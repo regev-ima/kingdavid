@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Warm gray neutrals (stone-tinted) */
+    --background: 30 6% 97%;
+    --foreground: 24 10% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 24 10% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 10% 10%;
+
+    /* Deep Indigo primary */
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 6% 94%;
+    --secondary-foreground: 24 10% 15%;
+    --muted: 30 6% 95%;
+    --muted-foreground: 24 6% 45%;
+    --accent: 263 70% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 24 6% 90%;
+    --input: 24 6% 85%;
+    --ring: 239 84% 67%;
+
+    --chart-1: 239 84% 67%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 43 96% 56%;
+    --chart-4: 263 70% 50%;
+    --chart-5: 0 84% 60%;
+    --radius: 0.5rem;
+
+    /* Dark sidebar */
+    --sidebar-background: 24 10% 10%;
+    --sidebar-foreground: 24 6% 80%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 24 8% 15%;
+    --sidebar-accent-foreground: 24 6% 90%;
+    --sidebar-border: 24 8% 18%;
+    --sidebar-ring: 239 84% 67%;
+
+    /* Brand tokens */
+    --brand-primary: 239 84% 67%;
+    --brand-primary-hover: 239 84% 57%;
+    --brand-primary-light: 239 84% 95%;
+    --brand-accent: 263 70% 50%;
+    --brand-success: 160 84% 39%;
+    --brand-warning: 43 96% 56%;
+    --brand-error: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 24 10% 6%;
+    --foreground: 30 6% 95%;
+    --card: 24 10% 9%;
+    --card-foreground: 30 6% 95%;
+    --popover: 24 10% 9%;
+    --popover-foreground: 30 6% 95%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 24 8% 14%;
+    --secondary-foreground: 30 6% 95%;
+    --muted: 24 8% 14%;
+    --muted-foreground: 24 6% 55%;
+    --accent: 263 70% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 35%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 24 8% 16%;
+    --input: 24 8% 16%;
+    --ring: 239 84% 67%;
+    --chart-1: 239 70% 60%;
+    --chart-2: 160 55% 45%;
+    --chart-3: 43 80% 55%;
+    --chart-4: 263 60% 60%;
+    --chart-5: 0 70% 55%;
+    --sidebar-background: 24 10% 5%;
+    --sidebar-foreground: 24 6% 80%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 24 8% 10%;
+    --sidebar-accent-foreground: 24 6% 90%;
+    --sidebar-border: 24 8% 12%;
+    --sidebar-ring: 239 84% 67%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Heebo', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: 'Heebo', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .font-body {
+    font-family: 'Heebo', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  .glass {
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+  }
+  .shadow-elevated {
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25),
+                0 0 0 1px rgb(0 0 0 / 0.05);
+  }
+  .shadow-card {
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.04),
+                0 4px 12px rgb(0 0 0 / 0.02);
+  }
+  .shadow-card-hover {
+    box-shadow: 0 2px 4px rgb(0 0 0 / 0.04),
+                0 8px 24px rgb(0 0 0 / 0.06);
+  }
+  .shadow-primary-glow {
+    box-shadow: 0 4px 14px 0 rgb(79 70 229 / 0.25);
+  }
+  .gradient-sidebar {
+    background: linear-gradient(180deg, hsl(24 10% 12%) 0%, hsl(24 10% 8%) 100%);
+  }
+  .gradient-brand {
+    background: linear-gradient(180deg, #4F46E5 0%, #4338CA 100%);
+  }
+
+  /* Selected state - subtle gradient + soft shadow */
+  .selected-card-state {
+    border-color: rgba(99, 102, 241, 0.5) !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.03) 100%) !important;
+    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.2), 0 2px 8px rgba(99, 102, 241, 0.1) !important;
+  }
+
+  /* Icon grid option - subtle selection */
+  .icon-option-selected {
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(79, 70, 229, 0.04) 100%);
+    border-color: rgba(79, 70, 229, 0.3);
+  }
+}
