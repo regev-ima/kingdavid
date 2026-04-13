@@ -33,7 +33,7 @@ CREATE TABLE quotes (
   warranty_terms TEXT,
   notes TEXT,
   pdf_url TEXT,
-  created_by_rep TEXT REFERENCES users(email),
+  created_by_rep TEXT REFERENCES profiles(email),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

@@ -9,7 +9,7 @@ CREATE TABLE support_tickets (
   subject TEXT NOT NULL,
   description TEXT,
   status ticket_status NOT NULL DEFAULT 'open',
-  assigned_to TEXT REFERENCES users(email),
+  assigned_to TEXT REFERENCES profiles(email),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

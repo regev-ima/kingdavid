@@ -19,7 +19,7 @@ CREATE TABLE customers (
   lifetime_value NUMERIC(12,2) NOT NULL DEFAULT 0,
   status customer_status NOT NULL DEFAULT 'active',
   vip_status BOOLEAN NOT NULL DEFAULT false,
-  account_manager TEXT REFERENCES users(email),
+  account_manager TEXT REFERENCES profiles(email),
   pending_rep_email TEXT,
   unique_id TEXT UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

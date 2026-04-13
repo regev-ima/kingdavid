@@ -36,8 +36,8 @@ CREATE TABLE orders (
 
   trial_30d_enabled BOOLEAN NOT NULL DEFAULT false,
   notes_sales TEXT,
-  rep1 TEXT REFERENCES users(email),
-  rep2 TEXT REFERENCES users(email),
+  rep1 TEXT REFERENCES profiles(email),
+  rep2 TEXT REFERENCES profiles(email),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

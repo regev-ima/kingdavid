@@ -13,8 +13,8 @@ CREATE TABLE leads (
   status lead_status NOT NULL DEFAULT 'new_lead',
 
   -- Rep assignment
-  rep1 TEXT REFERENCES users(email),
-  rep2 TEXT REFERENCES users(email),
+  rep1 TEXT REFERENCES profiles(email),
+  rep2 TEXT REFERENCES profiles(email),
   pending_rep_email TEXT,
   owner TEXT,
   created_by TEXT,
