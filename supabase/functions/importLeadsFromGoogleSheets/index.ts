@@ -2,7 +2,7 @@ import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
 
 const SPREADSHEET_ID = '1On0QrIVZ-rQw47A676EGui2fHGBJcBEhugcpCmB_fIU';
 const SHEET_NAME = 'Sheet 1';
-const BATCH_SIZE = 100;
+const BATCH_SIZE = 25;
 
 const STATUS_MAP: Record<string, string> = {
   'ליד חדש': 'new_lead',
@@ -146,26 +146,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Batch insert (upsert by phone)
+    // Bulk insert all at once (no duplicate check for speed)
     if (toInsert.length > 0) {
-      for (const lead of toInsert) {
-        try {
-          const { data: existing } = await supabase
-            .from('leads')
-            .select('id')
-            .eq('phone', lead.phone)
-            .limit(1);
-
-          if (existing && existing.length > 0) {
-            await supabase.from('leads').update(lead).eq('id', existing[0].id);
-            results.updated++;
-          } else {
-            await supabase.from('leads').insert(lead);
-            results.created++;
-          }
-        } catch (err) {
-          results.errors.push(`Phone ${lead.phone}: ${(err as Error).message}`);
-        }
+      const { error } = await supabase.from('leads').insert(toInsert);
+      if (error) {
+        results.errors.push(error.message);
+      } else {
+        results.created = toInsert.length;
       }
     }
 
