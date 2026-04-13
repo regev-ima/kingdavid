@@ -30,14 +30,8 @@ export default function Login() {
         return;
       }
 
-      if (!data?.session) {
-        setError('Login succeeded but no session returned');
-        setLoading(false);
-        return;
-      }
-
-      // Force redirect with full page reload to pick up new session
-      window.location.href = '/';
+      // Redirect - full page reload to pick up new session
+      window.location.replace('/');
     } catch (err) {
       setError(err.message || 'שגיאה בהתחברות. נסה שוב.');
       setLoading(false);
