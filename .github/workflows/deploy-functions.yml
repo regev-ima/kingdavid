@@ -58,6 +58,9 @@ jobs:
             uploadLeads
             upsertLead
             importProductsFromSheets
+            sendEmail
+            invokeLLM
+            extractData
           )
           for fn in "${FUNCTIONS[@]}"; do
             echo "Deploying $fn..."
