@@ -401,9 +401,10 @@ export default function Leads() {
       accessor: 'sla_status',
       render: (row) => {
         if (!row.created_date || row.first_action_at) return <span className="text-xs text-muted-foreground/70">טופל</span>;
-        
+
         const now = new Date();
-        const created = new Date(row.created_date + (row.created_date.includes('Z') ? '' : 'Z'));
+        const created = new Date(String(row.created_date).includes('Z') ? row.created_date : row.created_date + 'Z');
+        if (isNaN(created.getTime())) return <span className="text-xs text-muted-foreground/70">-</span>;
         const diffMinutes = Math.floor((now - created) / 1000 / 60);
         
         let color = 'text-green-600';
@@ -484,13 +485,18 @@ export default function Leads() {
       header: 'תאריך',
       accessor: 'created_date',
       render: (row) => {
-        const dateStr = row.created_date ? (row.created_date.includes('Z') ? row.created_date : row.created_date + 'Z') : new Date().toISOString();
-        return (
-          <div className="text-sm text-muted-foreground whitespace-nowrap">
-            <div>{formatInTimeZone(new Date(dateStr), 'Asia/Jerusalem', 'dd/MM/yyyy')}</div>
-            <div className="text-xs">{formatInTimeZone(new Date(dateStr), 'Asia/Jerusalem', 'HH:mm')}</div>
-          </div>
-        );
+        if (!row.created_date) return <span className="text-sm text-muted-foreground">-</span>;
+        const dateStr = String(row.created_date).includes('Z') ? row.created_date : row.created_date + 'Z';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return <span className="text-sm text-muted-foreground">-</span>;
+        try {
+          return (
+            <div className="text-sm text-muted-foreground whitespace-nowrap">
+              <div>{formatInTimeZone(d, 'Asia/Jerusalem', 'dd/MM/yyyy')}</div>
+              <div className="text-xs">{formatInTimeZone(d, 'Asia/Jerusalem', 'HH:mm')}</div>
+            </div>
+          );
+        } catch { return <span className="text-sm text-muted-foreground">-</span>; }
       },
       width: '110px'
     },
