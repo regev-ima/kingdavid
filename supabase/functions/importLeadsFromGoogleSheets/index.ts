@@ -1,4 +1,4 @@
-import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, corsHeaders, getUser } from '../_shared/supabase.ts';
 
 const SPREADSHEET_ID = '1On0QrIVZ-rQw47A676EGui2fHGBJcBEhugcpCmB_fIU';
 const SHEET_NAME = 'Sheet 1';
@@ -65,6 +65,9 @@ function mapStatus(hebrewStatus: string): string {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  const user = await getUser(req);
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
 
   try {
     let body: any = {};

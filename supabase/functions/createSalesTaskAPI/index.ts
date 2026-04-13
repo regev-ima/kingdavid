@@ -1,4 +1,4 @@
-import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, corsHeaders, getUser } from '../_shared/supabase.ts';
 
 // Map Hebrew status values to English enum values
 const STATUS_MAP: Record<string, string> = {
@@ -108,6 +108,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
+
+  const user = await getUser(req);
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
 
   try {
     const supabase = createServiceClient();

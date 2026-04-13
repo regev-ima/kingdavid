@@ -1,4 +1,4 @@
-import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, corsHeaders, getUser } from '../_shared/supabase.ts';
 
 // Create JWT for FCM v1 API authentication
 async function getAccessToken(): Promise<string> {
@@ -48,6 +48,9 @@ async function getAccessToken(): Promise<string> {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+
+  const user = await getUser(req);
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
 
   try {
     const { user_email, user_id, title, body, link, data } = await req.json();

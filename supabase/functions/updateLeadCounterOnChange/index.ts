@@ -5,6 +5,12 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // This function is triggered by DB (pg_net) - validate service role
+  const authHeader = req.headers.get('Authorization') || '';
+  if (!authHeader.includes('service_role')) {
+    return Response.json({ error: 'Forbidden: service role required' }, { status: 403, headers: corsHeaders });
+  }
+
   try {
     const supabase = createServiceClient();
     const { event, data: lead, old_data: oldLead } = await req.json();
