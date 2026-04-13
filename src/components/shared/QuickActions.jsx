@@ -22,7 +22,7 @@ import {
   Eye,
   Loader2
 } from "lucide-react";
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 import { formatPhoneForWhatsApp } from '@/utils/phoneUtils';
 
 export default function QuickActions({

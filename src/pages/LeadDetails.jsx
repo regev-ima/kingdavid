@@ -666,13 +666,13 @@ export default function LeadDetails() {
                   {/* Dates Row */}
                   <div className="border-t border-border/50 pt-4">
                     <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                      <DetailField 
-                        label="תאריך יצירה" 
-                        value={formatInTimeZone(new Date(lead.created_date + (lead.created_date.includes('Z') ? '' : 'Z')), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')} 
+                      <DetailField
+                        label="תאריך יצירה"
+                        value={lead.created_date ? formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
                       />
-                      <DetailField 
-                        label="תאריך עדכון" 
-                        value={formatInTimeZone(new Date(lead.updated_date + (lead.updated_date.includes('Z') ? '' : 'Z')), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')} 
+                      <DetailField
+                        label="תאריך עדכון"
+                        value={lead.updated_date ? formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
                       />
                     </div>
                   </div>
@@ -811,7 +811,7 @@ export default function LeadDetails() {
                                       <div className="flex items-center gap-1.5">
                                         <span className="text-muted-foreground">תאריך יצירה:</span>
                                         <span dir="ltr" className="tabular-nums font-medium">
-                                          {formatInTimeZone(new Date(task.created_date || task.manual_created_date || new Date()), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
+                                          {formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
                                         </span>
                                       </div>
                                       <div className="flex items-center gap-1.5">
@@ -838,7 +838,7 @@ export default function LeadDetails() {
                                         }`}>
                                           {statusKey === 'completed' ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                                           <span dir="ltr">
-                                            {formatInTimeZone(new Date(task.updated_date + (task.updated_date.includes('Z') ? '' : 'Z')), 'Asia/Jerusalem', 'dd/MM HH:mm')}
+                                            {task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : '-'}
                                           </span>
                                         </span>
                                       )}
@@ -966,20 +966,14 @@ export default function LeadDetails() {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">גיל הליד</span>
                 <span className="text-sm font-medium text-foreground">
-                  {formatDistanceToNow(
-                    new Date(lead.created_date + (lead.created_date.includes('Z') ? '' : 'Z')),
-                    { locale: he }
-                  )}
+                  {lead.created_date ? formatDistanceToNow(lead.created_date, { locale: he }) : '-'}
                 </span>
               </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">עדכון אחרון</span>
                 <span className="text-sm font-medium text-foreground">
-                  {formatDistanceToNow(
-                    new Date(lead.updated_date + (lead.updated_date.includes('Z') ? '' : 'Z')),
-                    { addSuffix: true, locale: he }
-                  )}
+                  {lead.updated_date ? formatDistanceToNow(lead.updated_date, { addSuffix: true, locale: he }) : '-'}
                 </span>
               </div>
 

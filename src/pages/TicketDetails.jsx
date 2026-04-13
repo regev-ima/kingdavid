@@ -285,7 +285,7 @@ export default function TicketDetails() {
               {ticket.sla_due_date ? (
                 <div className={isOverdue ? 'text-red-600' : ''}>
                   <p className="font-medium">
-                    {format(new Date(ticket.sla_due_date), 'dd/MM/yyyy HH:mm')}
+                    {format(ticket.sla_due_date, 'dd/MM/yyyy HH:mm')}
                   </p>
                   {isOverdue && (
                     <p className="text-sm mt-1">חריגת SLA!</p>
@@ -325,7 +325,7 @@ export default function TicketDetails() {
                   <div className="h-2 w-2 rounded-full bg-primary"></div>
                   <div>
                     <p className="font-medium">קריאה נפתחה</p>
-                    <p className="text-muted-foreground">{format(new Date(ticket.created_date), 'dd/MM/yyyy HH:mm')}</p>
+                    <p className="text-muted-foreground">{format(ticket.created_date, 'dd/MM/yyyy HH:mm')}</p>
                   </div>
                 </div>
                 {ticket.updated_date !== ticket.created_date && (
@@ -333,7 +333,7 @@ export default function TicketDetails() {
                     <div className="h-2 w-2 rounded-full bg-muted-foreground/40"></div>
                     <div>
                       <p className="font-medium">עודכן לאחרונה</p>
-                      <p className="text-muted-foreground">{format(new Date(ticket.updated_date), 'dd/MM/yyyy HH:mm')}</p>
+                      <p className="text-muted-foreground">{format(ticket.updated_date, 'dd/MM/yyyy HH:mm')}</p>
                     </div>
                   </div>
                 )}

@@ -20,9 +20,10 @@ function formatPhone(phone) {
 }
 
 function getTreatmentText(row) {
-  if (!row.first_action_at) return 'טרם טופל';
+  if (!row.first_action_at || !row.created_date) return 'טרם טופל';
   const created = new Date(row.created_date);
   const handled = new Date(row.first_action_at);
+  if (isNaN(created.getTime()) || isNaN(handled.getTime())) return '-';
   const diffMinutes = Math.floor((handled - created) / 1000 / 60);
 
   if (diffMinutes < 60) return `${diffMinutes} דק'`;
@@ -36,7 +37,8 @@ function getSlaData(row) {
   }
 
   const now = new Date();
-  const created = new Date(row.created_date + (row.created_date.includes('Z') ? '' : 'Z'));
+  const created = new Date(String(row.created_date).includes('Z') ? row.created_date : row.created_date + 'Z');
+  if (isNaN(created.getTime())) return { label: '-', className: 'text-muted-foreground/70' };
   const diffMinutes = Math.floor((now - created) / 1000 / 60);
 
   let className = 'text-green-600';

@@ -63,7 +63,7 @@ export default function LeadActivityTimeline({ leadId }) {
   });
 
   const sortedLogs = [...logs].sort(
-    (a, b) => new Date(b.created_date) - new Date(a.created_date)
+    (a, b) => (new Date(b.created_date || 0).getTime() || 0) - (new Date(a.created_date || 0).getTime() || 0)
   );
 
   if (isLoading) {
@@ -107,7 +107,7 @@ export default function LeadActivityTimeline({ leadId }) {
                 </Badge>
                 <span className="text-[11px] text-muted-foreground/70">
                   {formatInTimeZone(
-                    new Date(log.created_date + (log.created_date.includes('Z') ? '' : 'Z')),
+                    log.created_date || new Date().toISOString(),
                     'Asia/Jerusalem',
                     'dd/MM/yyyy HH:mm'
                   )}

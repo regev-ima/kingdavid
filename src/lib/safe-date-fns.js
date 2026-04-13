@@ -8,11 +8,23 @@ export {
   startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear,
   differenceInDays, differenceInHours, differenceInMinutes, differenceInBusinessDays,
   isAfter, isBefore, isValid, isPast, isToday, isSameDay, isWithinInterval,
-  parseISO, formatDistanceToNow,
+  parseISO,
   getDay, getMonth, getYear,
   setHours, setMinutes,
   eachDayOfInterval,
 } from 'date-fns';
+
+import { formatDistanceToNow as _formatDistanceToNow } from 'date-fns';
+
+export function formatDistanceToNow(date, options) {
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    return _formatDistanceToNow(d, options);
+  } catch {
+    return '-';
+  }
+}
 
 import { format as _format } from 'date-fns';
 

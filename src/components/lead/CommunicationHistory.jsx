@@ -62,7 +62,7 @@ export default function CommunicationHistory({ leadId }) {
   ];
 
   const sortedCommunications = [...allItems].sort(
-    (a, b) => new Date(b.created_date || b.call_started_at) - new Date(a.created_date || a.call_started_at)
+    (a, b) => (new Date(b.created_date || b.call_started_at || 0).getTime() || 0) - (new Date(a.created_date || a.call_started_at || 0).getTime() || 0)
   );
 
   if (isLoading) {

@@ -8,7 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { getCityRegion, getRegionName } from '@/components/utils/cityRegionMapper';
 import RouteMap from './RouteMap';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 
 const daysOfWeek = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 

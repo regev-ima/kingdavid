@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Bell, Save, AlertTriangle } from "lucide-react";
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export default function NotificationSettings() {
   const [user, setUser] = useState(null);
