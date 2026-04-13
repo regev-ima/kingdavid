@@ -1,7 +1,7 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
-import { format } from "date-fns";
+import { format } from "@/lib/safe-date-fns";
 
 /**
  * KING DAVID - Premium PDF Quote Generator

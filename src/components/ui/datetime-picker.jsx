@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { ChevronUp, ChevronDown, Calendar as CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
+import { format } from "@/lib/safe-date-fns";
 import { he } from "date-fns/locale";
 
 export function DateTimePicker({ value, onChange, placeholder = "בחר תאריך ושעה" }) {
