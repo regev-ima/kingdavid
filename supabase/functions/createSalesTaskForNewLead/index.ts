@@ -7,8 +7,10 @@ Deno.serve(async (req) => {
 
   // This function is triggered by DB (pg_net) - validate service role
   const authHeader = req.headers.get('Authorization') || '';
-  if (!authHeader.includes('service_role')) {
-    return Response.json({ error: 'Forbidden: service role required' }, { status: 403, headers: corsHeaders });
+  const token = authHeader.replace('Bearer ', '');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  if (!token || token !== serviceRoleKey) {
+    return Response.json({ error: 'Forbidden' }, { status: 403, headers: corsHeaders });
   }
 
   try {
@@ -73,6 +75,7 @@ Deno.serve(async (req) => {
     }, { headers: corsHeaders });
 
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

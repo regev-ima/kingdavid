@@ -182,10 +182,7 @@ Deno.serve(async (req) => {
     }, { headers: corsHeaders });
 
   } catch (error) {
-    console.error('Import error:', error);
-    return Response.json({
-      error: 'Import failed',
-      details: error.message
-    }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

@@ -270,6 +270,7 @@ Deno.serve(async (req) => {
       tasks: { pending_total: openTaskCount, today: todayTasks.length, overdue: overdueTasks.length },
     }, { headers: corsHeaders });
   } catch (error) {
-    return Response.json({ error: error.message || 'Unknown error' }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

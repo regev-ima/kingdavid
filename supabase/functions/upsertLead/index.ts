@@ -21,7 +21,17 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('authorization') || '';
     const providedSecret = req.headers.get('api_key') || req.headers.get('x-webhook-secret') || authHeader.replace(/^Bearer\s+/i, '');
 
-    if (!expectedSecret || providedSecret !== expectedSecret) {
+    // Constant-time comparison to prevent timing attacks
+    const timingSafeEqual = (a: string, b: string): boolean => {
+      if (a.length !== b.length) return false;
+      let result = 0;
+      for (let i = 0; i < a.length; i++) {
+        result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+      }
+      return result === 0;
+    };
+
+    if (!expectedSecret || !timingSafeEqual(providedSecret, expectedSecret)) {
       return Response.json({ success: false, error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
     }
 
@@ -83,6 +93,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, action: 'created', lead: newLead, message: `ליד ${leadData.full_name} נוצר בהצלחה` }, { headers: corsHeaders });
   } catch (error) {
-    return Response.json({ error: error.message, success: false }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

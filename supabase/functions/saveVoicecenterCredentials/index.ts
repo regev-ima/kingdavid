@@ -22,6 +22,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, message: 'פרטי VoiceCenter נשמרו בהצלחה' }, { headers: corsHeaders });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

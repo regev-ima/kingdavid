@@ -70,6 +70,7 @@ Deno.serve(async (req) => {
       rows_count: csvPayload.rows_count,
     }, { headers: corsHeaders });
   } catch (error) {
-    return Response.json({ error: error.message || 'Unknown error' }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

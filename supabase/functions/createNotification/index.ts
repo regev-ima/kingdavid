@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, notification, created: true }, { headers: corsHeaders });
   } catch (error) {
-    console.error('Error creating notification:', error);
-    return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

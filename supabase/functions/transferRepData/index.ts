@@ -56,10 +56,7 @@ Deno.serve(async (req) => {
       { headers: corsHeaders },
     );
   } catch (error) {
-    console.error('Transfer initiation error:', error);
-    return Response.json(
-      { error: (error as Error).message || 'Failed to initiate transfer' },
-      { status: 500, headers: corsHeaders },
-    );
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

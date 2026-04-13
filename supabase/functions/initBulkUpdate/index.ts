@@ -159,10 +159,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ error: 'Invalid mode' }, { status: 400, headers: corsHeaders });
   } catch (error) {
-    console.error('initBulkUpdate error:', error);
-    return Response.json(
-      { error: error.message || 'Internal error' },
-      { status: 500, headers: corsHeaders },
-    );
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

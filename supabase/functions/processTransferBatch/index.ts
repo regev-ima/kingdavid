@@ -179,10 +179,7 @@ Deno.serve(async (req) => {
       );
     }
   } catch (error) {
-    console.error('Batch processing error:', error);
-    return Response.json(
-      { error: (error as Error).message || 'Failed to process batch' },
-      { status: 500, headers: corsHeaders },
-    );
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

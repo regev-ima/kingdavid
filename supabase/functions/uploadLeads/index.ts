@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
       results: { created: results.created, updated: results.updated, failed: results.failed, total: leads.length, errors: results.errors.length > 0 ? results.errors : undefined },
     }, { headers: corsHeaders });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', error);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });

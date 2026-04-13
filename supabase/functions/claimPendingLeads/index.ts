@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
       message: `Sync complete. Assigned ${leadsUpdated} leads and ${tasksUpdated} tasks.`,
     }, { headers: corsHeaders });
   } catch (err) {
-    return Response.json({ error: err.message }, { status: 500, headers: corsHeaders });
+    console.error('Function error:', err);
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });
