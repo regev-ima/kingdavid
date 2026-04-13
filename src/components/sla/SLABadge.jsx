@@ -9,8 +9,10 @@ export default function SLABadge({ lead, showTimer = true }) {
     if (!lead.created_date || lead.first_action_at) return;
 
     const calculateMinutes = () => {
-      // Convert UTC to proper Date object
-      const entryTime = new Date(lead.created_date + (lead.created_date.includes('Z') ? '' : 'Z'));
+      if (!lead.created_date) return;
+      const dateStr = String(lead.created_date);
+      const entryTime = new Date(dateStr.includes('Z') ? dateStr : dateStr + 'Z');
+      if (isNaN(entryTime.getTime())) return;
       const now = new Date();
       const minutes = Math.floor((now - entryTime) / 60000);
       setMinutesSinceEntry(minutes);
