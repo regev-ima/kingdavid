@@ -2,8 +2,8 @@ import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
 
 const SPREADSHEET_ID = '1On0QrIVZ-rQw47A676EGui2fHGBJcBEhugcpCmB_fIU';
 const SHEET_NAME = 'Sheet 1';
+const BATCH_SIZE = 100;
 
-// Map Hebrew statuses to DB status codes
 const STATUS_MAP: Record<string, string> = {
   'ליד חדש': 'new_lead',
   'ליד חם': 'hot_lead',
@@ -43,7 +43,6 @@ function extractEmail(text: string): string {
 
 function parseDate(val: string): string | null {
   if (!val) return null;
-  // Handle DD/MM/YYYY or DD/MM/YYYY HH:mm
   const parts = val.trim().split(' ');
   const dateParts = parts[0].split('/');
   if (dateParts.length === 3) {
@@ -57,9 +56,7 @@ function parseDate(val: string): string | null {
 function mapStatus(hebrewStatus: string): string {
   if (!hebrewStatus) return 'new_lead';
   const trimmed = hebrewStatus.trim();
-  // Try exact match first
   if (STATUS_MAP[trimmed]) return STATUS_MAP[trimmed];
-  // Try partial match
   for (const [key, value] of Object.entries(STATUS_MAP)) {
     if (trimmed.includes(key) || key.includes(trimmed)) return value;
   }
@@ -70,23 +67,37 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    let body: any = {};
+    try { body = await req.json(); } catch { body = {}; }
+    const startRow = body.startRow || 1;
+
     const supabase = createServiceClient();
     const apiKey = Deno.env.get('GOOGLE_SHEETS_API_KEY');
     if (!apiKey) return Response.json({ error: 'GOOGLE_SHEETS_API_KEY not set' }, { status: 500, headers: corsHeaders });
 
-    // Fetch all rows
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SHEET_NAME)}?key=${apiKey}`;
+    // Fetch batch of rows
+    const range = `${SHEET_NAME}!A${startRow + 1}:BZ${startRow + BATCH_SIZE}`;
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?key=${apiKey}`;
     const res = await fetch(url);
     if (!res.ok) return Response.json({ error: 'Failed to fetch sheet', details: await res.text() }, { status: 400, headers: corsHeaders });
 
     const data = await res.json();
     const rows = data.values || [];
-    if (rows.length < 2) return Response.json({ error: 'Sheet is empty' }, { status: 400, headers: corsHeaders });
 
-    const results = { created: 0, updated: 0, skipped: 0, errors: [] as string[] };
+    if (rows.length === 0) {
+      return Response.json({ done: true, message: 'No more rows', startRow }, { headers: corsHeaders });
+    }
 
-    // Skip header row
-    for (let i = 1; i < rows.length; i++) {
+    // Pre-fetch all users for rep matching (one query)
+    const { data: allUsers } = await supabase.from('users').select('email');
+    const userEmails = new Set((allUsers || []).map((u: any) => u.email.toLowerCase()));
+
+    const results = { created: 0, updated: 0, skipped: 0, errors: [] as string[], nextStartRow: startRow + rows.length, hasMore: rows.length === BATCH_SIZE };
+
+    // Batch: collect all leads to insert/update
+    const toInsert: any[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
       try {
         const row = rows[i];
         const fullName = (row[0] || '').trim();
@@ -113,7 +124,7 @@ Deno.serve(async (req) => {
           phone,
           status,
           source,
-          notes,
+          notes: notes || undefined,
           unique_id: uniqueId || undefined,
           email: email || undefined,
           click_id: gclid || undefined,
@@ -123,41 +134,38 @@ Deno.serve(async (req) => {
           effective_sort_date: createdDate || new Date().toISOString(),
         };
 
-        // Assign rep if email found and exists in users
-        if (repEmail) {
-          const { data: repUser } = await supabase
-            .from('users')
-            .select('email')
-            .eq('email', repEmail)
+        if (repEmail && userEmails.has(repEmail)) {
+          leadData.rep1 = repEmail;
+        } else if (repEmail) {
+          leadData.pending_rep_email = repEmail;
+        }
+
+        toInsert.push(leadData);
+      } catch (err) {
+        results.errors.push(`Row ${startRow + i}: ${(err as Error).message}`);
+      }
+    }
+
+    // Batch insert (upsert by phone)
+    if (toInsert.length > 0) {
+      for (const lead of toInsert) {
+        try {
+          const { data: existing } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('phone', lead.phone)
             .limit(1);
 
-          if (repUser && repUser.length > 0) {
-            leadData.rep1 = repEmail;
+          if (existing && existing.length > 0) {
+            await supabase.from('leads').update(lead).eq('id', existing[0].id);
+            results.updated++;
           } else {
-            leadData.pending_rep_email = repEmail;
+            await supabase.from('leads').insert(lead);
+            results.created++;
           }
+        } catch (err) {
+          results.errors.push(`Phone ${lead.phone}: ${(err as Error).message}`);
         }
-
-        // Check if lead exists by unique_id or phone
-        let existing = null;
-        if (uniqueId) {
-          const { data } = await supabase.from('leads').select('id').eq('unique_id', uniqueId).limit(1);
-          if (data?.length) existing = data[0];
-        }
-        if (!existing) {
-          const { data } = await supabase.from('leads').select('id').eq('phone', phone).limit(1);
-          if (data?.length) existing = data[0];
-        }
-
-        if (existing) {
-          await supabase.from('leads').update(leadData).eq('id', existing.id);
-          results.updated++;
-        } else {
-          await supabase.from('leads').insert(leadData);
-          results.created++;
-        }
-      } catch (err) {
-        results.errors.push(`Row ${i + 1}: ${(err as Error).message}`);
       }
     }
 
