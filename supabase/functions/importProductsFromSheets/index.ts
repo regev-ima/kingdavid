@@ -5,8 +5,8 @@ const SPREADSHEET_ID = '1o2KSCJX3l9jKMvyVVU1gHLnK7hvEx_iF-01cjGeq0tQ';
 const SHEETS = [
   { name: 'מחירון מזרונים - זוגי 2026', category: 'mattress', bed_type: 'double' },
   { name: 'מחירון מזרונים - יחיד 2026', category: 'mattress', bed_type: 'single' },
-  { name: 'מחירון מיטות - זוגי 2026', category: 'bed', bed_type: 'double' },
-  { name: 'מחירון מיטות - יחיד 2026', category: 'bed', bed_type: 'single' },
+  { name: ' מחירון מיטות - זוגי 2026', category: 'bed', bed_type: 'double' },
+  { name: ' מחירון מיטות - יחיד 2026', category: 'bed', bed_type: 'single' },
 ];
 
 async function fetchSheet(apiKey: string, sheetName: string) {
