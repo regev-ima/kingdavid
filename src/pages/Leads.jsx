@@ -526,22 +526,25 @@ export default function Leads() {
     setFilters({ search: '', status: 'all', source: 'all', rep1: 'all' });
   };
 
-  // Use counters from LeadCounter entity instead of counting loaded leads
-  const getLeadCounterValue = (key) => {
+  // Use counters from LeadCounter entity
+  const getCounterValue = (key) => {
     if (isAdmin) {
-      const c = leadCounters.find(c => c.counter_key === key && !c.rep_email);
-      return c?.count || 0;
+      const c = leadCounters.find(c => c.counter_key === key && (!c.rep_email || c.rep_email === ''));
+      return c?.total_leads || c?.count || 0;
     } else {
       const c = leadCounters.find(c => c.counter_key === key && c.rep_email === userEmail);
-      return c?.count || 0;
+      return c?.total_leads || c?.count || 0;
     }
   };
 
-  const totalLeadCount = getLeadCounterValue('total');
-  const unassignedCount = leadCounters.find(c => c.counter_key === 'unassigned' && (!c.rep_email || c.rep_email === ''))?.count || 0;
+  const totalLeadCount = getCounterValue('total');
+  const unassignedCount = (() => {
+    const c = leadCounters.find(c => c.counter_key === 'unassigned' && (!c.rep_email || c.rep_email === ''));
+    return c?.total_leads || c?.count || 0;
+  })();
   const myLeadsCount = isAdmin
-    ? leadCounters.find(c => c.counter_key === 'total' && c.rep_email === userEmail)?.count || 0
-    : getLeadCounterValue('total');
+    ? (() => { const c = leadCounters.find(c => c.counter_key === 'total' && c.rep_email === userEmail); return c?.total_leads || c?.count || 0; })()
+    : getCounterValue('total');
 
   return (
     <div className="space-y-6">
