@@ -1,6 +1,6 @@
 import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
 
-const SPREADSHEET_ID = '1o2KSCJX3l9jKMvyVVU1gHLnK7hvEx_iF';
+const SPREADSHEET_ID = '1o2KSCJX3l9jKMvyVVU1gHLnK7hvEx_iF-01cjGeq0tQ';
 
 const SHEETS = [
   { name: 'מחירון מזרונים - זוגי 2026', category: 'mattress', bed_type: 'double' },
