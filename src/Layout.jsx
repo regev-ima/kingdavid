@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { useImpersonation } from "@/components/shared/ImpersonationContext";
 import {
@@ -90,7 +91,6 @@ const navigationByRole = {
 };
 
 function LayoutContent({ children, currentPageName }) {
-  const [user, setUser] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -98,26 +98,20 @@ function LayoutContent({ children, currentPageName }) {
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
 
+  // Cache user data - won't refetch on every page change
+  const { data: user } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => base44.auth.me(),
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: 1,
+  });
+
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const userData = await base44.auth.me();
-        setUser(userData);
-        
-        // Claim pending leads assigned to this user on login
-        if (userData?.role !== 'admin') {
-          try {
-            await base44.functions.invoke('claimPendingLeads');
-          } catch (e) {
-            // silently ignore claim failures
-          }
-        }
-      } catch (err) {
-        // user not authenticated
-      }
-    };
-    fetchUser();
-  }, []);
+    if (user && user.role !== 'admin') {
+      base44.functions.invoke('claimPendingLeads').catch(() => {});
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     // Load VoiceCenter Events SDK
