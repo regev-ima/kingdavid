@@ -62,6 +62,7 @@ jobs:
             invokeLLM
             extractData
             sendPushNotification
+            importLeadsFromGoogleSheets
           )
           for fn in "${FUNCTIONS[@]}"; do
             echo "Deploying $fn..."
