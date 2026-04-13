@@ -154,6 +154,14 @@ function createEntityAPI(tableName) {
         .eq('id', id);
       if (error) throw error;
     },
+
+    /**
+     * Subscribe to real-time changes (no-op returning unsubscribe function).
+     */
+    subscribe(callback) {
+      // No-op for now - can be wired to Supabase Realtime later
+      return () => {};
+    },
   };
 }
 
