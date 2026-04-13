@@ -48,8 +48,8 @@ export default function Login() {
     setLoading(true);
     setError('');
 
-    if (password.length < 6) {
-      setError('הסיסמה חייבת להכיל לפחות 6 תווים');
+    if (password.length < 8) {
+      setError('הסיסמה חייבת להכיל לפחות 8 תווים');
       setLoading(false);
       return;
     }
