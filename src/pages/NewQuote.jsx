@@ -19,7 +19,7 @@ import {
 
 import { ArrowRight, Save, Loader2, Plus, Trash2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
 import DiscountPopover from '@/components/quote/DiscountPopover';

@@ -14,7 +14,7 @@ import {
 import { Phone, MessageCircle, UserPlus, ArrowLeft } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { format, differenceInMinutes } from 'date-fns';
+import { format, differenceInMinutes } from '@/lib/safe-date-fns';
 
 function getSLABadge(lead) {
   if (lead.first_action_at) {

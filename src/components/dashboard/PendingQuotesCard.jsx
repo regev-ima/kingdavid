@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight, FileText } from 'lucide-react';
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { fetchAllList } from '@/lib/base44Pagination';

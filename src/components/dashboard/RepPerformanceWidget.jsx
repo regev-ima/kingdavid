@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TrendingUp } from "lucide-react";
-import { differenceInMinutes } from 'date-fns';
+import { differenceInMinutes } from '@/lib/safe-date-fns';
 import UserAvatar from '@/components/shared/UserAvatar';
 
 export default function RepPerformanceWidget({ leads, callLogs, users = [] }) {

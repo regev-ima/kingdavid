@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Phone, PhoneOff, CheckCircle2, XCircle, Clock, Voicemail, PhoneCall, Calendar } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import { Switch } from "@/components/ui/switch";
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 

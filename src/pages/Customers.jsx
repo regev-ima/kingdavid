@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import KPICard from '@/components/shared/KPICard';
 import { Crown, TrendingUp, Users, DollarSign, FileSpreadsheet } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import ImportCustomers from '@/components/customer/ImportCustomers';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, filterCustomersForUser } from '@/lib/rbac';
@@ -106,7 +106,10 @@ export default function Customers() {
     },
     {
       header: 'הזמנה ראשונה',
-      render: (customer) => customer.first_order_date ? format(new Date(customer.first_order_date), 'dd/MM/yyyy') : '-'
+      render: (customer) => {
+        if (!customer.first_order_date) return '-';
+        try { return format(new Date(customer.first_order_date), 'dd/MM/yyyy'); } catch { return '-'; }
+      }
     },
     {
       header: '',

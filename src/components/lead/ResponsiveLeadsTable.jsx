@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { AlertCircle, Phone } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';

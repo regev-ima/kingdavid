@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw } from "lucide-react";
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { canAccessAdminOnly } from '@/lib/rbac';

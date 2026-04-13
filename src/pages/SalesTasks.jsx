@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Calendar, Clock, Phone, MessageCircle, CheckCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip } from "lucide-react";
-import { format, isValid, formatDistanceToNow, startOfDay, endOfDay } from 'date-fns';
+import { format, isValid, formatDistanceToNow, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 
 const safeFormat = (dateStr, fmt) => {

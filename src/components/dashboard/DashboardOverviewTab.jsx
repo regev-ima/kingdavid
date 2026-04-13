@@ -10,7 +10,7 @@ import {
   TrendingUp, DollarSign, UserPlus, ArrowRight, Phone,
   CheckSquare, AlertCircle, ShoppingCart,
 } from "lucide-react";
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { he } from "date-fns/locale";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

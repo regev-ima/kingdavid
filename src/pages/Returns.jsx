@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, RotateCcw, Clock, CheckCircle, Truck } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessReturnsWorkspace, filterReturnsForUser } from '@/lib/rbac';
 

@@ -1,4 +1,4 @@
-import { endOfDay, isValid, startOfDay } from 'date-fns';
+import { endOfDay, isValid, startOfDay } from '@/lib/safe-date-fns';
 
 export const CLOSED_TASK_STATUSES = ['completed', 'not_done', 'cancelled'];
 

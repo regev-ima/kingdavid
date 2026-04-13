@@ -12,7 +12,7 @@ import {
 import { PhoneOff } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 export default function NoAnswerWidget({ callLogs, whatsappLogs, leads }) {
   const noAnswerCalls = callLogs.filter(log => 

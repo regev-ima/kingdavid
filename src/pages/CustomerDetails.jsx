@@ -22,7 +22,7 @@ import {
   Save,
   Loader2
 } from "lucide-react";
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canViewCustomer } from '@/lib/rbac';
 

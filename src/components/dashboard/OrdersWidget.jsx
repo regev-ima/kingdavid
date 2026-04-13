@@ -13,7 +13,7 @@ import {
 import { ShoppingCart, ArrowLeft } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 export default function OrdersWidget({ orders }) {
   return (

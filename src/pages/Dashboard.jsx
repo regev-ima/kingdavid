@@ -38,10 +38,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { endOfDay, startOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from 'date-fns';
+import { endOfDay, startOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from '@/lib/safe-date-fns';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly, isFactoryUser } from '@/lib/rbac';
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 const METRIC_COLOR = {
   positive: 'emerald',

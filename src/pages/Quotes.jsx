@@ -10,7 +10,7 @@ import QuickActions from '@/components/shared/QuickActions';
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, filterQuotesForUser } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';

@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, AlertTriangle, Clock } from "lucide-react";
-import { addHours, differenceInDays } from 'date-fns';
+import { addHours, differenceInDays } from '@/lib/safe-date-fns';
 
 const WARRANTY_ISSUE_LABELS = {
   mattress_sag: 'שקיעה במזרן',

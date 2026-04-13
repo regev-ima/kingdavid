@@ -11,7 +11,7 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, UserPlus, Download, ExternalLink } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { format, isValid, addHours, addDays, startOfDay } from 'date-fns';
+import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { LEAD_STATUS_OPTIONS, TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';

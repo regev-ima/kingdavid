@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bell, Check, Trash2, Settings } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 
 export default function NotificationBell({ user }) {

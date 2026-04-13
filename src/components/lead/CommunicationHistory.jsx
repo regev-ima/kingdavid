@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Phone, MessageCircle, Mail, Calendar, Clock, Headphones, X, History } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 const communicationIcons = {
   call: Phone,

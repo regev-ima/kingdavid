@@ -1,4 +1,4 @@
-import { isValid, startOfDay, endOfDay } from 'date-fns';
+import { isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 
 export function parseGenericDate(str) {
   if (!str) return null;

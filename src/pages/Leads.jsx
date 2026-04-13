@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Users, AlertCircle, UserPlus, FileSpreadsheet, Phone } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';

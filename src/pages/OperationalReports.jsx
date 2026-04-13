@@ -17,7 +17,7 @@ import {
   BarChart3,
   Download,
 } from "lucide-react";
-import { format, differenceInHours, differenceInDays, startOfMonth, endOfMonth } from 'date-fns';
+import { format, differenceInHours, differenceInDays, startOfMonth, endOfMonth } from '@/lib/safe-date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { fetchAllList } from '@/lib/base44Pagination';
 

@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, X } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 export default function VoiceCenterCallPopup() {
   const [sdk, setSdk] = useState(null);

@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Package, AlertTriangle, TrendingDown, Plus, ArrowUp, ArrowDown } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 const typeLabels = {
   raw_material: 'חומר גלם',

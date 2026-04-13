@@ -23,7 +23,7 @@ import {
   Headphones,
   RotateCcw,
 } from "lucide-react";
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from '@/lib/safe-date-fns';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 export default function FactoryDashboard() {

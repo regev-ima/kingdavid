@@ -23,7 +23,7 @@ import {
   Clock,
   AlertTriangle
 } from "lucide-react";
-import { format, isPast } from 'date-fns';
+import { format, isPast } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSupportWorkspace, canViewSupportTicket } from '@/lib/rbac';
 

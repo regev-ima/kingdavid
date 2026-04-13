@@ -42,7 +42,7 @@ import {
   Clock,
   AlertTriangle
 } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canViewQuote } from '@/lib/rbac';
 

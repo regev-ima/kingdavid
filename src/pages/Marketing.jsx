@@ -29,7 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { BarChart3, Users, Target, TrendingUp, DollarSign, Handshake, Megaphone } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
-import { format, subDays, startOfDay } from 'date-fns';
+import { format, subDays, startOfDay } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessAdminOnly } from '@/lib/rbac';
 

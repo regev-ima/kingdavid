@@ -13,7 +13,7 @@ import {
   MessageCircle,
   Clock,
 } from "lucide-react";
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 
 const actionIcons = {
   created: PlusCircle,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Clock, AlertTriangle, CheckCircle } from "lucide-react";
-import { differenceInBusinessDays, parseISO } from 'date-fns';
+import { differenceInBusinessDays, parseISO } from '@/lib/safe-date-fns';
 
 // חישוב ימי עסקים שנותרו עד דד-ליין
 function calculateSLADaysRemaining(orderCreatedDate) {

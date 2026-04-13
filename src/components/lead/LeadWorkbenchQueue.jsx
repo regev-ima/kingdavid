@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, CalendarClock, Clock } from 'lucide-react';
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import { parseWorkbenchDate } from '@/lib/leadWorkbench';
 
 function formatDueDate(date) {

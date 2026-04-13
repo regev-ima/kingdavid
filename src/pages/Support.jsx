@@ -10,7 +10,7 @@ import KPICard from '@/components/shared/KPICard';
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Headphones, AlertTriangle, Clock, CheckCircle } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSupportWorkspace, filterTicketsForUser } from '@/lib/rbac';
 

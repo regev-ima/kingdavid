@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Factory as FactoryIcon, Package, Clock, CheckCircle, AlertTriangle } from "lucide-react";
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from '@/lib/safe-date-fns';
 
 const filterOptions = [
   {

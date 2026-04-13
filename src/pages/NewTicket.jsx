@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowRight, Save, Loader2 } from "lucide-react";
-import { addHours } from 'date-fns';
+import { addHours } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSupportWorkspace } from '@/lib/rbac';
 

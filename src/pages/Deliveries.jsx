@@ -9,7 +9,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Truck, Clock, CheckCircle, AlertTriangle, MapPin } from "lucide-react";
-import { format } from 'date-fns';
+import { format } from '@/lib/safe-date-fns';
 
 const timeWindowLabels = {
   morning: 'בוקר (08:00-12:00)',

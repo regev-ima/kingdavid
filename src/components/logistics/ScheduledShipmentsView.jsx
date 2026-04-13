@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Truck, Package, Calendar, MapPin, Phone, User, FileText, Clock } from "lucide-react";
-import { format, parseISO } from 'date-fns';
+import { format, parseISO } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';

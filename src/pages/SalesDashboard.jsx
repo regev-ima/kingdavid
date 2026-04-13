@@ -21,7 +21,7 @@ import {
   UserPlus,
   Zap,
 } from 'lucide-react';
-import { addHours, format, formatDistanceToNow, isValid } from 'date-fns';
+import { addHours, format, formatDistanceToNow, isValid } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 
 import UserAvatar from '@/components/shared/UserAvatar';
