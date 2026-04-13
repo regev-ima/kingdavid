@@ -40,6 +40,7 @@ import ProductAddonsManager from "../components/product/ProductAddonsManager";
 
 const categoryLabels = {
   mattress: 'מזרון',
+  bed: 'מיטה',
   topper: 'תוספת',
   accessory: 'נלווה'
 };
@@ -339,6 +340,7 @@ export default function ProductsNew() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="mattress">מזרון</SelectItem>
+                    <SelectItem value="bed">מיטה</SelectItem>
                     <SelectItem value="topper">תוספת</SelectItem>
                     <SelectItem value="accessory">מוצר נלווה</SelectItem>
                   </SelectContent>
@@ -614,6 +616,7 @@ export default function ProductsNew() {
               <SelectContent>
                 <SelectItem value="all">כל הקטגוריות</SelectItem>
                 <SelectItem value="mattress">מזרונים</SelectItem>
+                <SelectItem value="bed">מיטות</SelectItem>
                 <SelectItem value="topper">תוספות</SelectItem>
                 <SelectItem value="accessory">נלווים</SelectItem>
               </SelectContent>
