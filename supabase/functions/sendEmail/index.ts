@@ -14,8 +14,8 @@ function buildEmailTemplate(subject: string, body: string, options?: {
     return `<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;background:#ffffff;">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;direction:rtl;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;direction:rtl;">
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:40px 32px;text-align:center;">
       <img src="${logoUrl}" alt="King David" style="height:70px;margin-bottom:12px;">
@@ -26,7 +26,7 @@ function buildEmailTemplate(subject: string, body: string, options?: {
     </div>
 
     <!-- Body -->
-    <div style="padding:32px;text-align:right;">
+    <div style="padding:32px;text-align:right;direction:rtl;">
       <p style="font-size:16px;color:#1e293b;margin:0 0 16px;text-align:right;">שלום ${options.customer_name || ''},</p>
       <p style="font-size:15px;color:#475569;line-height:1.7;margin:0 0 24px;text-align:right;">
         מצורפת הצעת מחיר מקינג דוד.<br>
@@ -34,18 +34,18 @@ function buildEmailTemplate(subject: string, body: string, options?: {
       </p>
 
       <!-- Quote Summary Card -->
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin:0 0 24px;">
-        <table style="width:100%;border-collapse:collapse;">
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin:0 0 24px;direction:rtl;">
+        <table style="width:100%;border-collapse:collapse;direction:rtl;">
           <tr>
-            <td style="padding:8px 0;color:#64748b;font-size:14px;">מספר הצעה</td>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;text-align:right;">מספר הצעה</td>
             <td style="padding:8px 0;color:#1e293b;font-weight:600;font-size:14px;text-align:left;">${options.quote_number}</td>
           </tr>
           ${options.total ? `<tr>
-            <td style="padding:8px 0;color:#64748b;font-size:14px;">סה״כ</td>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;text-align:right;">סה״כ</td>
             <td style="padding:8px 0;color:#1e293b;font-weight:700;font-size:18px;text-align:left;">₪${options.total}</td>
           </tr>` : ''}
           ${options.valid_until ? `<tr>
-            <td style="padding:8px 0;color:#64748b;font-size:14px;">תוקף ההצעה</td>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;text-align:right;">תוקף ההצעה</td>
             <td style="padding:8px 0;color:#1e293b;font-size:14px;text-align:left;">${options.valid_until}</td>
           </tr>` : ''}
         </table>
@@ -59,7 +59,7 @@ function buildEmailTemplate(subject: string, body: string, options?: {
         </a>
       </div>` : ''}
 
-      <p style="font-size:14px;color:#94a3b8;line-height:1.6;margin:24px 0 0;">
+      <p style="font-size:14px;color:#94a3b8;line-height:1.6;margin:24px 0 0;text-align:center;">
         לשאלות או הבהרות, אנחנו כאן בשבילך.<br>
         ניתן ליצור קשר בטלפון: 1700-700-464
       </p>
