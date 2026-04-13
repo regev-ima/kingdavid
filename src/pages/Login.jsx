@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const handleLogin = async (e) => {
@@ -20,30 +19,27 @@ export default function Login() {
     setError('');
 
     try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (authError) {
-        if (authError.message.includes('Invalid login')) {
-          setError('אימייל או סיסמה שגויים');
-        } else {
-          setError(authError.message);
-        }
+        setError(authError.message);
+        setLoading(false);
         return;
       }
 
-      // Redirect to original page or dashboard
-      const redirect = searchParams.get('redirect');
-      if (redirect) {
-        window.location.href = redirect;
-      } else {
-        navigate('/');
+      if (!data?.session) {
+        setError('Login succeeded but no session returned');
+        setLoading(false);
+        return;
       }
+
+      // Force redirect with full page reload to pick up new session
+      window.location.href = '/';
     } catch (err) {
-      setError('שגיאה בהתחברות. נסה שוב.');
-    } finally {
+      setError(err.message || 'שגיאה בהתחברות. נסה שוב.');
       setLoading(false);
     }
   };
