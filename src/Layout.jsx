@@ -113,6 +113,24 @@ function LayoutContent({ children, currentPageName }) {
     }
   }, [user?.id]);
 
+  // Request push notification permission
+  useEffect(() => {
+    if (user?.id) {
+      import('@/lib/firebase').then(({ requestNotificationPermission, onForegroundMessage }) => {
+        requestNotificationPermission(user.id);
+        onForegroundMessage((payload) => {
+          const { title, body } = payload.notification || {};
+          if (title) {
+            // Show in-app toast for foreground messages
+            import('sonner').then(({ toast }) => {
+              toast(title, { description: body });
+            });
+          }
+        });
+      }).catch(() => {});
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     // Load VoiceCenter Events SDK
     if (!window.EventsSDK) {
