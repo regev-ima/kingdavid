@@ -4,18 +4,17 @@
  * This module exposes the same `base44` interface that the rest of the app
  * already imports, so no changes are needed in the 76+ consumer files.
  *
- *   base44.entities.<Entity>.list / filter / create / update / delete
+ *   base44.entities.<Entity>.list / filter / create / update / delete / subscribe
  *   base44.auth.me / logout / redirectToLogin / updateMe
  *   base44.functions.invoke(name, params)
+ *   base44.integrations.Core.UploadFile / SendEmail / InvokeLLM / ExtractDataFromUploadedFile
+ *   base44.asServiceRole.entities.* (same as entities, RLS disabled via service role)
  */
 import { supabase } from './supabaseClient';
 import { entities } from './entities';
 
 // ── Auth helpers ────────────────────────────────────────────────
 const auth = {
-  /**
-   * Get the currently logged-in user profile.
-   */
   async me() {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw authError || new Error('Not authenticated');
@@ -30,9 +29,6 @@ const auth = {
     return profile;
   },
 
-  /**
-   * Update the current user's profile.
-   */
   async updateMe(data) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
@@ -48,9 +44,6 @@ const auth = {
     return profile;
   },
 
-  /**
-   * Log out and optionally redirect.
-   */
   async logout(redirectUrl) {
     await supabase.auth.signOut();
     if (redirectUrl) {
@@ -58,9 +51,6 @@ const auth = {
     }
   },
 
-  /**
-   * Redirect to login page.
-   */
   redirectToLogin(redirectUrl) {
     const loginPath = '/login';
     const redirect = redirectUrl ? `?redirect=${encodeURIComponent(redirectUrl)}` : '';
@@ -70,10 +60,6 @@ const auth = {
 
 // ── Functions (Edge Functions) ──────────────────────────────────
 const functions = {
-  /**
-   * Invoke a Supabase Edge Function.
-   * Mimics base44.functions.invoke(name, params).
-   */
   async invoke(functionName, params) {
     const { data, error } = await supabase.functions.invoke(functionName, {
       body: params,
@@ -83,17 +69,51 @@ const functions = {
   },
 };
 
-// ── App Logs (no-op, was Base44-specific) ───────────────────────
+// ── Integrations (Core: file upload, email, LLM) ───────────────
+const integrations = {
+  Core: {
+    async UploadFile({ file }) {
+      const fileName = `${Date.now()}_${file.name}`;
+      const { data, error } = await supabase.storage
+        .from('uploads')
+        .upload(fileName, file);
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(fileName);
+
+      return { file_url: urlData.publicUrl };
+    },
+
+    async SendEmail({ to, subject, body }) {
+      // Route through Edge Function for email sending
+      return await functions.invoke('sendEmail', { to, subject, body });
+    },
+
+    async InvokeLLM({ prompt, response_json_schema, model }) {
+      // Route through Edge Function for LLM calls
+      return await functions.invoke('invokeLLM', { prompt, response_json_schema, model });
+    },
+
+    async ExtractDataFromUploadedFile({ file_url, json_schema }) {
+      return await functions.invoke('extractData', { file_url, json_schema });
+    },
+  },
+};
+
+// ── App Logs (no-op) ────────────────────────────────────────────
 const appLogs = {
   logUserInApp: async () => {},
 };
 
-// ── Users management (no-op stubs) ─────────────────────────────
+// ── Users management ────────────────────────────────────────────
 const users = {
   inviteUser: async () => { throw new Error('User invite not implemented yet'); },
 };
 
-// ── Agents (no-op stubs) ────────────────────────────────────────
+// ── Agents ──────────────────────────────────────────────────────
 const agents = {
   getWhatsAppConnectURL: () => '#',
 };
@@ -103,8 +123,11 @@ export const base44 = {
   entities,
   auth,
   functions,
+  integrations,
   appLogs,
   users,
   agents,
+  // asServiceRole uses the same entities (RLS is disabled on tables)
+  asServiceRole: { entities },
   supabase,
 };

@@ -34,6 +34,7 @@ const TABLE_MAP = {
   WhatsAppMessageLog: 'whatsapp_message_logs',
   Notification: 'notifications',
   NotificationPreference: 'notification_preferences',
+  NotificationPreferences: 'notification_preferences',
   LeadCounter: 'lead_counters',
   TaskCounter: 'task_counters',
   DashboardCounter: 'dashboard_counters',
