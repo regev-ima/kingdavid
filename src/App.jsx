@@ -6,6 +6,7 @@ import { pagesConfig } from './pages.config'
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import ErrorBoundary from '@/components/shared/ErrorBoundary';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
 
@@ -54,7 +55,9 @@ const AuthenticatedApp = () => {
       <Routes>
         <Route path="/" element={
           <LayoutWrapper currentPageName={mainPageKey}>
-            <MainPage />
+            <ErrorBoundary>
+              <MainPage />
+            </ErrorBoundary>
           </LayoutWrapper>
         } />
         {Object.entries(LazyPages).map(([path, Page]) => (
@@ -63,7 +66,9 @@ const AuthenticatedApp = () => {
             path={`/${path}`}
             element={
               <LayoutWrapper currentPageName={path}>
-                <Page />
+                <ErrorBoundary>
+                  <Page />
+                </ErrorBoundary>
               </LayoutWrapper>
             }
           />
