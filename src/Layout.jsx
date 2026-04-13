@@ -154,8 +154,28 @@ function LayoutContent({ children, currentPageName }) {
     window.location.href = '/login';
   };
 
+  // Push notification state
+  const [showNotifBanner, setShowNotifBanner] = useState(false);
+
+  useEffect(() => {
+    if (user?.id && 'Notification' in window && Notification.permission === 'default') {
+      setShowNotifBanner(true);
+    }
+  }, [user?.id]);
+
+  const handleEnableNotifications = async () => {
+    try {
+      const { requestNotificationPermission } = await import('@/lib/firebase');
+      await requestNotificationPermission(user?.id);
+      setShowNotifBanner(false);
+    } catch (err) {
+      console.error('Push error:', err);
+      setShowNotifBanner(false);
+    }
+  };
+
   const effectiveUser = getEffectiveUser(user);
-  
+
   // Determine user type based on role and department
   let userRole = 'sales_user';
   if (effectiveUser?.role === 'admin') {
@@ -171,6 +191,26 @@ function LayoutContent({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
+      {showNotifBanner && (
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 bg-slate-900 text-white p-4 rounded-xl shadow-2xl z-[70] flex items-center gap-3">
+          <div className="flex-1">
+            <p className="font-semibold text-sm">הפעל התראות</p>
+            <p className="text-xs text-slate-400">קבל עדכונים על לידים חדשים ומשימות</p>
+          </div>
+          <button
+            onClick={handleEnableNotifications}
+            className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-sm px-4 py-2 rounded-lg whitespace-nowrap"
+          >
+            הפעל
+          </button>
+          <button
+            onClick={() => setShowNotifBanner(false)}
+            className="text-slate-500 hover:text-white text-lg"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {isImpersonating && (
         <div className="fixed top-0 left-0 right-0 bg-amber-500 text-white px-4 py-2 z-[60] flex items-center justify-between">
           <div className="flex items-center gap-2">
