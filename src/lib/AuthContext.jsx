@@ -12,92 +12,83 @@ export const AuthProvider = ({ children }) => {
   const [appPublicSettings, setAppPublicSettings] = useState(null);
 
   useEffect(() => {
-    // Check initial session
-    checkSession();
+    let mounted = true;
 
-    // Listen for auth state changes (login, logout, token refresh)
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (session?.user) {
+          const { data: profile, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', session.user.id)
+            .single();
+
+          if (!mounted) return;
+
+          if (profile && !error) {
+            setUser(profile);
+            setIsAuthenticated(true);
+          } else {
+            setAuthError({ type: 'user_not_registered', message: 'User not registered' });
+          }
+        }
+      } catch (err) {
+        console.error('Auth init error:', err);
+        if (mounted) {
+          setAuthError({ type: 'unknown', message: err.message });
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingAuth(false);
+        }
+      }
+    };
+
+    init();
+
+    // Listen for auth changes (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_IN' && session) {
-          await loadUserProfile(session.user);
+          const { data: profile } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', session.user.id)
+            .single();
+
+          if (mounted && profile) {
+            setUser(profile);
+            setIsAuthenticated(true);
+            setIsLoadingAuth(false);
+          }
         } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setIsAuthenticated(false);
+          if (mounted) {
+            setUser(null);
+            setIsAuthenticated(false);
+          }
         }
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
-
-  const checkSession = async () => {
-    try {
-      setIsLoadingAuth(true);
-      setAuthError(null);
-
-      const { data: { session }, error } = await supabase.auth.getSession();
-
-      if (error) {
-        setAuthError({ type: 'unknown', message: error.message });
-        setIsLoadingAuth(false);
-        return;
-      }
-
-      if (session?.user) {
-        await loadUserProfile(session.user);
-      } else {
-        setIsLoadingAuth(false);
-        setIsAuthenticated(false);
-      }
-    } catch (error) {
-      setAuthError({ type: 'unknown', message: error.message });
-      setIsLoadingAuth(false);
-    }
-  };
-
-  const loadUserProfile = async (authUser) => {
-    try {
-      const { data: profile, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_id', authUser.id)
-        .single();
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No profile found - user not registered in app
-          setAuthError({
-            type: 'user_not_registered',
-            message: 'User not registered for this app',
-          });
-        } else {
-          setAuthError({ type: 'unknown', message: error.message });
-        }
-        setIsLoadingAuth(false);
-        return;
-      }
-
-      setUser(profile);
-      setIsAuthenticated(true);
-      setIsLoadingAuth(false);
-    } catch (error) {
-      setAuthError({ type: 'unknown', message: error.message });
-      setIsLoadingAuth(false);
-    }
-  };
 
   const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
     await supabase.auth.signOut();
-
-    if (shouldRedirect) {
-      window.location.href = '/login';
-    }
   };
 
   const navigateToLogin = () => {
-    window.location.href = `/login?redirect=${encodeURIComponent(window.location.href)}`;
+    // kept for backwards compat, but Navigate component is preferred
+    window.location.href = `/login`;
   };
 
   return (
@@ -110,7 +101,7 @@ export const AuthProvider = ({ children }) => {
       appPublicSettings,
       logout,
       navigateToLogin,
-      checkAppState: checkSession,
+      checkAppState: () => {},
     }}>
       {children}
     </AuthContext.Provider>
