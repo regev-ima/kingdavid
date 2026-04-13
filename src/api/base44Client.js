@@ -83,11 +83,16 @@ const functions = {
   },
 };
 
+// ── App Logs (no-op, was Base44-specific) ───────────────────────
+const appLogs = {
+  logUserInApp: async () => {},
+};
+
 // ── Main export ─────────────────────────────────────────────────
 export const base44 = {
   entities,
   auth,
   functions,
-  // Keep supabase client accessible for edge cases
+  appLogs,
   supabase,
 };
