@@ -128,7 +128,7 @@ export default function Login() {
         {/* Background Image */}
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url('https://kingdavid4u.co.il/wp-content/uploads/2024/03/KD_WEB_HERO.webp')` }}
+          style={{ backgroundImage: `url('https://kingdavid4u.co.il/wp-content/uploads/2024/11/Final1-scaled.jpg')` }}
         />
         <div className="absolute inset-0 bg-gradient-to-l from-black/70 via-black/50 to-black/70" />
 
