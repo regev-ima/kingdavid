@@ -136,7 +136,7 @@ export default function Login() {
         <div className="relative z-10 flex flex-col justify-center items-center w-full p-16 text-center">
           <div className="mb-8">
             <img
-              src="https://kingdavid4u.co.il/wp-content/uploads/2024/01/KD_LOGO-1.webp"
+              src="https://kingdavid4u.co.il/wp-content/uploads/2023/09/logo.png"
               alt="King David"
               className="h-24 mx-auto mb-8 drop-shadow-2xl"
               onError={(e) => { e.target.style.display = 'none'; }}
@@ -173,7 +173,7 @@ export default function Login() {
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
             <img
-              src="https://kingdavid4u.co.il/wp-content/uploads/2024/01/KD_LOGO-1.webp"
+              src="https://kingdavid4u.co.il/wp-content/uploads/2023/09/logo.png"
               alt="King David"
               className="h-16 mx-auto mb-4"
               onError={(e) => {
