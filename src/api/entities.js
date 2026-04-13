@@ -91,8 +91,47 @@ function createEntityAPI(tableName) {
 
       if (filters) {
         for (const [key, value] of Object.entries(filters)) {
-          if (Array.isArray(value)) {
+          // Handle Base44-style operators
+          if (key === '$or' && Array.isArray(value)) {
+            // $or: [{rep1: 'a'}, {rep2: 'a'}] → .or('rep1.eq.a,rep2.eq.a')
+            const orParts = value.map(condition => {
+              return Object.entries(condition).map(([k, v]) => {
+                if (v === null) return `${k}.is.null`;
+                if (v === '') return `${k}.eq.`;
+                return `${k}.eq.${v}`;
+              }).join(',');
+            });
+            query = query.or(orParts.join(','));
+          } else if (key === '$and' && Array.isArray(value)) {
+            for (const condition of value) {
+              for (const [k, v] of Object.entries(condition)) {
+                if (v && typeof v === 'object' && !Array.isArray(v)) {
+                  if (v.$gte) query = query.gte(k, v.$gte);
+                  if (v.$lte) query = query.lte(k, v.$lte);
+                  if (v.$lt) query = query.lt(k, v.$lt);
+                  if (v.$gt) query = query.gt(k, v.$gt);
+                  if (v.$ne) query = query.neq(k, v.$ne);
+                  if (v.$nin) query = query.not(k, 'in', `(${v.$nin.join(',')})`);
+                } else {
+                  if (v === null) query = query.is(k, null);
+                  else query = query.eq(k, v);
+                }
+              }
+            }
+          } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+            // Handle operator objects: { status: { $nin: [...] } }
+            if (value.$gte) query = query.gte(key, value.$gte);
+            if (value.$lte) query = query.lte(key, value.$lte);
+            if (value.$lt) query = query.lt(key, value.$lt);
+            if (value.$gt) query = query.gt(key, value.$gt);
+            if (value.$ne) query = query.neq(key, value.$ne);
+            if (value.$nin) query = query.not(key, 'in', `(${value.$nin.join(',')})`);
+            if (value.$in) query = query.in(key, value.$in);
+            if (value.$regex) query = query.ilike(key, `%${value.$regex}%`);
+          } else if (Array.isArray(value)) {
             query = query.in(key, value);
+          } else if (value === null) {
+            query = query.is(key, null);
           } else {
             query = query.eq(key, value);
           }
