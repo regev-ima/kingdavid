@@ -184,6 +184,15 @@ export default function Login() {
             <h1 className="text-2xl font-bold text-slate-900" style={{ display: 'none' }}>King David</h1>
           </div>
 
+          {/* Logo on form side */}
+          <div className="hidden lg:block mb-8">
+            <img
+              src="https://kingdavid4u.co.il/wp-content/uploads/2023/09/logo.png"
+              alt="King David"
+              className="h-12"
+            />
+          </div>
+
           {/* Login Form */}
           {mode === 'login' && (
             <>
