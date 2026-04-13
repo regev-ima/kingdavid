@@ -176,6 +176,44 @@ export default function Settings() {
 
           <Card>
             <CardHeader>
+              <CardTitle>התראות Push</CardTitle>
+              <CardDescription>קבל התראות על לידים חדשים, משימות באיחור ועוד</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {typeof Notification !== 'undefined' && Notification.permission === 'granted' ? (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                  <span className="text-green-600">✓</span>
+                  <span className="text-sm text-green-700">התראות Push מופעלות במכשיר זה</span>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    הפעל התראות Push כדי לקבל עדכונים בזמן אמת גם כשהאפליקציה סגורה.
+                  </p>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const { requestNotificationPermission } = await import('@/lib/firebase');
+                        await requestNotificationPermission(user?.id);
+                        toast.success('התראות הופעלו בהצלחה!');
+                      } catch (err) {
+                        toast.error('שגיאה בהפעלת התראות');
+                      }
+                    }}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    🔔 הפעל התראות Push
+                  </Button>
+                </>
+              )}
+              <p className="text-xs text-muted-foreground">
+                * יש להפעיל בנפרד בכל מכשיר (מחשב, נייד)
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>הגדרות VoiceCenter</CardTitle>
               <CardDescription>התחבר למערכת ה-VoiceCenter שלך לתיעוד שיחות אוטומטי</CardDescription>
             </CardHeader>
