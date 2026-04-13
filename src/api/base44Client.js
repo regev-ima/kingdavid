@@ -110,7 +110,14 @@ const appLogs = {
 
 // ── Users management ────────────────────────────────────────────
 const users = {
-  inviteUser: async () => { throw new Error('User invite not implemented yet'); },
+  inviteUser: async (email, role) => {
+    // Create user via Edge Function (needs service role)
+    return await functions.invoke('importUsersFromSheets', {
+      directInvite: true,
+      email,
+      role: role || 'user',
+    });
+  },
 };
 
 // ── Agents ──────────────────────────────────────────────────────

@@ -59,7 +59,7 @@ function createEntityAPI(tableName) {
      * @param {string} [sort] - e.g. '-created_date' for descending
      * @param {number} [limit] - max rows to return
      */
-    async list(sort, limit) {
+    async list(sort, limit, skip) {
       let query = supabase.from(tableName).select('*');
 
       if (sort) {
@@ -68,7 +68,9 @@ function createEntityAPI(tableName) {
         query = query.order(column, { ascending: !desc });
       }
 
-      if (limit) {
+      if (skip && limit) {
+        query = query.range(skip, skip + limit - 1);
+      } else if (limit) {
         query = query.limit(limit);
       }
 
