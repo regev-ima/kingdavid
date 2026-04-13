@@ -26,7 +26,18 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createServiceClient();
-    const leadData = await req.json();
+    const rawData = await req.json();
+
+    // Sanitize all string inputs - strip HTML/script tags
+    const sanitize = (val: unknown): string => {
+      if (typeof val !== 'string') return String(val || '');
+      return val.replace(/<[^>]*>/g, '').replace(/[<>"']/g, '').trim();
+    };
+
+    const leadData: any = {};
+    for (const [key, value] of Object.entries(rawData)) {
+      leadData[key] = typeof value === 'string' ? sanitize(value) : value;
+    }
 
     if (!leadData.full_name || !leadData.phone) {
       return Response.json({ error: 'Missing required fields: full_name and phone are required' }, { status: 400, headers: corsHeaders });

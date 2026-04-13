@@ -150,6 +150,8 @@ function LayoutContent({ children, currentPageName }) {
   }, []);
 
   const handleLogout = async () => {
+    localStorage.removeItem('impersonation');
+    localStorage.removeItem('sb-njfrqbzkwwalwpzzxecy-auth-token');
     await base44.auth.logout();
     window.location.href = '/login';
   };
