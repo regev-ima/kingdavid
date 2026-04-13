@@ -275,14 +275,8 @@ export default function Login() {
               </form>
 
               <div className="mt-8 text-center">
-                <p className="text-sm text-slate-500">
-                  אין לך חשבון?{' '}
-                  <button
-                    onClick={() => switchMode('signup')}
-                    className="text-amber-600 hover:text-amber-700 font-semibold transition-colors"
-                  >
-                    הירשם עכשיו
-                  </button>
+                <p className="text-xs text-slate-400">
+                  אין לך חשבון? פנה למנהל המערכת לקבלת הזמנה
                 </p>
               </div>
             </>
