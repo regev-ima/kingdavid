@@ -85,7 +85,7 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
   const sla = getSlaData(row);
   const rep = getRepDisplay(row, users);
   const dateStr = row.created_date
-    ? row.created_date.includes('Z')
+    ? String(row.created_date).includes('Z')
       ? row.created_date
       : `${row.created_date}Z`
     : new Date().toISOString();

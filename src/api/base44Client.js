@@ -122,6 +122,40 @@ const users = {
 // ── Agents ──────────────────────────────────────────────────────
 const agents = {
   getWhatsAppConnectURL: () => '#',
+
+  async createConversation({ agent_name, metadata }) {
+    const { data, error } = await supabase
+      .from('agent_conversations')
+      .insert({ agent_name, metadata, messages: [] })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  subscribeToConversation(conversationId, callback) {
+    const channel = supabase
+      .channel(`agent_conv_${conversationId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_conversations', filter: `id=eq.${conversationId}` },
+        (payload) => { callback(payload.new); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
+
+  async addMessage(conversation, message) {
+    const messages = [...(conversation.messages || []), message];
+    const { data, error } = await supabase
+      .from('agent_conversations')
+      .update({ messages })
+      .eq('id', conversation.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };
 
 // ── Main export ─────────────────────────────────────────────────

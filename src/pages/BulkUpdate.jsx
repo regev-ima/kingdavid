@@ -150,7 +150,7 @@ export default function BulkUpdate() {
     setMatchCount(null);
     try {
       const filter = buildFilter();
-      console.log('Bulk update filter:', JSON.stringify(filter));
+      // filter built for bulk update
       const res = await base44.functions.invoke('initBulkUpdate', {
         entityName: selectedEntity,
         filter,
