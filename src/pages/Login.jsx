@@ -55,12 +55,7 @@ export default function Login() {
         redirectTo: `${window.location.origin}/login`,
       });
 
-      if (resetError) {
-        setError(resetError.message);
-        setLoading(false);
-        return;
-      }
-
+      // Always show success (prevent email enumeration)
       setMode('reset-sent');
     } catch (err) {
       setError('שגיאה בשליחת הקישור. נסה שוב.');

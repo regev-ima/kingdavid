@@ -1,9 +1,12 @@
-import { corsHeaders } from '../_shared/supabase.ts';
+import { corsHeaders, getUser } from '../_shared/supabase.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    const user = await getUser(req);
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+
     const { file_url, json_schema } = await req.json();
 
     if (!file_url) {
