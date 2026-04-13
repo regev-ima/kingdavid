@@ -131,8 +131,9 @@ function LayoutContent({ children, currentPageName }) {
     }
   }, []);
 
-  const handleLogout = () => {
-    base44.auth.logout();
+  const handleLogout = async () => {
+    await base44.auth.logout();
+    window.location.href = '/login';
   };
 
   const effectiveUser = getEffectiveUser(user);
