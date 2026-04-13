@@ -14,6 +14,11 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let mounted = true;
 
+    // Safety timeout - if auth check hangs, stop loading after 3s
+    const timeout = setTimeout(() => {
+      if (mounted) setIsLoadingAuth(false);
+    }, 3000);
+
     const init = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -76,6 +81,7 @@ export const AuthProvider = ({ children }) => {
 
     return () => {
       mounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);
