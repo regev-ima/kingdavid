@@ -57,6 +57,7 @@ jobs:
             updateTaskCounters
             uploadLeads
             upsertLead
+            importProductsFromSheets
           )
           for fn in "${FUNCTIONS[@]}"; do
             echo "Deploying $fn..."
