@@ -88,11 +88,23 @@ const appLogs = {
   logUserInApp: async () => {},
 };
 
+// ── Users management (no-op stubs) ─────────────────────────────
+const users = {
+  inviteUser: async () => { throw new Error('User invite not implemented yet'); },
+};
+
+// ── Agents (no-op stubs) ────────────────────────────────────────
+const agents = {
+  getWhatsAppConnectURL: () => '#',
+};
+
 // ── Main export ─────────────────────────────────────────────────
 export const base44 = {
   entities,
   auth,
   functions,
   appLogs,
+  users,
+  agents,
   supabase,
 };
