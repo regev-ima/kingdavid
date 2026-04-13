@@ -10,6 +10,8 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 
+const LazyLogin = lazy(() => import('./pages/Login.jsx'));
+
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 
@@ -91,7 +93,12 @@ function App() {
         <Router>
           <NavigationTracker />
           <ErrorBoundary>
-            <AuthenticatedApp />
+            <Suspense fallback={<PageLoadingFallback />}>
+              <Routes>
+                <Route path="/login" element={<LazyLogin />} />
+                <Route path="*" element={<AuthenticatedApp />} />
+              </Routes>
+            </Suspense>
           </ErrorBoundary>
         </Router>
         <Toaster />
