@@ -17,15 +17,18 @@ function buildEmailTemplate(subject: string, body: string, options?: {
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
   <div style="max-width:600px;margin:0 auto;background:#ffffff;">
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:32px;text-align:center;">
-      <img src="${logoUrl}" alt="King David" style="height:60px;margin-bottom:16px;">
-      <h1 style="color:#fbbf24;font-size:18px;margin:0;font-weight:400;">הצעת מחיר מס׳ ${options.quote_number}</h1>
+    <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:40px 32px;text-align:center;">
+      <img src="${logoUrl}" alt="King David" style="height:70px;margin-bottom:12px;">
+      <p style="color:#fbbf24;font-size:16px;margin:0 0 4px;font-weight:600;">לילות שלווים</p>
+      <p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">מתחילים במזרן הנכון | מזרני קינג דוד</p>
+      <div style="height:1px;background:linear-gradient(90deg,transparent,#fbbf24,transparent);margin:16px auto 12px;max-width:200px;"></div>
+      <h1 style="color:#ffffff;font-size:18px;margin:0;font-weight:400;">הצעת מחיר מס׳ ${options.quote_number}</h1>
     </div>
 
     <!-- Body -->
-    <div style="padding:32px;">
-      <p style="font-size:16px;color:#1e293b;margin:0 0 16px;">שלום ${options.customer_name || ''},</p>
-      <p style="font-size:15px;color:#475569;line-height:1.7;margin:0 0 24px;">
+    <div style="padding:32px;text-align:right;">
+      <p style="font-size:16px;color:#1e293b;margin:0 0 16px;text-align:right;">שלום ${options.customer_name || ''},</p>
+      <p style="font-size:15px;color:#475569;line-height:1.7;margin:0 0 24px;text-align:right;">
         מצורפת הצעת מחיר מקינג דוד.<br>
         אנו מקווים שתמצא את ההצעה מתאימה עבורך.
       </p>
@@ -81,13 +84,15 @@ function buildEmailTemplate(subject: string, body: string, options?: {
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
   <div style="max-width:600px;margin:0 auto;background:#ffffff;">
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:32px;text-align:center;">
-      <img src="${logoUrl}" alt="King David" style="height:60px;">
+    <div style="background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);padding:40px 32px;text-align:center;">
+      <img src="${logoUrl}" alt="King David" style="height:70px;margin-bottom:12px;">
+      <p style="color:#fbbf24;font-size:16px;margin:0 0 4px;font-weight:600;">לילות שלווים</p>
+      <p style="color:#94a3b8;font-size:13px;margin:0;">מתחילים במזרן הנכון | מזרני קינג דוד</p>
     </div>
 
     <!-- Body -->
-    <div style="padding:32px;">
-      <div style="font-size:15px;color:#374151;line-height:1.8;">
+    <div style="padding:32px;text-align:right;">
+      <div style="font-size:15px;color:#374151;line-height:1.8;text-align:right;">
         ${body.replace(/\n/g, '<br>')}
       </div>
     </div>

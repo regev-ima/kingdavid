@@ -112,19 +112,13 @@ export default function QuoteDetails() {
 
       await base44.integrations.Core.SendEmail({
         to: quote.customer_email,
-        subject: `הצעת מחיר מס' ${quote.quote_number} מקינג דוד`,
-        body: `
-          שלום ${quote.customer_name},
-
-          מצורפת הצעת מחיר מס' ${quote.quote_number}.
-
-          לצפייה בהצעה: ${quote.pdf_url}
-
-          ההצעה תקפה עד ${quote.valid_until ? format(new Date(quote.valid_until), 'dd/MM/yyyy') : ''}.
-
-          בברכה,
-          צוות המלך דוד
-        `
+        subject: `הצעת מחיר מס׳ ${quote.quote_number} - קינג דוד`,
+        body: `שלום ${quote.customer_name}, מצורפת הצעת מחיר מס׳ ${quote.quote_number}.`,
+        quote_number: quote.quote_number,
+        customer_name: quote.customer_name,
+        total: quote.total?.toLocaleString(),
+        pdf_url: quote.pdf_url,
+        valid_until: quote.valid_until ? format(new Date(quote.valid_until), 'dd/MM/yyyy') : '',
       });
 
       await base44.entities.Quote.update(quoteId, { status: 'sent' });

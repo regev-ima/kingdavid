@@ -575,8 +575,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                   if (!savedQuote.pdf_url) return;
                   await base44.integrations.Core.SendEmail({
                     to: formData.customer_email,
-                    subject: `הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד`,
-                    body: `שלום ${formData.customer_name},\n\nמצורפת הצעת מחיר מס' ${savedQuote.quote_number}.\n\nלצפייה בהצעה: ${savedQuote.pdf_url}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה,\nצוות קינג דוד`
+                    subject: `הצעת מחיר מס׳ ${savedQuote.quote_number} - קינג דוד`,
+                    body: `שלום ${formData.customer_name}, מצורפת הצעת מחיר מס׳ ${savedQuote.quote_number}.`,
+                    quote_number: savedQuote.quote_number,
+                    customer_name: formData.customer_name,
+                    total: savedQuote.total?.toLocaleString(),
+                    pdf_url: savedQuote.pdf_url,
+                    valid_until: formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : '',
                   });
                   await base44.entities.Quote.update(savedQuote.id, { status: 'sent' });
                 } catch (e) { console.error(e); }

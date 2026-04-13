@@ -87,9 +87,8 @@ const integrations = {
       return { file_url: urlData.publicUrl };
     },
 
-    async SendEmail({ to, subject, body }) {
-      // Route through Edge Function for email sending
-      return await functions.invoke('sendEmail', { to, subject, body });
+    async SendEmail(params) {
+      return await functions.invoke('sendEmail', params);
     },
 
     async InvokeLLM({ prompt, response_json_schema, model }) {
