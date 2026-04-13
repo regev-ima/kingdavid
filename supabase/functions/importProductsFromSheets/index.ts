@@ -66,13 +66,18 @@ Deno.serve(async (req) => {
           productMap.get(productName)!.push({ sku, size, basePrice });
         }
 
+        const bedLabel = sheet.bed_type === 'double' ? 'זוגי' : 'יחיד';
+        const skuSuffix = sheet.bed_type === 'double' ? '-D' : '-S';
+
         // Insert products and variations
         for (const [productName, variations] of productMap) {
+          const fullProductName = `${productName} (${bedLabel})`;
+
           // Check if product already exists
           const { data: existing } = await supabase
             .from('products')
             .select('id')
-            .eq('name', productName)
+            .eq('name', fullProductName)
             .limit(1);
 
           let productId: string;
@@ -83,8 +88,8 @@ Deno.serve(async (req) => {
             const { data: newProduct, error: prodError } = await supabase
               .from('products')
               .insert({
-                name: productName,
-                sku: variations[0].sku.replace(/\d{6}$/, ''),
+                name: fullProductName,
+                sku: variations[0].sku.replace(/\d{6}$/, '') + skuSuffix,
                 is_active: true,
                 category: sheet.category,
                 bed_type: sheet.bed_type,
@@ -105,10 +110,12 @@ Deno.serve(async (req) => {
             const { width, length } = parseSize(v.size);
             const price = parsePrice(v.basePrice);
 
+            const uniqueSku = v.sku + skuSuffix;
+
             const { data: existingVar } = await supabase
               .from('product_variations')
               .select('id')
-              .eq('sku', v.sku)
+              .eq('sku', uniqueSku)
               .limit(1);
 
             if (existingVar && existingVar.length > 0) continue; // Skip existing
@@ -117,7 +124,7 @@ Deno.serve(async (req) => {
               .from('product_variations')
               .insert({
                 product_id: productId,
-                sku: v.sku,
+                sku: uniqueSku,
                 name: `${productName} ${v.size}`,
                 width_cm: width,
                 length_cm: length,
