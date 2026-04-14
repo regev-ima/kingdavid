@@ -47,7 +47,9 @@ const categoryLabels = {
 
 const bedTypeLabels = {
   single: 'יחיד',
-  double: 'זוגי'
+  double: 'זוגי',
+  jewish: 'יהודית',
+  designed: 'מעוצבת'
 };
 
 export default function ProductsNew() {
@@ -65,6 +67,7 @@ export default function ProductsNew() {
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'mattress',
+    bed_type: '',
     description: '',
     image_url: '',
     default_variation_id: '',
@@ -73,7 +76,13 @@ export default function ProductsNew() {
     warranty_years: '',
     is_active: true,
     manager_notes: '',
-    has_trial_period: false
+    has_trial_period: false,
+    website_categories: '',
+    is_on_sale: false,
+    discount_type: 'percentage',
+    discount_value: '',
+    sale_starts_at: '',
+    sale_ends_at: ''
   });
 
   const [variationForm, setVariationForm] = useState({
@@ -164,6 +173,7 @@ export default function ProductsNew() {
     setProductForm({
       name: '',
       category: 'mattress',
+      bed_type: '',
       description: '',
       image_url: '',
       default_variation_id: '',
@@ -172,7 +182,13 @@ export default function ProductsNew() {
       warranty_years: '',
       is_active: true,
       manager_notes: '',
-      has_trial_period: false
+      has_trial_period: false,
+      website_categories: '',
+      is_on_sale: false,
+      discount_type: 'percentage',
+      discount_value: '',
+      sale_starts_at: '',
+      sale_ends_at: ''
     });
     setEditingProduct(null);
   };
@@ -196,6 +212,10 @@ export default function ProductsNew() {
 
   const handleProductSubmit = (e) => {
     e.preventDefault();
+    const websiteCategoriesArray = typeof productForm.website_categories === 'string'
+      ? productForm.website_categories.split(',').map((s) => s.trim()).filter(Boolean)
+      : (Array.isArray(productForm.website_categories) ? productForm.website_categories : []);
+
     const cleanData = {
       ...productForm,
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
@@ -203,7 +223,14 @@ export default function ProductsNew() {
       warranty_years: productForm.warranty_years ? Number(productForm.warranty_years) : null,
       default_variation_id: productForm.default_variation_id === 'none' ? '' : (productForm.default_variation_id || ''),
       manager_notes: productForm.manager_notes || '',
-      has_trial_period: !!productForm.has_trial_period
+      has_trial_period: !!productForm.has_trial_period,
+      bed_type: productForm.bed_type || null,
+      website_categories: websiteCategoriesArray,
+      is_on_sale: !!productForm.is_on_sale,
+      discount_type: productForm.is_on_sale ? (productForm.discount_type || 'percentage') : null,
+      discount_value: productForm.is_on_sale && productForm.discount_value !== '' ? Number(productForm.discount_value) : null,
+      sale_starts_at: productForm.is_on_sale && productForm.sale_starts_at ? productForm.sale_starts_at : null,
+      sale_ends_at: productForm.is_on_sale && productForm.sale_ends_at ? productForm.sale_ends_at : null
     };
 
     if (editingProduct) {
@@ -236,9 +263,12 @@ export default function ProductsNew() {
 
   const handleEditProduct = (product) => {
     setEditingProduct(product);
+    const saleStartsAt = product.sale_starts_at ? String(product.sale_starts_at).slice(0, 16) : '';
+    const saleEndsAt = product.sale_ends_at ? String(product.sale_ends_at).slice(0, 16) : '';
     setProductForm({
       name: product.name || '',
       category: product.category || 'mattress',
+      bed_type: product.bed_type || '',
       description: product.description || '',
       image_url: product.image_url || '',
       default_variation_id: product.default_variation_id || '',
@@ -247,7 +277,15 @@ export default function ProductsNew() {
       warranty_years: product.warranty_years || '',
       is_active: product.is_active !== false,
       manager_notes: product.manager_notes || '',
-      has_trial_period: product.has_trial_period || false
+      has_trial_period: product.has_trial_period || false,
+      website_categories: Array.isArray(product.website_categories)
+        ? product.website_categories.join(', ')
+        : (product.website_categories || ''),
+      is_on_sale: !!product.is_on_sale,
+      discount_type: product.discount_type || 'percentage',
+      discount_value: product.discount_value ?? '',
+      sale_starts_at: saleStartsAt,
+      sale_ends_at: saleEndsAt
     });
     setIsProductDialogOpen(true);
   };
@@ -348,6 +386,35 @@ export default function ProductsNew() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>סוג מיטה</Label>
+                <Select
+                  value={productForm.bed_type || 'none'}
+                  onValueChange={(val) => setProductForm({ ...productForm, bed_type: val === 'none' ? '' : val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="בחר סוג..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">לא רלוונטי</SelectItem>
+                    <SelectItem value="single">יחיד</SelectItem>
+                    <SelectItem value="double">זוגי</SelectItem>
+                    <SelectItem value="jewish">יהודית</SelectItem>
+                    <SelectItem value="designed">מעוצבת</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>קטגוריות באתר</Label>
+                <Input
+                  value={productForm.website_categories}
+                  onChange={(e) => setProductForm({ ...productForm, website_categories: e.target.value })}
+                  placeholder="הפרד בפסיקים, למשל: מבצעים, חדש"
+                />
+              </div>
+            </div>
+
             <div>
               <Label>תיאור</Label>
               <Textarea
@@ -445,7 +512,66 @@ export default function ProductsNew() {
                 />
                 <Label>30 ימי נסיון</Label>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={productForm.is_on_sale}
+                  onChange={(e) => setProductForm({ ...productForm, is_on_sale: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                <Label>במבצע</Label>
+              </div>
             </div>
+
+            {productForm.is_on_sale && (
+              <div className="space-y-4 p-4 bg-muted/40 rounded-lg border">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>סוג הנחה</Label>
+                    <Select
+                      value={productForm.discount_type || 'percentage'}
+                      onValueChange={(val) => setProductForm({ ...productForm, discount_type: val })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="percentage">אחוז (%)</SelectItem>
+                        <SelectItem value="amount">סכום (₪)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>ערך הנחה</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={productForm.discount_value}
+                      onChange={(e) => setProductForm({ ...productForm, discount_value: e.target.value })}
+                      placeholder={productForm.discount_type === 'amount' ? '₪' : '%'}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>תחילת מבצע</Label>
+                    <Input
+                      type="datetime-local"
+                      value={productForm.sale_starts_at}
+                      onChange={(e) => setProductForm({ ...productForm, sale_starts_at: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label>סיום מבצע</Label>
+                    <Input
+                      type="datetime-local"
+                      value={productForm.sale_ends_at}
+                      onChange={(e) => setProductForm({ ...productForm, sale_ends_at: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-4">
               <Button type="button" variant="outline" onClick={() => setIsProductDialogOpen(false)}>
