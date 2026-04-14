@@ -1,4 +1,5 @@
 import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { sendFcmToTokens } from '../_shared/fcm.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -69,11 +70,11 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
-    // Notify all admins about the new lead
+    // Notify all admins about the new lead (in-app bell + mobile push)
     try {
       const { data: admins } = await supabase
         .from('users')
-        .select('id, email')
+        .select('id, email, push_token')
         .eq('role', 'admin');
 
       if (admins && admins.length > 0) {
@@ -89,33 +90,51 @@ Deno.serve(async (req) => {
 
         const leadName = leadData.full_name || 'ליד חדש';
         const leadSource = leadData.source || leadData.utm_source || '';
-        const notificationsToInsert = admins
-          .filter((admin: any) => {
-            const prefs = prefsByUser.get(admin.id);
-            // If user has prefs and new_lead_alerts is explicitly false, skip.
-            // Otherwise default to sending.
-            return !prefs || prefs.new_lead_alerts !== false;
-          })
-          .map((admin: any) => ({
+        const title = `ליד חדש: ${leadName}`;
+        const message = leadSource
+          ? `התקבל ליד חדש ממקור ${leadSource} וממתין לשיוך לנציג`
+          : `התקבל ליד חדש וממתין לשיוך לנציג`;
+        const link = `/LeadDetails?id=${leadData.id}`;
+
+        // Admins who haven't explicitly disabled new_lead_alerts
+        const optedInAdmins = admins.filter((admin: any) => {
+          const prefs = prefsByUser.get(admin.id);
+          return !prefs || prefs.new_lead_alerts !== false;
+        });
+
+        // 1) In-app notifications (drives the notification bell)
+        if (optedInAdmins.length > 0) {
+          const notificationsToInsert = optedInAdmins.map((admin: any) => ({
             user_id: admin.id,
+            user_email: admin.email,
             type: 'new_lead_assigned',
-            title: `ליד חדש: ${leadName}`,
-            message: leadSource
-              ? `התקבל ליד חדש ממקור ${leadSource} וממתין לשיוך לנציג`
-              : `התקבל ליד חדש וממתין לשיוך לנציג`,
-            link: `/LeadDetails?id=${leadData.id}`,
-            link_label: 'פתח ליד',
-            priority: 'high',
+            title,
+            message,
+            link,
             entity_type: 'lead',
             entity_id: leadData.id,
             is_read: false,
           }));
 
-        if (notificationsToInsert.length > 0) {
           const { error: notifError } = await supabase
             .from('notifications')
             .insert(notificationsToInsert);
           if (notifError) console.error('Failed to insert admin notifications:', notifError);
+        }
+
+        // 2) Mobile/web push via FCM for admins that have a push_token
+        const pushTokens = optedInAdmins
+          .map((admin: any) => admin.push_token)
+          .filter((t: any) => typeof t === 'string' && t.length > 0);
+
+        if (pushTokens.length > 0) {
+          const pushResult = await sendFcmToTokens(pushTokens, {
+            title,
+            body: message,
+            link,
+            data: { entity_type: 'lead', entity_id: String(leadData.id), type: 'new_lead_assigned' },
+          });
+          console.log('FCM push result for new lead:', pushResult);
         }
       }
     } catch (notifyErr) {

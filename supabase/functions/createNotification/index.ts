@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createServiceClient();
-    const { userId, type, title, message, link, linkLabel, priority, entityType, entityId } = await req.json();
+    const { userId, type, title, message, link, entityType, entityId } = await req.json();
 
     if (!userId || !type || !title || !message) {
       return Response.json({ error: 'Missing required fields' }, { status: 400, headers: corsHeaders });
@@ -48,17 +48,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create notification
+    // Enrich with user_email for consistency with existing rows
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
+    // Create notification (columns match actual notifications table schema)
     const { data: notification, error } = await supabase
       .from('notifications')
       .insert({
         user_id: userId,
+        user_email: userRow?.email || null,
         type,
         title,
         message,
         link,
-        link_label: linkLabel,
-        priority: priority || 'medium',
         entity_type: entityType,
         entity_id: entityId,
         is_read: false,
