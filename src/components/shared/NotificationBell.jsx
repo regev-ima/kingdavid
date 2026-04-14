@@ -63,6 +63,8 @@ export default function NotificationBell({ user }) {
     e.stopPropagation();
     try {
       await base44.entities.Notification.update(notificationId, { is_read: true });
+      setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -72,6 +74,13 @@ export default function NotificationBell({ user }) {
     e.stopPropagation();
     try {
       await base44.entities.Notification.delete(notificationId);
+      setNotifications(prev => {
+        const removed = prev.find(n => n.id === notificationId);
+        if (removed && !removed.is_read) {
+          setUnreadCount(c => Math.max(0, c - 1));
+        }
+        return prev.filter(n => n.id !== notificationId);
+      });
     } catch (error) {
       console.error('Error deleting notification:', error);
     }
@@ -83,6 +92,8 @@ export default function NotificationBell({ user }) {
       await Promise.all(
         unreadNotifs.map(n => base44.entities.Notification.update(n.id, { is_read: true }))
       );
+      setNotifications(prev => prev.map(n => n.is_read ? n : { ...n, is_read: true }));
+      setUnreadCount(0);
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
