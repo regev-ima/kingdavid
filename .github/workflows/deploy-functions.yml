@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - claude/check-production-requirements-hO64j
+      - claude/fix-lead-notifications-M2jB4
     paths:
       - 'supabase/functions/**'
 
