@@ -67,7 +67,7 @@ export default function ProductsNew() {
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'mattress',
-    bed_type: '',
+    bed_type: [],
     description: '',
     image_url: '',
     default_variation_id: '',
@@ -173,7 +173,7 @@ export default function ProductsNew() {
     setProductForm({
       name: '',
       category: 'mattress',
-      bed_type: '',
+      bed_type: [],
       description: '',
       image_url: '',
       default_variation_id: '',
@@ -216,15 +216,22 @@ export default function ProductsNew() {
       ? productForm.website_categories.split(',').map((s) => s.trim()).filter(Boolean)
       : (Array.isArray(productForm.website_categories) ? productForm.website_categories : []);
 
+    const bedTypesArray = Array.isArray(productForm.bed_type)
+      ? productForm.bed_type.filter(Boolean)
+      : (productForm.bed_type ? [productForm.bed_type] : []);
+    const isBedTypeRelevant = productForm.category === 'mattress' || productForm.category === 'bed';
+
     const cleanData = {
       ...productForm,
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
       production_time_days: productForm.production_time_days ? Number(productForm.production_time_days) : null,
       warranty_years: productForm.warranty_years ? Number(productForm.warranty_years) : null,
-      default_variation_id: productForm.default_variation_id === 'none' ? '' : (productForm.default_variation_id || ''),
+      default_variation_id: productForm.default_variation_id && productForm.default_variation_id !== 'none'
+        ? productForm.default_variation_id
+        : null,
       manager_notes: productForm.manager_notes || '',
       has_trial_period: !!productForm.has_trial_period,
-      bed_type: productForm.bed_type || null,
+      bed_type: isBedTypeRelevant && bedTypesArray.length > 0 ? bedTypesArray : null,
       website_categories: websiteCategoriesArray,
       is_on_sale: !!productForm.is_on_sale,
       discount_type: productForm.is_on_sale ? (productForm.discount_type || 'percentage') : null,
@@ -268,7 +275,9 @@ export default function ProductsNew() {
     setProductForm({
       name: product.name || '',
       category: product.category || 'mattress',
-      bed_type: product.bed_type || '',
+      bed_type: Array.isArray(product.bed_type)
+        ? product.bed_type
+        : (product.bed_type ? [product.bed_type] : []),
       description: product.description || '',
       image_url: product.image_url || '',
       default_variation_id: product.default_variation_id || '',
@@ -327,7 +336,8 @@ export default function ProductsNew() {
 
   const filteredProducts = products.filter((p) => {
     const matchesCategory = filterCategory === 'all' || p.category === filterCategory;
-    const matchesBedType = filterBedType === 'all' || p.bed_type === filterBedType;
+    const bedTypes = Array.isArray(p.bed_type) ? p.bed_type : (p.bed_type ? [p.bed_type] : []);
+    const matchesBedType = filterBedType === 'all' || bedTypes.includes(filterBedType);
     const matchesSearch = !searchTerm ||
     p.name?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesCategory && matchesBedType && matchesSearch;
@@ -387,24 +397,36 @@ export default function ProductsNew() {
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>סוג מיטה</Label>
-                <Select
-                  value={productForm.bed_type || 'none'}
-                  onValueChange={(val) => setProductForm({ ...productForm, bed_type: val === 'none' ? '' : val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="בחר סוג..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">לא רלוונטי</SelectItem>
-                    <SelectItem value="single">יחיד</SelectItem>
-                    <SelectItem value="double">זוגי</SelectItem>
-                    <SelectItem value="jewish">יהודית</SelectItem>
-                    <SelectItem value="designed">מעוצבת</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {(productForm.category === 'mattress' || productForm.category === 'bed') ? (
+                <div>
+                  <Label>סוג</Label>
+                  <div className="flex flex-wrap gap-3 p-2 border rounded-md min-h-[40px]">
+                    {(productForm.category === 'mattress'
+                      ? ['single', 'double']
+                      : ['single', 'double', 'jewish', 'designed']
+                    ).map((opt) => {
+                      const checked = Array.isArray(productForm.bed_type) && productForm.bed_type.includes(opt);
+                      return (
+                        <label key={opt} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const current = Array.isArray(productForm.bed_type) ? productForm.bed_type : [];
+                              const next = e.target.checked
+                                ? [...current, opt]
+                                : current.filter((v) => v !== opt);
+                              setProductForm({ ...productForm, bed_type: next });
+                            }}
+                            className="h-4 w-4"
+                          />
+                          {bedTypeLabels[opt]}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : <div />}
               <div>
                 <Label>קטגוריות באתר</Label>
                 <Input
@@ -753,9 +775,11 @@ export default function ProductsNew() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">יחיד + זוגי</SelectItem>
+                <SelectItem value="all">כל הסוגים</SelectItem>
                 <SelectItem value="single">יחיד</SelectItem>
                 <SelectItem value="double">זוגי</SelectItem>
+                <SelectItem value="jewish">יהודית</SelectItem>
+                <SelectItem value="designed">מעוצבת</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -780,11 +804,16 @@ export default function ProductsNew() {
                         <div className="flex flex-wrap items-center gap-1.5">
                           <h3 className="font-bold text-base text-foreground">{product.name}</h3>
                           <Badge variant="outline" className="text-[10px]">{categoryLabels[product.category]}</Badge>
-                          {product.bed_type && (
-                            <Badge className={`text-[10px] ${product.bed_type === 'double' ? 'bg-purple-100 text-purple-700' : 'bg-cyan-100 text-cyan-700'}`}>
-                              {bedTypeLabels[product.bed_type] || product.bed_type}
-                            </Badge>
-                          )}
+                          {(() => {
+                            const bedTypes = Array.isArray(product.bed_type)
+                              ? product.bed_type
+                              : (product.bed_type ? [product.bed_type] : []);
+                            return bedTypes.map((bt) => (
+                              <Badge key={bt} className={`text-[10px] ${bt === 'double' ? 'bg-purple-100 text-purple-700' : 'bg-cyan-100 text-cyan-700'}`}>
+                                {bedTypeLabels[bt] || bt}
+                              </Badge>
+                            ));
+                          })()}
                           <TooltipProvider delayDuration={200}>
                           {product.has_trial_period && (
                             <Tooltip>
