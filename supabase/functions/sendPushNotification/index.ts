@@ -4,8 +4,21 @@ import { sendFcmToTokens } from '../_shared/fcm.ts';
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const user = await getUser(req);
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+  // Accept either: (a) a signed-in user, or (b) a call from pg_net / other
+  // server-side code using the service role key. We must NOT accept anon.
+  const authHeader = req.headers.get('Authorization') || '';
+  const token = authHeader.replace('Bearer ', '');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const isServiceRole = !!token && token === serviceRoleKey;
+
+  if (!isServiceRole) {
+    try {
+      const user = await getUser(req);
+      if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+    } catch {
+      return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+    }
+  }
 
   try {
     const { user_email, user_id, title, body, link, data } = await req.json();
