@@ -34,7 +34,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, Tag } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 
@@ -815,6 +815,55 @@ export default function ProductsNew() {
                             ));
                           })()}
                           <TooltipProvider delayDuration={200}>
+                          {product.is_on_sale && (() => {
+                            const fmt = (d) => {
+                              if (!d) return null;
+                              try {
+                                return new Date(d).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                              } catch { return String(d); }
+                            };
+                            const starts = fmt(product.sale_starts_at);
+                            const ends = fmt(product.sale_ends_at);
+                            const dv = product.discount_value;
+                            const dt = product.discount_type;
+                            const discountText = dv != null && dv !== ''
+                              ? (dt === 'amount' ? `₪${Number(dv).toLocaleString()} הנחה` : `${Number(dv)}% הנחה`)
+                              : 'מבצע';
+                            return (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md">
+                                    <Tag className="h-3 w-3" /> במבצע
+                                    {dv != null && dv !== '' && (
+                                      <span className="ms-1">
+                                        {dt === 'amount' ? `₪${Number(dv).toLocaleString()}-` : `${Number(dv)}%-`}
+                                      </span>
+                                    )}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="text-right" dir="rtl">
+                                  <p className="font-semibold mb-1">{discountText}</p>
+                                  {starts && <p>תחילה: {starts}</p>}
+                                  {ends && <p>סיום: {ends}</p>}
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })()}
+                          {product.is_on_sale && (product.sale_starts_at || product.sale_ends_at) && (() => {
+                            const fmtShort = (d) => {
+                              if (!d) return null;
+                              try {
+                                return new Date(d).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                              } catch { return String(d); }
+                            };
+                            const s = fmtShort(product.sale_starts_at);
+                            const e = fmtShort(product.sale_ends_at);
+                            return (
+                              <span className="text-[10px] text-rose-600/80 font-medium">
+                                {s && e ? `${s} – ${e}` : (s ? `מ-${s}` : `עד ${e}`)}
+                              </span>
+                            );
+                          })()}
                           {product.has_trial_period && (
                             <Tooltip>
                               <TooltipTrigger asChild>
