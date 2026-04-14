@@ -69,6 +69,60 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
+    // Notify all admins about the new lead
+    try {
+      const { data: admins } = await supabase
+        .from('users')
+        .select('id, email')
+        .eq('role', 'admin');
+
+      if (admins && admins.length > 0) {
+        const adminIds = admins.map((a: any) => a.id);
+
+        const { data: prefsRows } = await supabase
+          .from('notification_preferences')
+          .select('user_id, new_lead_alerts')
+          .in('user_id', adminIds);
+
+        const prefsByUser = new Map<string, any>();
+        (prefsRows || []).forEach((p: any) => prefsByUser.set(p.user_id, p));
+
+        const leadName = leadData.full_name || 'ליד חדש';
+        const leadSource = leadData.source || leadData.utm_source || '';
+        const notificationsToInsert = admins
+          .filter((admin: any) => {
+            const prefs = prefsByUser.get(admin.id);
+            // If user has prefs and new_lead_alerts is explicitly false, skip.
+            // Otherwise default to sending.
+            return !prefs || prefs.new_lead_alerts !== false;
+          })
+          .map((admin: any) => ({
+            user_id: admin.id,
+            type: 'new_lead_assigned',
+            title: `ליד חדש: ${leadName}`,
+            message: leadSource
+              ? `התקבל ליד חדש ממקור ${leadSource} וממתין לשיוך לנציג`
+              : `התקבל ליד חדש וממתין לשיוך לנציג`,
+            link: `/LeadDetails?id=${leadData.id}`,
+            link_label: 'פתח ליד',
+            priority: 'high',
+            entity_type: 'lead',
+            entity_id: leadData.id,
+            is_read: false,
+          }));
+
+        if (notificationsToInsert.length > 0) {
+          const { error: notifError } = await supabase
+            .from('notifications')
+            .insert(notificationsToInsert);
+          if (notifError) console.error('Failed to insert admin notifications:', notifError);
+        }
+      }
+    } catch (notifyErr) {
+      // Do not fail the task creation if notifications fail
+      console.error('Admin notification error:', notifyErr);
+    }
+
     return Response.json({
       message: 'Assignment task created successfully',
       task: salesTask,

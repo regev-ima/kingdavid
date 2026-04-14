@@ -171,7 +171,7 @@ export default function Dashboard() {
         startDate: from.toISOString(),
         endDate: to.toISOString(),
       });
-      return response.data;
+      return response;
     },
     enabled: !!user && !isCheckingAuth,
     staleTime: 45 * 1000,
@@ -190,7 +190,7 @@ export default function Dashboard() {
         endDate: to.toISOString(),
       });
 
-      return response.data;
+      return response;
     },
     onSuccess: (data) => {
       if (!data?.csv) return;
