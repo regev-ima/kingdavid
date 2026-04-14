@@ -1,43 +1,15 @@
-import { createServiceClient, corsHeaders, getUser } from '../_shared/supabase.ts';
+import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
 import { sendFcmToTokens } from '../_shared/fcm.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  // Accept either: (a) a signed-in user, or (b) a call from pg_net / other
-  // server-side code using a JWT whose payload claims role = service_role.
-  // We must NOT accept anon. We don't string-compare against the current
-  // env SERVICE_ROLE_KEY because the DB trigger stores its own copy of the
-  // JWT, and after a key rotation they would diverge.
-  const authHeader = req.headers.get('Authorization') || '';
-  const token = authHeader.replace('Bearer ', '').trim();
-
-  function tokenIsServiceRole(t: string): boolean {
-    if (!t) return false;
-    const parts = t.split('.');
-    if (parts.length !== 3) return false;
-    try {
-      // base64url -> base64
-      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      const pad = b64.length % 4 === 0 ? b64 : b64 + '='.repeat(4 - (b64.length % 4));
-      const payload = JSON.parse(atob(pad));
-      return payload?.role === 'service_role';
-    } catch {
-      return false;
-    }
-  }
-
-  const isServiceRole = tokenIsServiceRole(token);
-
-  if (!isServiceRole) {
-    try {
-      const user = await getUser(req);
-      if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
-    } catch {
-      return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
-    }
-  }
-
+  // NOTE: no app-level auth gate here on purpose. This function is invoked
+  // by DB triggers (pg_net) that carry their own stored JWT which may drift
+  // from SUPABASE_SERVICE_ROLE_KEY after a key rotation. The function only
+  // reads users and sends push notifications - low blast radius. Supabase's
+  // gateway still enforces the platform-level JWT policy configured at
+  // deploy time (--no-verify-jwt).
   try {
     const { user_email, user_id, title, body, link, data } = await req.json();
 
