@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 
 import { ArrowRight, Save, Loader2, Plus, Trash2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
+import { hasBedType, productMatchesBedType } from '@/utils/bedType';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
@@ -75,6 +76,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     status: 'draft',
     notes: 'תיאום שירותי מנוף, ככל שיידרש, ייעשה על ידי החברה כשירות ללקוח בלבד. התשלום עבור שירותי המנוף ישולם ישירות לחברת המנוף ועל אחריות הלקוח. לחברה אין כל אחריות, התחייבות או מעורבות בשירותי המנוף מלבד התיאום.',
   });
+
+  // NOTE: this useState used to live below the early-return branches at line ~305,
+  // which violated the Rules of Hooks (different hook count between renders →
+  // Minified React error #310). Moved up here so it runs unconditionally on
+  // every render.
+  const [emptyItemIndex, setEmptyItemIndex] = useState(null);
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -301,8 +308,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     );
   }
 
-  const [emptyItemIndex, setEmptyItemIndex] = useState(null);
-
   const addItem = () => {
     const emptyIdx = formData.items.findIndex(item => !item.product_id && !item.name);
     if (emptyIdx !== -1) {
@@ -406,7 +411,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   const hasBeds = formData.items.some(item => {
     const product = products.find(p => p.id === item.product_id);
-    return product?.bed_type;
+    return hasBedType(product);
   });
 
   const filteredExtraCharges = extraCharges.filter(ec => {
@@ -834,8 +839,9 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     const applicableAddons = addons.filter(addon => {
                       const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
                       if (!matchesCategory) return false;
-                      if (addon.applies_to === 'double' && product?.bed_type === 'single') return false;
-                      if (addon.applies_to === 'single' && product?.bed_type === 'double') return false;
+                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
+                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
+                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
                       return true;
                     });
                     if (applicableAddons.length === 0) return null;
