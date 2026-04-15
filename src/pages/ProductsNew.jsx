@@ -34,7 +34,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";
@@ -74,12 +74,13 @@ export default function ProductsNew() {
   const [searchTerm, setSearchTerm] = useState('');
   const queryClient = useQueryClient();
 
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'mattress',
     bed_type: [],
     description: '',
-    image_url: '',
+    images: [],
     default_variation_id: '',
     base_cost: '',
     production_time_days: '',
@@ -186,7 +187,7 @@ export default function ProductsNew() {
       category: 'mattress',
       bed_type: [],
       description: '',
-      image_url: '',
+      images: [],
       default_variation_id: '',
       base_cost: '',
       production_time_days: '',
@@ -243,8 +244,12 @@ export default function ProductsNew() {
       hardnessValue = n;
     }
 
+    const imagesArray = Array.isArray(productForm.images) ? productForm.images.filter(Boolean) : [];
+
     const cleanData = {
       ...productForm,
+      images: imagesArray,
+      image_url: imagesArray[0] || '',
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
       production_time_days: productForm.production_time_days ? Number(productForm.production_time_days) : null,
       warranty_years: productForm.warranty_years ? Number(productForm.warranty_years) : null,
@@ -295,6 +300,9 @@ export default function ProductsNew() {
     setEditingProduct(product);
     const saleStartsAt = product.sale_starts_at ? String(product.sale_starts_at).slice(0, 16) : '';
     const saleEndsAt = product.sale_ends_at ? String(product.sale_ends_at).slice(0, 16) : '';
+    const existingImages = Array.isArray(product.images) && product.images.length > 0
+      ? product.images.filter(Boolean)
+      : (product.image_url ? [product.image_url] : []);
     setProductForm({
       name: product.name || '',
       category: product.category || 'mattress',
@@ -302,7 +310,7 @@ export default function ProductsNew() {
         ? product.bed_type
         : (product.bed_type ? [product.bed_type] : []),
       description: product.description || '',
-      image_url: product.image_url || '',
+      images: existingImages,
       default_variation_id: product.default_variation_id || '',
       base_cost: product.base_cost || '',
       production_time_days: product.production_time_days || '',
@@ -540,12 +548,95 @@ export default function ProductsNew() {
             </div>
 
             <div>
-              <Label>קישור תמונה</Label>
-              <Input
-                    value={productForm.image_url}
-                    onChange={(e) => setProductForm({ ...productForm, image_url: e.target.value })}
-                    placeholder="https://..." />
-
+              <Label>תמונות</Label>
+              <div className="space-y-2">
+                {productForm.images.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {productForm.images.map((url, idx) => (
+                      <div key={`${url}-${idx}`} className="relative group">
+                        <img
+                          src={url}
+                          alt={`תמונה ${idx + 1}`}
+                          className="w-20 h-20 object-cover rounded-md border"
+                        />
+                        {idx === 0 && (
+                          <span className="absolute top-0.5 right-0.5 bg-primary text-primary-foreground text-[9px] px-1 py-0.5 rounded">
+                            ראשית
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = productForm.images.filter((_, i) => i !== idx);
+                            setProductForm({ ...productForm, images: next });
+                          }}
+                          className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label="הסר תמונה"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                        {idx > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = [...productForm.images];
+                              [next[0], next[idx]] = [next[idx], next[0]];
+                              setProductForm({ ...productForm, images: next });
+                            }}
+                            className="absolute bottom-0.5 right-0.5 bg-white/90 text-[9px] px-1 py-0.5 rounded border opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            הפוך לראשית
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-md p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                  {uploadingImages ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">מעלה...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      <span className="text-sm text-muted-foreground">
+                        {productForm.images.length > 0 ? 'הוסף עוד תמונות' : 'העלה תמונות'}
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={uploadingImages}
+                    className="hidden"
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length === 0) return;
+                      e.target.value = '';
+                      setUploadingImages(true);
+                      try {
+                        const uploaded = [];
+                        for (const file of files) {
+                          const { file_url } = await base44.integrations.Core.UploadFile({ file });
+                          if (file_url) uploaded.push(file_url);
+                        }
+                        setProductForm((prev) => ({
+                          ...prev,
+                          images: [...(prev.images || []), ...uploaded]
+                        }));
+                      } catch (err) {
+                        console.error('Image upload failed:', err);
+                        alert('שגיאה בהעלאת תמונה: ' + (err.message || 'שגיאה לא ידועה'));
+                      } finally {
+                        setUploadingImages(false);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
             </div>
 
             {editingProduct &&
