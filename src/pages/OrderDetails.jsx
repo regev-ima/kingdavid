@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -106,10 +107,10 @@ export default function OrderDetails() {
   const updateOrderMutation = useMutation({
     mutationFn: async (data) => {
       await base44.entities.Order.update(orderId, data);
-      
+
       // Auto-approve commission when payment is made
       if ((data.payment_status === 'paid' || data.payment_status === 'deposit_paid') && commission && commission.status === 'pending') {
-        await base44.entities.Commission.update(commission.id, { 
+        await base44.entities.Commission.update(commission.id, {
           status: 'approved',
           approved_by: user?.email,
           approved_date: new Date().toISOString().split('T')[0]
@@ -119,6 +120,15 @@ export default function OrderDetails() {
     onSuccess: () => {
       queryClient.invalidateQueries(['order', orderId]);
       queryClient.invalidateQueries(['commission', orderId]);
+    },
+    onError: (err) => {
+      // Surface Postgres errors (missing column, RLS, bad type) instead of
+      // swallowing them — without this the user clicks "שמור" and nothing
+      // appears to happen.
+      const detail = err?.message || err?.details || err?.hint || JSON.stringify(err);
+      toast.error(`שגיאה בשמירת ההזמנה: ${detail}`, { duration: 10000 });
+      // eslint-disable-next-line no-console
+      console.error('updateOrder error — full object:', err);
     },
   });
 

@@ -13,15 +13,16 @@ import { Badge } from "@/components/ui/badge";
 import DataTable from '@/components/shared/DataTable';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import {
-  ArrowRight, 
-  Phone, 
+  ArrowRight,
+  Phone,
   Mail,
   MessageCircle,
   Crown,
   ShoppingCart,
   FileText,
   Save,
-  Loader2
+  Loader2,
+  Plus
 } from "lucide-react";
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -178,6 +179,15 @@ export default function CustomerDetails() {
         </div>
         
         <div className="flex flex-wrap gap-2">
+          {/* Primary CTA: start a new order pre-filled with this customer's details.
+              NewOrder reads `customerId` from the URL and auto-fills name/phone/
+              email/delivery address so repeat orders don't require retyping. */}
+          <Link to={createPageUrl('NewOrder') + `?customerId=${customer.id}`}>
+            <Button className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700">
+              <Plus className="h-4 w-4 me-2" />
+              הזמנה חדשה
+            </Button>
+          </Link>
           <Button variant="outline" onClick={handleCall}>
             <Phone className="h-4 w-4 me-2" />
             התקשר
