@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { getBedTypes, productMatchesBedType, getPrimaryBedType } from '@/utils/bedType';
 
 const categoryConfig = {
   bed: { label: 'מיטות', icon: Bed, bgColor: 'bg-purple-100', iconColor: 'text-purple-600' },
@@ -70,7 +71,7 @@ export default function ProductSelector({
       filtered = filtered.filter(p => getProductValue(p, 'category') === selectedCategory);
     }
     if (selectedBedType && (selectedCategory === 'bed' || selectedCategory === 'mattress')) {
-      filtered = filtered.filter(p => getProductValue(p, 'bed_type') === selectedBedType);
+      filtered = filtered.filter(p => productMatchesBedType(p, selectedBedType));
     }
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -127,9 +128,9 @@ export default function ProductSelector({
         {selectedProduct ? (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium">{getProductValue(selectedProduct, 'name')}</span>
-            {getProductValue(selectedProduct, 'bed_type') && (
+            {getPrimaryBedType(selectedProduct) && (
               <Badge variant="outline" className="text-[11px] font-medium">
-                {bedTypeConfig[getProductValue(selectedProduct, 'bed_type')]?.label}
+                {bedTypeConfig[getPrimaryBedType(selectedProduct)]?.label}
               </Badge>
             )}
             {selectedVariation && (
@@ -281,14 +282,20 @@ export default function ProductSelector({
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 mr-3 flex-shrink-0">
-                              {getProductValue(product, 'bed_type') && (
-                                <Badge variant="outline" className={cn(
-                                  "text-[10px] font-medium",
-                                  getProductValue(product, 'bed_type') === 'double' ? "border-blue-200 text-blue-700 bg-blue-50" : "border-amber-200 text-amber-700 bg-amber-50"
-                                )}>
-                                  {getProductValue(product, 'bed_type') === 'double' ? 'זוגי' : 'יחיד'}
-                                </Badge>
-                              )}
+                              {getPrimaryBedType(product) && (() => {
+                                const bedTypes = getBedTypes(product);
+                                const isDoubleOnly = bedTypes.length === 1 && bedTypes[0] === 'double';
+                                const isBoth = bedTypes.includes('single') && bedTypes.includes('double');
+                                const label = isBoth ? 'יחיד + זוגי' : (isDoubleOnly ? 'זוגי' : 'יחיד');
+                                return (
+                                  <Badge variant="outline" className={cn(
+                                    "text-[10px] font-medium",
+                                    isDoubleOnly ? "border-blue-200 text-blue-700 bg-blue-50" : "border-amber-200 text-amber-700 bg-amber-50"
+                                  )}>
+                                    {label}
+                                  </Badge>
+                                );
+                              })()}
                               <ChevronLeft className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
                             </div>
                           </button>

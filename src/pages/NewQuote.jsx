@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 
 import { ArrowRight, Save, Loader2, Plus, Trash2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
+import { hasBedType, productMatchesBedType } from '@/utils/bedType';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
@@ -406,7 +407,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   const hasBeds = formData.items.some(item => {
     const product = products.find(p => p.id === item.product_id);
-    return product?.bed_type;
+    return hasBedType(product);
   });
 
   const filteredExtraCharges = extraCharges.filter(ec => {
@@ -834,8 +835,9 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     const applicableAddons = addons.filter(addon => {
                       const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
                       if (!matchesCategory) return false;
-                      if (addon.applies_to === 'double' && product?.bed_type === 'single') return false;
-                      if (addon.applies_to === 'single' && product?.bed_type === 'double') return false;
+                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
+                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
+                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
                       return true;
                     });
                     if (applicableAddons.length === 0) return null;

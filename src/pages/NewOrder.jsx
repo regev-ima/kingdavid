@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ArrowRight, Save, Loader2, Plus, Trash2 } from "lucide-react";
+import { productMatchesBedType } from '@/utils/bedType';
 import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
@@ -550,8 +551,9 @@ export default function NewOrder() {
                               const applicableAddons = addons.filter(addon => {
                                 const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
                                 if (!matchesCategory) return false;
-                                if (addon.applies_to === 'double' && product?.bed_type === 'single') return false;
-                                if (addon.applies_to === 'single' && product?.bed_type === 'double') return false;
+                                // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
+                                if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
+                                if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
                                 return true;
                               });
                               if (applicableAddons.length === 0) return null;
