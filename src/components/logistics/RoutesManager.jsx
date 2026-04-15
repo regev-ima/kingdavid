@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, MapPin, Truck, Edit, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from 'sonner';
 
 const daysOfWeek = [
   { value: 0, label: 'ראשון' },
@@ -61,6 +62,11 @@ export default function RoutesManager() {
       queryClient.invalidateQueries(['routes']);
       setIsDialogOpen(false);
       setEditingRoute(null);
+      toast.success('המסלול נוצר בהצלחה');
+    },
+    onError: (err) => {
+      toast.error(`שגיאה ביצירת מסלול: ${err.message}`);
+      console.error('createRoute error:', err);
     },
   });
 
@@ -70,6 +76,11 @@ export default function RoutesManager() {
       queryClient.invalidateQueries(['routes']);
       setIsDialogOpen(false);
       setEditingRoute(null);
+      toast.success('המסלול עודכן');
+    },
+    onError: (err) => {
+      toast.error(`שגיאה בעדכון מסלול: ${err.message}`);
+      console.error('updateRoute error:', err);
     },
   });
 
@@ -77,6 +88,11 @@ export default function RoutesManager() {
     mutationFn: (id) => base44.entities.DeliveryRoute.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries(['routes']);
+      toast.success('המסלול נמחק');
+    },
+    onError: (err) => {
+      toast.error(`שגיאה במחיקת מסלול: ${err.message}`);
+      console.error('deleteRoute error:', err);
     },
   });
 
@@ -164,13 +180,18 @@ export default function RoutesManager() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label>קיבולת (משטחים) *</Label>
-                  <Input 
-                    name="capacity_pallets" 
+                  <Label>מקסימום משלוחים ליום *</Label>
+                  <Input
+                    name="capacity_pallets"
                     type="number"
+                    min="1"
+                    placeholder="לדוגמא: 20"
                     defaultValue={editingRoute?.capacity_pallets}
-                    required 
+                    required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    כמה משלוחים מקסימום אפשר להכניס למשאית אחת ביום חלוקה
+                  </p>
                 </div>
               </div>
 
