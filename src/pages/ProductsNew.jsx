@@ -38,6 +38,7 @@ import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, T
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";
+import { compressImage } from "@/lib/imageCompression";
 
 const hardnessLabel = (v) => {
   if (v == null || v === '') return '';
@@ -621,7 +622,8 @@ export default function ProductsNew() {
                       try {
                         const uploaded = [];
                         for (const file of files) {
-                          const { file_url } = await base44.integrations.Core.UploadFile({ file });
+                          const compressed = await compressImage(file);
+                          const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
                           if (file_url) uploaded.push(file_url);
                         }
                         setProductForm((prev) => ({
