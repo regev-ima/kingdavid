@@ -9,9 +9,20 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
 import SmartScheduler from '@/components/logistics/SmartScheduler';
 import RoutesManager from '@/components/logistics/RoutesManager';
+import DeliveryWeekView from '@/components/logistics/DeliveryWeekView';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Truck, Clock, CheckCircle, AlertTriangle, MapPin, Sparkles, Route } from "lucide-react";
+import { Truck, Clock, CheckCircle, AlertTriangle, MapPin, Sparkles, Route, CalendarDays } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
+import { getCityRegion, REGIONS } from '@/components/utils/cityRegionMapper';
+
+const REGION_BADGE = {
+  north:     'bg-blue-100 text-blue-800',
+  center:    'bg-green-100 text-green-800',
+  sharon:    'bg-purple-100 text-purple-800',
+  shomron:   'bg-orange-100 text-orange-800',
+  jerusalem: 'bg-pink-100 text-pink-800',
+  south:     'bg-amber-100 text-amber-800',
+};
 
 const timeWindowLabels = {
   morning: 'בוקר (08:00-12:00)',
@@ -34,6 +45,18 @@ const filterOptions = [
     ]
   },
   {
+    key: 'region',
+    label: 'אזור',
+    options: [
+      { value: 'north', label: 'צפון' },
+      { value: 'center', label: 'מרכז' },
+      { value: 'sharon', label: 'שרון' },
+      { value: 'shomron', label: 'שומרון' },
+      { value: 'jerusalem', label: 'ירושלים' },
+      { value: 'south', label: 'דרום' },
+    ]
+  },
+  {
     key: 'time_window',
     label: 'חלון זמן',
     options: [
@@ -46,9 +69,9 @@ const filterOptions = [
 
 export default function Deliveries() {
   const navigate = useNavigate();
-  const [mainTab, setMainTab] = useState('list');
+  const [mainTab, setMainTab] = useState('week');
   const [activeTab, setActiveTab] = useState('all');
-  const [filters, setFilters] = useState({ search: '', status: 'all', time_window: 'all' });
+  const [filters, setFilters] = useState({ search: '', status: 'all', region: 'all', time_window: 'all' });
 
   const { data: shipments = [], isLoading } = useQuery({
     queryKey: ['shipments'],
@@ -89,6 +112,9 @@ export default function Deliveries() {
   if (filters.status && filters.status !== 'all') {
     filteredShipments = filteredShipments.filter(s => s.status === filters.status);
   }
+  if (filters.region && filters.region !== 'all') {
+    filteredShipments = filteredShipments.filter(s => getCityRegion(s.city) === filters.region);
+  }
   if (filters.time_window && filters.time_window !== 'all') {
     filteredShipments = filteredShipments.filter(s => s.time_window === filters.time_window);
   }
@@ -117,20 +143,28 @@ export default function Deliveries() {
     },
     {
       header: 'כתובת',
-      render: (row) => (
-        <div className="max-w-xs">
-          <p className="font-medium flex items-center gap-1">
-            <MapPin className="h-3 w-3" />
-            {row.city}
-          </p>
-          <p className="text-sm text-muted-foreground truncate">{row.address}</p>
-          {row.floor && (
-            <p className="text-xs text-muted-foreground/70">
-              קומה {row.floor} {row.has_elevator ? '(יש מעלית)' : '(אין מעלית)'}
+      render: (row) => {
+        const region = getCityRegion(row.city);
+        return (
+          <div className="max-w-xs">
+            <p className="font-medium flex items-center gap-1">
+              <MapPin className="h-3 w-3" />
+              {row.city}
+              {region && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${REGION_BADGE[region]}`}>
+                  {REGIONS[region]}
+                </span>
+              )}
             </p>
-          )}
-        </div>
-      )
+            <p className="text-sm text-muted-foreground truncate">{row.address}</p>
+            {row.floor && (
+              <p className="text-xs text-muted-foreground/70">
+                קומה {row.floor} {row.has_elevator ? '(יש מעלית)' : '(אין מעלית)'}
+              </p>
+            )}
+          </div>
+        );
+      }
     },
     {
       header: 'תאריך מתוכנן',
@@ -169,6 +203,9 @@ export default function Deliveries() {
 
       <Tabs value={mainTab} onValueChange={setMainTab} className="w-full">
         <TabsList className="bg-white border">
+          <TabsTrigger value="week" className="gap-2">
+            <CalendarDays className="h-4 w-4" /> תצוגת שבוע
+          </TabsTrigger>
           <TabsTrigger value="list" className="gap-2">
             <Truck className="h-4 w-4" /> רשימת משלוחים
           </TabsTrigger>
@@ -179,6 +216,10 @@ export default function Deliveries() {
             <Route className="h-4 w-4" /> ניהול מסלולים
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="week" className="mt-4">
+          <DeliveryWeekView shipments={shipments} />
+        </TabsContent>
 
         <TabsContent value="scheduler" className="mt-4">
           <SmartScheduler shipments={shipments} orders={orders} />
@@ -247,7 +288,7 @@ export default function Deliveries() {
         filters={filterOptions}
         values={filters}
         onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-        onClear={() => setFilters({ search: '', status: 'all', time_window: 'all' })}
+        onClear={() => setFilters({ search: '', status: 'all', region: 'all', time_window: 'all' })}
         searchPlaceholder="חפש לפי מספר משלוח, שם או עיר..."
       />
 
