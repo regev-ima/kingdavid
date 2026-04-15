@@ -1,7 +1,7 @@
 -- Seed 50 test shipments across the 6 delivery regions.
--- Safe to re-run: uses ON CONFLICT on shipment_number, and all rows are
--- tagged with notes='SEED_TEST_SHIPMENT' so they are trivially removable:
---   DELETE FROM delivery_shipments WHERE notes = 'SEED_TEST_SHIPMENT';
+-- Safe to re-run: ON CONFLICT on shipment_number.
+-- All seed rows live in the reserved range SHP90001–SHP90050, so cleanup is:
+--   DELETE FROM delivery_shipments WHERE shipment_number LIKE 'SHP900%';
 --
 -- Does NOT populate latitude/longitude — those will be filled by the
 -- geocodeShipment edge function (Google Maps) later. The optimizer falls
@@ -72,7 +72,7 @@ WITH seed_data(shipment_number, customer_name, customer_phone, address, city, ti
     ('SHP90050', 'חנה לוי',      '0501000050', 'הרצל 22',              'דימונה',       'afternoon')
 )
 INSERT INTO public.delivery_shipments
-  (shipment_number, customer_name, customer_phone, address, city, time_window, status, notes)
+  (shipment_number, customer_name, customer_phone, address, city, time_window, status)
 SELECT
   shipment_number,
   customer_name,
@@ -80,7 +80,6 @@ SELECT
   address,
   city,
   time_window,
-  'need_scheduling',
-  'SEED_TEST_SHIPMENT'
+  'need_scheduling'
 FROM seed_data
 ON CONFLICT (shipment_number) DO NOTHING;
