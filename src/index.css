@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ----------------------------------------------------------------------------
+ * Google Places Autocomplete dropdown (`.pac-container`).
+ * Google appends this to <body> with z-index: 1000 — below Radix Dialog's
+ * overlay (~50) but, in nested portals, can render BEHIND the dialog content.
+ * Force it to the very top so suggestions are always clickable.
+ * RTL alignment + Hebrew font tweaks while we're here.
+ * -------------------------------------------------------------------------- */
+.pac-container {
+  z-index: 99999 !important;
+  font-family: inherit !important;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.15);
+  margin-top: 4px;
+}
+.pac-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  direction: rtl;
+  text-align: right;
+}
+.pac-item:hover {
+  background-color: hsl(var(--muted));
+}
+.pac-item-query {
+  font-weight: 600;
+}
+
 @layer base {
   :root {
     /* Warm gray neutrals (stone-tinted) */
