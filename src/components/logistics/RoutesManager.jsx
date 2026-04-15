@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,10 +46,51 @@ const colorOptions = [
   { value: 'pink', label: 'ורוד', class: 'bg-pink-100 text-pink-800' },
 ];
 
+const EMPTY_FORM = {
+  name: '',
+  region: 'center',
+  capacity_pallets: 20,
+  active_days: [],
+  truck_identifiers: '',
+  default_carrier: '',
+  color: 'blue',
+  notes: '',
+  is_active: true,
+};
+
 export default function RoutesManager() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState(null);
+  const [form, setForm] = useState(EMPTY_FORM);
   const queryClient = useQueryClient();
+
+  // Sync form state when opening dialog for edit vs. create
+  useEffect(() => {
+    if (editingRoute) {
+      setForm({
+        name: editingRoute.name || '',
+        region: editingRoute.region || 'center',
+        capacity_pallets: editingRoute.capacity_pallets || 20,
+        active_days: editingRoute.active_days || [],
+        truck_identifiers: (editingRoute.truck_identifiers || []).join(', '),
+        default_carrier: editingRoute.default_carrier || '',
+        color: editingRoute.color || 'blue',
+        notes: editingRoute.notes || '',
+        is_active: editingRoute.is_active !== false,
+      });
+    } else {
+      setForm(EMPTY_FORM);
+    }
+  }, [editingRoute, isDialogOpen]);
+
+  const toggleDay = (dayValue) => {
+    setForm((f) => ({
+      ...f,
+      active_days: f.active_days.includes(dayValue)
+        ? f.active_days.filter((d) => d !== dayValue)
+        : [...f.active_days, dayValue].sort((a, b) => a - b),
+    }));
+  };
 
   const { data: routes = [], isLoading } = useQuery({
     queryKey: ['routes'],
@@ -97,29 +138,45 @@ export default function RoutesManager() {
   });
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    
-    const activeDays = [];
-    daysOfWeek.forEach(day => {
-      if (formData.get(`day_${day.value}`)) {
-        activeDays.push(day.value);
-      }
-    });
+    if (e) e.preventDefault();
 
-    const trucks = formData.get('truck_identifiers').split(',').map(t => t.trim()).filter(t => t);
+    // Client-side validation BEFORE hitting the DB, so the user always gets
+    // a clear reason when nothing happens.
+    if (!form.name?.trim()) {
+      toast.error('יש להזין שם מסלול');
+      return;
+    }
+    if (!form.region) {
+      toast.error('יש לבחור אזור');
+      return;
+    }
+    if (!form.capacity_pallets || form.capacity_pallets < 1) {
+      toast.error('יש להזין מקסימום משלוחים (מספר חיובי)');
+      return;
+    }
+    if (!form.active_days.length) {
+      toast.error('יש לסמן לפחות יום פעילות אחד');
+      return;
+    }
+
+    const trucks = form.truck_identifiers
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t);
 
     const routeData = {
-      name: formData.get('name'),
-      region: formData.get('region'),
-      active_days: activeDays,
-      capacity_pallets: parseInt(formData.get('capacity_pallets')),
+      name: form.name.trim(),
+      region: form.region,
+      active_days: form.active_days,
+      capacity_pallets: parseInt(form.capacity_pallets, 10),
       truck_identifiers: trucks,
-      default_carrier: formData.get('default_carrier'),
-      color: formData.get('color'),
-      notes: formData.get('notes'),
-      is_active: formData.get('is_active') === 'on',
+      default_carrier: form.default_carrier?.trim() || null,
+      color: form.color,
+      notes: form.notes?.trim() || null,
+      is_active: !!form.is_active,
     };
+
+    console.log('RoutesManager submit →', editingRoute ? 'update' : 'create', routeData);
 
     if (editingRoute) {
       updateRouteMutation.mutate({ id: editingRoute.id, data: routeData });
@@ -127,6 +184,8 @@ export default function RoutesManager() {
       createRouteMutation.mutate(routeData);
     }
   };
+
+  const isSubmitting = createRouteMutation.isPending || updateRouteMutation.isPending;
 
   const getColorClass = (color) => {
     return colorOptions.find(c => c.value === color)?.class || 'bg-muted text-foreground';
@@ -152,25 +211,23 @@ export default function RoutesManager() {
               <DialogTitle>{editingRoute ? 'עריכת מסלול' : 'מסלול חלוקה חדש'}</DialogTitle>
             </DialogHeader>
             
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-4">
               <div className="space-y-2">
                 <Label>שם המסלול *</Label>
-                <Input 
-                  name="name" 
-                  defaultValue={editingRoute?.name}
+                <Input
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="למשל: מסלול צפון א'"
-                  required 
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>אזור גיאוגרפי *</Label>
-                  <select 
-                    name="region"
-                    defaultValue={editingRoute?.region || 'center'}
+                  <select
+                    value={form.region}
+                    onChange={(e) => setForm({ ...form, region: e.target.value })}
                     className="w-full h-10 px-3 border rounded-md"
-                    required
                   >
                     {regionOptions.map(region => (
                       <option key={region.value} value={region.value}>
@@ -182,12 +239,11 @@ export default function RoutesManager() {
                 <div className="space-y-2">
                   <Label>מקסימום משלוחים ליום *</Label>
                   <Input
-                    name="capacity_pallets"
                     type="number"
                     min="1"
                     placeholder="לדוגמא: 20"
-                    defaultValue={editingRoute?.capacity_pallets}
-                    required
+                    value={form.capacity_pallets}
+                    onChange={(e) => setForm({ ...form, capacity_pallets: e.target.value })}
                   />
                   <p className="text-xs text-muted-foreground">
                     כמה משלוחים מקסימום אפשר להכניס למשאית אחת ביום חלוקה
@@ -200,10 +256,10 @@ export default function RoutesManager() {
                 <div className="grid grid-cols-4 gap-2">
                   {daysOfWeek.map(day => (
                     <div key={day.value} className="flex items-center gap-2">
-                      <Checkbox 
+                      <Checkbox
                         id={`day_${day.value}`}
-                        name={`day_${day.value}`}
-                        defaultChecked={editingRoute?.active_days?.includes(day.value)}
+                        checked={form.active_days.includes(day.value)}
+                        onCheckedChange={() => toggleDay(day.value)}
                       />
                       <label htmlFor={`day_${day.value}`} className="text-sm">
                         {day.label}
@@ -215,9 +271,9 @@ export default function RoutesManager() {
 
               <div className="space-y-2">
                 <Label>משאיות ייעודיות (הפרד בפסיקים)</Label>
-                <Input 
-                  name="truck_identifiers"
-                  defaultValue={editingRoute?.truck_identifiers?.join(', ')}
+                <Input
+                  value={form.truck_identifiers}
+                  onChange={(e) => setForm({ ...form, truck_identifiers: e.target.value })}
                   placeholder="משאית 1, משאית 2"
                 />
               </div>
@@ -225,17 +281,17 @@ export default function RoutesManager() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>ספק משלוחים ברירת מחדל</Label>
-                  <Input 
-                    name="default_carrier"
-                    defaultValue={editingRoute?.default_carrier}
+                  <Input
+                    value={form.default_carrier}
+                    onChange={(e) => setForm({ ...form, default_carrier: e.target.value })}
                     placeholder="שם הספק"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>צבע</Label>
-                  <select 
-                    name="color"
-                    defaultValue={editingRoute?.color || 'blue'}
+                  <select
+                    value={form.color}
+                    onChange={(e) => setForm({ ...form, color: e.target.value })}
                     className="w-full h-10 px-3 border rounded-md"
                   >
                     {colorOptions.map(color => (
@@ -249,18 +305,18 @@ export default function RoutesManager() {
 
               <div className="space-y-2">
                 <Label>הערות</Label>
-                <Textarea 
-                  name="notes"
-                  defaultValue={editingRoute?.notes}
+                <Textarea
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   rows={2}
                 />
               </div>
 
               <div className="flex items-center gap-2">
-                <Switch 
+                <Switch
                   id="is_active"
-                  name="is_active"
-                  defaultChecked={editingRoute?.is_active !== false}
+                  checked={form.is_active}
+                  onCheckedChange={(checked) => setForm({ ...form, is_active: checked })}
                 />
                 <Label htmlFor="is_active">מסלול פעיל</Label>
               </div>
@@ -269,11 +325,11 @@ export default function RoutesManager() {
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   ביטול
                 </Button>
-                <Button type="submit">
-                  {editingRoute ? 'עדכן' : 'צור מסלול'}
+                <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? 'שומר...' : (editingRoute ? 'עדכן' : 'צור מסלול')}
                 </Button>
               </div>
-            </form>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
