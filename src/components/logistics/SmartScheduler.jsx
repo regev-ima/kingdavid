@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Sparkles, Truck, AlertTriangle, TrendingUp, MapPin, Calendar, Map, Zap } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Sparkles, Truck, Map, Zap, Loader2 } from "lucide-react";
 import { calculateSLADaysRemaining } from './SLABadge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { getCityRegion, getRegionName } from '@/components/utils/cityRegionMapper';
+import { getCityRegion } from '@/components/utils/cityRegionMapper';
 import RouteMap from './RouteMap';
 import { toast } from 'sonner';
 
@@ -16,9 +16,39 @@ export default function SmartScheduler({ shipments, orders }) {
   const [recommendations, setRecommendations] = useState([]);
   const [showMap, setShowMap] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState(null);
-  const [simulationMode, setSimulationMode] = useState(false);
   const [analyzedShipments, setAnalyzedShipments] = useState([]);
   const [isScheduling, setIsScheduling] = useState(false);
+  const [progress, setProgress] = useState(null);
+  // progress = { label, target, elapsedMs, startCount } | null
+  const pollRef = useRef(null);
+  const tickRef = useRef(null);
+
+  // Live-polling: while scheduling is in flight, poll the DB every 1s to show
+  // how many shipments have flipped from need_scheduling → scheduled.
+  useEffect(() => {
+    if (!progress) return;
+
+    // Timer tick (elapsed seconds)
+    tickRef.current = setInterval(() => {
+      setProgress((p) => p ? { ...p, elapsedMs: p.elapsedMs + 1000 } : p);
+    }, 1000);
+
+    // DB poll (scheduled count)
+    pollRef.current = setInterval(async () => {
+      try {
+        const all = await base44.entities.DeliveryShipment.list();
+        const nowScheduled = all.filter((s) => s.status === 'scheduled').length;
+        setProgress((p) => p ? { ...p, doneCount: nowScheduled - p.startCount } : p);
+      } catch {
+        // ignore transient poll errors
+      }
+    }, 1500);
+
+    return () => {
+      clearInterval(tickRef.current);
+      clearInterval(pollRef.current);
+    };
+  }, [progress?.target]);
 
   const queryClient = useQueryClient();
   const { data: routes = [] } = useQuery({
@@ -38,49 +68,6 @@ export default function SmartScheduler({ shipments, orders }) {
     );
   };
 
-  // אלגוריתם אופטימיזציה למסלולים
-  const optimizeRoutes = (shipmentsToOptimize) => {
-    const optimizedRoutes = {};
-    
-    // קיבוץ משלוחים לפי מסלול
-    shipmentsToOptimize.forEach(shipment => {
-      if (!shipment.matchedRoute) return;
-      
-      const routeId = shipment.matchedRoute.id;
-      if (!optimizedRoutes[routeId]) {
-        optimizedRoutes[routeId] = {
-          route: shipment.matchedRoute,
-          shipments: [],
-          totalPallets: 0,
-          criticalCount: 0,
-          warningCount: 0,
-          safeCount: 0
-        };
-      }
-      
-      optimizedRoutes[routeId].shipments.push(shipment);
-      optimizedRoutes[routeId].totalPallets += 1; // נניח כל משלוח = 1 משטח
-      
-      if (shipment.priority === 'critical') optimizedRoutes[routeId].criticalCount++;
-      else if (shipment.priority === 'warning') optimizedRoutes[routeId].warningCount++;
-      else optimizedRoutes[routeId].safeCount++;
-    });
-    
-    // מיון משלוחים בכל מסלול לפי דחיפות ומיקום
-    Object.values(optimizedRoutes).forEach(routeData => {
-      routeData.shipments.sort((a, b) => {
-        // קודם לפי עדיפות
-        const priorityOrder = { critical: 0, warning: 1, safe: 2 };
-        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-        if (priorityDiff !== 0) return priorityDiff;
-        
-        // אחר כך לפי עיר (לקבץ אותה עיר ביחד)
-        return (a.city || '').localeCompare(b.city || '');
-      });
-    });
-    
-    return optimizedRoutes;
-  };
 
   // ניתוח חכם של המשלוחים עם מסלולים
   const analyzeShipments = () => {
@@ -230,7 +217,7 @@ export default function SmartScheduler({ shipments, orders }) {
   // שיבוץ מחדש של משלוחים קיימים
   const rescheduleExisting = async () => {
     const scheduled = shipments.filter(s => s.status === 'scheduled');
-    
+
     if (scheduled.length === 0) {
       toast.error('אין משלוחים מתוזמנים לשיבוץ מחדש');
       return;
@@ -240,6 +227,13 @@ export default function SmartScheduler({ shipments, orders }) {
     if (!confirmed) return;
 
     setIsScheduling(true);
+    setProgress({
+      label: `מאפס ומשבץ מחדש ${scheduled.length} משלוחים...`,
+      target: scheduled.length,
+      doneCount: 0,
+      startCount: shipments.filter(s => s.status === 'scheduled').length - scheduled.length,
+      elapsedMs: 0,
+    });
     toast.loading('מאפס ומשבץ מחדש...', { id: 'rescheduling' });
 
     try {
@@ -268,10 +262,13 @@ export default function SmartScheduler({ shipments, orders }) {
       toast.error('שגיאה: ' + error.message, { id: 'rescheduling' });
     } finally {
       setIsScheduling(false);
+      setProgress(null);
     }
   };
 
-  // ביצוע שיבוץ אוטומטי
+  // ביצוע שיבוץ אוטומטי (currently unused — kept for the richer optimization
+  // toast; primary flow is `scheduleAllPending` below).
+  // eslint-disable-next-line no-unused-vars
   const executeScheduling = async () => {
     if (analyzedShipments.length === 0) {
       toast.error('אין משלוחים לשיבוץ');
@@ -279,6 +276,13 @@ export default function SmartScheduler({ shipments, orders }) {
     }
 
     setIsScheduling(true);
+    setProgress({
+      label: `משבץ ${analyzedShipments.length} משלוחים ומחשב סדר גאוגרפי...`,
+      target: analyzedShipments.length,
+      doneCount: 0,
+      startCount: shipments.filter(s => s.status === 'scheduled').length,
+      elapsedMs: 0,
+    });
     toast.loading('משבץ ומבצע אופטימיזציה...', { id: 'scheduling' });
 
     try {
@@ -345,8 +349,55 @@ export default function SmartScheduler({ shipments, orders }) {
       toast.error('שגיאה: ' + error.message, { id: 'scheduling' });
     } finally {
       setIsScheduling(false);
+      setProgress(null);
     }
   };
+
+  // One-click primary flow: analyze → schedule, no intermediate step.
+  const scheduleAllPending = async () => {
+    const pending = shipments.filter((s) => s.status === 'need_scheduling');
+    if (pending.length === 0) {
+      toast.info('אין משלוחים חדשים לשיבוץ');
+      return;
+    }
+
+    // Run the existing analyzer (builds analyzedShipments + recommendations)
+    // then immediately execute scheduling on that set.
+    analyzeShipments();
+    // analyzeShipments sets state; we need to wait for it before execute.
+    // Easiest: duplicate what executeScheduling does but use `pending` directly.
+    setIsScheduling(true);
+    setProgress({
+      label: `משבץ ${pending.length} משלוחים ומחשב סדר גאוגרפי...`,
+      target: pending.length,
+      doneCount: 0,
+      startCount: shipments.filter((s) => s.status === 'scheduled').length,
+      elapsedMs: 0,
+    });
+    toast.loading('משבץ ומבצע אופטימיזציה...', { id: 'scheduling' });
+
+    try {
+      const shipmentIds = pending.map((s) => s.id);
+      const response = await base44.functions.invoke('scheduleShipments', { shipmentIds });
+
+      if (response?.data?.success) {
+        toast.success(response.data.message, { id: 'scheduling', duration: 5000 });
+        queryClient.invalidateQueries({ queryKey: ['shipments'] });
+        queryClient.invalidateQueries({ queryKey: ['orders'] });
+        setAnalyzedShipments([]);
+      } else {
+        toast.error('שגיאה בשיבוץ', { id: 'scheduling' });
+      }
+    } catch (err) {
+      toast.error('שגיאה: ' + err.message, { id: 'scheduling' });
+    } finally {
+      setIsScheduling(false);
+      setProgress(null);
+    }
+  };
+
+  const pendingCount = shipments.filter((s) => s.status === 'need_scheduling').length;
+  const scheduledCount = shipments.filter((s) => s.status === 'scheduled').length;
 
   return (
     <Card>
@@ -357,41 +408,85 @@ export default function SmartScheduler({ shipments, orders }) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2 flex-wrap">
-          <Button 
+        {/* Hero summary + primary CTA */}
+        <div className="flex items-center justify-between flex-wrap gap-4 rounded-lg border bg-slate-50 p-4">
+          <div className="flex gap-6">
+            <div>
+              <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
+              <p className="text-xs text-muted-foreground">ממתינים לשיבוץ</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-green-600">{scheduledCount}</p>
+              <p className="text-xs text-muted-foreground">כבר מתוזמנים</p>
+            </div>
+          </div>
+          <Button
+            onClick={scheduleAllPending}
+            disabled={isScheduling || pendingCount === 0}
+            size="lg"
+            className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+          >
+            <Zap className="h-5 w-5 me-2" />
+            {isScheduling
+              ? 'משבץ...'
+              : pendingCount === 0
+                ? 'אין משלוחים לשיבוץ'
+                : `שבץ את כל ה-${pendingCount} המשלוחים עכשיו`}
+          </Button>
+        </div>
+
+        {/* Secondary actions (collapsed, less prominent) */}
+        <div className="flex gap-2 flex-wrap text-sm">
+          <Button
             onClick={analyzeShipments}
-            className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
-          >
-            <Sparkles className="h-4 w-4 me-2" />
-            נתח וצור המלצות
-          </Button>
-          <Button 
-            onClick={rescheduleExisting}
+            variant="ghost"
+            size="sm"
             disabled={isScheduling}
-            variant="outline"
-            className="flex-1 border-orange-500 text-orange-700 hover:bg-orange-50"
           >
-            <Truck className="h-4 w-4 me-2" />
-            {isScheduling ? 'משבץ...' : 'שבץ מחדש משלוחים קיימים'}
+            <Sparkles className="h-3.5 w-3.5 me-1.5" />
+            הצג המלצות בלבד (בלי לשבץ)
           </Button>
-          {recommendations.length > 0 && (
-            <Button 
-              onClick={executeScheduling}
-              disabled={isScheduling}
-              className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-            >
-              <Zap className="h-4 w-4 me-2" />
-              {isScheduling ? 'משבץ...' : 'בצע שיבוץ אוטומטי'}
-            </Button>
-          )}
-          <Button 
-            onClick={() => setShowMap(!showMap)}
-            variant="outline"
+          <Button
+            onClick={rescheduleExisting}
+            disabled={isScheduling || scheduledCount === 0}
+            variant="ghost"
+            size="sm"
+            className="text-orange-700 hover:bg-orange-50"
           >
-            <Map className="h-4 w-4 me-2" />
+            <Truck className="h-3.5 w-3.5 me-1.5" />
+            שבץ מחדש משלוחים קיימים
+          </Button>
+          <Button onClick={() => setShowMap(!showMap)} variant="ghost" size="sm">
+            <Map className="h-3.5 w-3.5 me-1.5" />
             {showMap ? 'הסתר מפה' : 'הצג מפה'}
           </Button>
         </div>
+
+        {progress && (
+          <Card className="border-2 border-blue-400 bg-blue-50/60">
+            <CardContent className="p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-600 shrink-0" />
+                <div className="flex-1">
+                  <p className="font-semibold text-foreground">{progress.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    זמן שעבר: {Math.floor(progress.elapsedMs / 1000)} שניות
+                    {progress.target > 0 && ` • התקדמות: ${Math.min(progress.doneCount, progress.target)} / ${progress.target}`}
+                  </p>
+                </div>
+              </div>
+              <Progress
+                value={progress.target > 0
+                  ? Math.min(100, (progress.doneCount / progress.target) * 100)
+                  : 0}
+                className="h-2"
+              />
+              <p className="text-xs text-muted-foreground">
+                💡 המערכת מתאימה כל משלוח למסלול לפי אזור, מוצאת את יום החלוקה הקרוב ביותר, ומסדרת את הסדר הגאוגרפי מהמפעל בקריית מלאכי. עשוי להימשך עד ~15 שניות.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {showMap && (
           <div className="mt-4">
