@@ -77,6 +77,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     notes: 'תיאום שירותי מנוף, ככל שיידרש, ייעשה על ידי החברה כשירות ללקוח בלבד. התשלום עבור שירותי המנוף ישולם ישירות לחברת המנוף ועל אחריות הלקוח. לחברה אין כל אחריות, התחייבות או מעורבות בשירותי המנוף מלבד התיאום.',
   });
 
+  // NOTE: this useState used to live below the early-return branches at line ~305,
+  // which violated the Rules of Hooks (different hook count between renders →
+  // Minified React error #310). Moved up here so it runs unconditionally on
+  // every render.
+  const [emptyItemIndex, setEmptyItemIndex] = useState(null);
+
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
   const { data: lead } = useQuery({
@@ -301,8 +307,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       </div>
     );
   }
-
-  const [emptyItemIndex, setEmptyItemIndex] = useState(null);
 
   const addItem = () => {
     const emptyIdx = formData.items.findIndex(item => !item.product_id && !item.name);
