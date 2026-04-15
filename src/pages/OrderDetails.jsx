@@ -112,7 +112,7 @@ export default function OrderDetails() {
       if ((data.payment_status === 'paid' || data.payment_status === 'deposit_paid') && commission && commission.status === 'pending') {
         await base44.entities.Commission.update(commission.id, {
           status: 'approved',
-          approved_by: user?.email,
+          approved_by: effectiveUser?.email,
           approved_date: new Date().toISOString().split('T')[0]
         });
       }
@@ -526,7 +526,7 @@ export default function OrderDetails() {
                           date: newPayment.date,
                           notes: newPayment.notes,
                           recorded_at: new Date().toISOString(),
-                          recorded_by: user?.email,
+                          recorded_by: effectiveUser?.email,
                         };
                         const updatedPayments = [...(order.payments || []), paymentEntry];
                         const totalPaid = updatedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
