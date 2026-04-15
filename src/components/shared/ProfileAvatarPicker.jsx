@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
+import { compressImage } from '@/lib/imageCompression';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -74,7 +75,8 @@ export default function ProfileAvatarPicker({ user, onUpdate }) {
     }
 
     setUploading(true);
-    const { file_url } = await base44.integrations.Core.UploadFile({ file });
+    const compressed = await compressImage(file, { maxSizeMB: 0.2, maxWidthOrHeight: 400 });
+    const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
     await base44.auth.updateMe({ profile_image_url: file_url, profile_icon: '' });
     onUpdate?.();
     setUploading(false);

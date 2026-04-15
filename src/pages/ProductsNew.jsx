@@ -38,6 +38,8 @@ import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, T
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";
+import { compressImage } from "@/lib/imageCompression";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 const hardnessLabel = (v) => {
   if (v == null || v === '') return '';
@@ -75,11 +77,13 @@ export default function ProductsNew() {
   const queryClient = useQueryClient();
 
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [productForm, setProductForm] = useState({
     name: '',
     category: 'mattress',
     bed_type: [],
     description: '',
+    image_url: '',
     images: [],
     default_variation_id: '',
     base_cost: '',
@@ -187,6 +191,7 @@ export default function ProductsNew() {
       category: 'mattress',
       bed_type: [],
       description: '',
+      image_url: '',
       images: [],
       default_variation_id: '',
       base_cost: '',
@@ -249,7 +254,7 @@ export default function ProductsNew() {
     const cleanData = {
       ...productForm,
       images: imagesArray,
-      image_url: imagesArray[0] || '',
+      image_url: productForm.image_url || '',
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
       production_time_days: productForm.production_time_days ? Number(productForm.production_time_days) : null,
       warranty_years: productForm.warranty_years ? Number(productForm.warranty_years) : null,
@@ -300,9 +305,9 @@ export default function ProductsNew() {
     setEditingProduct(product);
     const saleStartsAt = product.sale_starts_at ? String(product.sale_starts_at).slice(0, 16) : '';
     const saleEndsAt = product.sale_ends_at ? String(product.sale_ends_at).slice(0, 16) : '';
-    const existingImages = Array.isArray(product.images) && product.images.length > 0
+    const existingImages = Array.isArray(product.images)
       ? product.images.filter(Boolean)
-      : (product.image_url ? [product.image_url] : []);
+      : [];
     setProductForm({
       name: product.name || '',
       category: product.category || 'mattress',
@@ -310,6 +315,7 @@ export default function ProductsNew() {
         ? product.bed_type
         : (product.bed_type ? [product.bed_type] : []),
       description: product.description || '',
+      image_url: product.image_url || '',
       images: existingImages,
       default_variation_id: product.default_variation_id || '',
       base_cost: product.base_cost || '',
@@ -397,11 +403,12 @@ export default function ProductsNew() {
 
       {/* Product Dialog */}
       <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
-        <DialogContent className="max-w-2xl" dir="rtl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0" dir="rtl">
+          <DialogHeader className="px-6 pt-6 pb-2 border-b">
             <DialogTitle>{editingProduct ? 'עריכת מוצר' : 'מוצר חדש'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleProductSubmit} className="space-y-4">
+          <form onSubmit={handleProductSubmit} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>שם המוצר *</Label>
@@ -548,49 +555,130 @@ export default function ProductsNew() {
             </div>
 
             <div>
-              <Label>תמונות</Label>
+              <Label>תמונת שער (ראשית)</Label>
+              <p className="text-xs text-muted-foreground mb-2">תוצג ככרטיסיית המוצר בחנות</p>
+              <div className="flex items-start gap-3">
+                {productForm.image_url ? (
+                  <div className="relative group">
+                    <img
+                      src={productForm.image_url}
+                      alt="תמונת שער"
+                      className="w-28 h-28 object-cover rounded-md border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setProductForm({ ...productForm, image_url: '' })}
+                      className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="הסר תמונת שער"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : null}
+                <label className="flex-1 flex items-center justify-center gap-2 border-2 border-dashed rounded-md p-4 cursor-pointer hover:bg-muted/30 transition-colors">
+                  {uploadingCover ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm text-muted-foreground">מעלה...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      <span className="text-sm text-muted-foreground">
+                        {productForm.image_url ? 'החלף תמונת שער' : 'העלה תמונת שער'}
+                      </span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingCover}
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (!file) return;
+                      setUploadingCover(true);
+                      try {
+                        const compressed = await compressImage(file);
+                        const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
+                        if (file_url) {
+                          setProductForm((prev) => ({ ...prev, image_url: file_url }));
+                        }
+                      } catch (err) {
+                        console.error('Cover upload failed:', err);
+                        alert('שגיאה בהעלאת תמונת שער: ' + (err.message || 'שגיאה לא ידועה'));
+                      } finally {
+                        setUploadingCover(false);
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div>
+              <Label>תמונות לגלריה</Label>
+              <p className="text-xs text-muted-foreground mb-2">תמונות נוספות לסליידר בדף המוצר. גרור לשינוי סדר.</p>
               <div className="space-y-2">
                 {productForm.images.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {productForm.images.map((url, idx) => (
-                      <div key={`${url}-${idx}`} className="relative group">
-                        <img
-                          src={url}
-                          alt={`תמונה ${idx + 1}`}
-                          className="w-20 h-20 object-cover rounded-md border"
-                        />
-                        {idx === 0 && (
-                          <span className="absolute top-0.5 right-0.5 bg-primary text-primary-foreground text-[9px] px-1 py-0.5 rounded">
-                            ראשית
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = productForm.images.filter((_, i) => i !== idx);
-                            setProductForm({ ...productForm, images: next });
-                          }}
-                          className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          aria-label="הסר תמונה"
+                  <DragDropContext
+                    onDragEnd={(result) => {
+                      if (!result.destination) return;
+                      const src = result.source.index;
+                      const dst = result.destination.index;
+                      if (src === dst) return;
+                      const next = Array.from(productForm.images);
+                      const [moved] = next.splice(src, 1);
+                      next.splice(dst, 0, moved);
+                      setProductForm((prev) => ({ ...prev, images: next }));
+                    }}
+                  >
+                    <Droppable droppableId="product-images" direction="horizontal">
+                      {(dropProvided) => (
+                        <div
+                          ref={dropProvided.innerRef}
+                          {...dropProvided.droppableProps}
+                          className="flex flex-wrap gap-2"
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                        {idx > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = [...productForm.images];
-                              [next[0], next[idx]] = [next[idx], next[0]];
-                              setProductForm({ ...productForm, images: next });
-                            }}
-                            className="absolute bottom-0.5 right-0.5 bg-white/90 text-[9px] px-1 py-0.5 rounded border opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            הפוך לראשית
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                          {productForm.images.map((url, idx) => (
+                            <Draggable key={`${url}-${idx}`} draggableId={`${url}-${idx}`} index={idx}>
+                              {(dragProvided, snapshot) => (
+                                <div
+                                  ref={dragProvided.innerRef}
+                                  {...dragProvided.draggableProps}
+                                  {...dragProvided.dragHandleProps}
+                                  className={`relative group ${snapshot.isDragging ? 'z-50 shadow-lg' : ''}`}
+                                >
+                                  <img
+                                    src={url}
+                                    alt={`תמונה ${idx + 1}`}
+                                    className="w-20 h-20 object-cover rounded-md border select-none"
+                                    draggable={false}
+                                  />
+                                  <span className="absolute top-0.5 right-0.5 bg-black/60 text-white text-[9px] px-1 rounded">
+                                    {idx + 1}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const next = productForm.images.filter((_, i) => i !== idx);
+                                      setProductForm((prev) => ({ ...prev, images: next }));
+                                    }}
+                                    className="absolute -top-1.5 -left-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    aria-label="הסר תמונה"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {dropProvided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </DragDropContext>
                 )}
                 <label className="flex items-center justify-center gap-2 border-2 border-dashed rounded-md p-4 cursor-pointer hover:bg-muted/30 transition-colors">
                   {uploadingImages ? (
@@ -602,7 +690,7 @@ export default function ProductsNew() {
                     <>
                       <Upload className="h-4 w-4" />
                       <span className="text-sm text-muted-foreground">
-                        {productForm.images.length > 0 ? 'הוסף עוד תמונות' : 'העלה תמונות'}
+                        {productForm.images.length > 0 ? 'הוסף עוד תמונות לגלריה' : 'העלה תמונות לגלריה'}
                       </span>
                     </>
                   )}
@@ -620,7 +708,8 @@ export default function ProductsNew() {
                       try {
                         const uploaded = [];
                         for (const file of files) {
-                          const { file_url } = await base44.integrations.Core.UploadFile({ file });
+                          const compressed = await compressImage(file);
+                          const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
                           if (file_url) uploaded.push(file_url);
                         }
                         setProductForm((prev) => ({
@@ -751,8 +840,9 @@ export default function ProductsNew() {
                 </div>
               </div>
             )}
+            </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background">
               <Button type="button" variant="outline" onClick={() => setIsProductDialogOpen(false)}>
                 ביטול
               </Button>
