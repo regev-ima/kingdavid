@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import {
   Select,
   SelectContent,
@@ -204,9 +205,10 @@ export default function NewReturn() {
             {formData.pickup_required && (
               <div className="space-y-2">
                 <Label>כתובת לאיסוף</Label>
-                <Input
+                <AddressAutocomplete
                   value={formData.pickup_address}
-                  onChange={(e) => setFormData({...formData, pickup_address: e.target.value})}
+                  onChange={(value) => setFormData({...formData, pickup_address: value})}
+                  placeholder="התחל להקליד..."
                 />
               </div>
             )}

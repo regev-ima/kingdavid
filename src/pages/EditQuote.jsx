@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { ArrowRight, Save, Loader2, Plus, Trash2, Check, X } from "lucide-react";
 import { hasBedType, productMatchesBedType } from '@/utils/bedType';
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
@@ -506,9 +507,16 @@ export default function EditQuote() {
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>כתובת למשלוח</Label>
-                <Input
+                <AddressAutocomplete
                   value={formData.delivery_address}
-                  onChange={(e) => setFormData({...formData, delivery_address: e.target.value})}
+                  onChange={(value, details) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      delivery_address: value,
+                      ...(details?.city ? { delivery_city: details.city } : {}),
+                    }));
+                  }}
+                  placeholder="התחל להקליד..."
                 />
               </div>
               <div className="space-y-2">

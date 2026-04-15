@@ -18,6 +18,7 @@ import {
 import { ArrowRight, Save, Loader2 } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
 
@@ -152,10 +153,16 @@ export default function NewLead() {
 
             <div className="space-y-2">
               <Label htmlFor="address">כתובת מלאה</Label>
-              <Input
+              <AddressAutocomplete
                 id="address"
                 value={formData.address}
-                onChange={(e) => handleChange('address', e.target.value)}
+                onChange={(value, details) => {
+                  handleChange('address', value);
+                  // If the user picked a suggestion, also fill the city field
+                  // so we don't end up with mismatched address/city pairs.
+                  if (details?.city) handleChange('city', details.city);
+                }}
+                placeholder="התחל להקליד וכתובת תושלם אוטומטית..."
               />
             </div>
           </CardContent>

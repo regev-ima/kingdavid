@@ -67,32 +67,11 @@ export default function ProductSelector({
 
   const filteredProducts = useMemo(() => {
     let filtered = products;
-    // ── Temporary diagnostic ───────────────────────────────────────────
-    // Remove after confirming product list works end-to-end.
-    if (open) {
-      // eslint-disable-next-line no-console
-      console.log('[ProductSelector] total products loaded:', products.length);
-      if (products.length > 0) {
-        // eslint-disable-next-line no-console
-        console.log('[ProductSelector] sample product:', {
-          name: products[0]?.name,
-          category: products[0]?.category,
-          bed_type: products[0]?.bed_type,
-          bed_type_type: Array.isArray(products[0]?.bed_type) ? 'array' : typeof products[0]?.bed_type,
-          is_active: products[0]?.is_active,
-        });
-      }
-      // eslint-disable-next-line no-console
-      console.log('[ProductSelector] filters:', { selectedCategory, selectedBedType, searchQuery });
-    }
-    // ───────────────────────────────────────────────────────────────────
     if (selectedCategory) {
       filtered = filtered.filter(p => getProductValue(p, 'category') === selectedCategory);
-      if (open) console.log('[ProductSelector] after category filter:', filtered.length);
     }
     if (selectedBedType && (selectedCategory === 'bed' || selectedCategory === 'mattress')) {
       filtered = filtered.filter(p => productMatchesBedType(p, selectedBedType));
-      if (open) console.log('[ProductSelector] after bed_type filter:', filtered.length);
     }
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -102,7 +81,7 @@ export default function ProductSelector({
       );
     }
     return filtered;
-  }, [products, selectedCategory, selectedBedType, searchQuery, open]);
+  }, [products, selectedCategory, selectedBedType, searchQuery]);
 
   const handleProductSelect = (productId, e) => {
     if (e) { e.stopPropagation(); e.preventDefault(); }

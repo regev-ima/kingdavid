@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import DataTable from '@/components/shared/DataTable';
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import {
   ArrowRight, 
   Phone, 
@@ -309,9 +310,16 @@ export default function CustomerDetails() {
               <div className="space-y-2">
                 <Label>כתובת</Label>
                 {isEditing ? (
-                  <Input
+                  <AddressAutocomplete
                     value={formData.address || ''}
-                    onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    onChange={(value, details) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        address: value,
+                        ...(details?.city ? { city: details.city } : {}),
+                      }));
+                    }}
+                    placeholder="התחל להקליד..."
                   />
                 ) : (
                   <p className="text-sm">{customer.address || '-'}</p>
