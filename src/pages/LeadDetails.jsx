@@ -66,6 +66,7 @@ import { Badge } from "@/components/ui/badge";
 import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 import LeadActivityTimeline from '@/components/lead/LeadActivityTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
@@ -613,7 +614,18 @@ export default function LeadDetails() {
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">כתובת</Label>
-                    <Input value={formData.address || ''} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="h-9" />
+                    <AddressAutocomplete
+                      value={formData.address || ''}
+                      onChange={(value, details) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          address: value,
+                          ...(details?.city ? { city: details.city } : {}),
+                        }));
+                      }}
+                      className="h-9"
+                      placeholder="התחל להקליד..."
+                    />
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">

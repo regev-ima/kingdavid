@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
+import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -203,9 +204,10 @@ export default function ReturnDetails() {
 
                 <div className="space-y-2">
                   <Label>כתובת לאיסוף</Label>
-                  <Input
+                  <AddressAutocomplete
                     value={returnReq.pickup_address || ''}
-                    onChange={(e) => updateReturnMutation.mutate({ pickup_address: e.target.value })}
+                    onChange={(value) => updateReturnMutation.mutate({ pickup_address: value })}
+                    placeholder="התחל להקליד..."
                   />
                 </div>
 
