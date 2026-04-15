@@ -50,6 +50,7 @@
  */
 import BulkUpdate from './pages/BulkUpdate';
 import CallAnalytics from './pages/CallAnalytics';
+import ClubSignups from './pages/ClubSignups';
 import CustomerDetails from './pages/CustomerDetails';
 import Customers from './pages/Customers';
 import Dashboard from './pages/Dashboard';
@@ -91,6 +92,7 @@ import __Layout from './Layout.jsx';
 export const PAGES = {
     "BulkUpdate": BulkUpdate,
     "CallAnalytics": CallAnalytics,
+    "ClubSignups": ClubSignups,
     "CustomerDetails": CustomerDetails,
     "Customers": Customers,
     "Dashboard": Dashboard,

@@ -64,6 +64,7 @@ const navigationByRole = {
     { name: 'כספים', href: 'Finance', icon: DollarSign },
     { name: 'נציגים', href: 'Representatives', icon: Users },
     { name: 'שיווק', href: 'Marketing', icon: BarChart3 },
+    { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown },
     { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },
     { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: DollarSign },
     { name: 'עדכון המוני', href: 'BulkUpdate', icon: RefreshCw },

@@ -42,6 +42,7 @@ const TABLE_MAP = {
   UpsellRule: 'upsell_rules',
   UpsellSuggestion: 'upsell_suggestions',
   Representative: 'representatives',
+  ClubSignup: 'club_signups',
 };
 
 /**
