@@ -106,8 +106,12 @@ export default function RoutesManager() {
       toast.success('המסלול נוצר בהצלחה');
     },
     onError: (err) => {
-      toast.error(`שגיאה ביצירת מסלול: ${err.message}`);
-      console.error('createRoute error:', err);
+      const detail = err?.message || err?.details || err?.hint || JSON.stringify(err);
+      toast.error(`שגיאה ביצירת מסלול: ${detail}`, { duration: 10000 });
+      console.error('createRoute error — full object:', err);
+      console.error('createRoute error fields:', {
+        code: err?.code, message: err?.message, details: err?.details, hint: err?.hint,
+      });
     },
   });
 
@@ -120,8 +124,9 @@ export default function RoutesManager() {
       toast.success('המסלול עודכן');
     },
     onError: (err) => {
-      toast.error(`שגיאה בעדכון מסלול: ${err.message}`);
-      console.error('updateRoute error:', err);
+      const detail = err?.message || err?.details || err?.hint || JSON.stringify(err);
+      toast.error(`שגיאה בעדכון מסלול: ${detail}`, { duration: 10000 });
+      console.error('updateRoute error — full object:', err);
     },
   });
 
@@ -132,8 +137,9 @@ export default function RoutesManager() {
       toast.success('המסלול נמחק');
     },
     onError: (err) => {
-      toast.error(`שגיאה במחיקת מסלול: ${err.message}`);
-      console.error('deleteRoute error:', err);
+      const detail = err?.message || err?.details || err?.hint || JSON.stringify(err);
+      toast.error(`שגיאה במחיקת מסלול: ${detail}`, { duration: 10000 });
+      console.error('deleteRoute error — full object:', err);
     },
   });
 
