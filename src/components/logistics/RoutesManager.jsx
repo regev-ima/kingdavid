@@ -31,8 +31,10 @@ const daysOfWeek = [
 const regionOptions = [
   { value: 'north', label: 'צפון' },
   { value: 'center', label: 'מרכז' },
-  { value: 'south', label: 'דרום' },
+  { value: 'sharon', label: 'שרון' },
+  { value: 'shomron', label: 'שומרון' },
   { value: 'jerusalem', label: 'ירושלים' },
+  { value: 'south', label: 'דרום' },
 ];
 
 const colorOptions = [
