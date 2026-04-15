@@ -37,6 +37,7 @@ export default function NewOrder() {
   const urlParams = new URLSearchParams(window.location.search);
   const quoteId = urlParams.get('quote_id');
   const leadId = urlParams.get('leadId');
+  const customerId = urlParams.get('customerId');
 
   const [formData, setFormData] = useState({
     source: 'store',
@@ -80,6 +81,15 @@ export default function NewOrder() {
     queryKey: ['lead-for-new-order-quote', quote?.lead_id],
     queryFn: () => base44.entities.Lead.filter({ id: quote.lead_id }).then(res => res[0] || null),
     enabled: !!quote?.lead_id && canAccessSales && !leadId,
+  });
+
+  // Repeat-order flow: the customer card links to NewOrder?customerId=<id>
+  // so we can pre-fill name/phone/email/address from the customer record
+  // without the user retyping anything.
+  const { data: customer } = useQuery({
+    queryKey: ['customer', customerId],
+    queryFn: () => base44.entities.Customer.filter({ id: customerId }).then(res => res[0] || null),
+    enabled: !!customerId && canAccessSales,
   });
 
   const { data: products = [] } = useQuery({
@@ -150,6 +160,24 @@ export default function NewOrder() {
       }));
     }
   }, [lead]);
+
+  // Pre-fill from the customer record when arriving from the customer card.
+  // A `customerId` URL param is mutually exclusive with `leadId`/`quote_id`
+  // (the customer card doesn't set those), so there's no risk of the three
+  // useEffects fighting over formData.
+  useEffect(() => {
+    if (customer) {
+      setFormData(prev => ({
+        ...prev,
+        customer_id: customer.id,
+        customer_name: customer.full_name || '',
+        customer_phone: customer.phone || '',
+        customer_email: customer.email || '',
+        delivery_address: customer.address || '',
+        delivery_city: customer.city || '',
+      }));
+    }
+  }, [customer]);
 
   const createOrderMutation = useMutation({
     mutationFn: async (data) => {
