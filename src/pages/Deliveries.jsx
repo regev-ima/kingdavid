@@ -7,8 +7,10 @@ import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
+import SmartScheduler from '@/components/logistics/SmartScheduler';
+import RoutesManager from '@/components/logistics/RoutesManager';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Truck, Clock, CheckCircle, AlertTriangle, MapPin } from "lucide-react";
+import { Truck, Clock, CheckCircle, AlertTriangle, MapPin, Sparkles, Route } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 
 const timeWindowLabels = {
@@ -44,6 +46,7 @@ const filterOptions = [
 
 export default function Deliveries() {
   const navigate = useNavigate();
+  const [mainTab, setMainTab] = useState('list');
   const [activeTab, setActiveTab] = useState('all');
   const [filters, setFilters] = useState({ search: '', status: 'all', time_window: 'all' });
 
@@ -164,6 +167,29 @@ export default function Deliveries() {
         <p className="text-muted-foreground">ניהול משלוחים, מסלולי חלוקה ותיאומים</p>
       </div>
 
+      <Tabs value={mainTab} onValueChange={setMainTab} className="w-full">
+        <TabsList className="bg-white border">
+          <TabsTrigger value="list" className="gap-2">
+            <Truck className="h-4 w-4" /> רשימת משלוחים
+          </TabsTrigger>
+          <TabsTrigger value="scheduler" className="gap-2">
+            <Sparkles className="h-4 w-4" /> שיבוץ חכם
+          </TabsTrigger>
+          <TabsTrigger value="routes" className="gap-2">
+            <Route className="h-4 w-4" /> ניהול מסלולים
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="scheduler" className="mt-4">
+          <SmartScheduler shipments={shipments} orders={orders} />
+        </TabsContent>
+
+        <TabsContent value="routes" className="mt-4">
+          <RoutesManager />
+        </TabsContent>
+
+        <TabsContent value="list" className="mt-4 space-y-6">
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <KPICard
           title="לתאום"
@@ -232,6 +258,8 @@ export default function Deliveries() {
         emptyMessage="לא נמצאו משלוחים"
         onRowClick={(row) => navigate(createPageUrl('ShipmentDetails') + `?id=${row.id}`)}
       />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
