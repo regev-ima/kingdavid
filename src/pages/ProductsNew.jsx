@@ -397,11 +397,12 @@ export default function ProductsNew() {
 
       {/* Product Dialog */}
       <Dialog open={isProductDialogOpen} onOpenChange={setIsProductDialogOpen}>
-        <DialogContent className="max-w-2xl" dir="rtl">
-          <DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0" dir="rtl">
+          <DialogHeader className="px-6 pt-6 pb-2 border-b">
             <DialogTitle>{editingProduct ? 'עריכת מוצר' : 'מוצר חדש'}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleProductSubmit} className="space-y-4">
+          <form onSubmit={handleProductSubmit} className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>שם המוצר *</Label>
@@ -751,8 +752,9 @@ export default function ProductsNew() {
                 </div>
               </div>
             )}
+            </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex justify-end gap-2 px-6 py-4 border-t bg-background">
               <Button type="button" variant="outline" onClick={() => setIsProductDialogOpen(false)}>
                 ביטול
               </Button>
