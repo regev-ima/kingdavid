@@ -55,12 +55,18 @@ export function loadGoogleMaps() {
     }
 
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&language=iw&region=IL&loading=async`;
+    // Note: NOT using `loading=async` because that param requires the new
+    // `google.maps.importLibrary('places')` init pattern. We use the legacy
+    // synchronous-init pattern (immediately read window.google.maps.places
+    // after onload), which is simpler and still fully supported.
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&language=iw&region=IL`;
     script.async = true;
     script.defer = true;
     script.setAttribute('data-google-maps-loader', 'true');
     script.onload = () => {
       if (window.google?.maps?.places) {
+        // eslint-disable-next-line no-console
+        console.log('[googleMapsLoader] loaded successfully');
         resolve(window.google);
       } else {
         reject(new Error('Google Maps loaded but places library is missing'));

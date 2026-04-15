@@ -7,31 +7,26 @@ import { loadGoogleMaps, isGoogleMapsConfigured } from '@/lib/googleMapsLoader';
  * Address input with Google Places Autocomplete.
  *
  * Props:
- *   value         — current string (the address typed/selected)
+ *   value         — current string (controlled)
  *   onChange      — (value, details | null) => void
- *                   `details` is provided only when the user SELECTS a suggestion
- *                   from the dropdown. When the user is just typing, details is null.
- *                   Shape of details:
+ *                   `details` is provided ONLY when the user picks a suggestion
+ *                   from the dropdown. When typing, details is null.
+ *                   Shape:
  *                     {
- *                       fullAddress: string,
- *                       streetNumber: string,
- *                       route: string,
- *                       city: string,
- *                       postalCode: string,
- *                       country: string,
- *                       latitude: number,
- *                       longitude: number,
+ *                       fullAddress, streetNumber, route, city, postalCode,
+ *                       country, latitude, longitude
  *                     }
- *   placeholder   — passed through to <Input>
- *   disabled      — passed through
- *   className     — passed through
- *   restrictToIsrael — default true. Biases + restricts results to IL.
- *   inputType     — 'address' (default) requests street-level results, or
- *                   'geocode' for any geocoded result (less strict).
- *   autoFocus     — passed through
+ *   placeholder, disabled, className, autoFocus, name, id — pass-through
+ *   restrictToIsrael — default true
+ *   inputType        — 'address' (default) | 'geocode'
  *
- * Fallback: if VITE_GOOGLE_MAPS_BROWSER_KEY isn't set, renders a plain <Input>.
- * The app stays usable; only autocomplete is missing.
+ * Fallback: if VITE_GOOGLE_MAPS_BROWSER_KEY is missing, renders a plain Input.
+ *
+ * Implementation note:
+ *   The `onChange` prop is held in a ref so that the parent passing a new
+ *   inline arrow function on every render does NOT cause this effect to
+ *   tear down and re-create the Google Autocomplete instance. (That bug
+ *   destroyed the dropdown on every keystroke and made it look "broken".)
  */
 export default function AddressAutocomplete({
   value = '',
@@ -47,43 +42,47 @@ export default function AddressAutocomplete({
 }) {
   const inputRef = useRef(null);
   const autocompleteRef = useRef(null);
+  const onChangeRef = useRef(onChange);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const configured = isGoogleMapsConfigured();
 
+  // Keep the onChange ref fresh without re-running the attach effect.
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Attach Google Autocomplete to the input — exactly once per mount.
   useEffect(() => {
     if (!configured) {
       setLoading(false);
-      return;
+      return undefined;
     }
 
     let cancelled = false;
 
     loadGoogleMaps()
       .then((google) => {
-        if (cancelled || !inputRef.current) return;
-        if (autocompleteRef.current) return; // already attached
+        if (cancelled || !inputRef.current || autocompleteRef.current) return;
 
-        const autocomplete = new google.maps.places.Autocomplete(inputRef.current, {
+        const ac = new google.maps.places.Autocomplete(inputRef.current, {
           types: [inputType],
           componentRestrictions: restrictToIsrael ? { country: 'il' } : undefined,
           fields: ['address_components', 'formatted_address', 'geometry'],
         });
 
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
+        ac.addListener('place_changed', () => {
+          const place = ac.getPlace();
           if (!place || !place.address_components) {
-            // User typed but didn't select a suggestion.
+            // User typed but didn't select a suggestion — ignore.
             return;
           }
-
           const comp = {};
           for (const c of place.address_components) {
             for (const t of c.types) {
               comp[t] = c.long_name;
             }
           }
-
           const details = {
             fullAddress: place.formatted_address || '',
             streetNumber: comp.street_number || '',
@@ -92,26 +91,29 @@ export default function AddressAutocomplete({
               comp.locality ||
               comp.postal_town ||
               comp.administrative_area_level_2 ||
-              comp.administrative_area_level_1 ||
+              comp.administrative_area_level_1  ||
               '',
             postalCode: comp.postal_code || '',
             country: comp.country || '',
             latitude: place.geometry?.location?.lat() ?? null,
             longitude: place.geometry?.location?.lng() ?? null,
           };
-
-          // Build "Route StreetNumber" as the street address (no city/country).
           const streetOnly = [details.route, details.streetNumber].filter(Boolean).join(' ').trim();
           const addressValue = streetOnly || place.formatted_address || '';
-
-          if (onChange) onChange(addressValue, details);
+          // Use the ref so we always call the LATEST onChange, even though
+          // the effect captured a stale closure.
+          onChangeRef.current?.(addressValue, details);
         });
 
-        autocompleteRef.current = autocomplete;
+        autocompleteRef.current = ac;
         setLoading(false);
+        // Diagnostic — remove once verified in production
+        // eslint-disable-next-line no-console
+        console.log('[AddressAutocomplete] attached to input', inputRef.current);
       })
       .catch((err) => {
         if (cancelled) return;
+        // eslint-disable-next-line no-console
         console.warn('[AddressAutocomplete] load failed:', err.message);
         setError(err.message);
         setLoading(false);
@@ -119,15 +121,19 @@ export default function AddressAutocomplete({
 
     return () => {
       cancelled = true;
+      // We deliberately do NOT clearInstanceListeners + null the ref on every
+      // re-render — only on real unmount. Since this effect's deps array is
+      // mount-only ([configured, inputType, restrictToIsrael]), this cleanup
+      // will only fire when the component truly unmounts or those props change.
       if (autocompleteRef.current && window.google?.maps?.event) {
         window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        autocompleteRef.current = null;
       }
-      autocompleteRef.current = null;
     };
-  }, [configured, inputType, restrictToIsrael, onChange]);
+  }, [configured, inputType, restrictToIsrael]); // ← onChange intentionally NOT here
 
   const handleChange = (e) => {
-    if (onChange) onChange(e.target.value, null);
+    onChangeRef.current?.(e.target.value, null);
   };
 
   return (
@@ -144,7 +150,8 @@ export default function AddressAutocomplete({
         disabled={disabled}
         autoFocus={autoFocus}
         className={`pe-8 ${className}`}
-        autoComplete="off"
+        // Autofill bypass — Chrome ignores 'off' but respects unrecognized values.
+        autoComplete="address-line1-fake"
       />
       {loading && configured && (
         <Loader2 className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60 animate-spin" />
