@@ -383,8 +383,20 @@ export default function Leads() {
     {
       header: 'סטטוס',
       accessor: 'status',
-      render: (row) => <StatusBadge status={row.status} />,
-      width: '112px'
+      render: (row) => (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <StatusBadge status={row.status} />
+          {(row.source === 'website' || (Array.isArray(row.tags) && row.tags.includes('אתר'))) && (
+            <span
+              className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-semibold px-1.5 py-0.5"
+              title={row.source_form || 'הגיע מהאתר'}
+            >
+              אתר
+            </span>
+          )}
+        </div>
+      ),
+      width: '130px'
     },
     {
       header: 'שם מודעה',
