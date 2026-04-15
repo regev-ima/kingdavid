@@ -1,6 +1,6 @@
 import React from 'react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
-import { AlertCircle, Phone } from 'lucide-react';
+import { AlertCircle, Phone, Globe } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -113,8 +113,14 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <StatusBadge status={row.status} />
+            {(row.source === 'website' || (Array.isArray(row.tags) && row.tags.includes('אתר'))) && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-semibold px-1.5 py-0.5">
+                <Globe className="h-2.5 w-2.5" />
+                אתר
+              </span>
+            )}
             {row.unique_id ? <span className="text-xs text-muted-foreground">ID: {row.unique_id}</span> : null}
           </div>
           <h3 className="text-base font-semibold text-foreground truncate">{row.full_name}</h3>

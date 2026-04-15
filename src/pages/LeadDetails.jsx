@@ -672,8 +672,32 @@ export default function LeadDetails() {
 
                   {/* Source */}
                   <div className="border-t border-border/50 pt-4">
-                    <DetailField label="מקור" value={SOURCE_LABELS[lead.source] || lead.source} />
+                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
+                      <DetailField label="מקור" value={SOURCE_LABELS[lead.source] || lead.source} />
+                      {lead.source_form && (
+                        <DetailField label="טופס מקור" value={lead.source_form} />
+                      )}
+                    </div>
+                    {Array.isArray(lead.tags) && lead.tags.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {lead.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-xs font-medium px-2 py-0.5"
+                          >
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Subject (website contact form) */}
+                  {lead.subject && (
+                    <div className="border-t border-border/50 pt-4">
+                      <DetailField label="נושא הפנייה" value={lead.subject} />
+                    </div>
+                  )}
 
                   {/* Dates Row */}
                   <div className="border-t border-border/50 pt-4">

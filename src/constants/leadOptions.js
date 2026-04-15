@@ -53,6 +53,7 @@ export const LEAD_SOURCE_OPTIONS = [
   { value: 'digital', label: 'דיגיטל' },
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'referral', label: 'הפניה' },
+  { value: 'website', label: 'אתר' },
 ];
 
 export const SOURCE_LABELS = Object.fromEntries(
