@@ -37,6 +37,16 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, Tag } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
+import { Slider } from "@/components/ui/slider";
+
+const hardnessLabel = (v) => {
+  if (v == null || v === '') return '';
+  const n = Number(v);
+  if (n <= 3) return 'רך';
+  if (n <= 5) return 'בינוני';
+  if (n <= 7) return 'בינוני-קשיח';
+  return 'קשיח';
+};
 
 const categoryLabels = {
   mattress: 'מזרון',
@@ -82,7 +92,8 @@ export default function ProductsNew() {
     discount_type: 'percentage',
     discount_value: '',
     sale_starts_at: '',
-    sale_ends_at: ''
+    sale_ends_at: '',
+    hardness: ''
   });
 
   const [variationForm, setVariationForm] = useState({
@@ -188,7 +199,8 @@ export default function ProductsNew() {
       discount_type: 'percentage',
       discount_value: '',
       sale_starts_at: '',
-      sale_ends_at: ''
+      sale_ends_at: '',
+      hardness: ''
     });
     setEditingProduct(null);
   };
@@ -221,6 +233,16 @@ export default function ProductsNew() {
       : (productForm.bed_type ? [productForm.bed_type] : []);
     const isBedTypeRelevant = productForm.category === 'mattress' || productForm.category === 'bed';
 
+    let hardnessValue = null;
+    if (productForm.hardness !== '' && productForm.hardness != null) {
+      const n = Number(productForm.hardness);
+      if (!Number.isInteger(n) || n < 1 || n > 10) {
+        alert('דרגת קושי חייבת להיות מספר שלם בין 1 ל-10');
+        return;
+      }
+      hardnessValue = n;
+    }
+
     const cleanData = {
       ...productForm,
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
@@ -237,7 +259,8 @@ export default function ProductsNew() {
       discount_type: productForm.is_on_sale ? (productForm.discount_type || 'percentage') : null,
       discount_value: productForm.is_on_sale && productForm.discount_value !== '' ? Number(productForm.discount_value) : null,
       sale_starts_at: productForm.is_on_sale && productForm.sale_starts_at ? productForm.sale_starts_at : null,
-      sale_ends_at: productForm.is_on_sale && productForm.sale_ends_at ? productForm.sale_ends_at : null
+      sale_ends_at: productForm.is_on_sale && productForm.sale_ends_at ? productForm.sale_ends_at : null,
+      hardness: hardnessValue
     };
 
     if (editingProduct) {
@@ -294,7 +317,8 @@ export default function ProductsNew() {
       discount_type: product.discount_type || 'percentage',
       discount_value: product.discount_value ?? '',
       sale_starts_at: saleStartsAt,
-      sale_ends_at: saleEndsAt
+      sale_ends_at: saleEndsAt,
+      hardness: product.hardness ?? ''
     });
     setIsProductDialogOpen(true);
   };
@@ -435,6 +459,48 @@ export default function ProductsNew() {
                   placeholder="הפרד בפסיקים, למשל: מבצעים, חדש"
                 />
               </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>דרגת קושי</Label>
+                {productForm.hardness !== '' && productForm.hardness != null && (
+                  <span className="text-xs font-semibold text-primary">
+                    {productForm.hardness}/10 · {hardnessLabel(productForm.hardness)}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <Slider
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={[Number(productForm.hardness) || 1]}
+                  onValueChange={(vals) => setProductForm({ ...productForm, hardness: vals[0] })}
+                  className="flex-1"
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={productForm.hardness}
+                  onChange={(e) => setProductForm({ ...productForm, hardness: e.target.value })}
+                  placeholder="—"
+                  className="w-20"
+                />
+                {productForm.hardness !== '' && productForm.hardness != null && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setProductForm({ ...productForm, hardness: '' })}
+                  >
+                    נקה
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">1=הכי רך, 10=הכי קשיח</p>
             </div>
 
             <div>
