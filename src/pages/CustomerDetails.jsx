@@ -10,8 +10,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import DataTable from '@/components/shared/DataTable';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
+import RepCard from '@/components/lead/RepCard';
 import {
   ArrowRight,
   Phone,
@@ -22,11 +30,13 @@ import {
   FileText,
   Save,
   Loader2,
-  Plus
+  Plus,
+  User as UserIcon,
 } from "lucide-react";
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canViewCustomer } from '@/lib/rbac';
+import { buildLeadsById, canViewCustomer, canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
+import { createCustomerAuditLog } from '@/utils/auditLog';
 
 export default function CustomerDetails() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
@@ -60,6 +70,12 @@ export default function CustomerDetails() {
     enabled: !!customer?.lead_id,
   });
 
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 300000,
+  });
+
   const [formData, setFormData] = useState({});
 
   useEffect(() => {
@@ -76,7 +92,30 @@ export default function CustomerDetails() {
     },
   });
 
-  const handleSave = () => {
+  const logRepChanges = async (nextData) => {
+    if (!customer) return;
+    const repFields = {
+      account_manager: 'נציג ראשי',
+      rep2: 'נציג משני',
+    };
+    for (const [field, label] of Object.entries(repFields)) {
+      const before = customer[field] || null;
+      const after = nextData[field] || null;
+      if (before === after) continue;
+      await createCustomerAuditLog({
+        customerId: customer.id,
+        actionType: 'rep_changed',
+        description: `${effectiveUser?.full_name || effectiveUser?.email || 'משתמש'} שינה ${label}: "${before || '(ריק)'}" → "${after || '(ריק)'}"`,
+        user: effectiveUser,
+        fieldName: field,
+        oldValue: before,
+        newValue: after,
+      });
+    }
+  };
+
+  const handleSave = async () => {
+    await logRepChanges(formData);
     updateCustomerMutation.mutate(formData);
   };
 
@@ -131,6 +170,38 @@ export default function CustomerDetails() {
       </div>
     );
   }
+
+  const canEditRep1 = canEditPrimaryRep(effectiveUser);
+  const canEditRep2 = canEditSecondaryRep(effectiveUser, customer);
+  const salesReps = users.filter((u) => u.role === 'user' || u.role === 'admin');
+
+  const handleQuickAssignRep1 = async (email) => {
+    const before = customer.account_manager || null;
+    await createCustomerAuditLog({
+      customerId: customer.id,
+      actionType: 'rep_assigned',
+      description: `${effectiveUser?.full_name || effectiveUser?.email || 'משתמש'} שייך נציג ראשי: "${before || '(ריק)'}" → "${email || '(ריק)'}"`,
+      user: effectiveUser,
+      fieldName: 'account_manager',
+      oldValue: before,
+      newValue: email,
+    });
+    updateCustomerMutation.mutate({ account_manager: email });
+  };
+
+  const handleQuickAssignRep2 = async (email) => {
+    const before = customer.rep2 || null;
+    await createCustomerAuditLog({
+      customerId: customer.id,
+      actionType: 'rep_assigned',
+      description: `${effectiveUser?.full_name || effectiveUser?.email || 'משתמש'} שייך נציג משני: "${before || '(ריק)'}" → "${email || '(ריק)'}"`,
+      user: effectiveUser,
+      fieldName: 'rep2',
+      oldValue: before,
+      newValue: email,
+    });
+    updateCustomerMutation.mutate({ rep2: email });
+  };
 
   const orderColumns = [
     {
@@ -426,13 +497,74 @@ export default function CustomerDetails() {
             </CardContent>
           </Card>
 
-          {/* Account Manager */}
+          {/* Rep Assignment */}
           <Card>
             <CardHeader>
-              <CardTitle>נציג אחראי</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <UserIcon className="h-4 w-4 text-muted-foreground" />
+                שיוך נציגים
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-sm">{customer.account_manager || '-'}</p>
+            <CardContent className="space-y-3">
+              {isEditing && (canEditRep1 || canEditRep2) ? (
+                <div className="space-y-3">
+                  {canEditRep1 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
+                      <Select
+                        value={formData.account_manager || ''}
+                        onValueChange={(value) => setFormData({ ...formData, account_manager: value })}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={null}>ללא שיוך</SelectItem>
+                          {salesReps.map((rep) =>
+                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {canEditRep2 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">נציג משני</Label>
+                      <Select
+                        value={formData.rep2 || ''}
+                        onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={null}>ללא</SelectItem>
+                          {salesReps.map((rep) =>
+                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <RepCard
+                    label="נציג ראשי"
+                    rep={customer.account_manager
+                      ? (salesReps.find((r) => r.email === customer.account_manager) || { email: customer.account_manager, full_name: customer.account_manager.split('@')[0] })
+                      : null}
+                    isEmpty={!customer.account_manager && !customer.pending_rep_email}
+                    canEdit={canEditRep1}
+                    salesReps={salesReps}
+                    onAssign={handleQuickAssignRep1}
+                    isPending={updateCustomerMutation.isPending}
+                  />
+                  <RepCard
+                    label="נציג משני"
+                    rep={customer.rep2 ? salesReps.find((r) => r.email === customer.rep2) : null}
+                    isEmpty={!customer.rep2}
+                    canEdit={canEditRep2}
+                    salesReps={salesReps}
+                    onAssign={handleQuickAssignRep2}
+                    isPending={updateCustomerMutation.isPending}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 

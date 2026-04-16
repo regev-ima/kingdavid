@@ -4,12 +4,12 @@ import { MessageCircle, Phone, RefreshCw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import UserAvatar from "@/components/shared/UserAvatar";
 
-export default function RepCard({ rep, label, isEmpty, onAssign, salesReps, isAdmin, isPending }) {
+export default function RepCard({ rep, label, isEmpty, onAssign, salesReps, canEdit, isPending }) {
   if (isEmpty || !rep) {
     return (
       <div className="p-3 rounded-lg border border-dashed border-border bg-muted/50">
         <p className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide mb-2">{label}</p>
-        {isAdmin && onAssign && salesReps?.length > 0 ? (
+        {canEdit && onAssign && salesReps?.length > 0 ? (
           <Select onValueChange={onAssign} disabled={isPending}>
             <SelectTrigger className="h-9 text-sm border-dashed border-border bg-white hover:bg-muted/50">
               <SelectValue placeholder={isPending ? "משייך..." : "בחר נציג לשיוך"} />
@@ -84,7 +84,7 @@ export default function RepCard({ rep, label, isEmpty, onAssign, salesReps, isAd
               <Phone className="h-4 w-4" />
             </Button>
           )}
-          {isAdmin && onAssign && salesReps?.length > 0 && (
+          {canEdit && onAssign && salesReps?.length > 0 && (
             <Select onValueChange={onAssign} disabled={isPending}>
               <SelectTrigger className="h-8 w-8 p-0 border-0 bg-transparent hover:bg-muted rounded-full [&>svg:last-child]:hidden">
                 <RefreshCw className="h-3.5 w-3.5 text-muted-foreground/70" />

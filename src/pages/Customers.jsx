@@ -15,17 +15,15 @@ import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, filterCustomersForUser } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
-const filterOptions = [
-  { key: 'vip', label: 'VIP', options: [
-    { value: 'true', label: 'VIP' },
-    { value: 'false', label: 'רגיל' }
-  ]},
-];
+const VIP_FILTER = { key: 'vip', label: 'VIP', options: [
+  { value: 'true', label: 'VIP' },
+  { value: 'false', label: 'רגיל' }
+]};
 
 export default function Customers() {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const [filterValues, setFilterValues] = useState({ search: '', vip: 'all' });
+  const [filterValues, setFilterValues] = useState({ search: '', vip: 'all', rep: 'all' });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -50,23 +48,42 @@ export default function Customers() {
     enabled: canAccessSales,
   });
 
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 300000,
+    enabled: canAccessSales,
+  });
+
   const scopedCustomers = filterCustomersForUser(effectiveUser, customers, {
     leadsById: buildLeadsById(leads),
     ordersByCustomerId: buildOrdersByCustomerId(orders),
   });
 
+  const repOptions = users
+    .filter((u) => u.role === 'user' || u.role === 'admin')
+    .map((u) => ({ value: u.email, label: u.full_name || u.email }));
+  const filterOptions = [
+    VIP_FILTER,
+    { key: 'rep', label: 'נציג מטפל', options: repOptions },
+  ];
+
   const filteredCustomers = scopedCustomers.filter(customer => {
     const searchLower = filterValues.search.toLowerCase();
-    const matchSearch = !filterValues.search || 
+    const matchSearch = !filterValues.search ||
       customer.full_name?.toLowerCase().includes(searchLower) ||
       customer.phone?.includes(filterValues.search) ||
       customer.email?.toLowerCase().includes(searchLower);
-    
-    const matchVip = filterValues.vip === 'all' || 
+
+    const matchVip = filterValues.vip === 'all' ||
       (filterValues.vip === 'true' && customer.vip_status) ||
       (filterValues.vip === 'false' && !customer.vip_status);
-    
-    return matchSearch && matchVip;
+
+    const matchRep = filterValues.rep === 'all' ||
+      customer.account_manager === filterValues.rep ||
+      customer.rep2 === filterValues.rep;
+
+    return matchSearch && matchVip && matchRep;
   });
 
   // Calculate KPIs
@@ -159,7 +176,7 @@ export default function Customers() {
         filters={filterOptions}
         values={filterValues}
         onChange={(key, value) => setFilterValues(prev => ({ ...prev, [key]: value }))}
-        onClear={() => setFilterValues({ search: '', vip: 'all' })}
+        onClear={() => setFilterValues({ search: '', vip: 'all', rep: 'all' })}
       />
 
       <DataTable

@@ -208,9 +208,12 @@ export default function Representatives() {
       }
 
       // Transfer all customers
-      const repCustomers = customers.filter(c => c.account_manager === repEmail);
+      const repCustomers = customers.filter(c => c.account_manager === repEmail || c.rep2 === repEmail);
       for (const customer of repCustomers) {
-        await base44.entities.Customer.update(customer.id, { account_manager: transferEmail });
+        const updates = {};
+        if (customer.account_manager === repEmail) updates.account_manager = transferEmail;
+        if (customer.rep2 === repEmail) updates.rep2 = transferEmail;
+        await base44.entities.Customer.update(customer.id, updates);
       }
 
       // Transfer all orders
@@ -329,7 +332,7 @@ export default function Representatives() {
   const getRepAssignmentCounts = (repEmail) => {
     const leadsCount = leads.filter(l => l.rep1 === repEmail || l.rep2 === repEmail).length;
     const quotesCount = quotes.filter(q => q.created_by_rep === repEmail).length;
-    const customersCount = customers.filter(c => c.account_manager === repEmail).length;
+    const customersCount = customers.filter(c => c.account_manager === repEmail || c.rep2 === repEmail).length;
     const ordersCount = orders.filter(o => o.rep1 === repEmail || o.rep2 === repEmail).length;
     
     return { leadsCount, quotesCount, customersCount, ordersCount };
