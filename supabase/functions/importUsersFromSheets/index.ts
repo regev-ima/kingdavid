@@ -177,6 +177,7 @@ async function handleDirectInvite(body: Record<string, any>) {
   const email: string | undefined = body.email?.trim();
   const role: string = body.role || 'user';
   const fullName: string | undefined = body.full_name || body.fullName;
+  const redirectTo: string | undefined = body.redirectTo;
 
   if (!email) {
     return Response.json({ error: 'Missing required field: email' }, { status: 400, headers: corsHeaders });
@@ -185,9 +186,12 @@ async function handleDirectInvite(body: Record<string, any>) {
   const supabase = createServiceClient();
 
   // Send the invitation email via Supabase Auth. This triggers the built-in invite template.
+  const inviteOptions: Record<string, any> = {};
+  if (fullName) inviteOptions.data = { full_name: fullName };
+  if (redirectTo) inviteOptions.redirectTo = redirectTo;
   const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
     email,
-    fullName ? { data: { full_name: fullName } } : undefined,
+    Object.keys(inviteOptions).length ? inviteOptions : undefined,
   );
 
   let authUserId: string | null = inviteData?.user?.id ?? null;
