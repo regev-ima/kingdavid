@@ -185,7 +185,7 @@ export function canViewCustomer(user, customer, context = {}) {
   if (isAdmin(user)) return true;
 
   const { leadsById = {}, ordersByCustomerId = {} } = context;
-  if (matchesUserIdentifier(user, customer.account_manager, customer.pending_rep_email)) return true;
+  if (matchesUserIdentifier(user, customer.account_manager, customer.rep2, customer.pending_rep_email)) return true;
 
   const lead = customer.lead_id ? leadsById[customer.lead_id] : null;
   if (lead && canViewLead(user, lead)) return true;
@@ -215,4 +215,19 @@ export function canViewReturnRequest(user, returnRequest) {
 
 export function filterReturnsForUser(user, returnRequests = []) {
   return returnRequests.filter((returnRequest) => canViewReturnRequest(user, returnRequest));
+}
+
+// Rep editing permissions — shared across Lead & Customer (and any other entity
+// with a primary/secondary rep pattern).
+// Primary rep (rep1 / account_manager) is the ownership assignment: admin-only.
+// Secondary rep (rep2) can be set once by a sales user while the slot is empty;
+// changing an already-set value is admin-only.
+export function canEditPrimaryRep(user) {
+  return isAdmin(user);
+}
+
+export function canEditSecondaryRep(user, entity) {
+  if (isAdmin(user)) return true;
+  if (!isSalesUser(user)) return false;
+  return !entity?.rep2;
 }

@@ -73,6 +73,7 @@ import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import { canViewLead } from '@/components/shared/rbac';
+import { canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
 export default function LeadDetails() {
@@ -241,6 +242,8 @@ export default function LeadDetails() {
 
   const isAdmin = effectiveUser?.role === 'admin';
   const canEdit = isAdmin || lead?.rep1 === effectiveUser?.email || lead?.rep2 === effectiveUser?.email || lead?.pending_rep_email === effectiveUser?.email;
+  const canEditLeadRep1 = canEditPrimaryRep(effectiveUser);
+  const canEditLeadRep2 = canEditSecondaryRep(effectiveUser, lead);
   const historicalTasks = useMemo(
     () => tasks.filter((task) => String(task?.task_status || '').toLowerCase() !== 'not_completed'),
     [tasks]
@@ -1121,36 +1124,40 @@ export default function LeadDetails() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 p-4">
-              {isAdmin && isEditing ? (
+              {isEditing && (canEditLeadRep1 || canEditLeadRep2) ? (
                 <div className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
-                    <Select
-                      value={formData.rep1 || ''}
-                      onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={null}>ללא שיוך</SelectItem>
-                        {salesReps.map((rep) =>
-                          <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">נציג משני</Label>
-                    <Select
-                      value={formData.rep2 || ''}
-                      onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={null}>ללא</SelectItem>
-                        {salesReps.map((rep) =>
-                          <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {canEditLeadRep1 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
+                      <Select
+                        value={formData.rep1 || ''}
+                        onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={null}>ללא שיוך</SelectItem>
+                          {salesReps.map((rep) =>
+                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {canEditLeadRep2 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">נציג משני</Label>
+                      <Select
+                        value={formData.rep2 || ''}
+                        onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
+                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={null}>ללא</SelectItem>
+                          {salesReps.map((rep) =>
+                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1158,7 +1165,7 @@ export default function LeadDetails() {
                     label="נציג ראשי"
                     rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: lead.rep1.split('@')[0] }) : null}
                     isEmpty={!lead.rep1 && !lead.pending_rep_email}
-                    isAdmin={isAdmin}
+                    canEdit={canEditLeadRep1}
                     salesReps={salesReps}
                     onAssign={handleQuickAssignRep1}
                     isPending={updateLeadMutation.isPending}
@@ -1219,7 +1226,7 @@ export default function LeadDetails() {
                     label="נציג משני"
                     rep={lead.rep2 ? salesReps.find((r) => r.email === lead.rep2) : null}
                     isEmpty={!lead.rep2}
-                    isAdmin={isAdmin}
+                    canEdit={canEditLeadRep2}
                     salesReps={salesReps}
                     onAssign={handleQuickAssignRep2}
                     isPending={updateLeadMutation.isPending}

@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       { name: 'SalesTask', fields: ['rep1', 'rep2', 'pending_rep_email'] },
       { name: 'Order', fields: ['rep1', 'rep2'] },
       { name: 'Quote', fields: ['created_by_rep'] },
-      { name: 'Customer', fields: ['account_manager', 'pending_rep_email'] },
+      { name: 'Customer', fields: ['account_manager', 'rep2', 'pending_rep_email'] },
       { name: 'Commission', fields: ['rep1', 'rep2'] },
       { name: 'SupportTicket', fields: ['assigned_to'] },
       { name: 'CallLog', fields: ['rep_id'] },
