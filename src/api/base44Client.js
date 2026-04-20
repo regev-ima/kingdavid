@@ -110,11 +110,16 @@ const appLogs = {
 // ── Users management ────────────────────────────────────────────
 const users = {
   inviteUser: async (email, role) => {
-    // Create user via Edge Function (needs service role)
+    // Create user via Edge Function (needs service role). Pass redirectTo so the
+    // invite email link lands on /login, where the set-password flow is wired up.
+    const redirectTo = typeof window !== 'undefined'
+      ? `${window.location.origin}/login`
+      : undefined;
     return await functions.invoke('importUsersFromSheets', {
       directInvite: true,
       email,
       role: role || 'user',
+      redirectTo,
     });
   },
 };
