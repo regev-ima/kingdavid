@@ -10,7 +10,14 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized - Admin only' }, { status: 403, headers: corsHeaders });
     }
 
-    const { spreadsheet_id, sheet_name, column_mapping } = await req.json();
+    const body = await req.json();
+
+    // Direct invite path: invite a single user by email (used by Representatives/Settings UI).
+    if (body.directInvite) {
+      return await handleDirectInvite(body);
+    }
+
+    const { spreadsheet_id, sheet_name, column_mapping } = body;
 
     if (!spreadsheet_id || !sheet_name) {
       return Response.json({
@@ -165,3 +172,60 @@ Deno.serve(async (req) => {
     return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });
+
+async function handleDirectInvite(body: Record<string, any>) {
+  const email: string | undefined = body.email?.trim();
+  const role: string = body.role || 'user';
+  const fullName: string | undefined = body.full_name || body.fullName;
+
+  if (!email) {
+    return Response.json({ error: 'Missing required field: email' }, { status: 400, headers: corsHeaders });
+  }
+
+  const supabase = createServiceClient();
+
+  // Send the invitation email via Supabase Auth. This triggers the built-in invite template.
+  const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+    email,
+    fullName ? { data: { full_name: fullName } } : undefined,
+  );
+
+  let authUserId: string | null = inviteData?.user?.id ?? null;
+  let alreadyRegistered = false;
+
+  if (inviteError) {
+    const msg = inviteError.message?.toLowerCase() || '';
+    if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+      alreadyRegistered = true;
+      // Look up the existing auth user so we can still link the profile.
+      const { data: listData } = await supabase.auth.admin.listUsers();
+      const found = listData?.users?.find((u: { email?: string }) => u.email === email);
+      if (found) authUserId = found.id;
+    } else {
+      return Response.json({ error: inviteError.message }, { status: 400, headers: corsHeaders });
+    }
+  }
+
+  // Upsert the users-table profile so role/full_name/auth_id stay in sync with the invite.
+  const profileFields: Record<string, any> = { role };
+  if (fullName) profileFields.full_name = fullName;
+  if (authUserId) profileFields.auth_id = authUserId;
+
+  const { data: existingProfiles } = await supabase
+    .from('users')
+    .select('id')
+    .eq('email', email);
+
+  if (existingProfiles && existingProfiles.length > 0) {
+    await supabase.from('users').update(profileFields).eq('id', existingProfiles[0].id);
+  } else {
+    await supabase.from('users').insert({ email, ...profileFields });
+  }
+
+  return Response.json({
+    message: alreadyRegistered ? 'User already registered; profile updated' : 'Invitation sent',
+    email,
+    role,
+    already_registered: alreadyRegistered,
+  }, { headers: corsHeaders });
+}

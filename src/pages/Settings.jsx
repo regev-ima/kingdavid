@@ -78,8 +78,13 @@ export default function Settings() {
   };
 
   const handleInviteUser = async (email, role) => {
-    await base44.users.inviteUser(email, role);
-    queryClient.invalidateQueries(['users']);
+    try {
+      const result = await base44.users.inviteUser(email, role);
+      queryClient.invalidateQueries(['users']);
+      toast.success(result?.already_registered ? 'המשתמש כבר רשום — הפרופיל עודכן' : 'ההזמנה נשלחה במייל');
+    } catch (err) {
+      toast.error(`שליחת ההזמנה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+    }
   };
 
   return (
