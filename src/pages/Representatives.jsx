@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -96,13 +97,17 @@ export default function Representatives() {
 
   const inviteUserMutation = useMutation({
     mutationFn: async ({ email, role }) => {
-      await base44.users.inviteUser(email, role);
+      return await base44.users.inviteUser(email, role);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries(['reps']);
       setShowInviteDialog(false);
       setInviteEmail('');
       setInviteRole('sales_user');
+      toast.success(data?.already_registered ? 'המשתמש כבר רשום — הפרופיל עודכן' : 'ההזמנה נשלחה במייל');
+    },
+    onError: (err) => {
+      toast.error(`שליחת ההזמנה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     },
   });
 
