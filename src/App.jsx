@@ -1,9 +1,10 @@
 import React, { Suspense, lazy } from 'react';
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
@@ -34,6 +35,13 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 
 const AuthenticatedApp = () => {
   const { isAuthenticated, isLoadingAuth } = useAuth();
+  const location = useLocation();
+
+  // Invite/recovery links land on '/' with a hash like '#type=invite&access_token=...'.
+  // Send them to /login (keeping the hash) so the set-password flow in Login.jsx can fire.
+  if (location.hash && /type=(invite|recovery)/.test(location.hash)) {
+    return <Navigate to={`/login${location.hash}`} replace />;
+  }
 
   // While checking auth, show a brief loading text
   if (isLoadingAuth) {
@@ -94,6 +102,7 @@ function App() {
           </Routes>
         </Router>
         <Toaster />
+        <SonnerToaster />
       </QueryClientProvider>
     </AuthProvider>
   )
