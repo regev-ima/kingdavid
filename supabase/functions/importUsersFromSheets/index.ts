@@ -179,6 +179,8 @@ async function handleDirectInvite(body: Record<string, any>) {
   const fullName: string | undefined = body.full_name || body.fullName;
   const redirectTo: string | undefined = body.redirectTo;
 
+  console.log('[directInvite] start', { email, role, hasFullName: !!fullName, redirectTo });
+
   if (!email) {
     return Response.json({ error: 'Missing required field: email' }, { status: 400, headers: corsHeaders });
   }
@@ -199,6 +201,7 @@ async function handleDirectInvite(body: Record<string, any>) {
 
   if (inviteError) {
     const msg = inviteError.message?.toLowerCase() || '';
+    console.log('[directInvite] inviteUserByEmail error', { message: inviteError.message });
     if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
       alreadyRegistered = true;
       // Look up the existing auth user so we can still link the profile.
@@ -208,6 +211,8 @@ async function handleDirectInvite(body: Record<string, any>) {
     } else {
       return Response.json({ error: inviteError.message }, { status: 400, headers: corsHeaders });
     }
+  } else {
+    console.log('[directInvite] invite email sent', { authUserId });
   }
 
   // Upsert the users-table profile so role/full_name/auth_id stay in sync with the invite.
@@ -215,17 +220,40 @@ async function handleDirectInvite(body: Record<string, any>) {
   if (fullName) profileFields.full_name = fullName;
   if (authUserId) profileFields.auth_id = authUserId;
 
-  const { data: existingProfiles } = await supabase
+  const { data: existingProfiles, error: lookupError } = await supabase
     .from('users')
     .select('id')
     .eq('email', email);
 
-  if (existingProfiles && existingProfiles.length > 0) {
-    await supabase.from('users').update(profileFields).eq('id', existingProfiles[0].id);
-  } else {
-    await supabase.from('users').insert({ email, ...profileFields });
+  if (lookupError) {
+    console.error('[directInvite] profile lookup failed', lookupError);
+    return Response.json({ error: `Profile lookup failed: ${lookupError.message}` }, { status: 500, headers: corsHeaders });
   }
 
+  let profileError: { message: string } | null = null;
+  if (existingProfiles && existingProfiles.length > 0) {
+    const { error } = await supabase.from('users').update(profileFields).eq('id', existingProfiles[0].id);
+    profileError = error;
+  } else {
+    // Fill required columns defensively so NOT NULL constraints don't silently fail the insert.
+    const insertPayload: Record<string, any> = {
+      email,
+      full_name: fullName || email.split('@')[0],
+      is_active: true,
+      ...profileFields,
+    };
+    const { error } = await supabase.from('users').insert(insertPayload);
+    profileError = error;
+  }
+
+  if (profileError) {
+    console.error('[directInvite] profile upsert failed', profileError);
+    return Response.json({
+      error: `Invitation email ${alreadyRegistered ? 'skipped' : 'sent'}, but profile sync failed: ${profileError.message}`,
+    }, { status: 500, headers: corsHeaders });
+  }
+
+  console.log('[directInvite] done', { email, role, alreadyRegistered });
   return Response.json({
     message: alreadyRegistered ? 'User already registered; profile updated' : 'Invitation sent',
     email,
