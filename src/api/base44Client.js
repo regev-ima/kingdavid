@@ -64,7 +64,20 @@ const functions = {
     const { data, error } = await supabase.functions.invoke(functionName, {
       body: params,
     });
-    if (error) throw error;
+    if (error) {
+      // FunctionsHttpError wraps the actual response in `context`. The default
+      // message is just "Edge Function returned a non-2xx status code", which
+      // hides the useful body. Pull the real error text out before throwing.
+      try {
+        if (error.context && typeof error.context.json === 'function') {
+          const body = await error.context.json();
+          if (body?.error) error.message = body.error;
+        }
+      } catch {
+        // ignore — fall back to the original error message
+      }
+      throw error;
+    }
     return data;
   },
 };
