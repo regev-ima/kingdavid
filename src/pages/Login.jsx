@@ -216,7 +216,7 @@ export default function Login() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       dir="ltr"
-                      className="pr-10 h-12 bg-slate-50 border-slate-200 focus:bg-white transition-colors"
+                      className="pr-10 h-12 text-base sm:text-sm bg-slate-50 border-slate-200 focus:bg-white transition-colors"
                     />
                   </div>
                 </div>
@@ -242,7 +242,7 @@ export default function Login() {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       dir="ltr"
-                      className="pr-10 pl-10 h-12 bg-slate-50 border-slate-200 focus:bg-white transition-colors"
+                      className="pr-10 pl-10 h-12 text-base sm:text-sm bg-slate-50 border-slate-200 focus:bg-white transition-colors"
                     />
                     <button
                       type="button"
@@ -305,7 +305,7 @@ export default function Login() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       dir="ltr"
-                      className="pr-10 h-12 bg-slate-50 border-slate-200 focus:bg-white transition-colors"
+                      className="pr-10 h-12 text-base sm:text-sm bg-slate-50 border-slate-200 focus:bg-white transition-colors"
                     />
                   </div>
                 </div>
@@ -362,7 +362,7 @@ export default function Login() {
                       required
                       minLength={8}
                       dir="ltr"
-                      className="pr-10 pl-10 h-12 bg-slate-50 border-slate-200 focus:bg-white transition-colors"
+                      className="pr-10 pl-10 h-12 text-base sm:text-sm bg-slate-50 border-slate-200 focus:bg-white transition-colors"
                     />
                     <button
                       type="button"
@@ -385,7 +385,7 @@ export default function Login() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
                       dir="ltr"
-                      className="pr-10 h-12 bg-slate-50 border-slate-200 focus:bg-white transition-colors"
+                      className="pr-10 h-12 text-base sm:text-sm bg-slate-50 border-slate-200 focus:bg-white transition-colors"
                     />
                   </div>
                 </div>
