@@ -34,7 +34,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronLeft, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";
@@ -98,7 +98,9 @@ export default function ProductsNew() {
     discount_value: '',
     sale_starts_at: '',
     sale_ends_at: '',
-    hardness: ''
+    hardness: '',
+    features: '',
+    technologies: []
   });
 
   const [variationForm, setVariationForm] = useState({
@@ -206,7 +208,9 @@ export default function ProductsNew() {
       discount_value: '',
       sale_starts_at: '',
       sale_ends_at: '',
-      hardness: ''
+      hardness: '',
+      features: '',
+      technologies: []
     });
     setEditingProduct(null);
   };
@@ -251,9 +255,23 @@ export default function ProductsNew() {
 
     const imagesArray = Array.isArray(productForm.images) ? productForm.images.filter(Boolean) : [];
 
+    // features: just trim the whole block — the website splits on its own.
+    const featuresText = (productForm.features || '').trim();
+
+    // technologies: drop items without a name; only keep description when non-empty.
+    const technologiesClean = (Array.isArray(productForm.technologies) ? productForm.technologies : [])
+      .map((t) => {
+        const name = (t?.name || '').trim();
+        const description = (t?.description || '').trim();
+        return description ? { name, description } : { name };
+      })
+      .filter((t) => t.name);
+
     const cleanData = {
       ...productForm,
       images: imagesArray,
+      features: featuresText,
+      technologies: technologiesClean,
       image_url: productForm.image_url || '',
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
       production_time_days: productForm.production_time_days ? Number(productForm.production_time_days) : null,
@@ -332,7 +350,9 @@ export default function ProductsNew() {
       discount_value: product.discount_value ?? '',
       sale_starts_at: saleStartsAt,
       sale_ends_at: saleEndsAt,
-      hardness: product.hardness ?? ''
+      hardness: product.hardness ?? '',
+      features: product.features || '',
+      technologies: Array.isArray(product.technologies) ? product.technologies : []
     });
     setIsProductDialogOpen(true);
   };
@@ -525,6 +545,109 @@ export default function ProductsNew() {
                     onChange={(e) => setProductForm({ ...productForm, description: e.target.value })}
                     rows={3} />
 
+            </div>
+
+            <div>
+              <Label>על המזרן</Label>
+              <Textarea
+                value={productForm.features}
+                onChange={(e) => setProductForm({ ...productForm, features: e.target.value })}
+                rows={5}
+                placeholder={'בד רך ונושם\n5 אזורי נוחות\nפילוטופ אינטגרלי'}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                יוצג באתר תחת &quot;על המזרן&quot;. כל שורה = פריט אחד. שורות ריקות יסוננו.
+              </p>
+            </div>
+
+            <div>
+              <Label>בתוך המזרן (טכנולוגיות)</Label>
+              <div className="space-y-2 mt-1">
+                {(productForm.technologies || []).map((tech, idx) => {
+                  const updateTech = (patch) => {
+                    const next = [...productForm.technologies];
+                    next[idx] = { ...next[idx], ...patch };
+                    setProductForm({ ...productForm, technologies: next });
+                  };
+                  const removeTech = () => {
+                    const next = productForm.technologies.filter((_, i) => i !== idx);
+                    setProductForm({ ...productForm, technologies: next });
+                  };
+                  const moveTech = (direction) => {
+                    const target = idx + direction;
+                    if (target < 0 || target >= productForm.technologies.length) return;
+                    const next = [...productForm.technologies];
+                    [next[idx], next[target]] = [next[target], next[idx]];
+                    setProductForm({ ...productForm, technologies: next });
+                  };
+                  return (
+                    <div key={idx} className="border rounded-md p-3 bg-muted/20">
+                      <div className="flex gap-2 items-start">
+                        <div className="flex-1 space-y-2">
+                          <Input
+                            placeholder="שם הטכנולוגיה (חובה)"
+                            value={tech?.name || ''}
+                            onChange={(e) => updateTech({ name: e.target.value })}
+                          />
+                          <Textarea
+                            placeholder="תיאור (אופציונלי)"
+                            value={tech?.description || ''}
+                            onChange={(e) => updateTech({ description: e.target.value })}
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => moveTech(-1)}
+                            disabled={idx === 0}
+                            aria-label="העבר למעלה"
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => moveTech(1)}
+                            disabled={idx === productForm.technologies.length - 1}
+                            aria-label="העבר למטה"
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={removeTech}
+                            aria-label="מחק"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setProductForm({
+                      ...productForm,
+                      technologies: [...(productForm.technologies || []), { name: '', description: '' }],
+                    })
+                  }
+                >
+                  <Plus className="h-4 w-4 mr-1" /> הוסף טכנולוגיה
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                יוצג באתר תחת &quot;בתוך המזרן&quot;. פריט ללא שם לא יישמר. סדר הפריטים משתקף באתר.
+              </p>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
