@@ -187,42 +187,11 @@ async function handleDirectInvite(body: Record<string, any>) {
 
   const supabase = createServiceClient();
 
-  // Send the invitation email via Supabase Auth. This triggers the built-in invite template.
-  const inviteOptions: Record<string, any> = {};
-  if (fullName) inviteOptions.data = { full_name: fullName };
-  if (redirectTo) inviteOptions.redirectTo = redirectTo;
-  const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
-    email,
-    Object.keys(inviteOptions).length ? inviteOptions : undefined,
-  );
-
-  let authUserId: string | null = inviteData?.user?.id ?? null;
-  let alreadyRegistered = false;
-
-  if (inviteError) {
-    const msg = inviteError.message?.toLowerCase() || '';
-    console.log('[directInvite] inviteUserByEmail error', { message: inviteError.message });
-    if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
-      alreadyRegistered = true;
-      // Look up the existing auth user so we can still link the profile.
-      const { data: listData } = await supabase.auth.admin.listUsers();
-      const found = listData?.users?.find((u: { email?: string }) => u.email === email);
-      if (found) authUserId = found.id;
-    } else {
-      return Response.json({ error: inviteError.message }, { status: 400, headers: corsHeaders });
-    }
-  } else {
-    console.log('[directInvite] invite email sent', { authUserId });
-  }
-
-  // Upsert the users-table profile so role/full_name/auth_id stay in sync with the invite.
-  const profileFields: Record<string, any> = { role };
-  if (fullName) profileFields.full_name = fullName;
-  if (authUserId) profileFields.auth_id = authUserId;
-
+  // Step 1: ensure the users-table row exists first so the rep shows up as "pending"
+  // in the CRM even if the invitation email later fails (e.g. SMTP rate limit).
   const { data: existingProfiles, error: lookupError } = await supabase
     .from('users')
-    .select('id')
+    .select('id, auth_id')
     .eq('email', email);
 
   if (lookupError) {
@@ -230,34 +199,87 @@ async function handleDirectInvite(body: Record<string, any>) {
     return Response.json({ error: `Profile lookup failed: ${lookupError.message}` }, { status: 500, headers: corsHeaders });
   }
 
-  let profileError: { message: string } | null = null;
-  if (existingProfiles && existingProfiles.length > 0) {
-    const { error } = await supabase.from('users').update(profileFields).eq('id', existingProfiles[0].id);
-    profileError = error;
+  const hasExistingProfile = !!(existingProfiles && existingProfiles.length > 0);
+  const profileBase: Record<string, any> = {
+    role,
+    full_name: fullName || email.split('@')[0],
+  };
+
+  if (hasExistingProfile) {
+    const { error } = await supabase.from('users').update(profileBase).eq('id', existingProfiles![0].id);
+    if (error) {
+      console.error('[directInvite] profile update failed', error);
+      return Response.json({ error: `Profile update failed: ${error.message}` }, { status: 500, headers: corsHeaders });
+    }
   } else {
-    // Fill required columns defensively so NOT NULL constraints don't silently fail the insert.
-    const insertPayload: Record<string, any> = {
+    const { error } = await supabase.from('users').insert({
       email,
-      full_name: fullName || email.split('@')[0],
       is_active: true,
-      ...profileFields,
-    };
-    const { error } = await supabase.from('users').insert(insertPayload);
-    profileError = error;
+      ...profileBase,
+    });
+    if (error) {
+      console.error('[directInvite] profile insert failed', error);
+      return Response.json({ error: `Profile insert failed: ${error.message}` }, { status: 500, headers: corsHeaders });
+    }
   }
 
-  if (profileError) {
-    console.error('[directInvite] profile upsert failed', profileError);
-    return Response.json({
-      error: `Invitation email ${alreadyRegistered ? 'skipped' : 'sent'}, but profile sync failed: ${profileError.message}`,
-    }, { status: 500, headers: corsHeaders });
+  // Step 2: try to send the invitation email. A failure here (rate limit, SMTP misconfig, etc.)
+  // should NOT undo the profile row — the rep is already in the list as pending, and the admin
+  // can resend later.
+  const inviteOptions: Record<string, any> = {};
+  if (fullName) inviteOptions.data = { full_name: fullName };
+  if (redirectTo) inviteOptions.redirectTo = redirectTo;
+
+  const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(
+    email,
+    Object.keys(inviteOptions).length ? inviteOptions : undefined,
+  );
+
+  let authUserId: string | null = inviteData?.user?.id ?? null;
+  let alreadyRegistered = false;
+  let emailSent = !inviteError;
+  let emailError: string | null = null;
+
+  if (inviteError) {
+    const msg = inviteError.message?.toLowerCase() || '';
+    console.log('[directInvite] inviteUserByEmail error', { message: inviteError.message });
+    if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+      alreadyRegistered = true;
+      // Link the existing auth user to the profile so future logins resolve.
+      const { data: listData } = await supabase.auth.admin.listUsers();
+      const found = listData?.users?.find((u: { email?: string }) => u.email === email);
+      if (found) authUserId = found.id;
+    } else {
+      emailError = inviteError.message;
+    }
+  } else {
+    console.log('[directInvite] invite email sent', { authUserId });
   }
 
-  console.log('[directInvite] done', { email, role, alreadyRegistered });
+  // Step 3: if we now have an auth_id, link it to the profile.
+  if (authUserId) {
+    const { error } = await supabase.from('users').update({ auth_id: authUserId }).eq('email', email);
+    if (error) {
+      console.error('[directInvite] auth_id link failed', error);
+    }
+  }
+
+  console.log('[directInvite] done', { email, role, emailSent, alreadyRegistered, emailError });
+
+  // Profile exists either way. Surface email outcome so the UI can message correctly.
+  const message = emailSent
+    ? 'Invitation sent'
+    : alreadyRegistered
+      ? 'User already registered; profile updated (no new email sent)'
+      : `Profile created, but invitation email failed: ${emailError}`;
+
   return Response.json({
-    message: alreadyRegistered ? 'User already registered; profile updated' : 'Invitation sent',
+    message,
     email,
     role,
+    profile_created: !hasExistingProfile,
     already_registered: alreadyRegistered,
+    email_sent: emailSent,
+    email_error: emailError,
   }, { headers: corsHeaders });
 }

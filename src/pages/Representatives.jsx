@@ -104,10 +104,16 @@ export default function Representatives() {
       setShowInviteDialog(false);
       setInviteEmail('');
       setInviteRole('sales_user');
-      toast.success(data?.already_registered ? 'המשתמש כבר רשום — הפרופיל עודכן' : 'ההזמנה נשלחה במייל');
+      if (data?.email_sent) {
+        toast.success('הנציג נוסף וההזמנה נשלחה במייל');
+      } else if (data?.already_registered) {
+        toast.success('המשתמש כבר רשום — הפרופיל עודכן ברשימה');
+      } else {
+        toast.warning(`הנציג נוסף לרשימה (בהמתנה), אך שליחת המייל נכשלה: ${data?.email_error || 'שגיאה לא ידועה'}. נסה שוב בהמשך.`);
+      }
     },
     onError: (err) => {
-      toast.error(`שליחת ההזמנה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+      toast.error(`הוספת הנציג נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     },
   });
 
