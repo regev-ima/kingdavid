@@ -39,7 +39,10 @@ export default function ExtraCharges() {
 
   const { data: extraCharges = [], isLoading } = useQuery({
     queryKey: ['extraCharges'],
-    queryFn: () => base44.entities.ExtraCharge.list('-sort_order'),
+    // Was '-sort_order'; that column doesn't exist on extra_charges in this
+    // schema, so the GET 400'd with `column "sort_order" does not exist` and
+    // the page rendered empty. created_date is set automatically and is safe.
+    queryFn: () => base44.entities.ExtraCharge.list('-created_date'),
   });
 
   // Surface the real Postgres error rather than swallowing it. The PostgREST
