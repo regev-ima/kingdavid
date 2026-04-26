@@ -26,9 +26,11 @@ import {
 } from "@/components/ui/select";
 import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
+import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { canAccessAdminOnly } from '@/lib/rbac';
+import { supabase } from '@/api/supabaseClient';
 
 export default function Representatives() {
   const [user, setUser] = useState(null);
@@ -70,10 +72,23 @@ export default function Representatives() {
     queryFn: () => base44.entities.User.list(),
   });
 
-  const { data: leadCounters = [] } = useQuery({
-    queryKey: ['leadCounters'],
-    queryFn: () => base44.entities.LeadCounter.list(),
+  // Aggregated per-rep stats (total/active/closed_won/closed_lost) and
+  // last_sign_in_at, all in a single round-trip via the public.rep_stats view.
+  const { data: repStatsRows = [] } = useQuery({
+    queryKey: ['repStats'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('rep_stats').select('*');
+      if (error) throw error;
+      return data;
+    },
   });
+  const repStatsByEmail = React.useMemo(() => {
+    const map = new Map();
+    for (const row of repStatsRows) {
+      if (row?.email) map.set(row.email.toLowerCase(), row);
+    }
+    return map;
+  }, [repStatsRows]);
 
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
     queryKey: ['leads'],
@@ -350,27 +365,13 @@ export default function Representatives() {
   };
 
   const getRepStats = (repEmail) => {
-    // Get stats from LeadCounter entity for accurate counts
-    const totalCounter = leadCounters.find(c => c.rep_email === repEmail && c.counter_key === 'total');
-    const closedCounter = leadCounters.find(c => c.rep_email === repEmail && c.counter_key === 'deal_closed');
-    
-    const total = totalCounter?.count || 0;
-    const won = closedCounter?.count || 0;
-    
-    // Calculate active leads (total minus closed)
-    const active = total - won;
-
+    const row = repEmail ? repStatsByEmail.get(repEmail.toLowerCase()) : null;
     return {
-      total,
-      won,
-      active,
-      new: 0,
-      assigned: 0,
-      contacted: 0,
-      qualified: 0,
-      quote_sent: 0,
-      negotiating: 0,
-      lost: 0,
+      total: row?.total_leads ?? 0,
+      active: row?.active_leads ?? 0,
+      won: row?.closed_won ?? 0,
+      lost: row?.closed_lost ?? 0,
+      lastSignIn: row?.last_sign_in_at ?? null,
     };
   };
 
@@ -854,7 +855,7 @@ export default function Representatives() {
               <div>
                 <p className="text-sm text-muted-foreground">הוזמנו ולא נכנסו</p>
                 <p className="text-2xl font-bold">
-                  {activeReps.filter(r => !r.last_login).length}
+                  {activeReps.filter(r => !repStatsByEmail.get(r.email?.toLowerCase())?.last_sign_in_at).length}
                 </p>
               </div>
               <Clock className="h-10 w-10 text-amber-600" />
@@ -1056,19 +1057,24 @@ export default function Representatives() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800">
-                        {stats.won}
+                      <span
+                        className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800"
+                        title={`נסגרה עסקה: ${stats.won} | לא רלוונטי: ${stats.lost}`}
+                      >
+                        {stats.won + stats.lost}
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      {rep.last_login ? (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          <span>{formatDistanceToNow(new Date(rep.last_login), { addSuffix: true, locale: he })}</span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/70">-</span>
-                      )}
+                      {(() => {
+                        const lastSignIn = parseDbTimestamp(stats.lastSignIn);
+                        if (!lastSignIn) return <span className="text-xs text-muted-foreground/70">-</span>;
+                        return (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            <span>{formatDistanceToNow(lastSignIn, { addSuffix: true, locale: he })}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-center gap-1">
