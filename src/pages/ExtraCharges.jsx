@@ -33,7 +33,6 @@ export default function ExtraCharges() {
     description: '',
     cost: 0,
     is_active: true,
-    sort_order: 0,
   });
 
   const queryClient = useQueryClient();
@@ -43,11 +42,23 @@ export default function ExtraCharges() {
     queryFn: () => base44.entities.ExtraCharge.list('-sort_order'),
   });
 
-  // Surface the real Postgres error rather than swallowing it. Without these
-  // the dialog just closed (or stayed open) with no feedback and "צור" looked
-  // like a no-op when an INSERT actually failed (e.g. RLS / missing column).
-  const describeMutationError = (err) =>
-    err?.message || err?.details || err?.hint || (typeof err === 'string' ? err : JSON.stringify(err));
+  // Surface the real Postgres error rather than swallowing it. The PostgREST
+  // error body has separate message / details / hint fields; show them all
+  // so we don't have to dig in DevTools to find which one populated.
+  const describeMutationError = (err) => {
+    const parts = [err?.message, err?.details, err?.hint, err?.code]
+      .map((p) => (p == null || p === '' ? null : String(p)))
+      .filter(Boolean);
+    if (parts.length) return parts.join(' — ');
+    return typeof err === 'string' ? err : JSON.stringify(err);
+  };
+
+  // Persistent toasts (duration: Infinity until dismissed) so a real Postgres
+  // error doesn't slide off the screen before the user can read it.
+  const errorToast = (label, err) => {
+    console.error(label, { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+    toast.error(`${label}: ${describeMutationError(err)}`, { duration: Infinity });
+  };
 
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.ExtraCharge.create(data),
@@ -57,10 +68,7 @@ export default function ExtraCharges() {
       resetForm();
       toast.success('התוספת נוצרה');
     },
-    onError: (err) => {
-      console.error('[ExtraCharges] create failed', err);
-      toast.error(`יצירת תוספת נכשלה: ${describeMutationError(err)}`);
-    },
+    onError: (err) => errorToast('יצירת תוספת נכשלה', err),
   });
 
   const updateMutation = useMutation({
@@ -71,10 +79,7 @@ export default function ExtraCharges() {
       resetForm();
       toast.success('התוספת עודכנה');
     },
-    onError: (err) => {
-      console.error('[ExtraCharges] update failed', err);
-      toast.error(`עדכון תוספת נכשל: ${describeMutationError(err)}`);
-    },
+    onError: (err) => errorToast('עדכון תוספת נכשל', err),
   });
 
   const deleteMutation = useMutation({
@@ -83,14 +88,11 @@ export default function ExtraCharges() {
       queryClient.invalidateQueries(['extraCharges']);
       toast.success('התוספת נמחקה');
     },
-    onError: (err) => {
-      console.error('[ExtraCharges] delete failed', err);
-      toast.error(`מחיקת תוספת נכשלה: ${describeMutationError(err)}`);
-    },
+    onError: (err) => errorToast('מחיקת תוספת נכשלה', err),
   });
 
   const resetForm = () => {
-    setFormData({ name: '', description: '', cost: 0, is_active: true, sort_order: 0 });
+    setFormData({ name: '', description: '', cost: 0, is_active: true });
     setEditingCharge(null);
   };
 
