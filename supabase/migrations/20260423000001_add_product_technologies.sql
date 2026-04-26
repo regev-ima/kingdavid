@@ -13,9 +13,12 @@ ALTER TABLE public.products
 
 -- 2. RPC ------------------------------------------------------------
 -- Re-create the RPC with technologies appended to RETURNS TABLE and SELECT.
+-- CREATE OR REPLACE can't change the RETURNS TABLE signature, so drop + create.
 -- All other columns, ORDER BY, filters, SECURITY DEFINER and search_path
 -- are preserved verbatim.
-CREATE OR REPLACE FUNCTION public.website_get_products()
+DROP FUNCTION IF EXISTS public.website_get_products();
+
+CREATE FUNCTION public.website_get_products()
  RETURNS TABLE(
     id                   uuid,
     name                 text,
