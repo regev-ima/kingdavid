@@ -133,11 +133,12 @@ export default function NewTicket() {
       const slaHours = slaDurations[data.priority];
       const slaDueDate = addHours(new Date(), slaHours);
 
-      // Drop null customer_id / lead_id so we don't violate FK if those
-      // columns require a real id. The DB happily accepts the absent keys.
-      const payload = { ...data };
-      if (!payload.customer_id) delete payload.customer_id;
-      if (!payload.lead_id) delete payload.lead_id;
+      // support_tickets in this account's deployed schema does NOT yet have
+      // customer_id / lead_id columns (PGRST204 confirmed). Strip them out
+      // of the payload until the matching migration runs — the auto-filled
+      // name / phone / email already give the agent everything needed to
+      // identify the customer.
+      const { customer_id: _cid, lead_id: _lid, ...payload } = data;
 
       return base44.entities.SupportTicket.create({
         ...payload,
