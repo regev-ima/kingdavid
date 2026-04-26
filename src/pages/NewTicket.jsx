@@ -140,6 +140,16 @@ export default function NewTicket() {
       // identify the customer.
       const { customer_id: _cid, lead_id: _lid, ...payload } = data;
 
+      // Postgres UUID columns reject "" (22P02 invalid input syntax). The
+      // form initializes order_id with `urlParams.get('order_id') || ''`, so
+      // a ticket opened from /Support (no order context) was sending "" and
+      // failing. Convert empty strings on any uuid-typed key to null. Keep
+      // this list narrow — only fields we know are UUID columns.
+      const UUID_KEYS = ['order_id'];
+      for (const key of UUID_KEYS) {
+        if (payload[key] === '') payload[key] = null;
+      }
+
       return base44.entities.SupportTicket.create({
         ...payload,
         ticket_number: newNumber,
