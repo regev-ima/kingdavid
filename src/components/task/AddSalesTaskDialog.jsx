@@ -1,16 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
-import { X, Phone, Users, FileText, ShoppingCart } from "lucide-react";
+import { X, Phone, Users, FileText, ShoppingCart, Search, UserCheck } from "lucide-react";
+
+// Strip everything but digits, then drop a leading country prefix so any
+// stored form ("0537772829", "053-777-2829", "+972537772829") matches.
+function normalizePhoneForLeadLookup(raw) {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
+  return digits;
+}
 // import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS } from '@/constants/leadOptions';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
-import { canAccessSalesWorkspace, filterLeadsForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
+import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/components/shared/rbac';
 
 const TASK_TYPE_OPTIONS = [
   { value: 'call', label: 'שיחה', emoji: '📞' },
@@ -60,10 +70,40 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
   });
   const [validationError, setValidationError] = useState('');
 
-  const { data: leads = [] } = useQuery({
-    queryKey: ['leads-for-task'],
-    queryFn: () => base44.entities.Lead.list('-created_date', 500),
-    enabled: isOpen && canAccessSales,
+  // Lead picker — search by phone or name against the entire DB (the previous
+  // .list(500) dropdown couldn't reach a 100k-row leads table). Picked lead is
+  // stored in `pickedLead` so the form can show it pinned without doing a
+  // second lookup; clearing the pick re-enables search.
+  const [leadSearch, setLeadSearch] = useState('');
+  const [debouncedLeadSearch, setDebouncedLeadSearch] = useState('');
+  const [pickedLead, setPickedLead] = useState(preSelectedLead || null);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedLeadSearch(leadSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [leadSearch]);
+
+  const phoneTail = useMemo(() => {
+    const norm = normalizePhoneForLeadLookup(debouncedLeadSearch);
+    return norm.length >= 4 ? norm.slice(-9) : '';
+  }, [debouncedLeadSearch]);
+
+  const lookupEnabled = isOpen && canAccessSales && !pickedLead && debouncedLeadSearch.length >= 2;
+
+  const { data: leadMatches = [] } = useQuery({
+    queryKey: ['leads-for-task-lookup', debouncedLeadSearch],
+    enabled: lookupEnabled,
+    staleTime: 60_000,
+    queryFn: () => base44.entities.Lead.filter(
+      {
+        $or: [
+          { full_name: { $regex: debouncedLeadSearch, $options: 'i' } },
+          { phone:     { $regex: phoneTail || debouncedLeadSearch, $options: 'i' } },
+          { email:     { $regex: debouncedLeadSearch, $options: 'i' } },
+        ],
+      },
+      '-created_date',
+      8,
+    ),
   });
 
   const { data: users = [] } = useQuery({
@@ -74,6 +114,7 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
 
   useEffect(() => {
     if (preSelectedLead) {
+      setPickedLead(preSelectedLead);
       setFormData(prev => ({
         ...prev,
         lead_id: preSelectedLead.id,
@@ -82,6 +123,32 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
       }));
     }
   }, [preSelectedLead]);
+
+  // Reset all the lookup state along with the form when the dialog closes.
+  useEffect(() => {
+    if (!isOpen) {
+      setLeadSearch('');
+      setDebouncedLeadSearch('');
+      if (!preSelectedLead) setPickedLead(null);
+    }
+  }, [isOpen, preSelectedLead]);
+
+  const handlePickLead = (lead) => {
+    setPickedLead(lead);
+    setFormData(prev => ({
+      ...prev,
+      lead_id: lead.id,
+      rep1: lead.rep1 || prev.rep1,
+      status: lead.status || '',
+    }));
+    setLeadSearch('');
+    setDebouncedLeadSearch('');
+  };
+
+  const handleClearPickedLead = () => {
+    setPickedLead(null);
+    setFormData(prev => ({ ...prev, lead_id: '', status: '' }));
+  };
 
   useEffect(() => {
     if (isOpen && effectiveUser && !isAdmin && !formData.rep1) {
@@ -128,8 +195,6 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
     });
   };
 
-  const scopedLeads = filterLeadsForUser(effectiveUser, leads);
-  const selectedLead = scopedLeads.find(l => l.id === formData.lead_id);
   const salesUsers = users.filter(u => u.role === 'user' || u.role === 'admin');
 
   return (
@@ -146,35 +211,61 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
 
         <div className="space-y-5 pt-2">
           {/* ליד */}
-          {!preSelectedLead ? (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">ליד *</Label>
-              <Select value={formData.lead_id} onValueChange={(value) => {
-                const selectedLd = leads.find(l => l.id === value);
-                setFormData({ ...formData, lead_id: value, rep1: selectedLd?.rep1 || formData.rep1, status: selectedLd?.status || '' });
-              }}>
-                <SelectTrigger className="bg-muted">
-                  <SelectValue placeholder="בחר ליד..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {scopedLeads.map((lead) => (
-                    <SelectItem key={lead.id} value={lead.id}>
-                      {lead.full_name || lead.phone}{lead.phone ? ` · ${lead.phone}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedLead && (
-                <p className="text-xs text-muted-foreground pr-1">
-                  {selectedLead.phone}{selectedLead.city ? ` · ${selectedLead.city}` : ''}
+          {pickedLead ? (
+            <div className="bg-gradient-to-l from-blue-50 to-primary/5 border border-blue-100 rounded-xl p-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="font-bold text-foreground text-base flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-emerald-600" />
+                  {pickedLead.full_name || '(ללא שם)'}
                 </p>
+                {pickedLead.phone && <p className="text-sm text-muted-foreground mt-0.5">📞 {pickedLead.phone}</p>}
+                {pickedLead.email && <p className="text-sm text-muted-foreground">✉️ {pickedLead.email}</p>}
+              </div>
+              {!preSelectedLead && (
+                <Button type="button" variant="ghost" size="sm" onClick={handleClearPickedLead} className="h-7 px-2">
+                  <X className="h-3.5 w-3.5 me-1" />
+                  שנה
+                </Button>
               )}
             </div>
           ) : (
-            <div className="bg-gradient-to-l from-blue-50 to-primary/5 border border-blue-100 rounded-xl p-4">
-              <p className="font-bold text-foreground text-base">{preSelectedLead.full_name}</p>
-              {preSelectedLead.phone && <p className="text-sm text-muted-foreground mt-0.5">📞 {preSelectedLead.phone}</p>}
-              {preSelectedLead.email && <p className="text-sm text-muted-foreground">✉️ {preSelectedLead.email}</p>}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">ליד *</Label>
+              <div className="relative">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={leadSearch}
+                  onChange={(e) => setLeadSearch(e.target.value)}
+                  placeholder="הקלד טלפון או שם לחיפוש ליד..."
+                  className="pr-10 bg-muted"
+                  autoFocus
+                />
+              </div>
+              {debouncedLeadSearch.length >= 2 ? (
+                leadMatches.length > 0 ? (
+                  <div className="rounded-md border border-border bg-white max-h-64 overflow-y-auto divide-y divide-border/50">
+                    {leadMatches.map((lead) => (
+                      <button
+                        key={lead.id}
+                        type="button"
+                        onClick={() => handlePickLead(lead)}
+                        className="w-full text-right px-3 py-2 hover:bg-muted/60 transition-colors"
+                      >
+                        <div className="text-sm font-medium truncate">{lead.full_name || '(ללא שם)'}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {lead.phone || '-'}
+                          {lead.email ? ` • ${lead.email}` : ''}
+                          {lead.city ? ` • ${lead.city}` : ''}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground pr-1">לא נמצא ליד תואם.</p>
+                )
+              ) : (
+                <p className="text-xs text-muted-foreground pr-1">הקלד לפחות 2 תווים — חיפוש על כל הלידים בבסיס הנתונים.</p>
+              )}
             </div>
           )}
 
