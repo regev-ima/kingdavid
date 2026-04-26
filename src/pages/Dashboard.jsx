@@ -91,18 +91,31 @@ function resolveDrilldownUrl(link, replacements = {}) {
 function KpiTile({ title, value, subtitle, onClick, tone = 'primary' }) {
   const color = METRIC_COLOR[tone] || METRIC_COLOR.primary;
   const toneClass = KPI_TONE_CLASS[color] || KPI_TONE_CLASS.indigo;
+  const interactive = typeof onClick === 'function';
+
+  // Place the click handler on the whole Card (was on an inner <button> that
+  // didn't cover the card's padding, so clicks near the edges did nothing).
+  const handleKeyDown = (event) => {
+    if (!interactive) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClick(event);
+    }
+  };
+
   return (
-    <Card className={toneClass}>
-      <CardContent className="p-4">
-        <button
-          type="button"
-          onClick={onClick}
-          className="w-full text-right"
-        >
-          <p className="text-xs text-muted-foreground mb-1">{title}</p>
-          <p className="text-2xl font-bold text-foreground leading-none">{value}</p>
-          {subtitle ? <p className="text-xs text-muted-foreground mt-2">{subtitle}</p> : null}
-        </button>
+    <Card
+      className={`${toneClass} ${interactive ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary' : ''}`}
+      onClick={interactive ? onClick : undefined}
+      onKeyDown={handleKeyDown}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-label={interactive ? title : undefined}
+    >
+      <CardContent className="p-4 text-right">
+        <p className="text-xs text-muted-foreground mb-1">{title}</p>
+        <p className="text-2xl font-bold text-foreground leading-none">{value}</p>
+        {subtitle ? <p className="text-xs text-muted-foreground mt-2">{subtitle}</p> : null}
       </CardContent>
     </Card>
   );
@@ -432,8 +445,24 @@ export default function Dashboard() {
             <div className="divide-y divide-border/50">
               {alerts.map((alert) => {
                 const severity = SEVERITY_BADGE[alert.severity] || SEVERITY_BADGE.low;
+                const interactive = !!alert.action_link;
+                const handleOpen = () => goTo(alert.action_link);
                 return (
-                  <div key={alert.id} className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div
+                    key={alert.id}
+                    className={`p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 ${interactive ? 'cursor-pointer hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:bg-muted/60' : ''}`}
+                    onClick={interactive ? handleOpen : undefined}
+                    onKeyDown={(event) => {
+                      if (!interactive) return;
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleOpen();
+                      }
+                    }}
+                    role={interactive ? 'button' : undefined}
+                    tabIndex={interactive ? 0 : undefined}
+                    aria-label={interactive ? alert.reason : undefined}
+                  >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant={severity.variant}>{severity.label}</Badge>
@@ -443,7 +472,14 @@ export default function Dashboard() {
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">השפעה: {alert.impact || 0}</span>
-                      <Button size="sm" variant="outline" onClick={() => goTo(alert.action_link)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleOpen();
+                        }}
+                      >
                         פתח
                       </Button>
                     </div>
