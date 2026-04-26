@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -21,80 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Globe, Search, TrendingUp, Users, FileText, DollarSign, ArrowUpDown } from 'lucide-react';
+import { Globe, Search, ArrowUpDown } from 'lucide-react';
 
 function formatCurrency(v) {
   return `₪${Number(v || 0).toLocaleString()}`;
-}
-
-async function fetchAll(entity, query, sort = '-created_date') {
-  const all = [];
-  let skip = 0;
-  const BATCH = 500;
-  while (true) {
-    const batch = await base44.entities[entity].filter(query, sort, BATCH, skip);
-    all.push(...batch);
-    if (batch.length < BATCH) break;
-    skip += BATCH;
-  }
-  return all;
-}
-
-function aggregateLandingPages(leads, orders, quotes) {
-  const leadsById = new Map(leads.map(l => [l.id, l]));
-  const lpMap = new Map();
-
-  const getRow = (lp) => {
-    if (!lpMap.has(lp)) {
-      lpMap.set(lp, {
-        landing_page: lp,
-        sources: new Set(),
-        total_leads: 0,
-        won_leads: 0,
-        quote_leads: 0,
-        open_leads: 0,
-        revenue: 0,
-        statuses: {},
-      });
-    }
-    return lpMap.get(lp);
-  };
-
-  const quoteLeadIds = new Set(quotes.map(q => q.lead_id).filter(Boolean));
-
-  leads.forEach(lead => {
-    const lp = (lead.landing_page || '').trim() || 'ללא דף נחיתה';
-    const row = getRow(lp);
-    row.total_leads += 1;
-    if (lead.utm_source || lead.source) row.sources.add(lead.utm_source || lead.source);
-    if (lead.status === 'deal_closed') row.won_leads += 1;
-    if (quoteLeadIds.has(lead.id)) row.quote_leads += 1;
-
-    const closed = new Set([
-      'deal_closed','not_relevant_duplicate','mailing_remove_request',
-      'lives_far_phone_concern','products_not_available','not_relevant_bought_elsewhere',
-      'not_relevant_1000_nis','not_relevant_denies_contact','not_relevant_service',
-      'not_interested_hangs_up','not_relevant_no_explanation','heard_price_not_interested',
-      'not_relevant_wrong_number','closed_by_manager_to_mailing'
-    ]);
-    if (!closed.has(lead.status)) row.open_leads += 1;
-
-    const status = lead.status || 'unknown';
-    row.statuses[status] = (row.statuses[status] || 0) + 1;
-  });
-
-  orders.forEach(order => {
-    const lead = order.lead_id ? leadsById.get(order.lead_id) : null;
-    const lp = (lead?.landing_page || '').trim() || 'ללא דף נחיתה';
-    getRow(lp).revenue += Number(order.total || 0);
-  });
-
-  return Array.from(lpMap.values()).map(row => ({
-    ...row,
-    sources: Array.from(row.sources).join(', ') || '-',
-    conversion_rate: row.total_leads > 0 ? Math.round((row.won_leads / row.total_leads) * 1000) / 10 : 0,
-    quote_rate: row.total_leads > 0 ? Math.round((row.quote_leads / row.total_leads) * 1000) / 10 : 0,
-  }));
 }
 
 export default function LandingPages() {
@@ -103,52 +32,55 @@ export default function LandingPages() {
   const [sortDir, setSortDir] = useState('desc');
   const [sourceFilter, setSourceFilter] = useState('all');
 
-  const { data: leads, isLoading: leadsLoading } = useQuery({
-    queryKey: ['landing-pages-leads'],
-    queryFn: () => fetchAll('Lead', {}, '-created_date'),
+  // Single round-trip — public.landing_pages_stats does the per-landing-page
+  // aggregation server-side (see supabase/migrations/.._landing_pages_stats_view.sql).
+  // The previous fetchAll() approach pulled every lead/order/quote in 500-row
+  // batches and aggregated in the browser, which timed out on a 100k-lead
+  // dataset and made the page unloadable.
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['landingPagesStats'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('landing_pages_stats').select('*');
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000,
   });
-
-  const { data: orders, isLoading: ordersLoading } = useQuery({
-    queryKey: ['landing-pages-orders'],
-    queryFn: () => fetchAll('Order', {}, '-created_date'),
-  });
-
-  const { data: quotes, isLoading: quotesLoading } = useQuery({
-    queryKey: ['landing-pages-quotes'],
-    queryFn: () => fetchAll('Quote', {}, '-created_date'),
-  });
-
-  const isLoading = leadsLoading || ordersLoading || quotesLoading;
-
-  const rows = useMemo(() => {
-    if (!leads || !orders || !quotes) return [];
-    return aggregateLandingPages(leads, orders, quotes);
-  }, [leads, orders, quotes]);
 
   const allSources = useMemo(() => {
     const s = new Set();
-    (leads || []).forEach(l => {
-      if (l.utm_source || l.source) s.add(l.utm_source || l.source);
+    rows.forEach(r => {
+      if (!r.sources || r.sources === '-') return;
+      r.sources.split(',').forEach(part => {
+        const t = part.trim();
+        if (t) s.add(t);
+      });
     });
     return Array.from(s).sort();
-  }, [leads]);
+  }, [rows]);
 
   const filteredRows = useMemo(() => {
     let result = rows;
 
     if (search) {
       const q = search.toLowerCase();
-      result = result.filter(r => r.landing_page.toLowerCase().includes(q) || r.sources.toLowerCase().includes(q));
+      result = result.filter(r =>
+        r.landing_page?.toLowerCase().includes(q) ||
+        r.sources?.toLowerCase().includes(q)
+      );
     }
 
     if (sourceFilter !== 'all') {
-      result = result.filter(r => r.sources.includes(sourceFilter));
+      result = result.filter(r => r.sources?.includes(sourceFilter));
     }
 
-    result.sort((a, b) => {
+    result = [...result].sort((a, b) => {
       const aVal = a[sortField] ?? 0;
       const bVal = b[sortField] ?? 0;
-      return sortDir === 'desc' ? (bVal > aVal ? 1 : -1) : (aVal > bVal ? 1 : -1);
+      if (typeof aVal === 'string' || typeof bVal === 'string') {
+        return sortDir === 'desc' ? String(bVal).localeCompare(String(aVal)) : String(aVal).localeCompare(String(bVal));
+      }
+      return sortDir === 'desc' ? Number(bVal) - Number(aVal) : Number(aVal) - Number(bVal);
     });
 
     return result;
@@ -156,11 +88,11 @@ export default function LandingPages() {
 
   const totals = useMemo(() => {
     return filteredRows.reduce((acc, r) => ({
-      leads: acc.leads + r.total_leads,
-      won: acc.won + r.won_leads,
-      quotes: acc.quotes + r.quote_leads,
-      revenue: acc.revenue + r.revenue,
-      open: acc.open + r.open_leads,
+      leads: acc.leads + (Number(r.total_leads) || 0),
+      won: acc.won + (Number(r.won_leads) || 0),
+      quotes: acc.quotes + (Number(r.quote_leads) || 0),
+      revenue: acc.revenue + (Number(r.revenue) || 0),
+      open: acc.open + (Number(r.open_leads) || 0),
     }), { leads: 0, won: 0, quotes: 0, revenue: 0, open: 0 });
   }, [filteredRows]);
 
@@ -308,7 +240,7 @@ export default function LandingPages() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs text-muted-foreground">{row.sources}</span>
+                        <span className="text-xs text-muted-foreground">{row.sources || '-'}</span>
                       </TableCell>
                       <TableCell className="font-semibold">{row.total_leads}</TableCell>
                       <TableCell>{row.open_leads}</TableCell>
