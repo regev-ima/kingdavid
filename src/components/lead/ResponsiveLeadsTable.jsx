@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { AlertCircle, Phone, Globe } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
@@ -37,8 +37,8 @@ function getSlaData(row) {
   }
 
   const now = new Date();
-  const created = new Date(String(row.created_date).includes('Z') ? row.created_date : row.created_date + 'Z');
-  if (isNaN(created.getTime())) return { label: '-', className: 'text-muted-foreground/70' };
+  const created = parseDbTimestamp(row.created_date);
+  if (!created) return { label: '-', className: 'text-muted-foreground/70' };
   const diffMinutes = Math.floor((now - created) / 1000 / 60);
 
   let className = 'text-green-600';
@@ -84,11 +84,7 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
   const isSelectionMode = selectedIds.length > 0;
   const sla = getSlaData(row);
   const rep = getRepDisplay(row, users);
-  const dateStr = row.created_date
-    ? String(row.created_date).includes('Z')
-      ? row.created_date
-      : `${row.created_date}Z`
-    : new Date().toISOString();
+  const createdDate = parseDbTimestamp(row.created_date) ?? new Date();
 
   const handleCardClick = () => {
     if (isSelectionMode) {
@@ -167,8 +163,8 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
         </div>
         <div className="rounded-xl bg-muted/40 p-3">
           <div className="text-xs text-muted-foreground mb-1">תאריך</div>
-          <div className="font-medium text-foreground/80">{formatInTimeZone(new Date(dateStr), 'Asia/Jerusalem', 'dd/MM/yyyy')}</div>
-          <div className="text-xs text-muted-foreground">{formatInTimeZone(new Date(dateStr), 'Asia/Jerusalem', 'HH:mm')}</div>
+          <div className="font-medium text-foreground/80">{formatInTimeZone(createdDate, 'Asia/Jerusalem', 'dd/MM/yyyy')}</div>
+          <div className="text-xs text-muted-foreground">{formatInTimeZone(createdDate, 'Asia/Jerusalem', 'HH:mm')}</div>
         </div>
       </div>
 
