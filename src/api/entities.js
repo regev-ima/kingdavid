@@ -90,29 +90,63 @@ function createEntityAPI(tableName) {
     async filter(filters, sort, limit, skip) {
       let query = supabase.from(tableName).select('*');
 
+      // Translate one {field: value} or {field: {$op: …}} pair into a
+      // PostgREST filter fragment ("field.op.value"). Supports the operator
+      // shapes the rest of this file uses: $regex (case-insensitive ILIKE),
+      // $eq, $ne, $gte/$lte/$gt/$lt, $in. Used by the $or and (nested) $and
+      // branches below.
+      const conditionPairToOrFragment = (k, v) => {
+        if (v === null) return `${k}.is.null`;
+        if (v === '') return `${k}.eq.`;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          if (v.$regex != null) return `${k}.ilike.*${v.$regex}*`;
+          if (v.$ilike != null) return `${k}.ilike.*${v.$ilike}*`;
+          if (v.$in != null) return `${k}.in.(${v.$in.join(',')})`;
+          if (v.$gte != null) return `${k}.gte.${v.$gte}`;
+          if (v.$lte != null) return `${k}.lte.${v.$lte}`;
+          if (v.$gt  != null) return `${k}.gt.${v.$gt}`;
+          if (v.$lt  != null) return `${k}.lt.${v.$lt}`;
+          if (v.$ne  != null) return `${k}.neq.${v.$ne}`;
+          if (v.$eq  != null) return `${k}.eq.${v.$eq}`;
+        }
+        if (Array.isArray(v)) return `${k}.in.(${v.join(',')})`;
+        return `${k}.eq.${v}`;
+      };
+
       if (filters) {
         for (const [key, value] of Object.entries(filters)) {
           // Handle Base44-style operators
           if (key === '$or' && Array.isArray(value)) {
             // $or: [{rep1: 'a'}, {rep2: 'a'}] → .or('rep1.eq.a,rep2.eq.a')
+            // Now also handles operator-shaped values like
+            //   { full_name: { $regex: 'רגב', $options: 'i' } }
+            // → "full_name.ilike.*רגב*", which used to silently degrade to
+            // "full_name.eq.[object Object]" and return 0 rows.
             const orParts = value.map(condition => {
-              return Object.entries(condition).map(([k, v]) => {
-                if (v === null) return `${k}.is.null`;
-                if (v === '') return `${k}.eq.`;
-                return `${k}.eq.${v}`;
-              }).join(',');
+              return Object.entries(condition).map(([k, v]) => conditionPairToOrFragment(k, v)).join(',');
             });
             query = query.or(orParts.join(','));
           } else if (key === '$and' && Array.isArray(value)) {
             for (const condition of value) {
               for (const [k, v] of Object.entries(condition)) {
-                if (v && typeof v === 'object' && !Array.isArray(v)) {
+                // Nested $or: [{...}, {...}] inside $and. Translate the
+                // sub-conditions through the same helper so a search
+                // {$and:[{status:'open'}, {$or:[{full_name:{$regex:..}}, ...]}]}
+                // compiles to a real PostgREST .or() filter rather than
+                // silently doing query.eq('$or', [array]).
+                if (k === '$or' && Array.isArray(v)) {
+                  const orParts = v.map(sub => Object.entries(sub).map(([sk, sv]) => conditionPairToOrFragment(sk, sv)).join(','));
+                  query = query.or(orParts.join(','));
+                } else if (v && typeof v === 'object' && !Array.isArray(v)) {
                   if (v.$gte) query = query.gte(k, v.$gte);
                   if (v.$lte) query = query.lte(k, v.$lte);
                   if (v.$lt) query = query.lt(k, v.$lt);
                   if (v.$gt) query = query.gt(k, v.$gt);
                   if (v.$ne) query = query.neq(k, v.$ne);
                   if (v.$nin) query = query.not(k, 'in', `(${v.$nin.join(',')})`);
+                  if (v.$in) query = query.in(k, v.$in);
+                  if (v.$regex != null) query = query.ilike(k, `%${v.$regex}%`);
+                  if (v.$ilike != null) query = query.ilike(k, `%${v.$ilike}%`);
                 } else {
                   if (v === null) query = query.is(k, null);
                   else query = query.eq(k, v);
