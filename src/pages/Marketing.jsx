@@ -115,12 +115,18 @@ export default function Marketing() {
   const filteredOrders = orders.filter(o => isWithinRange(o.created_date));
   const filteredMeetings = meetings.filter(m => isWithinRange(m.due_date || m.created_date));
 
-  // Apply detailed filters to leads
+  // Field accessors with Facebook Lead Ads fallbacks. Leads coming in via the
+  // Facebook integration populate facebook_* columns, not utm_*. Without these
+  // fallbacks the page treats every Facebook lead as "Unknown".
+  const getCampaign = (l) => l?.utm_campaign || l?.facebook_campaign_name || null;
+  const getAdName  = (l) => l?.utm_content  || l?.facebook_ad_name      || null;
+
+  // Apply detailed filters to leads (match against the same fallback chain).
   let displayLeads = filteredLeads;
   if (filters.utm_source !== 'all') displayLeads = displayLeads.filter(l => l.utm_source === filters.utm_source);
   if (filters.utm_medium !== 'all') displayLeads = displayLeads.filter(l => l.utm_medium === filters.utm_medium);
-  if (filters.utm_campaign !== 'all') displayLeads = displayLeads.filter(l => l.utm_campaign === filters.utm_campaign);
-  if (filters.utm_content !== 'all') displayLeads = displayLeads.filter(l => l.utm_content === filters.utm_content);
+  if (filters.utm_campaign !== 'all') displayLeads = displayLeads.filter(l => getCampaign(l) === filters.utm_campaign);
+  if (filters.utm_content !== 'all') displayLeads = displayLeads.filter(l => getAdName(l) === filters.utm_content);
 
   // Aggregations
   const totalCost = filteredCosts.reduce((sum, c) => sum + (c.amount || 0), 0);
@@ -181,7 +187,7 @@ export default function Marketing() {
   // 2. Ad Performance (Content)
   const adPerformance = useMemo(() => {
     return Object.values(displayLeads.reduce((acc, lead) => {
-      const ad = lead.utm_content || 'Unknown Ad';
+      const ad = getAdName(lead) || 'Unknown Ad';
       if (!acc[ad]) acc[ad] = { name: ad, leads: [], won: 0, revenue: 0 };
       acc[ad].leads.push(lead);
       if (lead.status === 'deal_closed') {
@@ -199,7 +205,7 @@ export default function Marketing() {
   // 3. Campaign Performance
   const processedCampaignData = useMemo(() => {
     const campaignPerformanceMap = displayLeads.reduce((acc, lead) => {
-      const campaign = lead.utm_campaign || 'Unknown Campaign';
+      const campaign = getCampaign(lead) || 'Unknown Campaign';
       if (!acc[campaign]) acc[campaign] = { name: campaign, leads: [], won: 0, revenue: 0, cost: 0 };
       acc[campaign].leads.push(lead);
       if (lead.status === 'deal_closed') {
@@ -233,9 +239,10 @@ export default function Marketing() {
     { name: 'נסגרו', value: meetingsWon }
   ];
 
-  // Filters Options
+  // Filters Options — pull campaign names from utm_campaign + facebook_campaign_name
+  // so the dropdown actually lists Facebook leads' campaigns alongside UTM ones.
   const uniqueSources = [...new Set(filteredLeads.map(l => l.utm_source).filter(Boolean))];
-  const uniqueCampaigns = [...new Set(filteredLeads.map(l => l.utm_campaign).filter(Boolean))];
+  const uniqueCampaigns = [...new Set(filteredLeads.map(getCampaign).filter(Boolean))].sort();
 
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
@@ -649,8 +656,8 @@ export default function Marketing() {
                           </span>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{lead.utm_source || '-'}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{lead.utm_campaign || '-'}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{lead.utm_content || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{getCampaign(lead) || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{getAdName(lead) || '-'}</TableCell>
                       </TableRow>
                     ))
                   )}
@@ -695,7 +702,7 @@ export default function Marketing() {
                         </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{lead.utm_source || lead.source || '-'}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{lead.utm_campaign || '-'}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{getCampaign(lead) || '-'}</TableCell>
                     </TableRow>
                   ))
                 )}
