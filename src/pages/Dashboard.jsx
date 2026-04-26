@@ -248,7 +248,51 @@ export default function Dashboard() {
     }
   };
 
-  const drilldowns = stats?.drilldowns_meta || {};
+  // Frontend-side defaults for drilldown URLs. The deployed getDashboardStats
+  // Edge Function doesn't include `drilldowns_meta` in its payload, so without
+  // these defaults `goTo(undefined)` did nothing and the KPI cards looked
+  // clickable but had nowhere to navigate to. If the backend ever starts
+  // returning drilldowns_meta, those win (server-supplied wins over default).
+  const startIso = dateRange?.from ? new Date(dateRange.from).toISOString() : undefined;
+  const endIso = dateRange?.to ? new Date(dateRange.to).toISOString() : undefined;
+  const defaultDrilldowns = useMemo(() => ({
+    summary_kpis: {
+      revenue: { page: 'Orders', query: { tab: 'all' } },
+      conversion: { page: 'Leads', query: { tab: 'open' } },
+      sla: { page: 'Leads', query: { tab: 'open' } },
+      open_workload: { page: 'SalesTasks', query: { tab: 'not_completed' } },
+    },
+    live_pipeline: {
+      tasks_overdue: { page: 'SalesTasks', query: { tab: 'overdue' } },
+      tasks_today: { page: 'SalesTasks', query: { tab: 'today' } },
+      sla_red_open: { page: 'Leads', query: { tab: 'open' } },
+      pending_quotes: { page: 'Quotes', query: { tab: 'pending' } },
+    },
+    sales_performance: {
+      rep_row: {
+        page: 'Leads',
+        query: {
+          tab: 'all',
+          rep1: '{rep_email}',
+          repScope: 'primary',
+          ...(startIso ? { startDate: startIso } : {}),
+          ...(endIso ? { endDate: endIso } : {}),
+        },
+      },
+    },
+    marketing_performance: {
+      source_row: { page: 'Leads', query: { tab: 'all', source: '{source}' } },
+      campaign_row: { page: 'Marketing', query: { utm_campaign: '{campaign}' } },
+    },
+    smart_alerts: {
+      sla_red: { page: 'Leads', query: { tab: 'open' } },
+      tasks_overdue: { page: 'SalesTasks', query: { tab: 'overdue' } },
+      failing_campaign: { page: 'Marketing', query: {} },
+      expiring_quotes: { page: 'Quotes', query: { tab: 'expiring' } },
+    },
+  }), [startIso, endIso]);
+
+  const drilldowns = stats?.drilldowns_meta || defaultDrilldowns;
   const summary = stats?.summary_kpis || {};
   const live = stats?.live_pipeline || {};
   const repRows = stats?.sales_performance?.reps || [];

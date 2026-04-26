@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,7 @@ export default function ExtraCharges() {
     description: '',
     cost: 0,
     is_active: true,
+    sort_order: 0,
   });
 
   const queryClient = useQueryClient();
@@ -41,12 +43,23 @@ export default function ExtraCharges() {
     queryFn: () => base44.entities.ExtraCharge.list('-sort_order'),
   });
 
+  // Surface the real Postgres error rather than swallowing it. Without these
+  // the dialog just closed (or stayed open) with no feedback and "צור" looked
+  // like a no-op when an INSERT actually failed (e.g. RLS / missing column).
+  const describeMutationError = (err) =>
+    err?.message || err?.details || err?.hint || (typeof err === 'string' ? err : JSON.stringify(err));
+
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.ExtraCharge.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries(['extraCharges']);
       setIsDialogOpen(false);
       resetForm();
+      toast.success('התוספת נוצרה');
+    },
+    onError: (err) => {
+      console.error('[ExtraCharges] create failed', err);
+      toast.error(`יצירת תוספת נכשלה: ${describeMutationError(err)}`);
     },
   });
 
@@ -56,6 +69,11 @@ export default function ExtraCharges() {
       queryClient.invalidateQueries(['extraCharges']);
       setIsDialogOpen(false);
       resetForm();
+      toast.success('התוספת עודכנה');
+    },
+    onError: (err) => {
+      console.error('[ExtraCharges] update failed', err);
+      toast.error(`עדכון תוספת נכשל: ${describeMutationError(err)}`);
     },
   });
 
@@ -63,11 +81,16 @@ export default function ExtraCharges() {
     mutationFn: (id) => base44.entities.ExtraCharge.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries(['extraCharges']);
+      toast.success('התוספת נמחקה');
+    },
+    onError: (err) => {
+      console.error('[ExtraCharges] delete failed', err);
+      toast.error(`מחיקת תוספת נכשלה: ${describeMutationError(err)}`);
     },
   });
 
   const resetForm = () => {
-    setFormData({ name: '', description: '', cost: 0, is_active: true });
+    setFormData({ name: '', description: '', cost: 0, is_active: true, sort_order: 0 });
     setEditingCharge(null);
   };
 
