@@ -42,6 +42,7 @@ import { endOfDay, startOfDay, subDays, startOfWeek, startOfMonth, startOfYear }
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly, isFactoryUser } from '@/lib/rbac';
 import { format } from '@/lib/safe-date-fns';
+import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 
 const METRIC_COLOR = {
   positive: 'emerald',
@@ -145,6 +146,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
 
   const [dateRange, setDateRange] = useState({
     from: startOfDay(new Date()),
@@ -395,9 +397,14 @@ export default function Dashboard() {
               <Link to={createPageUrl('NewLead')}>
                 <Button size="sm" className="h-8 text-xs">ליד חדש</Button>
               </Link>
-              <Link to={createPageUrl('SalesTasks')}>
-                <Button size="sm" variant="outline" className="h-8 text-xs">משימה חדשה</Button>
-              </Link>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                onClick={() => setIsAddTaskOpen(true)}
+              >
+                משימה חדשה
+              </Button>
               <Link to={createPageUrl('NewQuote')}>
                 <Button size="sm" variant="outline" className="h-8 text-xs">הצעה חדשה</Button>
               </Link>
@@ -798,6 +805,12 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
+
+      <AddSalesTaskDialog
+        isOpen={isAddTaskOpen}
+        onClose={() => setIsAddTaskOpen(false)}
+        effectiveUser={user}
+      />
     </div>
   );
 }
