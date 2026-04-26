@@ -505,8 +505,16 @@ export default function Dashboard() {
             <div className="divide-y divide-border/50">
               {alerts.map((alert) => {
                 const severity = SEVERITY_BADGE[alert.severity] || SEVERITY_BADGE.low;
-                const interactive = !!alert.action_link;
-                const handleOpen = () => goTo(alert.action_link);
+                // The deployed getDashboardStats Edge Function omits
+                // action_link on each smart alert. Fall back to the frontend
+                // default drilldown keyed by alert.type / alert.id so the
+                // rows still navigate.
+                const fallbackByType = drilldowns?.smart_alerts?.[alert.type]
+                  || drilldowns?.smart_alerts?.[alert.id?.replace(/s$/, '')]
+                  || drilldowns?.smart_alerts?.[alert.id];
+                const link = alert.action_link || fallbackByType;
+                const interactive = !!link;
+                const handleOpen = () => goTo(link);
                 return (
                   <div
                     key={alert.id}
