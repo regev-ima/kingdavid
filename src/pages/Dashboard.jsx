@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/table';
 import {
   Calendar as CalendarIcon,
+  ChevronLeft,
   Clock,
   Download,
   FileText,
@@ -106,7 +107,7 @@ function KpiTile({ title, value, subtitle, onClick, tone = 'primary' }) {
 
   return (
     <Card
-      className={`${toneClass} ${interactive ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary' : ''}`}
+      className={`${toneClass} group relative ${interactive ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary' : ''}`}
       onClick={interactive ? onClick : undefined}
       onKeyDown={handleKeyDown}
       role={interactive ? 'button' : undefined}
@@ -114,7 +115,15 @@ function KpiTile({ title, value, subtitle, onClick, tone = 'primary' }) {
       aria-label={interactive ? title : undefined}
     >
       <CardContent className="p-4 text-right">
-        <p className="text-xs text-muted-foreground mb-1">{title}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs text-muted-foreground mb-1">{title}</p>
+          {interactive ? (
+            <ChevronLeft
+              className="h-3.5 w-3.5 text-muted-foreground/60 group-hover:text-primary group-hover:-translate-x-0.5 transition-all"
+              aria-hidden="true"
+            />
+          ) : null}
+        </div>
         <p className="text-2xl font-bold text-foreground leading-none">{value}</p>
         {subtitle ? <p className="text-xs text-muted-foreground mt-2">{subtitle}</p> : null}
       </CardContent>
