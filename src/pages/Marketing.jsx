@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { BarChart3, Users, Target, TrendingUp, DollarSign, Handshake, Megaphone } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
 import { format, subDays, startOfDay } from '@/lib/safe-date-fns';
+import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessAdminOnly } from '@/lib/rbac';
 
@@ -100,13 +101,20 @@ export default function Marketing() {
   } else if (dateRange === 'yesterday') {
     startDate = startOfDay(subDays(now, 1));
     endDate = startOfDay(now);
+  } else if (dateRange === 'all') {
+    startDate = new Date(0);
   } else {
     startDate = startOfDay(subDays(now, parseInt(dateRange) || 30));
   }
 
+  // Postgres returns timestamptz as "2026-04-23 14:10:52+00" (space separator,
+  // no Z) which `new Date()` parses inconsistently across browsers — Safari
+  // returns Invalid Date and the lead silently drops out of the window. Use
+  // parseDbTimestamp so the comparison is robust regardless of format.
   const isWithinRange = (dateStr) => {
     if (!dateStr) return false;
-    const d = new Date(dateStr);
+    const d = parseDbTimestamp(dateStr);
+    if (!d) return false;
     return d >= startDate && d < endDate;
   };
 
@@ -274,6 +282,9 @@ export default function Marketing() {
             <SelectItem value="14">14 ימים אחרונים</SelectItem>
             <SelectItem value="30">30 ימים אחרונים</SelectItem>
             <SelectItem value="90">90 ימים אחרונים</SelectItem>
+            <SelectItem value="180">180 ימים אחרונים</SelectItem>
+            <SelectItem value="365">שנה אחרונה</SelectItem>
+            <SelectItem value="all">מאז ומעולם</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -649,7 +660,7 @@ export default function Marketing() {
                     displayLeads.map((lead) => (
                       <TableRow key={lead.id}>
                         <TableCell className="font-medium">{lead.full_name}</TableCell>
-                        <TableCell>{format(new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
+                        <TableCell>{format(parseDbTimestamp(lead.created_date) ?? new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
                         <TableCell>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${lead.status === 'deal_closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-foreground'}`}>
                             {lead.status === 'deal_closed' ? 'סגור (המר)' : lead.status}
@@ -695,7 +706,7 @@ export default function Marketing() {
                     <TableRow key={lead.id}>
                       <TableCell className="font-medium">{lead.full_name}</TableCell>
                       <TableCell dir="ltr" className="text-right">{lead.phone}</TableCell>
-                      <TableCell>{format(new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
+                      <TableCell>{format(parseDbTimestamp(lead.created_date) ?? new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${lead.status === 'deal_closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-foreground'}`}>
                           {lead.status === 'deal_closed' ? 'סגור (המר)' : lead.status}
