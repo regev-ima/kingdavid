@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Users, AlertCircle, UserPlus, FileSpreadsheet, Phone } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
@@ -415,8 +415,8 @@ export default function Leads() {
         if (!row.created_date || row.first_action_at) return <span className="text-xs text-muted-foreground/70">טופל</span>;
 
         const now = new Date();
-        const created = new Date(String(row.created_date).includes('Z') ? row.created_date : row.created_date + 'Z');
-        if (isNaN(created.getTime())) return <span className="text-xs text-muted-foreground/70">-</span>;
+        const created = parseDbTimestamp(row.created_date);
+        if (!created) return <span className="text-xs text-muted-foreground/70">-</span>;
         const diffMinutes = Math.floor((now - created) / 1000 / 60);
         
         let color = 'text-green-600';
@@ -497,10 +497,8 @@ export default function Leads() {
       header: 'תאריך',
       accessor: 'created_date',
       render: (row) => {
-        if (!row.created_date) return <span className="text-sm text-muted-foreground">-</span>;
-        const dateStr = String(row.created_date).includes('Z') ? row.created_date : row.created_date + 'Z';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return <span className="text-sm text-muted-foreground">-</span>;
+        const d = parseDbTimestamp(row.created_date);
+        if (!d) return <span className="text-sm text-muted-foreground">-</span>;
         try {
           return (
             <div className="text-sm text-muted-foreground whitespace-nowrap">
