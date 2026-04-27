@@ -34,6 +34,27 @@ export default function Customers() {
     enabled: canAccessSales,
   });
 
+  // PostgREST silently caps .list() at 1000 rows, so the customers array
+  // stops growing past 1000 and "סה״כ לקוחות" was rendering 1,000 even
+  // when there are 15k+ rows. The customers_stats view aggregates every
+  // KPI for the whole table in a single round-trip
+  // (see supabase/migrations/.._customers_stats_view.sql).
+  const { data: stats = { total: 0, vip: 0, revenue: 0, orders: 0 } } = useQuery({
+    queryKey: ['customers-stats'],
+    staleTime: 60000,
+    enabled: canAccessSales,
+    queryFn: async () => {
+      const { data, error } = await base44.supabase
+        .from('customers_stats')
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      return data || { total: 0, vip: 0, revenue: 0, orders: 0 };
+    },
+  });
+  const totalCustomers = Number(stats.total) || 0;
+  const vipCustomers = Number(stats.vip) || 0;
+
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: () => base44.entities.Order.list(),
@@ -86,11 +107,12 @@ export default function Customers() {
     return matchSearch && matchVip && matchRep;
   });
 
-  // Calculate KPIs
-  const totalCustomers = scopedCustomers.length;
-  const vipCustomers = scopedCustomers.filter(c => c.vip_status).length;
-  const totalRevenue = scopedCustomers.reduce((sum, c) => sum + (c.total_revenue || 0), 0);
-  const avgOrderValue = totalCustomers > 0 ? totalRevenue / customers.reduce((sum, c) => sum + (c.total_orders || 0), 0) : 0;
+  // KPI numbers come from the customers_stats view above so they reflect
+  // the entire table (not just the first page that the customers list
+  // query returns).
+  const totalRevenue = Number(stats.revenue) || 0;
+  const totalOrders = Number(stats.orders) || 0;
+  const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
   const columns = [
     {
