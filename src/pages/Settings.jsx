@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
+import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import UserAvatar from "@/components/shared/UserAvatar";
@@ -374,6 +375,31 @@ export default function Settings() {
 
 function StatusManagement() {
   const { hiddenStatuses, isLoading, setHiddenStatuses, isPending } = useHiddenStatuses();
+  const { customStatuses, addStatus, removeStatus } = useCustomStatuses();
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+
+  const handleAddStatus = (e) => {
+    e?.preventDefault?.();
+    const label = newStatusLabel.trim();
+    if (!label) return;
+    const created = addStatus(label);
+    if (!created) {
+      toast.error('סטטוס בשם הזה כבר קיים');
+      return;
+    }
+    setNewStatusLabel('');
+    toast.success(`הסטטוס "${label}" נוסף`);
+  };
+
+  const handleRemoveCustom = (status) => {
+    if (!confirm(`למחוק את הסטטוס "${status.label}"? לידים שכבר נמצאים בסטטוס הזה לא יושפעו.`)) return;
+    removeStatus(status.value);
+    // Drop any "hidden" entry that was hiding the now-deleted status.
+    if (hiddenStatuses.includes(status.value)) {
+      setHiddenStatuses(hiddenStatuses.filter((s) => s !== status.value));
+    }
+    toast.success(`הסטטוס "${status.label}" נמחק`);
+  };
 
   const toggleStatus = (statusValue) => {
     const newList = hiddenStatuses.includes(statusValue)
@@ -396,34 +422,76 @@ function StatusManagement() {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="space-y-1">
-            {LEAD_STATUS_OPTIONS.map((opt) => {
-              const isHidden = hiddenStatuses.includes(opt.value);
-              return (
-                <div
-                  key={opt.value}
-                  className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
-                    isHidden ? 'bg-muted/50 opacity-60' : 'hover:bg-muted/30'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {isHidden ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-emerald-500" />
-                    )}
-                    <span className={`text-sm font-medium ${isHidden ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
-                      {opt.label}
-                    </span>
+          <div className="space-y-4">
+            {/* Add-status row — always visible at the top so the action is
+                obvious. Submitting an empty / duplicate label just no-ops
+                with a toast (handled in handleAddStatus). */}
+            <form
+              onSubmit={handleAddStatus}
+              className="flex gap-2 items-center pb-3 border-b border-border/40"
+            >
+              <Input
+                value={newStatusLabel}
+                onChange={(e) => setNewStatusLabel(e.target.value)}
+                placeholder="שם סטטוס חדש (למשל: 'נשלח חוזה לחתימה')"
+                className="flex-1"
+              />
+              <Button type="submit" disabled={!newStatusLabel.trim()}>
+                <Plus className="h-4 w-4 me-2" />
+                הוסף סטטוס
+              </Button>
+            </form>
+
+            <div className="space-y-1">
+              {[
+                ...LEAD_STATUS_OPTIONS.map((opt) => ({ ...opt, isCustom: false })),
+                ...customStatuses.map((opt) => ({ ...opt, isCustom: true })),
+              ].map((opt) => {
+                const isHidden = hiddenStatuses.includes(opt.value);
+                return (
+                  <div
+                    key={opt.value}
+                    className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors ${
+                      isHidden ? 'bg-muted/50 opacity-60' : 'hover:bg-muted/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {isHidden ? (
+                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-emerald-500" />
+                      )}
+                      <span className={`text-sm font-medium ${isHidden ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                        {opt.label}
+                      </span>
+                      {opt.isCustom ? (
+                        <span className="text-[10px] uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                          מותאם
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={!isHidden}
+                        onCheckedChange={() => toggleStatus(opt.value)}
+                        disabled={isPending}
+                      />
+                      {opt.isCustom ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveCustom(opt)}
+                          className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          aria-label={`מחק סטטוס ${opt.label}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                  <Switch
-                    checked={!isHidden}
-                    onCheckedChange={() => toggleStatus(opt.value)}
-                    disabled={isPending}
-                  />
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         )}
       </CardContent>

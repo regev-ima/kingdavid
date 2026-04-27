@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone } from "lucide-react";
+import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { useToast } from "@/components/ui/use-toast";
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
@@ -27,10 +28,10 @@ import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSE
 import { useNavigate } from 'react-router-dom';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 
-const filterOptions = [
-  { key: 'status', label: 'סטטוס', options: LEAD_STATUS_OPTIONS },
-  { key: 'source', label: 'מקור', options: LEAD_SOURCE_OPTIONS },
-];
+// filterOptions for the source filter is static. The status filter is built
+// inside the component because admin-added custom statuses (per-browser
+// localStorage) need to show up alongside the built-in list.
+const sourceFilterOption = { key: 'source', label: 'מקור', options: LEAD_SOURCE_OPTIONS };
 
 export default function Leads() {
   const initialParams = new URLSearchParams(window.location.search);
@@ -50,6 +51,7 @@ export default function Leads() {
   const [assigningRep, setAssigningRep] = useState('');
   const [showImportFromSheets, setShowImportFromSheets] = useState(false);
   const [limit, setLimit] = useState(100);
+  const { customStatuses: customStatusesForFilter } = useCustomStatuses();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
@@ -733,7 +735,10 @@ export default function Leads() {
 
       <div className="space-y-3">
         <FilterBar
-          filters={filterOptions}
+          filters={[
+            { key: 'status', label: 'סטטוס', options: [...LEAD_STATUS_OPTIONS, ...customStatusesForFilter] },
+            sourceFilterOption,
+          ]}
           values={filters}
           onChange={handleFilterChange}
           onClear={clearFilters}
