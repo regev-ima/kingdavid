@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Users, AlertCircle, UserPlus, FileSpreadsheet, Phone } from "lucide-react";
+import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
@@ -188,6 +188,18 @@ export default function Leads() {
       const query = buildQuery();
       return base44.entities.Lead.filter(query, '-effective_sort_date', limit);
     },
+    enabled: !!effectiveUser,
+    staleTime: 60000,
+    placeholderData: (prev) => prev,
+  });
+
+  // Server-side count of every lead matching the current filter combo. The
+  // visible `leads` array is capped at `limit`, so without this the badge
+  // would lie ("מציג 100" when 16k actually match). Same query shape; just
+  // returns the total rather than the rows.
+  const { data: filteredCount = null } = useQuery({
+    queryKey: ['leadsCount', activeTab, userEmail, isAdmin, filters.rep1, filters.search, filters.status, filters.source, repScope, startDateParam, endDateParam],
+    queryFn: () => base44.entities.Lead.count(buildQuery()),
     enabled: !!effectiveUser,
     staleTime: 60000,
     placeholderData: (prev) => prev,
@@ -744,6 +756,17 @@ export default function Leads() {
           </div>
         )}
       </div>
+
+      {/* Tiny match-count badge. Shown whenever any filter is active or the
+          user picked a non-default tab, so they always know the true size of
+          the result set even though the table is paginated to `limit`. */}
+      {(filters.search || filters.status !== 'all' || filters.source !== 'all' || filters.rep1 !== 'all' || activeTab !== 'all') && (
+        <div className="text-xs text-muted-foreground pr-1">
+          {filteredCount === null
+            ? 'סופר...'
+            : `מציג ${leads.length.toLocaleString()} מתוך ${Number(filteredCount).toLocaleString()} לידים תואמים${Number(filteredCount) > leads.length ? ' (טען עוד למטה כדי לראות יותר)' : ''}`}
+        </div>
+      )}
 
       <ResponsiveLeadsTable
         columns={columns}
