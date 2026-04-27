@@ -191,6 +191,87 @@ function createEntityAPI(tableName) {
     },
 
     /**
+     * Count rows matching the same {filters} object filter() accepts.
+     * Used by /Leads to show "מציג X לידים" when the user applies a filter,
+     * since the visible array is capped by `limit` and doesn't reflect the
+     * true match count. Server-side count via PostgREST `Prefer: count=exact`
+     * + `head: true` (no rows in the response — just the Content-Range count).
+     */
+    async count(filters) {
+      let query = supabase.from(tableName).select('*', { count: 'exact', head: true });
+
+      const conditionPairToOrFragment = (k, v) => {
+        if (v === null) return `${k}.is.null`;
+        if (v === '') return `${k}.eq.`;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          if (v.$regex != null) return `${k}.ilike.*${v.$regex}*`;
+          if (v.$ilike != null) return `${k}.ilike.*${v.$ilike}*`;
+          if (v.$in != null) return `${k}.in.(${v.$in.join(',')})`;
+          if (v.$gte != null) return `${k}.gte.${v.$gte}`;
+          if (v.$lte != null) return `${k}.lte.${v.$lte}`;
+          if (v.$gt  != null) return `${k}.gt.${v.$gt}`;
+          if (v.$lt  != null) return `${k}.lt.${v.$lt}`;
+          if (v.$ne  != null) return `${k}.neq.${v.$ne}`;
+          if (v.$eq  != null) return `${k}.eq.${v.$eq}`;
+        }
+        if (Array.isArray(v)) return `${k}.in.(${v.join(',')})`;
+        return `${k}.eq.${v}`;
+      };
+
+      if (filters) {
+        for (const [key, value] of Object.entries(filters)) {
+          if (key === '$or' && Array.isArray(value)) {
+            const orParts = value.map(condition =>
+              Object.entries(condition).map(([k, v]) => conditionPairToOrFragment(k, v)).join(',')
+            );
+            query = query.or(orParts.join(','));
+          } else if (key === '$and' && Array.isArray(value)) {
+            for (const condition of value) {
+              for (const [k, v] of Object.entries(condition)) {
+                if (k === '$or' && Array.isArray(v)) {
+                  const orParts = v.map(sub => Object.entries(sub).map(([sk, sv]) => conditionPairToOrFragment(sk, sv)).join(','));
+                  query = query.or(orParts.join(','));
+                } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+                  if (v.$gte) query = query.gte(k, v.$gte);
+                  if (v.$lte) query = query.lte(k, v.$lte);
+                  if (v.$lt) query = query.lt(k, v.$lt);
+                  if (v.$gt) query = query.gt(k, v.$gt);
+                  if (v.$ne) query = query.neq(k, v.$ne);
+                  if (v.$nin) query = query.not(k, 'in', `(${v.$nin.join(',')})`);
+                  if (v.$in) query = query.in(k, v.$in);
+                  if (v.$regex != null) query = query.ilike(k, `%${v.$regex}%`);
+                  if (v.$ilike != null) query = query.ilike(k, `%${v.$ilike}%`);
+                } else {
+                  if (v === null) query = query.is(k, null);
+                  else query = query.eq(k, v);
+                }
+              }
+            }
+          } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+            if (value.$gte) query = query.gte(key, value.$gte);
+            if (value.$lte) query = query.lte(key, value.$lte);
+            if (value.$lt) query = query.lt(key, value.$lt);
+            if (value.$gt) query = query.gt(key, value.$gt);
+            if (value.$ne) query = query.neq(key, value.$ne);
+            if (value.$nin) query = query.not(key, 'in', `(${value.$nin.join(',')})`);
+            if (value.$in) query = query.in(key, value.$in);
+            if (value.$regex) query = query.ilike(key, `%${value.$regex}%`);
+          } else if (Array.isArray(value)) {
+            query = query.in(key, value);
+          } else if (value === null) {
+            query = query.is(key, null);
+          } else {
+            query = query.eq(key, value);
+          }
+        }
+      }
+
+      const { count, error } = await query;
+      if (error) throw error;
+      return count ?? 0;
+    },
+
+    /**
      * Create a new row.
      * @param {Object} data
      */
