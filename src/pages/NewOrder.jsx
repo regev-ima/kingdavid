@@ -276,9 +276,11 @@ export default function NewOrder() {
       const addonsTotal = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
       return sum + (item.quantity * (item.unit_price + addonsTotal));
     }, 0);
+    // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
+    // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
     const subtotal = itemsTotal + extrasTotal;
-    const vat_amount = Math.round(subtotal * 0.18);
+    const vat_amount = Math.round(itemsTotal * 0.18);
     const total = Math.round(subtotal + vat_amount);
     return { subtotal, vat_amount, total };
   };

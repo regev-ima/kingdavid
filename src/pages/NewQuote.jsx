@@ -304,12 +304,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       return sum + (itemTotal * (item.discount_percent / 100));
     }, 0);
 
+    // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
+    // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-    
+
     const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = Math.round(subtotal * 0.18);
+    const vat_amount = Math.round(itemsSubtotal * 0.18);
     const total = Math.round(subtotal + vat_amount);
-    
+
     return { subtotal, discount_total, vat_amount, total };
   };
 
