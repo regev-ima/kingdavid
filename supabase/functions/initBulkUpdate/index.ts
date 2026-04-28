@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { applyBulkFilter } from '../_shared/bulkFilter.ts';
 
 const COUNT_BATCH = 500;
 
@@ -52,16 +53,17 @@ function buildQuery(
   limit: number,
   offset: number,
 ) {
+  // The previous version handled only Array→in / scalar→eq. The frontend
+  // (BulkUpdate.jsx → buildFilter) actually emits `{$and:[...]}`,
+  // `{phone: {$regex:'…'}}`, `{$or:[...]}`, etc — so the old loop turned
+  // a `{$and:[...]}` into `eq('$and', [array])` and counted 0 rows on
+  // every filtered query. applyBulkFilter mirrors the operator handling
+  // in src/api/entities.js so the Edge Function understands the same
+  // shapes the rest of the app uses.
   let query = supabase.from(tableName).select('*');
 
   if (filter && Object.keys(filter).length > 0) {
-    for (const [key, value] of Object.entries(filter)) {
-      if (Array.isArray(value)) {
-        query = query.in(key, value);
-      } else {
-        query = query.eq(key, value as string);
-      }
-    }
+    query = applyBulkFilter(query, filter);
   }
 
   query = query.order('created_date', { ascending: false });
