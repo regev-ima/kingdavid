@@ -1,20 +1,23 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Clock, AlertTriangle, CheckCircle } from "lucide-react";
+import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
 
 export default function SLABadge({ lead, showTimer = true }) {
   const [minutesSinceEntry, setMinutesSinceEntry] = useState(0);
-  
+
+  // SLA timer is anchored to the most recent touch (effective_sort_date)
+  // rather than the original created_date, so a returning lead resets the
+  // clock instead of showing a stale "528 ימים".
+  const anchor = getLeadSlaAnchor(lead);
+  const handled = isLeadHandled(lead);
+
   useEffect(() => {
-    if (!lead.created_date || lead.first_action_at) return;
+    if (handled || !anchor) return;
 
     const calculateMinutes = () => {
-      if (!lead.created_date) return;
-      const dateStr = String(lead.created_date);
-      const entryTime = new Date(dateStr.includes('Z') ? dateStr : dateStr + 'Z');
-      if (isNaN(entryTime.getTime())) return;
       const now = new Date();
-      const minutes = Math.floor((now - entryTime) / 60000);
+      const minutes = Math.floor((now - anchor) / 60000);
       setMinutesSinceEntry(minutes);
     };
 
@@ -22,10 +25,10 @@ export default function SLABadge({ lead, showTimer = true }) {
     const interval = setInterval(calculateMinutes, 30000); // Update every 30s
 
     return () => clearInterval(interval);
-  }, [lead.created_date, lead.first_action_at]);
+  }, [anchor, handled]);
 
-  // If already actioned
-  if (lead.first_action_at) {
+  // If already actioned (and the lead hasn't returned since)
+  if (handled) {
     return showTimer ? (
       <Badge className="bg-gray-100 text-gray-600">
         <CheckCircle className="h-3 w-3 me-1" />
