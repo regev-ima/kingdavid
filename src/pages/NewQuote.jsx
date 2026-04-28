@@ -324,6 +324,16 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
         .filter(Boolean);
       const description = parts.length ? parts.join(' — ') : (typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה');
       console.error('Quote.create failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      // The duplicate-key path is its own bucket — a stale tab or a heavily
+      // contested moment can land here even after the retry helper. Tell
+      // the user exactly what to do instead of dropping the raw PG error.
+      const isDuplicateKey = err?.code === '23505' || /duplicate key|unique constraint/i.test(description);
+      if (isDuplicateKey) {
+        toast.error('מספר ההצעה כבר תפוס (ייתכן שנוצרה הצעה נוספת באותו רגע). אנא רענן את הדף ונסה שוב.', {
+          duration: Infinity,
+        });
+        return;
+      }
       toast.error(`שמירת ההצעה נכשלה: ${description}`, { duration: Infinity });
     },
   });
