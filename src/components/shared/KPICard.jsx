@@ -16,15 +16,20 @@ const formatNumber = (num) => {
   return num;
 };
 
-export default function KPICard({ 
-  title, 
-  value, 
-  subtitle, 
-  icon: Icon, 
-  trend, 
+export default function KPICard({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  trend,
   trendValue,
   color = 'indigo',
-  onClick 
+  onClick,
+  delta,
+  // 'positive' = rising is good (green ▲); 'negative' = rising is bad (e.g.
+  // unpaid balance, pending commissions). Affects color of the delta badge.
+  deltaPolarity = 'positive',
+  deltaLabel,
 }) {
   const displayValue = formatNumber(value);
   const colorConfig = {
@@ -42,6 +47,29 @@ export default function KPICard({
   };
 
   const c = colorConfig[color] || colorConfig.indigo;
+
+  // Period-over-period delta. We render `null` for missing/non-finite numbers
+  // (no prior data → "—") and treat 0 as a neutral "no change" so the card
+  // doesn't claim a 100% rise out of nowhere. Polarity flips the colors for
+  // KPIs where rising is bad (unpaid, refunds, pending commissions).
+  const hasDelta = typeof delta === 'number' && Number.isFinite(delta);
+  const deltaIsPositive = hasDelta && delta > 0;
+  const deltaIsNegative = hasDelta && delta < 0;
+  const deltaIsGood =
+    (deltaIsPositive && deltaPolarity === 'positive') ||
+    (deltaIsNegative && deltaPolarity === 'negative');
+  const deltaIsBad =
+    (deltaIsNegative && deltaPolarity === 'positive') ||
+    (deltaIsPositive && deltaPolarity === 'negative');
+  const deltaToneClass = deltaIsGood
+    ? 'bg-emerald-50 text-emerald-700'
+    : deltaIsBad
+    ? 'bg-red-50 text-red-700'
+    : 'bg-muted text-muted-foreground';
+  const deltaArrow = deltaIsPositive ? '▲' : deltaIsNegative ? '▼' : '•';
+  const deltaText = hasDelta
+    ? `${deltaArrow} ${Math.abs(delta * 100).toFixed(0)}%`
+    : '—';
 
   return (
     <div 
@@ -65,6 +93,20 @@ export default function KPICard({
               <span className={`text-xs sm:text-sm font-semibold ${trend === 'up' ? 'text-emerald-600' : 'text-red-600'}`}>
                 {trendValue}
               </span>
+            </div>
+          )}
+          {(hasDelta || deltaLabel) && (
+            <div className="mt-2 flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] sm:text-xs font-semibold ${deltaToneClass}`}
+              >
+                {deltaText}
+              </span>
+              {deltaLabel && (
+                <span className="text-[10px] sm:text-xs text-muted-foreground truncate" title={deltaLabel}>
+                  {deltaLabel}
+                </span>
+              )}
             </div>
           )}
         </div>

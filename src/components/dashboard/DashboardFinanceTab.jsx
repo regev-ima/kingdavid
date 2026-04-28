@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import KPICard from '@/components/shared/KPICard';
+import { formatCurrency } from '@/utils/currency';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -52,37 +53,37 @@ export default function DashboardFinanceTab({ stats }) {
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4">
         <KPICard
           title="סה״כ הכנסות"
-          value={`₪${(fin.total_revenue || 0).toLocaleString()}`}
+          value={formatCurrency(fin.total_revenue || 0)}
           icon={DollarSign}
           color="emerald"
         />
         <KPICard
           title="שולם"
-          value={`₪${(fin.paid_revenue || 0).toLocaleString()}`}
+          value={formatCurrency(fin.paid_revenue || 0)}
           icon={CreditCard}
           color="blue"
         />
         <KPICard
           title="מקדמות"
-          value={`₪${(fin.deposit_revenue || 0).toLocaleString()}`}
+          value={formatCurrency(fin.deposit_revenue || 0)}
           icon={Wallet}
           color="amber"
         />
         <KPICard
           title="לא שולם"
-          value={`₪${(fin.unpaid_revenue || 0).toLocaleString()}`}
+          value={formatCurrency(fin.unpaid_revenue || 0)}
           icon={Wallet}
           color="red"
         />
         <KPICard
           title="עסקה ממוצעת"
-          value={`₪${(fin.avg_order_value || 0).toLocaleString()}`}
+          value={formatCurrency(fin.avg_order_value || 0)}
           icon={TrendingUp}
           color="indigo"
         />
         <KPICard
           title="עמלות ממתינות"
-          value={`₪${(fin.commissions_pending || 0).toLocaleString()}`}
+          value={formatCurrency(fin.commissions_pending || 0)}
           icon={Receipt}
           color="purple"
         />
@@ -108,28 +109,28 @@ export default function DashboardFinanceTab({ stats }) {
               </div>
               <div className="text-left">
                 <span className="text-xl font-bold text-amber-700">{fin.quotes_pending || 0}</span>
-                <span className="text-sm text-amber-600 ms-2">₪{(fin.quotes_pending_value || 0).toLocaleString()}</span>
+                <span className="text-sm text-amber-600 ms-2">{formatCurrency(fin.quotes_pending_value || 0)}</span>
               </div>
             </div>
             <div className="flex justify-between items-center p-3 bg-emerald-50 rounded-lg">
               <span className="font-medium text-emerald-700">אושרו</span>
               <div className="text-left">
                 <span className="text-xl font-bold text-emerald-700">{fin.quotes_approved || 0}</span>
-                <span className="text-sm text-emerald-600 ms-2">₪{(fin.quotes_approved_value || 0).toLocaleString()}</span>
+                <span className="text-sm text-emerald-600 ms-2">{formatCurrency(fin.quotes_approved_value || 0)}</span>
               </div>
             </div>
             <div className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
               <span className="font-medium text-red-700">פגו תוקף</span>
               <div className="text-left">
                 <span className="text-xl font-bold text-red-700">{fin.quotes_expired || 0}</span>
-                <span className="text-sm text-red-600 ms-2">₪{(fin.quotes_expired_value || 0).toLocaleString()}</span>
+                <span className="text-sm text-red-600 ms-2">{formatCurrency(fin.quotes_expired_value || 0)}</span>
               </div>
             </div>
             <div className="flex justify-between items-center p-3 bg-muted/50 rounded-lg">
               <span className="font-medium text-muted-foreground">נדחו</span>
               <div className="text-left">
                 <span className="text-xl font-bold text-muted-foreground">{fin.quotes_rejected || 0}</span>
-                <span className="text-sm text-muted-foreground ms-2">₪{(fin.quotes_rejected_value || 0).toLocaleString()}</span>
+                <span className="text-sm text-muted-foreground ms-2">{formatCurrency(fin.quotes_rejected_value || 0)}</span>
               </div>
             </div>
             <div className="border-t pt-3">
@@ -137,7 +138,7 @@ export default function DashboardFinanceTab({ stats }) {
                 <span className="font-semibold text-foreground">הזמנות שנסגרו (בתקופה)</span>
                 <div className="text-left">
                   <span className="text-xl font-bold text-foreground">{fin.orders_count || 0}</span>
-                  <span className="text-sm text-muted-foreground ms-2">₪{(fin.total_revenue || 0).toLocaleString()}</span>
+                  <span className="text-sm text-muted-foreground ms-2">{formatCurrency(fin.total_revenue || 0)}</span>
                 </div>
               </div>
             </div>
@@ -168,9 +169,9 @@ export default function DashboardFinanceTab({ stats }) {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={campaignBarData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                      <XAxis type="number" tickFormatter={(v) => `₪${v.toLocaleString()}`} />
+                      <XAxis type="number" tickFormatter={(v) => formatCurrency(v)} />
                       <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(value) => `₪${value.toLocaleString()}`} />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
                       <Bar dataKey="revenue" name="הכנסות" fill="#4f46e5" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -189,13 +190,13 @@ export default function DashboardFinanceTab({ stats }) {
                         outerRadius={100}
                         paddingAngle={5}
                         dataKey="value"
-                        label={({ name, value }) => `${name}: ₪${value.toLocaleString()}`}
+                        label={({ name, value }) => `${name}: ${formatCurrency(value)}`}
                       >
                         {currentPieData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(value) => `₪${value.toLocaleString()}`} />
+                      <Tooltip formatter={(value) => formatCurrency(value)} />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (
@@ -216,19 +217,19 @@ export default function DashboardFinanceTab({ stats }) {
           <div className="grid sm:grid-cols-4 gap-4">
             <div className="p-4 bg-emerald-50 rounded-lg text-center">
               <p className="text-sm font-medium text-emerald-700 mb-1">שולם במלואו</p>
-              <p className="text-2xl font-bold text-emerald-700">₪{(fin.paid_revenue || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-emerald-700">{formatCurrency(fin.paid_revenue || 0)}</p>
             </div>
             <div className="p-4 bg-amber-50 rounded-lg text-center">
               <p className="text-sm font-medium text-amber-700 mb-1">מקדמות</p>
-              <p className="text-2xl font-bold text-amber-700">₪{(fin.deposit_revenue || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-amber-700">{formatCurrency(fin.deposit_revenue || 0)}</p>
             </div>
             <div className="p-4 bg-red-50 rounded-lg text-center">
               <p className="text-sm font-medium text-red-700 mb-1">ממתין לתשלום</p>
-              <p className="text-2xl font-bold text-red-700">₪{(fin.unpaid_revenue || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-red-700">{formatCurrency(fin.unpaid_revenue || 0)}</p>
             </div>
             <div className="p-4 bg-purple-50 rounded-lg text-center">
               <p className="text-sm font-medium text-purple-700 mb-1">עמלות ממתינות</p>
-              <p className="text-2xl font-bold text-purple-700">₪{(fin.commissions_pending || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-purple-700">{formatCurrency(fin.commissions_pending || 0)}</p>
             </div>
           </div>
         </CardContent>
@@ -265,7 +266,7 @@ export default function DashboardFinanceTab({ stats }) {
                         </div>
                       </TableCell>
                       <TableCell className="py-2.5 px-4 text-sm">{c.count}</TableCell>
-                      <TableCell className="py-2.5 px-4 text-sm font-semibold text-emerald-600">₪{c.revenue.toLocaleString()}</TableCell>
+                      <TableCell className="py-2.5 px-4 text-sm font-semibold text-emerald-600">{formatCurrency(c.revenue)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
