@@ -100,27 +100,40 @@ export default function SalesTasks() {
   const { data: allSalesTasks = [], isLoading } = useQuery({
     queryKey: ['salesTasks'],
     queryFn: async () => {
-      // Fetch open + recently completed/closed tasks
-      const openTasks = await base44.entities.SalesTask.filter(
-        { task_status: 'not_completed' },
-        '-created_date',
-        500
-      );
-      const completedTasks = await base44.entities.SalesTask.filter(
-        { task_status: 'completed' },
-        '-updated_date',
-        200
-      );
-      const notDoneTasks = await base44.entities.SalesTask.filter(
-        { task_status: 'not_done' },
-        '-updated_date',
-        100
-      );
-      const cancelledTasks = await base44.entities.SalesTask.filter(
-        { task_status: 'cancelled' },
-        '-updated_date',
-        100
-      );
+      // The previous version fetched four hard-capped buckets
+      //   not_completed:500, completed:200, not_done:100, cancelled:100
+      // and surfaced their lengths as the page KPIs. With ~8k tasks in
+      // production the page silently displayed ~700 — the open-tasks KPI
+      // and the completed KPI sat exactly at the caps (500 / 200), and the
+      // overdue total was off by an order of magnitude.
+      //
+      // Fix: paginate through every status with no per-bucket cap. PostgREST
+      // returns at most 1000 rows per request, so we walk in 1000-row pages
+      // (5 round-trips at 5k rows ≈ ~1 s on a warm cache, acceptable for
+      // this admin view). A future PR can move the KPI counts to a server-
+      // side aggregation so we don't have to ship every row to the browser.
+      const PAGE = 1000;
+      const fetchAllByStatus = async (status, sort = '-created_date') => {
+        const out = [];
+        let skip = 0;
+        // Defensive cap so a runaway loop can't fetch forever. 50k rows is
+        // far beyond any realistic table size for this entity.
+        const HARD_CAP = 50_000;
+        while (out.length < HARD_CAP) {
+          const batch = await base44.entities.SalesTask.filter({ task_status: status }, sort, PAGE, skip);
+          out.push(...batch);
+          if (batch.length < PAGE) break;
+          skip += PAGE;
+        }
+        return out;
+      };
+
+      const [openTasks, completedTasks, notDoneTasks, cancelledTasks] = await Promise.all([
+        fetchAllByStatus('not_completed', '-created_date'),
+        fetchAllByStatus('completed', '-updated_date'),
+        fetchAllByStatus('not_done', '-updated_date'),
+        fetchAllByStatus('cancelled', '-updated_date'),
+      ]);
       return [...openTasks, ...completedTasks, ...notDoneTasks, ...cancelledTasks];
     },
     enabled: canAccessSales,
