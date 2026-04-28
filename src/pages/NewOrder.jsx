@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -24,13 +24,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Save, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X } from "lucide-react";
 import { productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
+
+// Strip everything but digits, then drop a leading country prefix so
+// "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
+// Mirrors the helper in NewQuote.jsx — same lookup, same expected behaviour.
+function normalizePhoneForLookup(raw) {
+  if (!raw) return '';
+  const digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
+  return digits;
+}
 
 export default function NewOrder() {
   const navigate = useNavigate();
@@ -122,6 +132,79 @@ export default function NewOrder() {
     queryFn: () => base44.entities.ProductAddonPrice.list(),
     enabled: canAccessSales,
   });
+
+  // Real-time phone lookup so a NewOrder started without a lead/customer/quote
+  // context still snaps to an existing record. Mirrors the implementation in
+  // NewQuote.jsx — 150 ms debounce, kicks in at 4+ digits, keeps the previous
+  // dropdown visible while the next query is in flight, and skipped entirely
+  // once the form is already linked (we came from a lead/customer/quote URL,
+  // or the user already picked a match).
+  const [debouncedPhone, setDebouncedPhone] = useState('');
+  const [linkedRecord, setLinkedRecord] = useState(null); // { kind, id, full_name }
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedPhone(normalizePhoneForLookup(formData.customer_phone)), 150);
+    return () => clearTimeout(t);
+  }, [formData.customer_phone]);
+
+  const phoneLookupEnabled =
+    !leadId && !customerId && !quoteId && debouncedPhone.length >= 4 && !linkedRecord;
+
+  const { data: phoneMatchesData } = useQuery({
+    queryKey: ['orderPhoneLookup', debouncedPhone],
+    enabled: phoneLookupEnabled && canAccessSales,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
+      const pattern = `%${tail}%`;
+      const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
+        base44.supabase
+          .from('customers')
+          .select('id, full_name, phone, email, address, city')
+          .ilike('phone', pattern)
+          .limit(5),
+        base44.supabase
+          .from('leads')
+          .select('id, full_name, phone, email, address, city, status')
+          .ilike('phone', pattern)
+          .limit(5),
+      ]);
+      if (cErr) throw cErr;
+      if (lErr) throw lErr;
+      return { customers: customers || [], leads: leads || [] };
+    },
+  });
+
+  const phoneMatches = useMemo(() => {
+    if (!phoneMatchesData) return [];
+    return [
+      ...phoneMatchesData.customers.map((row) => ({ kind: 'customer', ...row })),
+      ...phoneMatchesData.leads.map((row) => ({ kind: 'lead', ...row })),
+    ];
+  }, [phoneMatchesData]);
+
+  const showPhoneMatches = phoneLookupEnabled && phoneMatches.length > 0;
+
+  const applyPhoneMatch = (match) => {
+    setFormData((prev) => ({
+      ...prev,
+      customer_name: match.full_name || prev.customer_name,
+      customer_phone: match.phone || prev.customer_phone,
+      customer_email: match.email || prev.customer_email,
+      delivery_address: match.address || prev.delivery_address,
+      delivery_city: match.city || prev.delivery_city,
+      // Stamp lead_id when matching a lead so the order gets linked the same
+      // way it would if the user had navigated from /Leads. Customer matches
+      // don't need lead_id — the order's customer_id flow handles them.
+      lead_id: match.kind === 'lead' ? match.id : prev.lead_id,
+    }));
+    setLinkedRecord({ kind: match.kind, id: match.id, full_name: match.full_name });
+  };
+
+  const clearPhoneLink = () => {
+    setLinkedRecord(null);
+    if (!leadId) setFormData((prev) => ({ ...prev, lead_id: '' }));
+  };
 
   useEffect(() => {
     if (quote) {
@@ -491,6 +574,49 @@ export default function NewOrder() {
                 />
               </div>
             </div>
+            {linkedRecord ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm text-emerald-800">
+                  <UserCheck className="h-4 w-4" />
+                  <span>
+                    {linkedRecord.kind === 'customer' ? 'מקושר ללקוח קיים' : 'מקושר לליד קיים'}
+                    {linkedRecord.full_name ? ` — ${linkedRecord.full_name}` : ''}
+                  </span>
+                </div>
+                <Button type="button" variant="ghost" size="sm" onClick={clearPhoneLink} className="h-7 px-2 text-emerald-700">
+                  <X className="h-3.5 w-3.5 me-1" />
+                  בטל קישור
+                </Button>
+              </div>
+            ) : null}
+            {showPhoneMatches ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2">
+                <p className="text-xs text-blue-800 font-medium">נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההזמנה:</p>
+                <div className="space-y-1.5">
+                  {phoneMatches.map((m) => (
+                    <button
+                      key={`${m.kind}-${m.id}`}
+                      type="button"
+                      onClick={() => applyPhoneMatch(m)}
+                      className="w-full text-right rounded-md bg-white border border-blue-100 px-3 py-2 hover:border-blue-300 hover:shadow-sm transition-colors flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="text-sm min-w-0">
+                          <div className="font-medium truncate">{m.full_name || '(ללא שם)'}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {m.phone || '-'} {m.email ? `• ${m.email}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${m.kind === 'customer' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                        {m.kind === 'customer' ? 'לקוח' : 'ליד'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>כתובת למשלוח *</Label>
