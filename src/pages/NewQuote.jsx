@@ -105,22 +105,35 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // existing lead context) can still snap to an existing customer / lead.
   // Skipped entirely once the form already has a hard lead_id (came from
   // a lead in the URL/dialog).
+  //
+  // Two perf knobs:
+  //   * 150ms debounce (was 350ms) — feels real-time without DDoSing the DB.
+  //   * Lookup kicks in at 4 digits (was 7) so the user gets feedback as
+  //     soon as the discriminating tail of the number is typed.
+  // The DB side is covered by the pg_trgm GIN index added in
+  // 20260428000001_phone_trigram_indexes.sql so ILIKE '%tail%' is no
+  // longer a full table scan.
   const [debouncedPhone, setDebouncedPhone] = useState('');
   const [linkedRecord, setLinkedRecord] = useState(null); // { kind, id, full_name }
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedPhone(normalizePhoneForLookup(formData.customer_phone)), 350);
+    const t = setTimeout(() => setDebouncedPhone(normalizePhoneForLookup(formData.customer_phone)), 150);
     return () => clearTimeout(t);
   }, [formData.customer_phone]);
-  const phoneLookupEnabled = !leadId && debouncedPhone.length >= 7 && !linkedRecord;
+  const phoneLookupEnabled = !leadId && debouncedPhone.length >= 4 && !linkedRecord;
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
-  const { data: phoneMatchesData } = useQuery({
+  const { data: phoneMatchesData, isFetching: isPhoneLookupFetching } = useQuery({
     queryKey: ['quotePhoneLookup', debouncedPhone],
     enabled: phoneLookupEnabled && canAccessSales,
     staleTime: 60_000,
+    // Keep the previous result on screen while the next one is loading so
+    // the dropdown doesn't blink between keystrokes.
+    placeholderData: (prev) => prev,
     queryFn: async () => {
-      const tail = debouncedPhone.slice(-9);
+      // Use the longest available tail (up to 9 digits) — short queries
+      // could match a lot of rows so the limit clamps the result anyway.
+      const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
       const pattern = `%${tail}%`;
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
