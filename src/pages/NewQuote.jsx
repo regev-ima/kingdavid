@@ -31,6 +31,7 @@ import DiscountPopover from '@/components/quote/DiscountPopover';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, canViewLead } from '@/lib/rbac';
 import { formatPhoneForWhatsApp } from '@/utils/phoneUtils';
+import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -256,34 +257,38 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
         }
       }
 
-      // Generate quote number
-      const quotes = await base44.entities.Quote.list('-created_date', 1);
-      const lastNumber = quotes[0]?.quote_number?.replace('Q', '') || '1000';
-      const newNumber = `Q${parseInt(lastNumber) + 1}`;
-      
-      const newQuote = await base44.entities.Quote.create({
-        ...data,
-        lead_id: leadId,
-        quote_number: newNumber,
-        created_by_rep: lead?.rep1 || effectiveUser?.email,
-        items: data.items.map(item => ({
-          product_id: item.product_id || '',
-          variation_id: item.variation_id || '',
-          sku: item.sku || '',
-          name: item.name || '',
-          length_cm: item.length_cm || null,
-          width_cm: item.width_cm || null,
-          height_cm: item.height_cm || null,
-          quantity: item.quantity || 1,
-          unit_price: item.unit_price || 0,
-          discount_percent: item.discount_percent || 0,
-          total: item.total || 0,
-          selected_addons: (item.selected_addons || []).map(addon => ({
-            addon_id: addon.addon_id || '',
-            name: addon.name || '',
-            price: addon.price || 0
-          }))
-        }))
+      // Atomically allocate a unique quote_number — fetch + insert with
+      // retry-on-unique-violation so two reps saving at the same moment can't
+      // collide on the same Q#### (which used to throw 23505 to the user).
+      const newQuote = await createWithSequentialNumber({
+        entity: base44.entities.Quote,
+        numberField: 'quote_number',
+        prefix: 'Q',
+        startingValue: 1001,
+        buildPayload: (newNumber) => ({
+          ...data,
+          lead_id: leadId,
+          quote_number: newNumber,
+          created_by_rep: lead?.rep1 || effectiveUser?.email,
+          items: data.items.map((item) => ({
+            product_id: item.product_id || '',
+            variation_id: item.variation_id || '',
+            sku: item.sku || '',
+            name: item.name || '',
+            length_cm: item.length_cm || null,
+            width_cm: item.width_cm || null,
+            height_cm: item.height_cm || null,
+            quantity: item.quantity || 1,
+            unit_price: item.unit_price || 0,
+            discount_percent: item.discount_percent || 0,
+            total: item.total || 0,
+            selected_addons: (item.selected_addons || []).map((addon) => ({
+              addon_id: addon.addon_id || '',
+              name: addon.name || '',
+              price: addon.price || 0,
+            })),
+          })),
+        }),
       });
 
       if (leadId) {

@@ -30,6 +30,7 @@ import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
+import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 
 export default function NewOrder() {
   const navigate = useNavigate();
@@ -181,20 +182,28 @@ export default function NewOrder() {
 
   const createOrderMutation = useMutation({
     mutationFn: async (data) => {
-      // Generate order number
-      const orders = await base44.entities.Order.list('-created_date', 1);
-      const lastNumber = orders[0]?.order_number?.replace('ORD', '') || '10000';
-      const newNumber = `ORD${parseInt(lastNumber) + 1}`;
-      
-      const order = await base44.entities.Order.create({
-        ...data,
-        order_number: newNumber,
-        rep1: quote?.created_by_rep || lead?.rep1 || quoteLead?.rep1 || effectiveUser?.email,
+      // Atomically allocate a unique order_number — fetch + insert with
+      // retry-on-unique-violation so two reps saving at the same moment can't
+      // collide on the same ORD#### (which would throw 23505).
+      const order = await createWithSequentialNumber({
+        entity: base44.entities.Order,
+        numberField: 'order_number',
+        prefix: 'ORD',
+        startingValue: 10001,
+        buildPayload: (newNumber) => ({
+          ...data,
+          order_number: newNumber,
+          rep1: quote?.created_by_rep || lead?.rep1 || quoteLead?.rep1 || effectiveUser?.email,
+        }),
       });
+
+      // Derive the shipment number from the order's actual assigned number,
+      // not from the pre-collision candidate, so retries stay aligned.
+      const shipmentSuffix = String(order.order_number || '').replace('ORD', '');
 
       // Create shipment
       await base44.entities.DeliveryShipment.create({
-        shipment_number: `SHP${parseInt(lastNumber) + 1}`,
+        shipment_number: `SHP${shipmentSuffix}`,
         order_id: order.id,
         customer_name: data.customer_name,
         customer_phone: data.customer_phone,
@@ -206,7 +215,7 @@ export default function NewOrder() {
       // Create commission
       await base44.entities.Commission.create({
         order_id: order.id,
-        order_number: newNumber,
+        order_number: order.order_number,
         rep1: quote?.created_by_rep || lead?.rep1 || quoteLead?.rep1 || effectiveUser?.email,
         rep1_percent: 100,
         rep2_percent: 0,
