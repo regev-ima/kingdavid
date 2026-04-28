@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { applyBulkFilter } from '../_shared/bulkFilter.ts';
 
 const BATCH_SIZE = 20;
 const UPDATE_DELAY = 200;
@@ -118,13 +119,8 @@ Deno.serve(async (req) => {
       let query = supabase.from(tableName).select('*');
 
       if (hasFilter && filter && Object.keys(filter).length > 0) {
-        for (const [key, value] of Object.entries(filter)) {
-          if (Array.isArray(value)) {
-            query = query.in(key, value as string[]);
-          } else {
-            query = query.eq(key, value as string);
-          }
-        }
+        // See note in initBulkUpdate — same operator-aware filter shape.
+        query = applyBulkFilter(query, filter);
       }
 
       query = query.order('created_date', { ascending: false });
