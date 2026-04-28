@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -156,6 +157,29 @@ export default function ProductsNew() {
     }
   });
 
+  // Without an onError handler, every PostgREST insert/update failure (RLS,
+  // NOT NULL, duplicate SKU, missing FK to products) used to be swallowed —
+  // the dialog stayed open and the user reported "click צור וריאציה and
+  // nothing happens". Surface the real error parts so we can see which
+  // field tripped the constraint.
+  const describeMutationError = (err) => {
+    const parts = [err?.message, err?.details, err?.hint, err?.code]
+      .map((p) => (p == null || p === '' ? null : String(p)))
+      .filter(Boolean);
+    if (parts.length) return parts.join(' — ');
+    return typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה';
+  };
+  const variationErrorToast = (label) => (err) => {
+    console.error(label, { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+    const description = describeMutationError(err);
+    const isDuplicateSku = err?.code === '23505' || /duplicate key/i.test(description);
+    if (isDuplicateSku) {
+      toast.error('המק"ט כבר תפוס. שנה אותו ונסה שוב.', { duration: Infinity });
+      return;
+    }
+    toast.error(`${label}: ${description}`, { duration: Infinity });
+  };
+
   const createVariationMutation = useMutation({
     mutationFn: (data) => {
       const finalPrice = data.base_price * (1 - (data.discount_percent || 0) / 100);
@@ -165,7 +189,9 @@ export default function ProductsNew() {
       queryClient.invalidateQueries(['product-variations']);
       setIsVariationDialogOpen(false);
       resetVariationForm();
-    }
+      toast.success('הווריאציה נוצרה');
+    },
+    onError: variationErrorToast('יצירת וריאציה נכשלה'),
   });
 
   const updateVariationMutation = useMutation({
@@ -177,7 +203,9 @@ export default function ProductsNew() {
       queryClient.invalidateQueries(['product-variations']);
       setIsVariationDialogOpen(false);
       resetVariationForm();
-    }
+      toast.success('הווריאציה עודכנה');
+    },
+    onError: variationErrorToast('עדכון וריאציה נכשל'),
   });
 
   const deleteVariationMutation = useMutation({
@@ -300,6 +328,22 @@ export default function ProductsNew() {
 
   const handleVariationSubmit = (e) => {
     e.preventDefault();
+    // Guard: every variation must point at a product. If the dialog was
+    // opened from somewhere that didn't seed product_id (dev-only path,
+    // stale state) the insert would have failed FK with no UI feedback —
+    // catch it here so the user gets a clear message instead of silence.
+    if (!editingVariation && !variationForm.product_id) {
+      toast.error('לא ניתן ליצור וריאציה בלי מוצר משויך. סגור את הדיאלוג ולחץ על "הוסף וריאציה" של מוצר ספציפי.');
+      return;
+    }
+    if (!variationForm.sku?.trim()) {
+      toast.error('נדרש למלא מק"ט לפני יצירת הווריאציה');
+      return;
+    }
+    if (!Number.isFinite(Number(variationForm.base_price)) || Number(variationForm.base_price) <= 0) {
+      toast.error('נדרש למלא מחיר חיובי לפני יצירת הווריאציה');
+      return;
+    }
     const cleanData = {
       ...variationForm,
       length_cm: variationForm.length_cm ? Number(variationForm.length_cm) : null,
@@ -309,7 +353,7 @@ export default function ProductsNew() {
       discount_percent: Number(variationForm.discount_percent || 0),
       stock_quantity: Number(variationForm.stock_quantity || 0),
       min_stock_threshold: variationForm.min_stock_threshold ? Number(variationForm.min_stock_threshold) : null,
-      cost: variationForm.cost ? Number(variationForm.cost) : null
+      cost: variationForm.cost ? Number(variationForm.cost) : null,
     };
 
     if (editingVariation) {
