@@ -150,13 +150,16 @@ export default function BulkUpdate() {
     setMatchCount(null);
     try {
       const filter = buildFilter();
-      // filter built for bulk update
+      // base44.functions.invoke returns the parsed body directly — there is
+      // no `.data` wrapper. Reading `res.data.count` was throwing TypeError
+      // on every count and dumping us into the catch with matchCount=-1, so
+      // the page reported "error in count" no matter what filters were set.
       const res = await base44.functions.invoke('initBulkUpdate', {
         entityName: selectedEntity,
         filter,
         mode: 'count',
       });
-      setMatchCount(res.data.count);
+      setMatchCount(res?.count ?? 0);
     } catch (err) {
       console.error('Count error:', err);
       setMatchCount(-1);
@@ -182,14 +185,16 @@ export default function BulkUpdate() {
         mode: 'execute',
       });
 
-      const { taskName, totalCount } = initRes.data;
+      // Same `.data` mistake as in handleCount: invoke returns the body
+      // directly, so the destructure was reading from undefined.
+      const { taskName, totalCount } = initRes || {};
       taskNameRef.current = taskName;
       setProgress(p => ({ ...p, totalCount }));
 
       let hasMore = true;
       while (hasMore && !cancelledRef.current) {
         const res = await base44.functions.invoke('processBulkUpdateBatch', { taskName });
-        const d = res.data;
+        const d = res || {};
 
         if (d.cancelled) {
           setCancelled(true);
