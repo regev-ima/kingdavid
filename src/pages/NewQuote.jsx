@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
 
 // Strip everything but digits, then drop a leading country prefix so
@@ -77,7 +78,20 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     terms: 'תשלום מלא עם ההזמנה. אספקה תוך 14-21 ימי עסקים.',
     warranty_terms: 'אחריות יצרן ל-10 שנים על המזרן.',
     status: 'draft',
-    notes: 'תיאום שירותי מנוף, ככל שיידרש, ייעשה על ידי החברה כשירות ללקוח בלבד. התשלום עבור שירותי המנוף ישולם ישירות לחברת המנוף ועל אחריות הלקוח. לחברה אין כל אחריות, התחייבות או מעורבות בשירותי המנוף מלבד התיאום.',
+    notes: `ניתן להחליף/לבטל הזמנה של מזרן תוך 30 יום מקבלתו בהחזר כספי מלא, למעט דמי הובלה.
+* מזרנים שהוגדרו במידה מיוחדת על פי תקנון החברה אינם ניתנים לביטול/החלפה על אף אריזתם המקורית.
+* החזרת מזרן יתבצע בתיאום מראש בלבד, בטלפון או במייל מול מחלקת שירות לקוחות.
+* בסיסים ומיטות מכל סוג הינם הזמנה אישית, בעיצוב וייצור אישי ללקוח, עפ''י דרישותיו ולכן אינם ניתנים לביטול או החלפה בשום אופן.
+* שינוי או ביטול הזמנה של בסיסים או מיטות יינתן עד 48 שעות מרגע ההזמנה בלבד. לאחר מכן לא יהיה ניתן לבטל.
+*במידה וההובלה כרוכה במנוף/חבלים או פירוק/פינוי, העלות הנוספת תחול על חשבון הלקוח מול חברת השילוח וההובלה.
+* מחיר ההובלה וההרכבה במדרגות, עד קומה 3, כל קומה נוספת בעלות ₪50 עבור כל פריט שאינו נכנס למעלית.
+* הלקוח מצהיר כי יש לו גישה להכנסת הסחורה לביתו, ומאשר כי האחריות להכנסת כל מוצר שהוא לביתו חלה עליו בלבד.
+*מסירת הסחורה ללקוח תבוצע אך ורק לאחר גמר חשבון ותשלום מלא בפועל.
+* משלוח והובלה ללקוח תבוצע בתיאום מראש בהתראה של יום אחד קודם המשלוח. כמו כן ללקוח האפשרות לדחות את מועד האספקה.
+* איסוף עצמי בתיאום מראש ישירות במפעל ברח׳ העמל 6 קרית מלאכי בימים א-ה בין השעות 9:00 - 16:00.
+
+הלקוח מאשר בחתימתו אישור סופי ומוחלט לכל הכתוב לעיל,
+ומצהיר בזאת כי הוא עבר על כל פרטי ההזמנה ומסכים לתנאי החברה ומדיניותה.`,
   });
 
   // NOTE: this useState used to live below the early-return branches at line ~305,
@@ -210,11 +224,17 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   const createQuoteMutation = useMutation({
     mutationFn: async (data) => {
-      // If no lead_id, search for existing lead by phone or create new
+      // If no lead_id, search for existing lead by phone or create new.
+      // Guard the phone-lookup branch — `Lead.filter({ phone: '' })` was
+      // throwing on the server when the customer phone field was empty,
+      // and the swallowed error was the root cause of "save quote does
+      // nothing" before we added onError below.
       let leadId = data.lead_id;
       if (!leadId) {
-        // Check if lead already exists with this phone number
-        const existingLeads = await base44.entities.Lead.filter({ phone: data.customer_phone });
+        const phoneForLookup = (data.customer_phone || '').trim();
+        const existingLeads = phoneForLookup
+          ? await base44.entities.Lead.filter({ phone: phoneForLookup })
+          : [];
 
         if (existingLeads.length > 0) {
           // Use existing lead
@@ -287,6 +307,19 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       } else {
         navigate(createPageUrl('QuoteDetails') + `?id=${quote.id}`);
       }
+    },
+    // Without this, a failed Lead lookup / Quote.create / RLS denial just
+    // bounces the button back to its idle state and the page does nothing —
+    // the user reported clicking "שמור הצעה" and seeing no feedback at all.
+    // Surface the real PostgREST error parts so we don't have to dig in
+    // DevTools to find which field broke. Mirrors the pattern in ExtraCharges.jsx.
+    onError: (err) => {
+      const parts = [err?.message, err?.details, err?.hint, err?.code]
+        .map((p) => (p == null || p === '' ? null : String(p)))
+        .filter(Boolean);
+      const description = parts.length ? parts.join(' — ') : (typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה');
+      console.error('Quote.create failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      toast.error(`שמירת ההצעה נכשלה: ${description}`, { duration: Infinity });
     },
   });
 
@@ -474,6 +507,19 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // Catch the obvious "user reached step 3 with empty form" case before
+    // it round-trips through Supabase and surfaces as a cryptic NOT NULL
+    // violation. Anything more nuanced will land in onError as a toast.
+    const missing = [];
+    if (!formData.customer_name?.trim()) missing.push('שם לקוח');
+    if (!formData.customer_phone?.trim()) missing.push('טלפון');
+    if (!formData.items.some((item) => item.product_id)) missing.push('לפחות מוצר אחד');
+    if (missing.length > 0) {
+      toast.error(`חסרים שדות חובה: ${missing.join(', ')}`);
+      // Jump back to the step that holds the missing input so the user can fix it.
+      setCurrentStep(missing.includes('לפחות מוצר אחד') ? 2 : 1);
+      return;
+    }
     createQuoteMutation.mutate(formData);
   };
 
