@@ -25,20 +25,24 @@ const QuotePdfGenerator = async (quoteData) => {
   // The default notes block is a multi-line list (each bullet on its own line
   // separated by \n, with leading "*" markers). The PDF used to dump the whole
   // string into one <p> with font-weight:900 — so it rendered as one bold wall
-  // of text. Render it as a proper list instead: one <li> per non-empty line,
-  // strip the leading "*", and let the .notes CSS keep the body in a regular
-  // (not bold) weight.
+  // of text.
+  //
+  // We avoid <ul>/<li> here on purpose: html2canvas (the HTML→canvas pipeline
+  // that produces the PDF) doesn't reliably render the native list marker on
+  // the RTL side — the bullets ended up flush left while the text was flush
+  // right, looking like two disconnected columns. Rendering a literal "•"
+  // inline at the start of each line keeps the marker right next to its text
+  // regardless of how the renderer handles list-style.
   const formatNotesAsList = (raw) => {
     const lines = String(raw || "")
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean);
     if (lines.length === 0) return "";
-    const items = lines
+    return lines
       .map((line) => esc(line.replace(/^\*\s*/, "")))
-      .map((line) => `<li>${line}</li>`)
+      .map((line) => `<div class="notes-item"><span class="notes-bullet">•</span><span>${line}</span></div>`)
       .join("");
-    return `<ul class="notes-list">${items}</ul>`;
   };
 
   const normalizeNumber = (n) => {
@@ -288,16 +292,21 @@ const QuotePdfGenerator = async (quoteData) => {
         margin: 0 0 6px 0;
         color: #111827;
       }
-      .notes-list {
-        list-style: disc;
-        padding-inline-start: 18px;
-        margin: 0 0 8px 0;
-      }
-      .notes-list li {
+      .notes-item {
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 6px;
         margin: 0 0 4px 0;
         font-weight: 400;
+        text-align: right;
       }
-      .notes-list li:last-child { margin: 0; }
+      .notes-item:last-child { margin: 0; }
+      .notes-bullet {
+        flex: 0 0 auto;
+        color: #4B5563;
+        line-height: 1.6;
+      }
 
       .footer {
         padding: 10px 22px 14px;
