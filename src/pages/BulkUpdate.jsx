@@ -90,6 +90,29 @@ export default function BulkUpdate() {
   const primaryFilters = config?.filterFields?.slice(0, primaryFilterCount) || [];
   const extraFilters = config?.filterFields?.slice(primaryFilterCount) || [];
 
+  // A "phone" filter typed as 0537772829 used to compile to
+  //   ILIKE '%0537772829%'
+  // but most records in the DB are stored either as the international
+  // form (972537772829) or with formatting (053-777-2829). The literal
+  // ILIKE almost never matched and the count came back 0, so the
+  // "המשך להגדרות עדכון" button (gated on a positive count) stayed
+  // disabled.
+  //
+  // Strip non-digits from the user's input and search on the last 9
+  // digits — that tail is identical across "0537772829", "972537772829"
+  // and "+972-53-777-2829" (when the stored value is digit-only). For
+  // values that legitimately have dashes the trigram index still
+  // accelerates the substring match.
+  const isPhoneFilterField = (field) => {
+    const key = String(field?.key || '').toLowerCase();
+    return key === 'phone' || key.endsWith('_phone');
+  };
+  const phoneSearchTail = (raw) => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.slice(-Math.min(9, digits.length));
+  };
+
   const buildFilter = () => {
     const conditions = [];
 
@@ -112,6 +135,13 @@ export default function BulkUpdate() {
             { [field.key]: null },
             { [field.key]: '' },
           ],
+        });
+      } else if (field.type === 'text' && isPhoneFilterField(field)) {
+        // Phone-specific normalization (see comment above buildFilter).
+        const tail = phoneSearchTail(val);
+        if (!tail) continue;
+        conditions.push({
+          [field.key]: { '$regex': tail, '$options': 'i' },
         });
       } else if (field.type === 'text') {
         // Text fields use regex for partial match
