@@ -248,11 +248,15 @@ export default function SmartScheduler({ shipments, orders }) {
       }
 
       // שיבוץ מחדש
+      // base44.functions.invoke returns the parsed body directly — there is
+      // no `.data` envelope. Reading `response.data.*` was throwing
+      //   Cannot read properties of undefined (reading 'success')
+      // and the user reported "שיבוץ חכם לא עבד" with that exact message.
       const shipmentIds = scheduled.map(s => s.id);
       const response = await base44.functions.invoke('scheduleShipments', { shipmentIds });
 
-      if (response.data.success) {
-        toast.success(`${response.data.results.success} משלוחים שובצו מחדש בהצלחה!`, { id: 'rescheduling', duration: 5000 });
+      if (response?.success) {
+        toast.success(`${response.results?.success ?? 0} משלוחים שובצו מחדש בהצלחה!`, { id: 'rescheduling', duration: 5000 });
         queryClient.invalidateQueries({ queryKey: ['shipments'] });
         queryClient.invalidateQueries({ queryKey: ['orders'] });
       } else {
@@ -289,15 +293,17 @@ export default function SmartScheduler({ shipments, orders }) {
       const shipmentIds = analyzedShipments.map(s => s.id);
       const response = await base44.functions.invoke('scheduleShipments', { shipmentIds });
 
-      if (response.data.success) {
+      // Same `.data` mistake as in the rescheduleScheduled handler above —
+      // the Edge Function returns the body directly.
+      if (response?.success) {
         // הצגת תוצאות אופטימיזציה
-        const optimizations = response.data.optimizations || [];
-        
+        const optimizations = response.optimizations || [];
+
         if (optimizations.length > 0) {
           const routeOptimizations = optimizations.filter(opt => opt.optimizedOrder);
           const overloadWarnings = optimizations.filter(opt => opt.type === 'overload');
-          
-          let message = response.data.message;
+
+          let message = response.message;
           if (routeOptimizations.length > 0) {
             const totalSaved = routeOptimizations.reduce((sum, opt) => sum + opt.improvement, 0);
             message += `\n💡 חיסכון של ${totalSaved} ק"מ באופטימיזציה!`;
@@ -336,9 +342,9 @@ export default function SmartScheduler({ shipments, orders }) {
             ]);
           }
         } else {
-          toast.success(response.data.message, { id: 'scheduling' });
+          toast.success(response.message, { id: 'scheduling' });
         }
-        
+
         queryClient.invalidateQueries({ queryKey: ['shipments'] });
         queryClient.invalidateQueries({ queryKey: ['orders'] });
         setAnalyzedShipments([]);
@@ -380,8 +386,8 @@ export default function SmartScheduler({ shipments, orders }) {
       const shipmentIds = pending.map((s) => s.id);
       const response = await base44.functions.invoke('scheduleShipments', { shipmentIds });
 
-      if (response?.data?.success) {
-        toast.success(response.data.message, { id: 'scheduling', duration: 5000 });
+      if (response?.success) {
+        toast.success(response.message, { id: 'scheduling', duration: 5000 });
         queryClient.invalidateQueries({ queryKey: ['shipments'] });
         queryClient.invalidateQueries({ queryKey: ['orders'] });
         setAnalyzedShipments([]);
