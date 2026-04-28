@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
 
 // Strip everything but digits, then drop a leading country prefix so
@@ -210,11 +211,17 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   const createQuoteMutation = useMutation({
     mutationFn: async (data) => {
-      // If no lead_id, search for existing lead by phone or create new
+      // If no lead_id, search for existing lead by phone or create new.
+      // Guard the phone-lookup branch — `Lead.filter({ phone: '' })` was
+      // throwing on the server when the customer phone field was empty,
+      // and the swallowed error was the root cause of "save quote does
+      // nothing" before we added onError below.
       let leadId = data.lead_id;
       if (!leadId) {
-        // Check if lead already exists with this phone number
-        const existingLeads = await base44.entities.Lead.filter({ phone: data.customer_phone });
+        const phoneForLookup = (data.customer_phone || '').trim();
+        const existingLeads = phoneForLookup
+          ? await base44.entities.Lead.filter({ phone: phoneForLookup })
+          : [];
 
         if (existingLeads.length > 0) {
           // Use existing lead
@@ -287,6 +294,19 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       } else {
         navigate(createPageUrl('QuoteDetails') + `?id=${quote.id}`);
       }
+    },
+    // Without this, a failed Lead lookup / Quote.create / RLS denial just
+    // bounces the button back to its idle state and the page does nothing —
+    // the user reported clicking "שמור הצעה" and seeing no feedback at all.
+    // Surface the real PostgREST error parts so we don't have to dig in
+    // DevTools to find which field broke. Mirrors the pattern in ExtraCharges.jsx.
+    onError: (err) => {
+      const parts = [err?.message, err?.details, err?.hint, err?.code]
+        .map((p) => (p == null || p === '' ? null : String(p)))
+        .filter(Boolean);
+      const description = parts.length ? parts.join(' — ') : (typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה');
+      console.error('Quote.create failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      toast.error(`שמירת ההצעה נכשלה: ${description}`, { duration: Infinity });
     },
   });
 
@@ -474,6 +494,19 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // Catch the obvious "user reached step 3 with empty form" case before
+    // it round-trips through Supabase and surfaces as a cryptic NOT NULL
+    // violation. Anything more nuanced will land in onError as a toast.
+    const missing = [];
+    if (!formData.customer_name?.trim()) missing.push('שם לקוח');
+    if (!formData.customer_phone?.trim()) missing.push('טלפון');
+    if (!formData.items.some((item) => item.product_id)) missing.push('לפחות מוצר אחד');
+    if (missing.length > 0) {
+      toast.error(`חסרים שדות חובה: ${missing.join(', ')}`);
+      // Jump back to the step that holds the missing input so the user can fix it.
+      setCurrentStep(missing.includes('לפחות מוצר אחד') ? 2 : 1);
+      return;
+    }
     createQuoteMutation.mutate(formData);
   };
 
