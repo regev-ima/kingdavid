@@ -11,6 +11,36 @@ const QuotePdfGenerator = async (quoteData) => {
 
   const safe = (v) => (v === null || v === undefined ? "" : String(v));
 
+  // HTML-escape a value before interpolating it into the document so the
+  // user-written notes / terms can't accidentally break out of the surrounding
+  // markup (e.g. a literal "<" in a note).
+  const esc = (v) =>
+    safe(v)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  // The default notes block is a multi-line list (each bullet on its own line
+  // separated by \n, with leading "*" markers). The PDF used to dump the whole
+  // string into one <p> with font-weight:900 — so it rendered as one bold wall
+  // of text. Render it as a proper list instead: one <li> per non-empty line,
+  // strip the leading "*", and let the .notes CSS keep the body in a regular
+  // (not bold) weight.
+  const formatNotesAsList = (raw) => {
+    const lines = String(raw || "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return "";
+    const items = lines
+      .map((line) => esc(line.replace(/^\*\s*/, "")))
+      .map((line) => `<li>${line}</li>`)
+      .join("");
+    return `<ul class="notes-list">${items}</ul>`;
+  };
+
   const normalizeNumber = (n) => {
     const x = Number(n);
     return Number.isFinite(x) ? x : 0;
@@ -245,13 +275,29 @@ const QuotePdfGenerator = async (quoteData) => {
         border: 1px solid #E8ECF4;
         background: #FFFFFF;
         border-radius: 14px;
-        padding: 12px;
+        padding: 12px 14px;
         font-size: 11px;
         color:#0B1220;
-        font-weight: 900;
+        font-weight: 400;
+        line-height: 1.6;
       }
-      .notes p { margin: 0 0 6px 0; }
+      .notes p { margin: 0 0 6px 0; font-weight: 400; }
       .notes p:last-child { margin:0; }
+      .notes-label {
+        font-weight: 700;
+        margin: 0 0 6px 0;
+        color: #111827;
+      }
+      .notes-list {
+        list-style: disc;
+        padding-inline-start: 18px;
+        margin: 0 0 8px 0;
+      }
+      .notes-list li {
+        margin: 0 0 4px 0;
+        font-weight: 400;
+      }
+      .notes-list li:last-child { margin: 0; }
 
       .footer {
         padding: 10px 22px 14px;
@@ -387,9 +433,9 @@ const QuotePdfGenerator = async (quoteData) => {
           quoteData.terms || quoteData.warranty_terms || quoteData.notes
             ? `
           <div class="notes">
-            ${quoteData.notes ? `<p><strong>הערות:</strong> ${safe(quoteData.notes)}</p>` : ""}
-            ${quoteData.terms ? `<p>${safe(quoteData.terms)}</p>` : ""}
-            ${quoteData.warranty_terms ? `<p>${safe(quoteData.warranty_terms)}</p>` : ""}
+            ${quoteData.notes ? `<p class="notes-label">הערות:</p>${formatNotesAsList(quoteData.notes)}` : ""}
+            ${quoteData.terms ? `<p>${esc(quoteData.terms)}</p>` : ""}
+            ${quoteData.warranty_terms ? `<p>${esc(quoteData.warranty_terms)}</p>` : ""}
           </div>
         `
             : ""
@@ -397,8 +443,9 @@ const QuotePdfGenerator = async (quoteData) => {
       </div>
 
       <div class="footer">
-        <div class="row">רח׳ בן צבי 23, רמת אליהו, ראשון לציון 75706 | טל׳ 03-9622319 | פקס 03-9628989</div>
-        <div class="row">info@kingdavid4u.co.il | www.kingdavid4u.co.il</div>
+        <div class="row">משרדים וחנות המפעל – רח׳ בן צבי 23 ראשל״צ</div>
+        <div class="row">כתובת מפעל החברה: רחוב העמל 6 קרית מלאכי</div>
+        <div class="row">טל: 1700-700-464, פקס: 03-9622319</div>
       </div>
     </div>
   </div>
