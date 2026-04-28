@@ -8,11 +8,12 @@ import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canAccessSalesWorkspace, filterQuotesForUser } from '@/lib/rbac';
+import { buildLeadsById, canAccessSalesWorkspace, filterQuotesForUser, isAdmin } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 const filterOptions = [
@@ -51,6 +52,13 @@ export default function Quotes() {
     enabled: canAccessSales,
   });
 
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 300000,
+    enabled: canAccessSales,
+  });
+
   const leadsById = buildLeadsById(leads);
   const scopedQuotes = filterQuotesForUser(effectiveUser, quotes, leadsById);
   let filteredQuotes = scopedQuotes;
@@ -85,6 +93,37 @@ export default function Quotes() {
     const daysUntilExpiry = differenceInDays(new Date(q.valid_until), new Date());
     return daysUntilExpiry <= 3 && daysUntilExpiry >= 0;
   }).length;
+
+  // "Open" quotes = not yet finalized (drafts + sent, awaiting customer response).
+  // Approved/rejected/expired are excluded from the open-totals summary.
+  const openQuotes = scopedQuotes.filter(q => q.status === 'sent' || q.status === 'draft');
+  const openTotal = openQuotes.reduce((sum, q) => sum + (q.total || 0), 0);
+
+  // Per-rep breakdown — only meaningful when the viewer can see other reps'
+  // quotes (i.e. admin). For sales users the list is already scoped to them.
+  const showPerRep = isAdmin(effectiveUser);
+  const userByEmail = users.reduce((acc, u) => {
+    if (u?.email) acc[String(u.email).toLowerCase()] = u;
+    return acc;
+  }, {});
+  const repTotals = showPerRep
+    ? Object.values(openQuotes.reduce((acc, q) => {
+        const repEmail = q.created_by_rep || 'unassigned';
+        const key = String(repEmail).toLowerCase();
+        if (!acc[key]) {
+          const repUser = userByEmail[key];
+          acc[key] = {
+            email: repEmail,
+            name: repUser?.full_name || (repEmail === 'unassigned' ? 'לא משויך' : repEmail),
+            count: 0,
+            total: 0,
+          };
+        }
+        acc[key].count += 1;
+        acc[key].total += q.total || 0;
+        return acc;
+      }, {})).sort((a, b) => b.total - a.total)
+    : [];
 
   const columns = [
     {
@@ -173,6 +212,44 @@ export default function Quotes() {
           </Button>
         </Link>
       </div>
+
+      <Card className="border-border shadow-card">
+        <CardContent className="p-4 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <p className="text-xs text-muted-foreground">סה"כ הצעות פתוחות</p>
+              <p className="text-2xl font-bold text-foreground leading-none mt-1">
+                ₪{Math.round(openTotal).toLocaleString()}
+              </p>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {openQuotes.length.toLocaleString()} הצעות (טיוטה + נשלחו)
+            </p>
+          </div>
+
+          {showPerRep && repTotals.length > 0 && (
+            <div className="border-t pt-3">
+              <p className="text-xs font-medium text-muted-foreground mb-2">פילוח לפי נציג</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {repTotals.map((rep) => (
+                  <div
+                    key={rep.email}
+                    className="flex items-center justify-between bg-muted/40 border border-border rounded-md px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground truncate">{rep.name}</p>
+                      <p className="text-xs text-muted-foreground">{rep.count} הצעות</p>
+                    </div>
+                    <span className="text-sm font-semibold text-primary whitespace-nowrap ms-3">
+                      ₪{Math.round(rep.total).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex flex-col sm:flex-row bg-card border h-auto gap-1 p-1.5 rounded-lg shadow-card">
