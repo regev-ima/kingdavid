@@ -11,7 +11,11 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
+import { useStatusColors } from '@/hooks/useStatusColors';
 import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { STATUS_COLOR_PRESETS, getStatusColorPreset } from '@/constants/statusColors';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import StatusBadge from '@/components/shared/StatusBadge';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import UserAvatar from "@/components/shared/UserAvatar";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
@@ -373,9 +377,57 @@ export default function Settings() {
   );
 }
 
+function StatusColorPicker({ value, onChange }) {
+  const current = getStatusColorPreset(value);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="h-7 w-7 rounded-full border border-border/60 hover:border-primary/60 transition-colors flex items-center justify-center"
+          aria-label="בחר צבע לסטטוס"
+        >
+          <span
+            className={`block h-4 w-4 rounded-full ${current ? current.dot : 'bg-gradient-to-br from-slate-300 to-slate-500'}`}
+          />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-2" align="start">
+        <div className="grid grid-cols-6 gap-1.5">
+          {STATUS_COLOR_PRESETS.map((preset) => {
+            const isActive = preset.id === value;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => onChange(preset.id)}
+                className={`h-7 w-7 rounded-full ${preset.dot} flex items-center justify-center transition-all ${
+                  isActive ? 'ring-2 ring-offset-1 ring-primary scale-110' : 'hover:scale-110'
+                }`}
+                title={preset.label}
+                aria-label={preset.label}
+              />
+            );
+          })}
+        </div>
+        {value ? (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground py-1 border-t border-border/40 pt-2"
+          >
+            איפוס לצבע ברירת המחדל
+          </button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function StatusManagement() {
   const { hiddenStatuses, isLoading, setHiddenStatuses, isPending } = useHiddenStatuses();
   const { customStatuses, addStatus, removeStatus } = useCustomStatuses();
+  const { statusColors, setStatusColor } = useStatusColors();
   const [newStatusLabel, setNewStatusLabel] = useState('');
 
   const handleAddStatus = (e) => {
@@ -455,22 +507,26 @@ function StatusManagement() {
                       isHidden ? 'bg-muted/50 opacity-60' : 'hover:bg-muted/30'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       {isHidden ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        <EyeOff className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       ) : (
-                        <Eye className="h-4 w-4 text-emerald-500" />
+                        <Eye className="h-4 w-4 text-emerald-500 flex-shrink-0" />
                       )}
-                      <span className={`text-sm font-medium ${isHidden ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
-                        {opt.label}
-                      </span>
-                      {opt.isCustom ? (
-                        <span className="text-[10px] uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                          מותאם
-                        </span>
-                      ) : null}
+                      <div className={`flex items-center gap-2 min-w-0 ${isHidden ? 'opacity-60' : ''}`}>
+                        <StatusBadge status={opt.value} label={opt.label} />
+                        {opt.isCustom ? (
+                          <span className="text-[10px] uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                            מותאם
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <StatusColorPicker
+                        value={statusColors[opt.value]}
+                        onChange={(presetId) => setStatusColor(opt.value, presetId)}
+                      />
                       <Switch
                         checked={!isHidden}
                         onCheckedChange={() => toggleStatus(opt.value)}
