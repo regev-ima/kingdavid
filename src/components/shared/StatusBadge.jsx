@@ -1,4 +1,6 @@
 import React from 'react';
+import { useStatusColors } from '@/hooks/useStatusColors';
+import { getStatusColorPreset } from '@/constants/statusColors';
 
 const statusConfig = {
   // Lead Status
@@ -131,16 +133,23 @@ function getDotColor(colorString) {
   return `bg-${match[1]}-${match[2]}`;
 }
 
-export default function StatusBadge({ status, className = '' }) {
+export default function StatusBadge({ status, className = '', label: labelOverride }) {
+  const { statusColors } = useStatusColors();
   const config = statusConfig[status] || { label: status, color: 'bg-gray-100 text-gray-600' };
-  // Remove ring classes for cleaner look
-  const cleanColor = config.color.replace(/ring-1\s*/g, '').replace(/ring-\w+-\d+/g, '').trim();
-  const dotColor = getDotColor(config.color);
+
+  // Admin override (Settings → סטטוסים → color picker) takes precedence over
+  // the built-in palette so a recolored status looks the same everywhere it's
+  // rendered. Falls back to the original tailwind classes when no override.
+  const overridePreset = getStatusColorPreset(statusColors[status]);
+  const colorClasses = overridePreset
+    ? `${overridePreset.bg} ${overridePreset.text}`
+    : config.color.replace(/ring-1\s*/g, '').replace(/ring-\w+-\d+/g, '').trim();
+  const dotColor = overridePreset ? overridePreset.dot : getDotColor(config.color);
 
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium ${cleanColor} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium ${colorClasses} ${className}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${dotColor} flex-shrink-0`} />
-      {config.label}
+      {labelOverride ?? config.label}
     </span>
   );
 }

@@ -707,59 +707,90 @@ export default function Finance() {
           />
 
           {/* Summary */}
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>סיכום</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid sm:grid-cols-4 gap-4">
-                {(() => {
-                  let start, end;
-                  const now = new Date();
-                  
-                  switch (reportDateRange) {
-                    case 'today':
-                      start = startOfDay(now);
-                      end = endOfDay(now);
-                      break;
-                    case 'week':
-                      start = startOfWeek(now, { weekStartsOn: 0 });
-                      end = endOfWeek(now, { weekStartsOn: 0 });
-                      break;
-                    case 'month':
-                      start = startOfMonth(now);
-                      end = endOfMonth(now);
-                      break;
-                    case 'custom':
-                      start = reportStartDate ? new Date(reportStartDate) : startOfMonth(now);
-                      end = reportEndDate ? new Date(reportEndDate) : endOfMonth(now);
-                      break;
-                    default:
-                      start = startOfMonth(now);
-                      end = endOfMonth(now);
-                  }
+          {(() => {
+            let start, end;
+            const now = new Date();
 
-                  const filtered = commissions.filter(c => {
-                    const date = new Date(c.created_date);
-                    const dateMatch = isWithinInterval(date, { start, end });
-                    const repMatch = reportRep === 'all' || c.rep1 === reportRep || c.rep2 === reportRep;
-                    return dateMatch && repMatch;
-                  });
+            switch (reportDateRange) {
+              case 'today':
+                start = startOfDay(now);
+                end = endOfDay(now);
+                break;
+              case 'week':
+                start = startOfWeek(now, { weekStartsOn: 0 });
+                end = endOfWeek(now, { weekStartsOn: 0 });
+                break;
+              case 'month':
+                start = startOfMonth(now);
+                end = endOfMonth(now);
+                break;
+              case 'custom':
+                start = reportStartDate ? new Date(reportStartDate) : startOfMonth(now);
+                end = reportEndDate ? new Date(reportEndDate) : endOfMonth(now);
+                break;
+              default:
+                start = startOfMonth(now);
+                end = endOfMonth(now);
+            }
 
-                  const calculateAmount = (c) => {
-                    if (reportRep === 'all') return c.total_commission || 0;
-                    if (c.rep1 === reportRep) return c.rep1_amount || 0;
-                    if (c.rep2 === reportRep) return c.rep2_amount || 0;
-                    return 0;
-                  };
+            const filtered = commissions.filter(c => {
+              const date = new Date(c.created_date);
+              const dateMatch = isWithinInterval(date, { start, end });
+              const repMatch = reportRep === 'all' || c.rep1 === reportRep || c.rep2 === reportRep;
+              return dateMatch && repMatch;
+            });
 
-                  const totalAmount = filtered.reduce((sum, c) => sum + calculateAmount(c), 0);
-                  const pendingAmount = filtered.filter(c => c.status === 'pending').reduce((sum, c) => sum + calculateAmount(c), 0);
-                  const approvedAmount = filtered.filter(c => c.status === 'approved').reduce((sum, c) => sum + calculateAmount(c), 0);
-                  const paidAmount = filtered.filter(c => c.status === 'paid').reduce((sum, c) => sum + calculateAmount(c), 0);
+            const calculateAmount = (c) => {
+              if (reportRep === 'all') return c.total_commission || 0;
+              if (c.rep1 === reportRep) return c.rep1_amount || 0;
+              if (c.rep2 === reportRep) return c.rep2_amount || 0;
+              return 0;
+            };
 
-                  return (
-                    <>
+            const totalAmount = filtered.reduce((sum, c) => sum + calculateAmount(c), 0);
+            const pendingAmount = filtered.filter(c => c.status === 'pending').reduce((sum, c) => sum + calculateAmount(c), 0);
+            const approvedAmount = filtered.filter(c => c.status === 'approved').reduce((sum, c) => sum + calculateAmount(c), 0);
+            const paidAmount = filtered.filter(c => c.status === 'paid').reduce((sum, c) => sum + calculateAmount(c), 0);
+
+            // Per-rep aggregation — only meaningful when "all reps" is selected.
+            // Each commission contributes rep1_amount to rep1 and rep2_amount
+            // to rep2 (when present), so a row split between two reps shows
+            // up correctly under both names.
+            const repAggregate = new Map();
+            const bumpRep = (email, amount, status) => {
+              if (!email || !amount) return;
+              const existing = repAggregate.get(email) || {
+                email,
+                count: 0,
+                total: 0,
+                pending: 0,
+                approved: 0,
+                paid: 0,
+              };
+              existing.count += 1;
+              existing.total += amount;
+              if (status === 'pending') existing.pending += amount;
+              else if (status === 'approved') existing.approved += amount;
+              else if (status === 'paid') existing.paid += amount;
+              repAggregate.set(email, existing);
+            };
+
+            if (reportRep === 'all') {
+              filtered.forEach((c) => {
+                bumpRep(c.rep1, c.rep1_amount || 0, c.status);
+                bumpRep(c.rep2, c.rep2_amount || 0, c.status);
+              });
+            }
+            const repRows = Array.from(repAggregate.values()).sort((a, b) => b.total - a.total);
+
+            return (
+              <>
+                <Card className="mt-6">
+                  <CardHeader>
+                    <CardTitle>סיכום</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid sm:grid-cols-4 gap-4">
                       <div className="p-4 bg-primary/5 rounded-lg">
                         <p className="text-sm text-primary mb-1">סה"כ עמלות</p>
                         <p className="text-2xl font-bold text-foreground">₪{totalAmount.toLocaleString()}</p>
@@ -776,12 +807,46 @@ export default function Finance() {
                         <p className="text-sm text-green-700 mb-1">שולמו</p>
                         <p className="text-2xl font-bold text-green-900">₪{paidAmount.toLocaleString()}</p>
                       </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </CardContent>
-          </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {reportRep === 'all' && repRows.length > 0 && (
+                  <Card className="mt-6">
+                    <CardHeader>
+                      <CardTitle>פילוח לפי נציג</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40 text-muted-foreground">
+                          <tr>
+                            <th className="text-start font-medium px-4 py-2.5">נציג</th>
+                            <th className="text-start font-medium px-4 py-2.5">עמלות</th>
+                            <th className="text-start font-medium px-4 py-2.5">ממתינות</th>
+                            <th className="text-start font-medium px-4 py-2.5">מאושרות</th>
+                            <th className="text-start font-medium px-4 py-2.5">שולמו</th>
+                            <th className="text-start font-medium px-4 py-2.5">סה"כ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {repRows.map((rep) => (
+                            <tr key={rep.email} className="border-t border-border">
+                              <td className="px-4 py-2.5 font-medium text-foreground">{getRepName(rep.email)}</td>
+                              <td className="px-4 py-2.5 text-muted-foreground">{rep.count}</td>
+                              <td className="px-4 py-2.5 text-amber-700">₪{rep.pending.toLocaleString()}</td>
+                              <td className="px-4 py-2.5 text-foreground">₪{rep.approved.toLocaleString()}</td>
+                              <td className="px-4 py-2.5 text-green-700">₪{rep.paid.toLocaleString()}</td>
+                              <td className="px-4 py-2.5 font-semibold text-primary">₪{rep.total.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            );
+          })()}
         </>
       )}
     </div>

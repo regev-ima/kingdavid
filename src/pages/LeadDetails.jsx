@@ -72,6 +72,7 @@ import { createAuditLog } from '@/utils/auditLog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
+import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
@@ -637,7 +638,9 @@ export default function LeadDetails() {
                         <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {LEAD_STATUS_OPTIONS.map(opt => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                            <SelectItem key={opt.value} value={opt.value}>
+                              <StatusOptionRow status={opt.value} label={opt.label} />
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -983,7 +986,9 @@ export default function LeadDetails() {
                   <SelectTrigger className="bg-white border-blue-200 h-10 text-sm font-semibold"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {getVisibleStatusOptions(hiddenStatuses, lead.status).map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <StatusOptionRow status={opt.value} label={opt.label} />
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
