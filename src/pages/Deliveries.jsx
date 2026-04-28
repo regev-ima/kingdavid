@@ -10,6 +10,7 @@ import KPICard from '@/components/shared/KPICard';
 import SmartScheduler from '@/components/logistics/SmartScheduler';
 import RoutesManager from '@/components/logistics/RoutesManager';
 import DeliveryWeekView from '@/components/logistics/DeliveryWeekView';
+import DayDeliveryMap from '@/components/logistics/DayDeliveryMap';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Truck, Clock, CheckCircle, AlertTriangle, MapPin, Sparkles, Route, CalendarDays } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
@@ -206,6 +207,9 @@ export default function Deliveries() {
           <TabsTrigger value="week" className="gap-2">
             <CalendarDays className="h-4 w-4" /> תצוגת שבוע
           </TabsTrigger>
+          <TabsTrigger value="map" className="gap-2">
+            <MapPin className="h-4 w-4" /> מפת יום
+          </TabsTrigger>
           <TabsTrigger value="list" className="gap-2">
             <Truck className="h-4 w-4" /> רשימת משלוחים
           </TabsTrigger>
@@ -219,6 +223,10 @@ export default function Deliveries() {
 
         <TabsContent value="week" className="mt-4">
           <DeliveryWeekView shipments={shipments} />
+        </TabsContent>
+
+        <TabsContent value="map" className="mt-4">
+          <DayDeliveryMap shipments={shipments} />
         </TabsContent>
 
         <TabsContent value="scheduler" className="mt-4">
