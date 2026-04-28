@@ -240,19 +240,27 @@ export default function SalesDashboard() {
   const { data: salesTasks = [], refetch: refetchTasks } = useQuery({
     queryKey: ['salesTasks', 'dashboard'],
     queryFn: async () => {
-      // Fetch open tasks (not_completed) - these are the ones that matter for the dashboard
-      const openTasks = await base44.entities.SalesTask.filter(
-        { task_status: 'not_completed' },
-        '-created_date',
-        500
-      );
-      // Also fetch tasks completed today for the "completed today" section
-      const todayStr = new Date().toISOString().split('T')[0];
-      const recentTasks = await base44.entities.SalesTask.filter(
-        { task_status: 'completed' },
-        '-updated_date',
-        100
-      );
+      // Same truncation pattern as SalesTasks.jsx — the 500-row cap on open
+      // tasks meant a sales rep with > 500 open tasks saw incorrect KPI
+      // numbers on the rep dashboard. Paginate through both buckets.
+      const PAGE = 1000;
+      const fetchAllByStatus = async (status, sort) => {
+        const out = [];
+        let skip = 0;
+        const HARD_CAP = 50_000;
+        while (out.length < HARD_CAP) {
+          const batch = await base44.entities.SalesTask.filter({ task_status: status }, sort, PAGE, skip);
+          out.push(...batch);
+          if (batch.length < PAGE) break;
+          skip += PAGE;
+        }
+        return out;
+      };
+
+      const [openTasks, recentTasks] = await Promise.all([
+        fetchAllByStatus('not_completed', '-created_date'),
+        fetchAllByStatus('completed', '-updated_date'),
+      ]);
       return [...openTasks, ...recentTasks];
     },
     staleTime: 60000,
