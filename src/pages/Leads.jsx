@@ -27,6 +27,7 @@ import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { useNavigate } from 'react-router-dom';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
+import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
 // filterOptions for the source filter is static. The status filter is built
 // inside the component because admin-added custom statuses (per-browser
@@ -374,9 +375,25 @@ export default function Leads() {
           }
           return p;
         };
+        const returning = isReturningLead(row);
+        const createdAt = parseDbTimestamp(row.created_date);
+        const returnedAt = parseDbTimestamp(row.effective_sort_date);
+        const returningTooltip = returning && createdAt && returnedAt
+          ? `נוצר ${formatInTimeZone(createdAt, 'Asia/Jerusalem', 'dd/MM/yyyy')} · חזר ${formatInTimeZone(returnedAt, 'Asia/Jerusalem', 'dd/MM/yyyy')}`
+          : '';
         return (
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">{row.full_name}</p>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{row.full_name}</p>
+              {returning && (
+                <span
+                  title={returningTooltip}
+                  className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0"
+                >
+                  🔁 פניה חוזרת
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1.5 min-w-0">
               <p className="text-sm text-muted-foreground whitespace-nowrap" dir="ltr">{formatPhone(row.phone)}</p>
               {row.phone && (
@@ -426,13 +443,18 @@ export default function Leads() {
       header: 'SLA',
       accessor: 'sla_status',
       render: (row) => {
-        if (!row.created_date || row.first_action_at) return <span className="text-xs text-muted-foreground/70">טופל</span>;
+        // A returning lead's SLA timer restarts from the latest touch
+        // (effective_sort_date), not the original created_date — so a
+        // 528-day-old lead that re-submitted this morning shows minutes,
+        // not days. isLeadHandled honors the same anchor so a lead that
+        // came back AFTER being handled stops showing "טופל".
+        if (isLeadHandled(row)) return <span className="text-xs text-muted-foreground/70">טופל</span>;
+        const anchor = getLeadSlaAnchor(row);
+        if (!anchor) return <span className="text-xs text-muted-foreground/70">-</span>;
 
         const now = new Date();
-        const created = parseDbTimestamp(row.created_date);
-        if (!created) return <span className="text-xs text-muted-foreground/70">-</span>;
-        const diffMinutes = Math.floor((now - created) / 1000 / 60);
-        
+        const diffMinutes = Math.floor((now - anchor) / 1000 / 60);
+
         let color = 'text-green-600';
         if (diffMinutes > SLA_THRESHOLDS.AMBER_MAX_MINUTES) color = 'text-red-600';
         else if (diffMinutes > SLA_THRESHOLDS.GREEN_MAX_MINUTES) color = 'text-amber-600';

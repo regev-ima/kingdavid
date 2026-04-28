@@ -9,6 +9,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
 function formatPhone(phone) {
   if (!phone) return '';
@@ -32,14 +33,14 @@ function getTreatmentText(row) {
 }
 
 function getSlaData(row) {
-  if (!row.created_date || row.first_action_at) {
+  if (isLeadHandled(row)) {
     return { label: 'טופל', className: 'text-muted-foreground/70' };
   }
 
+  const anchor = getLeadSlaAnchor(row);
+  if (!anchor) return { label: '-', className: 'text-muted-foreground/70' };
   const now = new Date();
-  const created = parseDbTimestamp(row.created_date);
-  if (!created) return { label: '-', className: 'text-muted-foreground/70' };
-  const diffMinutes = Math.floor((now - created) / 1000 / 60);
+  const diffMinutes = Math.floor((now - anchor) / 1000 / 60);
 
   let className = 'text-green-600';
   if (diffMinutes > SLA_THRESHOLDS.AMBER_MAX_MINUTES) className = 'text-red-600';
@@ -119,7 +120,14 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
             )}
             {row.unique_id ? <span className="text-xs text-muted-foreground">ID: {row.unique_id}</span> : null}
           </div>
-          <h3 className="text-base font-semibold text-foreground truncate">{row.full_name}</h3>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="text-base font-semibold text-foreground truncate">{row.full_name}</h3>
+            {isReturningLead(row) && (
+              <span className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0">
+                🔁 פניה חוזרת
+              </span>
+            )}
+          </div>
           <div className="mt-1 flex items-center gap-2">
             <span className="text-sm text-muted-foreground" dir="ltr">{formatPhone(row.phone)}</span>
             {row.phone ? (

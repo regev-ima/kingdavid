@@ -43,6 +43,7 @@ import {
   parseSalesTaskDate,
 } from '@/components/shared/salesTaskWorkbench';
 import PendingQuotesCard from '@/components/dashboard/PendingQuotesCard';
+import MyCommissionsCard from '@/components/dashboard/MyCommissionsCard';
 
 const TASK_TYPE_EMOJI = {
   call: '📞',
@@ -413,8 +414,8 @@ export default function SalesDashboard() {
         <MiniKpiCard label="ללא יעד" value={metrics.undatedCount} helper="דורש תכנון" icon={ListTodo} tone="slate" onClick={() => navigate(createPageUrl('SalesTasks') + '?tab=undated')} />
       </div>
 
-      {/* לידים חדשים + הצעות מחיר ממתינות */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      {/* לידים חדשים + הצעות מחיר ממתינות + העמלות שלי */}
+      <div className="grid gap-5 lg:grid-cols-3">
         <TaskListCard
           title="לידים חדשים"
           helper="משימות של לידים בסטטוס ׳ליד חדש׳ — דורשים טיפול ראשוני"
@@ -428,6 +429,7 @@ export default function SalesDashboard() {
           taskTypeEmoji={TASK_TYPE_EMOJI}
         />
         <PendingQuotesCard leadsById={leadsById} effectiveUser={effectiveUser} />
+        <MyCommissionsCard effectiveUser={effectiveUser} />
       </div>
 
       {/* Main 50/50: באיחור + להיום (ללא לידים חדשים) */}
