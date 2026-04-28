@@ -1,11 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MapPin, Phone, ChevronDown, ChevronUp, Sun, Cloud, Moon, Calendar as CalendarIcon, User } from 'lucide-react';
+import { MapPin, Phone, ChevronDown, ChevronUp, Sun, Cloud, Moon, Calendar as CalendarIcon, User, GripVertical } from 'lucide-react';
 import { format, addDays, startOfWeek } from '@/lib/safe-date-fns';
 import { getCityRegion, REGIONS } from '@/components/utils/cityRegionMapper';
 
@@ -32,10 +36,29 @@ const HEB_DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמ
  * Week view for scheduled shipments.
  * Groups each day's scheduled shipments by region, and within region by time
  * window. This is the view a dispatcher uses when planning trucks for the week.
+ *
+ * Drag a shipment to a different day to reschedule it — the row's
+ * scheduled_date is updated and the Deliveries list is invalidated so KPIs
+ * stay in sync. Same-day drops are no-ops; we don't support intra-day
+ * reordering yet (the in-day order is auto-derived from region + time
+ * window + city).
  */
 export default function DeliveryWeekView({ shipments }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, -1 = prev, +1 = next
+
+  const rescheduleMutation = useMutation({
+    mutationFn: ({ id, newDate }) => base44.entities.DeliveryShipment.update(id, { scheduled_date: newDate }),
+    onSuccess: (_, { newDate }) => {
+      queryClient.invalidateQueries(['shipments']);
+      toast.success(`המשלוח הועבר ל-${format(new Date(newDate), 'dd/MM')}`);
+    },
+    onError: (err) => {
+      const parts = [err?.message, err?.details, err?.hint, err?.code].filter(Boolean);
+      toast.error(`עדכון המשלוח נכשל: ${parts.join(' — ') || 'שגיאה לא ידועה'}`, { duration: Infinity });
+    },
+  });
 
   // Build the 5 business days (Sun–Thu) for the selected week.
   const weekDays = useMemo(() => {
@@ -62,6 +85,17 @@ export default function DeliveryWeekView({ shipments }) {
     [shipments],
   );
 
+  // dnd-callback: figure out which day the row was dropped onto and bump its
+  // scheduled_date if the target day differs from the source day. Same-day
+  // drops are no-ops on purpose (intra-day order isn't user-controlled here).
+  const handleDragEnd = (result) => {
+    const { destination, source, draggableId } = result;
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId) return;
+    if (rescheduleMutation.isPending) return;
+    rescheduleMutation.mutate({ id: draggableId, newDate: destination.droppableId });
+  };
+
   // A single day column: groups that day's shipments by region, then by time window.
   const renderDayCard = (date) => {
     const key = format(date, 'yyyy-MM-dd');
@@ -76,36 +110,56 @@ export default function DeliveryWeekView({ shipments }) {
       (byRegion[region] ??= []).push(s);
     }
 
+    // Each Draggable inside this Droppable needs a unique sequential index.
+    // We grant indices in the same iteration order the regions/rows render
+    // below, so the first row of the first (largest) region gets index 0,
+    // the last row of the last region gets index N-1.
+    const sortedRegions = Object.entries(byRegion).sort(([, a], [, b]) => b.length - a.length);
+    let rowIndexCounter = 0;
+    const indexFor = () => rowIndexCounter++;
+
     return (
-      <Card key={key} className={isToday ? 'border-2 border-indigo-500' : ''}>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-baseline justify-between">
-            <div className="flex items-baseline gap-2">
-              <span className="text-base">{dayName}</span>
-              <span className="text-sm text-muted-foreground">{format(date, 'dd/MM')}</span>
-              {isToday && <Badge className="bg-indigo-600">היום</Badge>}
-            </div>
-            <Badge variant="outline">{dayShipments.length}</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-0">
-          {dayShipments.length === 0 && (
-            <p className="text-xs text-muted-foreground italic">אין משלוחים מתוכננים</p>
-          )}
-          {Object.entries(byRegion)
-            .sort(([, a], [, b]) => b.length - a.length)
-            .map(([region, regionShipments]) => (
-              <RegionSection
-                key={region}
-                region={region}
-                shipments={regionShipments}
-                onShipmentClick={(id) =>
-                  navigate(createPageUrl('ShipmentDetails') + `?id=${id}`)
-                }
-              />
-            ))}
-        </CardContent>
-      </Card>
+      <Droppable droppableId={key} key={key}>
+        {(dropProvided, dropSnapshot) => (
+          <Card
+            ref={dropProvided.innerRef}
+            {...dropProvided.droppableProps}
+            className={`${isToday ? 'border-2 border-indigo-500' : ''} ${
+              dropSnapshot.isDraggingOver ? 'ring-2 ring-indigo-300 bg-indigo-50/50' : ''
+            } transition-colors`}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-baseline justify-between">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-base">{dayName}</span>
+                  <span className="text-sm text-muted-foreground">{format(date, 'dd/MM')}</span>
+                  {isToday && <Badge className="bg-indigo-600">היום</Badge>}
+                </div>
+                <Badge variant="outline">{dayShipments.length}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0 min-h-[80px]">
+              {dayShipments.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">
+                  {dropSnapshot.isDraggingOver ? 'שחרר כדי לתזמן ליום הזה' : 'אין משלוחים מתוכננים'}
+                </p>
+              )}
+              {sortedRegions.map(([region, regionShipments]) => (
+                <RegionSection
+                  key={region}
+                  region={region}
+                  shipments={regionShipments}
+                  indexFor={indexFor}
+                  onShipmentClick={(id) =>
+                    navigate(createPageUrl('ShipmentDetails') + `?id=${id}`)
+                  }
+                />
+              ))}
+              {dropProvided.placeholder}
+            </CardContent>
+          </Card>
+        )}
+      </Droppable>
     );
   };
 
@@ -148,10 +202,16 @@ export default function DeliveryWeekView({ shipments }) {
         )}
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        💡 גרור משלוח ליום אחר כדי לתזמן מחדש.
+      </p>
+
       {/* 5-day grid */}
-      <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
-        {weekDays.map(renderDayCard)}
-      </div>
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+          {weekDays.map(renderDayCard)}
+        </div>
+      </DragDropContext>
     </div>
   );
 }
@@ -159,7 +219,7 @@ export default function DeliveryWeekView({ shipments }) {
 // ---------------------------------------------------------------------------
 // Region section inside a day card
 // ---------------------------------------------------------------------------
-function RegionSection({ region, shipments, onShipmentClick }) {
+function RegionSection({ region, shipments, indexFor, onShipmentClick }) {
   const [expanded, setExpanded] = useState(shipments.length <= 3);
   const regionLabel = REGIONS[region] || region;
   const colorClass = REGION_COLORS[region] || 'bg-gray-100 text-gray-800 border-gray-300';
@@ -191,13 +251,18 @@ function RegionSection({ region, shipments, onShipmentClick }) {
 
       {expanded && (
         <ol className="divide-y">
-          {sorted.map((s, idx) => (
-            <ShipmentRow
-              key={s.id}
-              index={idx + 1}
-              shipment={s}
-              onClick={() => onShipmentClick(s.id)}
-            />
+          {sorted.map((s, stopIdx) => (
+            <Draggable key={s.id} draggableId={s.id} index={indexFor()}>
+              {(dragProvided, dragSnapshot) => (
+                <ShipmentRow
+                  index={stopIdx + 1}
+                  shipment={s}
+                  onClick={() => onShipmentClick(s.id)}
+                  dragProvided={dragProvided}
+                  isDragging={dragSnapshot.isDragging}
+                />
+              )}
+            </Draggable>
           ))}
         </ol>
       )}
@@ -208,13 +273,33 @@ function RegionSection({ region, shipments, onShipmentClick }) {
 // ---------------------------------------------------------------------------
 // Single shipment row inside a region section
 // ---------------------------------------------------------------------------
-function ShipmentRow({ index, shipment, onClick }) {
+function ShipmentRow({ index, shipment, onClick, dragProvided, isDragging }) {
   const meta = TIME_WINDOW_META[shipment.time_window] || TIME_WINDOW_META.all_day;
   const Icon = meta.icon;
   const phone = (shipment.contact_phone || shipment.customer_phone || '').replace(/[^0-9]/g, '');
 
   return (
-    <li className="px-3 py-2 flex items-start gap-2 text-xs hover:bg-slate-50 transition-colors">
+    <li
+      ref={dragProvided?.innerRef}
+      {...(dragProvided?.draggableProps || {})}
+      className={`px-3 py-2 flex items-start gap-2 text-xs hover:bg-slate-50 transition-colors ${
+        isDragging ? 'bg-white shadow-lg ring-2 ring-indigo-300 rounded' : ''
+      }`}
+    >
+      {/* Drag handle — only this small zone responds to drag-start so the
+          rest of the row can still receive plain clicks (open shipment) and
+          taps on the phone link. */}
+      {dragProvided && (
+        <span
+          {...dragProvided.dragHandleProps}
+          className="shrink-0 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing pt-0.5"
+          title="גרור ליום אחר"
+          aria-label="גרור ליום אחר"
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+      )}
+
       {/* Stop number (route order) */}
       <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px]">
         {index}
