@@ -505,6 +505,15 @@ export default function LeadDetails() {
 
       <div className="lg:hidden flex flex-wrap gap-2">
         <Button
+          size="sm"
+          onClick={() => handleClickToCall(lead.phone)}
+          disabled={!lead.phone}
+          className="flex-1 min-w-[120px] justify-center h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+        >
+          <Phone className="h-3.5 w-3.5 me-1.5" />
+          חייג
+        </Button>
+        <Button
           variant="outline"
           size="sm"
           onClick={() => setShowAddTaskDialog(true)}
@@ -513,6 +522,15 @@ export default function LeadDetails() {
           <Clock className="h-3.5 w-3.5 me-1.5" />
           משימה חדשה
         </Button>
+        <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`} className="flex-1 min-w-[120px]">
+          <Button
+            size="sm"
+            className="w-full justify-center h-9 text-xs"
+          >
+            <FileText className="h-3.5 w-3.5 me-1.5" />
+            הצעה חדשה
+          </Button>
+        </Link>
       </div>
 
       <div className="hidden lg:flex sticky top-16 z-20 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card">
@@ -536,6 +554,15 @@ export default function LeadDetails() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => handleClickToCall(lead.phone)}
+            disabled={!lead.phone}
+            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            <Phone className="h-3.5 w-3.5 me-1" />
+            חייג
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowAddTaskDialog(true)} className="h-8 text-xs">
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
@@ -670,24 +697,7 @@ export default function LeadDetails() {
                   {/* Contact Info Grid */}
                   <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
                     <DetailField label="שם מלא" value={lead.full_name} />
-                    <DetailField label="טלפון">
-                      {lead.phone ? (
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium text-foreground" dir="ltr">{lead.phone}</p>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => handleClickToCall(lead.phone)}
-                            className="h-7 px-2.5 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
-                          >
-                            <Phone className="h-3.5 w-3.5" />
-                            <span className="text-xs font-medium">חייג</span>
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="text-sm font-medium text-muted-foreground/40">-</p>
-                      )}
-                    </DetailField>
+                    <DetailField label="טלפון" value={lead.phone} />
                     <DetailField label="אימייל" value={lead.email} />
                     <DetailField label="עיר" value={lead.city} />
                   </div>
