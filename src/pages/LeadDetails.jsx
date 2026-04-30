@@ -179,6 +179,13 @@ export default function LeadDetails() {
     staleTime: 120000,
   });
 
+  const openServiceTicketsCount = useMemo(
+    () => serviceTickets.filter(
+      (ticket) => !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase())
+    ).length,
+    [serviceTickets]
+  );
+
   // Sync form data when lead loads or updates (for real-time status changes)
   const leadUpdatedDate = lead?.updated_date;
   React.useEffect(() => {
@@ -494,11 +501,20 @@ export default function LeadDetails() {
           <Button
             type="button"
             size="sm"
-            className="h-8 text-xs"
+            className="h-8 text-xs gap-1.5"
             variant={workMode === 'service' ? 'default' : 'ghost'}
             onClick={() => setWorkMode('service')}
           >
             מצב שירות
+            {openServiceTicketsCount > 0 && (
+              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
+                workMode === 'service'
+                  ? 'bg-white/25 text-white'
+                  : 'bg-amber-500 text-white'
+              }`}>
+                {openServiceTicketsCount}
+              </span>
+            )}
           </Button>
         </div>
       </div>
@@ -545,11 +561,20 @@ export default function LeadDetails() {
           </Button>
           <Button
             size="sm"
-            className="h-8 text-xs"
+            className="h-8 text-xs gap-1.5"
             variant={workMode === 'service' ? 'default' : 'ghost'}
             onClick={() => setWorkMode('service')}
           >
             שירות
+            {openServiceTicketsCount > 0 && (
+              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
+                workMode === 'service'
+                  ? 'bg-white/25 text-white'
+                  : 'bg-amber-500 text-white'
+              }`}>
+                {openServiceTicketsCount}
+              </span>
+            )}
           </Button>
         </div>
 
