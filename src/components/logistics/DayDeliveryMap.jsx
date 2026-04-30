@@ -20,6 +20,30 @@ const DEPOT = {
   label: 'מפעל קינג דוד · קריית מלאכי',
 };
 
+// Bounding box around Israel — used to (a) reject obviously-bogus
+// coordinates such as (0,0) which leaflet would otherwise plot in the Gulf
+// of Guinea, and (b) constrain the map's pannable area so dispatchers
+// can't accidentally drift to Africa or Europe. Slightly generous on each
+// side so legitimate edge cities (Eilat in the south, Metula in the north)
+// don't get filtered out.
+const ISRAEL_BBOX = {
+  minLat: 29.0,
+  maxLat: 33.5,
+  minLng: 34.0,
+  maxLng: 36.2,
+};
+
+function isInsideIsrael(lat, lng) {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= ISRAEL_BBOX.minLat &&
+    lat <= ISRAEL_BBOX.maxLat &&
+    lng >= ISRAEL_BBOX.minLng &&
+    lng <= ISRAEL_BBOX.maxLng
+  );
+}
+
 // Status → marker color. Mirrors the badge palette the rest of the app uses
 // for delivery_shipments.status so the map "feels" consistent with the list.
 const STATUS_COLORS = {
@@ -127,9 +151,10 @@ export default function DayDeliveryMap({ shipments }) {
     patchLeafletDefaults();
   }, []);
 
-  // Filter to the chosen date and keep only rows that carry coordinates —
-  // anything without lat/lng can't be plotted, but we surface the count so
-  // the dispatcher knows some shipments are missing geocoding.
+  // Filter to the chosen date and keep only rows that carry coordinates
+  // *inside Israel*. Reject (0,0) and any other lat/lng that would render
+  // outside the country — leaflet was drawing the Gulf of Guinea otherwise
+  // because the legacy geocoder occasionally writes nulls back as zeros.
   const { mapped, unmapped } = useMemo(() => {
     const dayRows = shipments.filter((s) => s.scheduled_date && s.scheduled_date.slice(0, 10) === date);
     const m = [];
@@ -137,7 +162,7 @@ export default function DayDeliveryMap({ shipments }) {
     for (const s of dayRows) {
       const lat = Number(s.latitude);
       const lng = Number(s.longitude);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) m.push({ ...s, lat, lng });
+      if (isInsideIsrael(lat, lng)) m.push({ ...s, lat, lng });
       else u.push(s);
     }
     return { mapped: m, unmapped: u };
@@ -193,7 +218,7 @@ export default function DayDeliveryMap({ shipments }) {
               <Badge variant="outline">{mapped.length} משלוחים על המפה</Badge>
               {unmapped.length > 0 && (
                 <Badge variant="outline" className="border-amber-500 text-amber-700">
-                  {unmapped.length} ללא קואורדינטות
+                  {unmapped.length} ללא קואורדינטות תקינות
                 </Badge>
               )}
             </div>
@@ -225,6 +250,15 @@ export default function DayDeliveryMap({ shipments }) {
                 zoom={9}
                 style={{ height: '560px', width: '100%' }}
                 scrollWheelZoom
+                // Lock the pannable area to Israel so a stray click+drag
+                // can't take the dispatcher to Africa or Europe.
+                maxBounds={[
+                  [ISRAEL_BBOX.minLat, ISRAEL_BBOX.minLng],
+                  [ISRAEL_BBOX.maxLat, ISRAEL_BBOX.maxLng],
+                ]}
+                maxBoundsViscosity={1}
+                minZoom={7}
+                maxZoom={16}
               >
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -326,7 +360,7 @@ export default function DayDeliveryMap({ shipments }) {
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground mb-2">
-              משלוחים שלא עברו geocoding לא יוצגו על המפה. הרץ את ה-edge function geocodeShipment כדי לאכלס lat/lng.
+              משלוחים בלי lat/lng או עם קואורדינטות מחוץ לישראל (כולל 0,0) לא יוצגו על המפה. הרץ את ה-edge function geocodeShipment כדי לאכלס מחדש.
             </p>
             <ul className="space-y-1 text-sm">
               {unmapped.map((s) => (
