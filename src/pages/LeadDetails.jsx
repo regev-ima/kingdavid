@@ -49,11 +49,9 @@ import {
   Plus,
   Activity,
   History,
-  Phone,
-  PhoneCall
+  Phone
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import CallLogger from '@/components/call/CallLogger';
 import SLABadge from '@/components/sla/SLABadge';
 import CommunicationHistory from '@/components/lead/CommunicationHistory';
 import AddCommunication from '@/components/lead/AddCommunication';
@@ -88,7 +86,6 @@ export default function LeadDetails() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
-  const [showCallLogger, setShowCallLogger] = useState(false);
   const [showAddCommunication, setShowAddCommunication] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
@@ -508,14 +505,6 @@ export default function LeadDetails() {
 
       <div className="lg:hidden flex flex-wrap gap-2">
         <Button
-          size="sm"
-          onClick={() => setShowCallLogger(true)}
-          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
-        >
-          <PhoneCall className="h-3.5 w-3.5 me-1.5" />
-          תעד שיחה
-        </Button>
-        <Button
           variant="outline"
           size="sm"
           onClick={() => setShowAddTaskDialog(true)}
@@ -547,10 +536,6 @@ export default function LeadDetails() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button size="sm" onClick={() => setShowCallLogger(true)} className="h-8 text-xs">
-            <PhoneCall className="h-3.5 w-3.5 me-1" />
-            תיעוד שיחה
-          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowAddTaskDialog(true)} className="h-8 text-xs">
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
@@ -1337,14 +1322,6 @@ export default function LeadDetails() {
           </Card>
         </div>
       </div>
-
-      {/* Call Logger Dialog */}
-      <CallLogger
-        lead={lead}
-        salesTask={tasks[0]}
-        isOpen={showCallLogger}
-        onClose={() => setShowCallLogger(false)} />
-
 
       {/* Add Communication Dialog */}
       <AddCommunication
