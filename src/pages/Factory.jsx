@@ -224,11 +224,11 @@ export default function Factory() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-white border w-full h-auto flex-wrap justify-start">
-          <TabsTrigger value="all">הכל ({factoryOrders.length})</TabsTrigger>
-          <TabsTrigger value="queue">תור ({queueCount})</TabsTrigger>
-          <TabsTrigger value="in_production">בייצור ({inProductionCount})</TabsTrigger>
-          <TabsTrigger value="ready">מוכן ({readyCount})</TabsTrigger>
-          <TabsTrigger value="delayed" className="text-red-600">
+          <TabsTrigger value="all" className="data-[state=active]:ring-2 data-[state=active]:ring-primary/40 data-[state=active]:bg-primary/5">הכל ({factoryOrders.length})</TabsTrigger>
+          <TabsTrigger value="queue" className="data-[state=active]:ring-2 data-[state=active]:ring-primary/40 data-[state=active]:bg-primary/5">תור ({queueCount})</TabsTrigger>
+          <TabsTrigger value="in_production" className="data-[state=active]:ring-2 data-[state=active]:ring-primary/40 data-[state=active]:bg-primary/5">בייצור ({inProductionCount})</TabsTrigger>
+          <TabsTrigger value="ready" className="data-[state=active]:ring-2 data-[state=active]:ring-primary/40 data-[state=active]:bg-primary/5">מוכן ({readyCount})</TabsTrigger>
+          <TabsTrigger value="delayed" className="text-red-600 data-[state=active]:ring-2 data-[state=active]:ring-red-400 data-[state=active]:bg-red-50">
             באיחור
           </TabsTrigger>
         </TabsList>
