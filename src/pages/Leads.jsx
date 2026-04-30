@@ -78,16 +78,40 @@ export default function Leads() {
     fetchUser();
   }, [getEffectiveUser]);
 
-  // Fetch lead counters (lightweight)
-  const { data: leadCounters = [] } = useQuery({
-    queryKey: ['leadCounters'],
-    queryFn: () => base44.entities.LeadCounter.list('-created_date', 500),
-    staleTime: 60000,
-  });
-
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = effectiveUser?.role === 'admin';
   const userEmail = effectiveUser?.email;
+
+  // Live KPI counts. Previously the strip read from the cached `lead_counters`
+  // table, but that cache had no DB trigger keeping it in sync — values drifted
+  // (e.g. "הלידים שלי: 3" while the table actually showed 5). This runs four
+  // server-side `count: 'exact', head: true` queries in parallel, ~150 ms total
+  // even at 100k+ rows. Same pattern SalesTasks moved to in #76.
+  const { data: kpiCounts = { total: 0, my: 0, open: 0, unassigned: 0 } } = useQuery({
+    queryKey: ['leadsKpiCounts', isAdmin, userEmail],
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const myFilter = {
+        '$or': [
+          { rep1: userEmail },
+          { rep2: userEmail },
+          { pending_rep_email: userEmail },
+        ],
+      };
+      const unassignedFilter = { '$or': [{ rep1: null }, { rep1: '' }] };
+      const openFilter = { status: { '$nin': CLOSED_STATUSES } };
+      const myOpenFilter = { '$and': [myFilter, openFilter] };
+
+      const [total, my, open, unassigned] = await Promise.all([
+        isAdmin ? base44.entities.Lead.count({}) : base44.entities.Lead.count(myFilter),
+        base44.entities.Lead.count(myFilter),
+        isAdmin ? base44.entities.Lead.count(openFilter) : base44.entities.Lead.count(myOpenFilter),
+        base44.entities.Lead.count(unassignedFilter),
+      ]);
+      return { total, my, open, unassigned };
+    },
+  });
 
   useEffect(() => {
     if (!effectiveUser) return;
@@ -573,25 +597,10 @@ export default function Leads() {
     setFilters({ search: '', status: 'all', source: 'all', rep1: 'all' });
   };
 
-  // Use counters from LeadCounter entity
-  const getCounterValue = (key) => {
-    if (isAdmin) {
-      const c = leadCounters.find(c => c.counter_key === key && (!c.rep_email || c.rep_email === ''));
-      return c?.total_leads || c?.count || 0;
-    } else {
-      const c = leadCounters.find(c => c.counter_key === key && c.rep_email === userEmail);
-      return c?.total_leads || c?.count || 0;
-    }
-  };
-
-  const totalLeadCount = getCounterValue('total');
-  const unassignedCount = (() => {
-    const c = leadCounters.find(c => c.counter_key === 'unassigned' && (!c.rep_email || c.rep_email === ''));
-    return c?.total_leads || c?.count || 0;
-  })();
-  const myLeadsCount = isAdmin
-    ? (() => { const c = leadCounters.find(c => c.counter_key === 'total' && c.rep_email === userEmail); return c?.total_leads || c?.count || 0; })()
-    : getCounterValue('total');
+  const totalLeadCount = kpiCounts.total;
+  const myLeadsCount = kpiCounts.my;
+  const openLeadsCount = kpiCounts.open;
+  const unassignedCount = kpiCounts.unassigned;
 
   return (
     <div className="space-y-6">
@@ -709,14 +718,16 @@ export default function Leads() {
           onClick={() => setActiveTab('open')}
           className={`
             p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2
-            ${activeTab === 'open' 
-              ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+            ${activeTab === 'open'
+              ? 'border-primary bg-primary/5 text-primary shadow-sm'
               : 'border-border/50 bg-card hover:border-primary/20 hover:bg-muted/50 text-muted-foreground shadow-card'
             }
           `}
         >
           <span className="text-sm font-medium">פתוחים</span>
-          <span className="text-xs text-muted-foreground/70 mt-1">פעילים</span>
+          <span className={`text-2xl font-bold ${activeTab === 'open' ? 'text-primary' : 'text-foreground'}`}>
+            {openLeadsCount}
+          </span>
         </div>
 
         {/* 3. My Leads */}
