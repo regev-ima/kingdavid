@@ -49,8 +49,10 @@ import {
   Plus,
   Activity,
   History,
+  Phone,
   PhoneCall
 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import CallLogger from '@/components/call/CallLogger';
 import SLABadge from '@/components/sla/SLABadge';
 import CommunicationHistory from '@/components/lead/CommunicationHistory';
@@ -96,6 +98,22 @@ export default function LeadDetails() {
   const [workMode, setWorkMode] = useState(initialMode);
   const { hiddenStatuses } = useHiddenStatuses();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const handleClickToCall = async (phone) => {
+    if (!phone) return;
+    try {
+      toast({ title: "מתחיל שיחה...", description: phone });
+      await base44.functions.invoke('clickToCall', { customerPhone: phone, leadId });
+      toast({ title: "השיחה התחילה בהצלחה" });
+    } catch (err) {
+      toast({
+        title: "שגיאה בהתחלת שיחה",
+        description: err?.response?.data?.error || err.message,
+        variant: "destructive",
+      });
+    }
+  };
 
   // All queries fire in parallel - no dependencies between them
   const { data: user = null } = useQuery({
@@ -667,7 +685,24 @@ export default function LeadDetails() {
                   {/* Contact Info Grid */}
                   <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
                     <DetailField label="שם מלא" value={lead.full_name} />
-                    <DetailField label="טלפון" value={lead.phone} />
+                    <DetailField label="טלפון">
+                      {lead.phone ? (
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground" dir="ltr">{lead.phone}</p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleClickToCall(lead.phone)}
+                            className="h-7 px-2.5 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">חייג</span>
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-sm font-medium text-muted-foreground/40">-</p>
+                      )}
+                    </DetailField>
                     <DetailField label="אימייל" value={lead.email} />
                     <DetailField label="עיר" value={lead.city} />
                   </div>
