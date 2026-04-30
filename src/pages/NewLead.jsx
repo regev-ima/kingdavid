@@ -25,9 +25,10 @@ import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
 export default function NewLead() {
   const navigate = useNavigate();
   const { user, effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
+  const initialPhone = new URLSearchParams(window.location.search).get('phone') || '';
   const [formData, setFormData] = useState({
     full_name: '',
-    phone: '',
+    phone: initialPhone,
     email: '',
     city: '',
     address: '',

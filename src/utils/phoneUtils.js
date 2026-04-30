@@ -82,3 +82,14 @@ export function formatPhoneForWhatsApp(phone) {
   const normalized = normalizeIsraeliPhone(phone);
   return normalized || '';
 }
+
+/**
+ * Heuristic: is this search query "phone-shaped"? Used to decide whether
+ * a 0-results search should offer a "create new lead with this phone" CTA.
+ * 7 digits is the minimum Israeli landline length (03-XXXXXXX).
+ */
+export function isPhoneShapedQuery(query) {
+  if (!query) return false;
+  const digits = String(query).replace(/\D/g, '');
+  return digits.length >= 7;
+}

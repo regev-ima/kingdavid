@@ -28,6 +28,7 @@ import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSE
 import { useNavigate } from 'react-router-dom';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
+import { isPhoneShapedQuery } from '@/utils/phoneUtils';
 
 // filterOptions for the source filter is static. The status filter is built
 // inside the component because admin-added custom statuses (per-browser
@@ -792,6 +793,20 @@ export default function Leads() {
           {filteredCount === null
             ? 'סופר...'
             : `מציג ${leads.length.toLocaleString()} מתוך ${Number(filteredCount).toLocaleString()} לידים תואמים${Number(filteredCount) > leads.length ? ' (טען עוד למטה כדי לראות יותר)' : ''}`}
+        </div>
+      )}
+
+      {!isLoading && Number(filteredCount) === 0 && isPhoneShapedQuery(filters.search) && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="text-sm text-foreground">
+            לא נמצא ליד עם הטלפון <span className="font-semibold" dir="ltr">{filters.search}</span>.
+          </div>
+          <Link to={createPageUrl('NewLead') + `?phone=${encodeURIComponent(filters.search)}`}>
+            <Button size="sm" className="gap-1.5">
+              <UserPlus className="h-4 w-4" />
+              צור ליד חדש עם טלפון זה
+            </Button>
+          </Link>
         </div>
       )}
 

@@ -8,10 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, User, FileText, ShoppingCart, Headphones } from "lucide-react";
+import { Search, User, FileText, ShoppingCart, Headphones, UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { getUserScope, USER_SCOPES } from "@/lib/rbac";
+import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 
 // The previous implementation pulled `.list('-created_date', 200)` for each
 // entity and filtered client-side — fine for small datasets, useless once
@@ -133,7 +135,20 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
 
         <div className="overflow-y-auto flex-1 space-y-4">
           {debouncedQuery.length >= 2 && totalResults === 0 && (
-            <p className="text-center text-muted-foreground py-4">לא נמצאו תוצאות</p>
+            <div className="flex flex-col items-center gap-3 py-4">
+              <p className="text-center text-muted-foreground">לא נמצאו תוצאות</p>
+              {canSearchLeads && isPhoneShapedQuery(debouncedQuery) && (
+                <Link
+                  to={createPageUrl('NewLead') + `?phone=${encodeURIComponent(debouncedQuery)}`}
+                  onClick={onClose}
+                >
+                  <Button size="sm" className="gap-1.5">
+                    <UserPlus className="h-4 w-4" />
+                    צור ליד חדש עם הטלפון <span dir="ltr" className="font-semibold">{debouncedQuery}</span>
+                  </Button>
+                </Link>
+              )}
+            </div>
           )}
 
           {leads.length > 0 && (
