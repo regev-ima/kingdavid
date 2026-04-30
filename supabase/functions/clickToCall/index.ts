@@ -19,7 +19,11 @@ Deno.serve(async (req) => {
 
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'text/html,application/xhtml+xml,application/xml' },
+      headers: {
+        'X-Destination': 'voicenter',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'text/html,application/xhtml+xml,application/xml',
+      },
     });
 
     const responseData = await response.text();
