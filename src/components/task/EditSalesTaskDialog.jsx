@@ -362,7 +362,6 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
                       await base44.entities.SalesTask.update(editingTask.id, {
                         task_status: 'completed',
                         status: noAnswerFlow.status,
-                        completed_date: now,
                       });
 
                       const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
@@ -488,7 +487,6 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
                       await base44.entities.SalesTask.update(editingTask.id, {
                         task_status: 'completed',
                         status: followupFlow.status,
-                        completed_date: now,
                       });
 
                       await base44.entities.SalesTask.create({
