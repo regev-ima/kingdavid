@@ -48,15 +48,18 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
+import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'completed', 'not_done', 'cancelled', 'all'].includes(initialTab) ? initialTab : 'today');
+  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('due_date');
+  const [sortBy, setSortBy] = useState('priority');
   const [dateFilter, setDateFilter] = useState('');
+  const [showStale, setShowStale] = useState(false);
+  const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
@@ -158,17 +161,26 @@ export default function SalesTasks() {
         q = q.eq('task_status', 'not_completed').is('due_date', null);
       } else if (activeTab === 'not_completed') {
         q = q.eq('task_status', 'not_completed');
+      } else if (activeTab === 'assignment') {
+        q = q.eq('task_status', 'not_completed').eq('task_type', 'assignment');
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
       }
       // 'all' falls through with no filter.
 
-      // Sort: open buckets prefer due_date asc (next-up first), closed
-      // buckets prefer most-recently-touched first.
+      // Sort: closed tabs by most-recently-touched. Open tabs by due_date —
+      // ascending for forward-looking buckets (today/upcoming/not_completed),
+      // but descending for overdue so the *most recent* misses come back
+      // first. With 6k+ migration leftovers, ascending pulled only ancient
+      // garbage and crowded out anything actionable.
       const recentlyTouched = ['completed', 'not_done', 'cancelled'].includes(activeTab);
-      q = recentlyTouched
-        ? q.order('updated_date', { ascending: false, nullsFirst: false })
-        : q.order('due_date', { ascending: true, nullsFirst: false });
+      if (recentlyTouched) {
+        q = q.order('updated_date', { ascending: false, nullsFirst: false });
+      } else if (activeTab === 'overdue') {
+        q = q.order('due_date', { ascending: false, nullsFirst: false });
+      } else {
+        q = q.order('due_date', { ascending: true, nullsFirst: false });
+      }
 
       q = q.limit(TASKS_FETCH_LIMIT);
       const { data, error } = await q;
@@ -215,10 +227,35 @@ export default function SalesTasks() {
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const leadsById = useMemo(() => buildLeadsById(allLeads), [allLeads]);
-  const scopedTasks = useMemo(
+  const ownedTasks = useMemo(
     () => filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById),
     [effectiveUser, allSalesTasks, leadsById],
   );
+
+  // Counts of what the default-view filter is hiding so we can tell the user.
+  const hiddenStaleCount = useMemo(
+    () => ownedTasks.filter((t) => isStaleOverdueTask(t, now)).length,
+    [ownedTasks, now],
+  );
+  const assignmentTaskCount = useMemo(
+    () => ownedTasks.filter(isAssignmentTask).length,
+    [ownedTasks],
+  );
+
+  // The list view drops legacy migration leftovers and the admin-only
+  // assignment queue by default, since both flooded the rep's screen with
+  // noise. Toggles below the filter bar bring them back. The "assignment"
+  // tab always shows assignment tasks regardless of the toggle.
+  const scopedTasks = useMemo(() => {
+    let tasks = ownedTasks;
+    if (!showStale) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
+    if (activeTab === 'assignment') {
+      tasks = tasks.filter(isAssignmentTask);
+    } else if (!showAssignmentTasks) {
+      tasks = tasks.filter((t) => !isAssignmentTask(t));
+    }
+    return tasks;
+  }, [ownedTasks, showStale, showAssignmentTasks, activeTab, now]);
   // (Used to call buildScopedTaskMetrics here. Now that KPIs come from the
   // server-side `counts` query, the metric arrays it produced were unused on
   // this page. Dropped to avoid the wasted computation on every rerender.)
@@ -226,7 +263,7 @@ export default function SalesTasks() {
   // Reset pagination when filters change
   useEffect(() => {
     setTasksPage(0);
-  }, [activeTab, search, sortBy, dateFilter, leadStatusFilter]);
+  }, [activeTab, search, sortBy, dateFilter, leadStatusFilter, showStale, showAssignmentTasks]);
 
   // 2. Filter & sort tasks BEFORE enriching with lead data (no lead data needed here)
   const { totalFilteredCount, paginatedTasks } = useMemo(() => {
@@ -251,7 +288,9 @@ export default function SalesTasks() {
     }
 
     tasks = sortSalesTasks(tasks, activeTab, now).sort((a, b) => {
-      if (sortBy === 'status') {
+      if (sortBy === 'priority') {
+        return compareTasksByPriority(a, b, leadsById, now);
+      } else if (sortBy === 'status') {
         return (a.task_status || '').localeCompare(b.task_status || '');
       } else if (sortBy === 'rep') {
         return (a.rep1 || '').localeCompare(b.rep1 || '');
@@ -452,6 +491,14 @@ export default function SalesTasks() {
             <Clock className="w-3.5 h-3.5 me-1.5 inline-block" /> ממתין
             <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{notCompletedCount}</span>
           </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="assignment" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-violet-700 data-[state=active]:bg-violet-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
+              <ClipboardList className="w-3.5 h-3.5 me-1.5 inline-block" /> להקצות
+              {assignmentTaskCount > 0 && (
+                <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{assignmentTaskCount}</span>
+              )}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="completed" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-emerald-700 data-[state=active]:bg-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
             <CheckCircle2 className="w-3.5 h-3.5 me-1.5 inline-block" /> בוצע
             <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{completedCount}</span>
@@ -478,6 +525,7 @@ export default function SalesTasks() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="priority">מומלץ (לפי עדיפות)</SelectItem>
               <SelectItem value="due_date">לפי תאריך יעד</SelectItem>
               <SelectItem value="status">לפי סטטוס</SelectItem>
               <SelectItem value="rep">לפי נציג</SelectItem>
@@ -549,6 +597,28 @@ export default function SalesTasks() {
         </div>
       </div>
 
+      {/* ===== HIDDEN-ITEMS HINT ===== */}
+      {(hiddenStaleCount > 0 || (assignmentTaskCount > 0 && !showAssignmentTasks && activeTab !== 'assignment')) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
+          {hiddenStaleCount > 0 && (
+            <button
+              onClick={() => setShowStale((v) => !v)}
+              className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
+            >
+              {showStale ? 'הסתר' : 'הצג'} {hiddenStaleCount.toLocaleString()} משימות ישנות מ-{STALE_TASK_THRESHOLD_DAYS} ימים
+            </button>
+          )}
+          {assignmentTaskCount > 0 && activeTab !== 'assignment' && (
+            <button
+              onClick={() => setShowAssignmentTasks((v) => !v)}
+              className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
+            >
+              {showAssignmentTasks ? 'הסתר' : 'כלול'} {assignmentTaskCount.toLocaleString()} משימות שיוך
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ===== TASK LIST ===== */}
       <div className="space-y-3">
         {isLoading ? (
@@ -584,6 +654,11 @@ export default function SalesTasks() {
             const isOverdue = dueDate && dueDate < todayStart && normalizedTaskStatus !== 'completed' && normalizedTaskStatus !== 'cancelled';
             const isToday = dueDate && dueDate >= todayStart && dueDate <= todayEnd && normalizedTaskStatus !== 'completed' && normalizedTaskStatus !== 'cancelled';
             const isDone = normalizedTaskStatus === 'completed';
+            const isNextUp =
+              index === 0 &&
+              sortBy === 'priority' &&
+              ['today', 'overdue', 'not_completed'].includes(activeTab) &&
+              normalizedTaskStatus === 'not_completed';
 
             const urgencyBorder = isDone ? 'border-s-green-300'
               : isOverdue ? 'border-s-red-500'
@@ -639,13 +714,21 @@ export default function SalesTasks() {
               <div
                 key={task.id}
                 onClick={() => handleOpenTaskDetails(task)}
-                className={`cursor-pointer p-4 rounded-xl border shadow-sm ${cardBgClass} transition-colors duration-150 hover:ring-2 hover:ring-primary/10 ${isDone ? 'opacity-70' : ''}`}
+                className={`cursor-pointer p-4 rounded-xl border shadow-sm ${cardBgClass} transition-colors duration-150 hover:ring-2 hover:ring-primary/10 ${isDone ? 'opacity-70' : ''} ${isNextUp ? 'ring-2 ring-primary shadow-md' : ''}`}
               >
+                {isNextUp && (
+                  <div className="mb-3 -mx-1 flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-bold text-primary-foreground">
+                      ★ הבאה בתור
+                    </span>
+                    <span className="text-xs text-muted-foreground">המשימה הראשונה לטיפול עכשיו</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center">
-                  
+
                   {/* רבע 1: לקוח ונציג */}
                   <div className="flex flex-col gap-1.5 text-start overflow-hidden w-full">
-                    <span className="font-bold text-base text-foreground truncate block">
+                    <span className={`font-bold text-foreground truncate block ${isNextUp ? 'text-lg' : 'text-base'}`}>
                       {task.lead?.full_name || task.summary?.match(/הליד (.+?)(?:\s+לנציג|\s+יש)/)?.[1] || task.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד'}
                     </span>
                     <div className="text-sm text-muted-foreground truncate">

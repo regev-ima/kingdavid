@@ -225,6 +225,74 @@ export function sortSalesTasks(tasks, tab = 'not_completed', now = new Date()) {
   return [...tasks].sort((a, b) => compareSalesTasks(a, b, tab, now));
 }
 
+// Priority sort — independent of tab. Used by the "מומלץ" sort option to
+// dictate the rep's work order: SLA breach first, then hottest leads, then
+// followups, with due_date as tiebreaker inside each tier. Lead status is
+// usually denormalized onto the task (`task.status`); fall back to the lead.
+const HOT_LEAD_STATUSES = new Set(['hot_lead', 'coming_to_branch']);
+const NEW_LEAD_STATUSES = new Set(['new_lead']);
+const FOLLOWUP_LEAD_STATUSES = new Set([
+  'followup_before_quote',
+  'followup_after_quote',
+]);
+
+function getLeadHeatTier(leadStatus) {
+  if (HOT_LEAD_STATUSES.has(leadStatus)) return 0;
+  if (NEW_LEAD_STATUSES.has(leadStatus)) return 1;
+  if (FOLLOWUP_LEAD_STATUSES.has(leadStatus)) return 2;
+  return 3;
+}
+
+function getBucketRank(bucket) {
+  switch (bucket) {
+    case 'overdue': return 0;
+    case 'today': return 1;
+    case 'upcoming': return 2;
+    case 'undated': return 3;
+    default: return 4;
+  }
+}
+
+export function compareTasksByPriority(a, b, leadsById = {}, now = new Date()) {
+  const bucketA = getSalesTaskQueueBucket(a, now);
+  const bucketB = getSalesTaskQueueBucket(b, now);
+  const heatA = getLeadHeatTier(a.status || leadsById[a.lead_id]?.status);
+  const heatB = getLeadHeatTier(b.status || leadsById[b.lead_id]?.status);
+
+  // Composite: bucket dominates (SLA-first), heat ranks within the bucket.
+  const scoreA = getBucketRank(bucketA) * 10 + heatA;
+  const scoreB = getBucketRank(bucketB) * 10 + heatB;
+  if (scoreA !== scoreB) return scoreA - scoreB;
+
+  const dueA = parseSalesTaskDate(a.due_date);
+  const dueB = parseSalesTaskDate(b.due_date);
+  if (dueA && dueB) return dueA.getTime() - dueB.getTime();
+  if (dueA) return -1;
+  if (dueB) return 1;
+
+  return (
+    (parseGenericDate(b.created_date)?.getTime() || 0) -
+    (parseGenericDate(a.created_date)?.getTime() || 0)
+  );
+}
+
+// Anything past this cutoff is treated as legacy/migration noise the rep
+// shouldn't be staring at every morning. Tunable; surfaced via a toggle.
+export const STALE_TASK_THRESHOLD_DAYS = 30;
+
+export function isStaleOverdueTask(task, now = new Date(), thresholdDays = STALE_TASK_THRESHOLD_DAYS) {
+  if (normalizeTaskStatus(task.task_status) !== 'not_completed') return false;
+  const due = parseSalesTaskDate(task.due_date);
+  if (!due) return false;
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - thresholdDays);
+  return due < cutoff;
+}
+
+export function isAssignmentTask(task) {
+  return task?.task_type === 'assignment';
+}
+
 export function buildTaskActionItems(tasks, leadsById, now = new Date()) {
   return sortSalesTasks(
     tasks.filter((task) => ['overdue', 'today', 'upcoming', 'undated'].includes(getSalesTaskQueueBucket(task, now))),
