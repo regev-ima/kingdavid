@@ -31,7 +31,32 @@ const statusConfig = {
   heard_price_not_interested: { label: 'שמע מחיר ולא מעוניין לשמוע עוד', color: 'bg-red-100 text-red-700 ring-1 ring-red-200' },
   not_relevant_wrong_number: { label: 'לא רלוונטי - מספר שגוי', color: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200' },
   closed_by_manager_to_mailing: { label: 'נסגר ע"י מנהל - הועבר לדיוור', color: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200' },
-  
+
+  // Statuses introduced by the 2026-04-26 lead-status normalization migration.
+  // Without these the badge renders the raw English key ("will_arrive_for_meeting").
+  will_arrive_for_meeting: { label: 'יגיע לסניף לפגישה', color: 'bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200' },
+  second_line_lead: { label: 'ליד קו שני', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
+  manager_call_potential_close: { label: 'שיחת מנהל - פוטנציאל לסגירה', color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },
+  transferred_by_manager_for_followup: { label: 'הועבר ע"י מנהל - להמשך טיפול', color: 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200' },
+  call_from_google: { label: 'שיחה מגוגל', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
+  call_from_facebook: { label: 'שיחה מפייסבוק', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
+  already_purchased_inquiry: { label: 'כבר רכש - פניה לבירור', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+  system_test: { label: 'בדיקת מערכת', color: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200' },
+  return_to_followup: { label: 'לחזור לפולואפ', color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },
+  no_answer_8_calls: { label: 'אין מענה - 8 חיוגים', color: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' },
+  not_relevant_not_mature: { label: 'לא רלוונטי - ליד לא בשל', color: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200' },
+  service_handled: { label: 'שירות לקוחות - טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+  service_30_nights_trial: { label: 'שירות - 30 לילות ניסיון', color: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' },
+  service_30_nights_trial_handled: { label: 'שירות - 30 לילות ניסיון טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+  service_warranty: { label: 'שירות - תעודת אחריות', color: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' },
+  service_warranty_handled: { label: 'שירות - תעודת אחריות טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+  service_cancellations: { label: 'שירות - ביטולים', color: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' },
+  service_cancellations_handled: { label: 'שירות - ביטולים טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+  service_missing_items: { label: 'שירות - חוסרים בהזמנה', color: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' },
+  service_missing_items_handled: { label: 'שירות - חוסרים בהזמנה טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+  delivery_inquiry: { label: 'בירור אספקה', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
+  delivery_inquiry_handled: { label: 'בירור אספקה - טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
+
   // Task Status
   not_completed: { label: 'ממתין לביצוע', color: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' },
   completed: { label: 'בוצע', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
