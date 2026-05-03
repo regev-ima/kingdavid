@@ -245,6 +245,17 @@ export default function SalesTasks() {
     () => ownedTasks.filter(isAssignmentTask).length,
     [ownedTasks],
   );
+  // When the active tab's entire bucket is assignment-only (e.g. today
+  // is dominated by `assignment` tasks the rep filter hides), the list
+  // looks empty and the rep doesn't know why. Surface this as a CTA in
+  // the empty state.
+  const assignmentInActiveTabCount = useMemo(
+    () =>
+      ownedTasks.filter(
+        (t) => isAssignmentTask(t) && matchesSalesTaskTab(t, activeTab, now),
+      ).length,
+    [ownedTasks, activeTab, now],
+  );
 
   // The list view drops legacy migration leftovers and the admin-only
   // assignment queue by default, since both flooded the rep's screen with
@@ -641,21 +652,54 @@ export default function SalesTasks() {
         ) : finalVisibleTasks.length === 0 ? (
           <div className="bg-card rounded-xl border border-border shadow-card flex flex-col items-center justify-center py-16 gap-3">
             <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
-              <Calendar className="h-7 w-7 text-muted-foreground/40" />
+              <ClipboardList className="h-7 w-7 text-muted-foreground/40" />
             </div>
-            <div className="text-center">
-              <p className="text-muted-foreground font-medium text-sm">אין משימות להצגה</p>
-              <p className="text-muted-foreground/70 text-xs mt-0.5">שנה את הפילטר או הוסף משימה חדשה</p>
-            </div>
-            <Button
-              onClick={() => setShowNewTaskDialog(true)}
-              size="sm"
-              variant="outline"
-              className="mt-1 text-xs h-8 border-primary/20 text-primary hover:bg-primary/5 gap-1"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              הוסף משימה
-            </Button>
+            {assignmentInActiveTabCount > 0 && activeTab !== 'assignment' && !showAssignmentTasks ? (
+              <>
+                <div className="text-center max-w-md">
+                  <p className="text-foreground font-medium text-sm">אין משימות עבודה — רק משימות שיוך</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    יש {assignmentInActiveTabCount.toLocaleString()} משימות שיוך פתוחות שמחכות להקצאה לנציג. הן הוסתרו מתצוגת העבודה היומית.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                  {isAdmin && (
+                    <Button
+                      onClick={() => setActiveTab('assignment')}
+                      size="sm"
+                      className="text-xs h-8 gap-1"
+                    >
+                      <ClipboardList className="h-3.5 w-3.5" />
+                      עבור לתור השיוך
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => setShowAssignmentTasks(true)}
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-8 border-primary/20 text-primary hover:bg-primary/5"
+                  >
+                    הצג כאן בכל זאת
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-center">
+                  <p className="text-muted-foreground font-medium text-sm">אין משימות להצגה</p>
+                  <p className="text-muted-foreground/70 text-xs mt-0.5">שנה את הפילטר או הוסף משימה חדשה</p>
+                </div>
+                <Button
+                  onClick={() => setShowNewTaskDialog(true)}
+                  size="sm"
+                  variant="outline"
+                  className="mt-1 text-xs h-8 border-primary/20 text-primary hover:bg-primary/5 gap-1"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  הוסף משימה
+                </Button>
+              </>
+            )}
           </div>
         ) : (
           finalVisibleTasks.map((task, index) => {
