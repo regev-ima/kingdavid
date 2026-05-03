@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
+import { getRepDisplayName } from '@/lib/repDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -688,7 +689,7 @@ export default function OrderDetails() {
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="font-medium">
-                        {users.find(u => u.email === commission.rep1)?.full_name || commission.rep1?.split('@')[0]}
+                        {getRepDisplayName(commission.rep1, users)}
                       </p>
                       <p className="text-xs text-muted-foreground">{commission.rep1_percent}%</p>
                     </div>
@@ -698,7 +699,7 @@ export default function OrderDetails() {
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium">
-                          {users.find(u => u.email === commission.rep2)?.full_name || commission.rep2?.split('@')[0]}
+                          {getRepDisplayName(commission.rep2, users)}
                         </p>
                         <p className="text-xs text-muted-foreground">{commission.rep2_percent}%</p>
                       </div>

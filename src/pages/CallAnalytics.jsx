@@ -6,6 +6,7 @@ import KPICard from '@/components/shared/KPICard';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
+import { getRepDisplayName } from '@/lib/repDisplay';
 import { Phone, PhoneIncoming, Clock, Target, AlertCircle } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -155,7 +156,7 @@ export default function CallAnalytics() {
     {
       key: 'rep',
       label: 'נציג',
-      options: uniqueReps.map(rep => ({ value: rep, label: rep?.split('@')[0] || rep }))
+      options: uniqueReps.map(rep => ({ value: rep, label: getRepDisplayName(rep, users) || rep }))
     }
   ];
 
@@ -196,8 +197,7 @@ export default function CallAnalytics() {
       accessor: 'rep_id',
       render: (log) => {
         if (!log.rep_id) return '-';
-        const user = users.find(u => u.email === log.rep_id);
-        return user?.full_name || log.rep_id.split('@')[0];
+        return getRepDisplayName(log.rep_id, users);
       }
     },
     {
