@@ -79,7 +79,7 @@ function bucketTasks(tasks) {
   return { slots, undated };
 }
 
-function TaskCard({ task, lead, isDragging, dragProvided, onClick }) {
+function TaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
   const Icon = TASK_TYPE_ICONS[task.task_type] || Paperclip;
   const leadName = lead?.full_name || task?.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד';
   const phone = lead?.phone;
@@ -106,6 +106,21 @@ function TaskCard({ task, lead, isDragging, dragProvided, onClick }) {
       </div>
       {(task.status || lead?.status) && (
         <StatusBadge status={task.status || lead?.status} className="text-[10px] py-0 px-1.5" />
+      )}
+      {phone && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // The whole card opens the edit dialog on click — keep the call
+            // button from triggering both at once.
+            e.stopPropagation();
+            onCall?.(phone);
+          }}
+          className="flex-shrink-0 rounded-full bg-green-100 hover:bg-green-200 active:bg-green-300 p-1.5 text-green-700 transition-colors"
+          title={`התקשר ל-${phone}`}
+        >
+          <Phone className="h-3.5 w-3.5" />
+        </button>
       )}
     </div>
   );
@@ -153,6 +168,16 @@ export default function TaskDayView({ effectiveUser, isAdmin, onTaskClick }) {
   // Reschedule by setting due_date to {date}T{hour}:00. Optimistic-friendly
   // through react-query's invalidation; we keep the write simple and let the
   // refetch settle the UI.
+  const handleCall = async (phone) => {
+    if (!phone) return;
+    try {
+      await base44.functions.invoke('clickToCall', { customerPhone: phone });
+      toast.success(`מתקשר ל-${phone}`);
+    } catch (err) {
+      toast.error(`חיוג נכשל: ${err?.message || 'שגיאה'}`);
+    }
+  };
+
   const rescheduleMutation = useMutation({
     mutationFn: async ({ id, hour, dropDate }) => {
       const next = new Date(dropDate);
@@ -254,6 +279,7 @@ export default function TaskDayView({ effectiveUser, isAdmin, onTaskClick }) {
                               dragProvided={dragProvided}
                               isDragging={dragSnapshot.isDragging}
                               onClick={() => onTaskClick?.(task)}
+                              onCall={handleCall}
                             />
                           </div>
                         )}
@@ -301,6 +327,7 @@ export default function TaskDayView({ effectiveUser, isAdmin, onTaskClick }) {
                                   dragProvided={dragProvided}
                                   isDragging={dragSnapshot.isDragging}
                                   onClick={() => onTaskClick?.(task)}
+                                  onCall={handleCall}
                                 />
                               )}
                             </Draggable>
