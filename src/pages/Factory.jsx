@@ -16,8 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Factory as FactoryIcon, Package, Clock, CheckCircle, AlertTriangle } from "lucide-react";
+import { Factory as FactoryIcon, Package, Clock, CheckCircle, AlertTriangle, List, LayoutGrid } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
+import FactoryKanban from '@/components/factory/FactoryKanban';
 
 const filterOptions = [
   {
@@ -36,6 +37,7 @@ const filterOptions = [
 export default function Factory() {
   const [activeTab, setActiveTab] = useState('queue');
   const [filters, setFilters] = useState({ search: '', production_status: 'all' });
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -47,6 +49,23 @@ export default function Factory() {
   const { data: inventory = [] } = useQuery({
     queryKey: ['inventory'],
     queryFn: () => base44.entities.InventoryItem.list(),
+  });
+
+  // Map of order_id → has-shipment, used by the kanban cards to show
+  // a "משלוח פתוח" badge after auto-create. Cheap one-shot fetch; we
+  // refresh it via the queryKey on each kanban move.
+  const { data: shipmentsByOrderId = {} } = useQuery({
+    queryKey: ['factory-shipments'],
+    queryFn: async () => {
+      const list = await base44.entities.DeliveryShipment.list();
+      const map = {};
+      for (const s of list || []) {
+        if (s.order_id) map[s.order_id] = s;
+      }
+      return map;
+    },
+    enabled: viewMode === 'kanban',
+    staleTime: 60_000,
   });
 
   const updateOrderMutation = useMutation({
@@ -186,9 +205,31 @@ export default function Factory() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">מפעל</h1>
-        <p className="text-muted-foreground">ניהול ייצור ותור עבודה</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">מפעל</h1>
+          <p className="text-muted-foreground">ניהול ייצור ותור עבודה</p>
+        </div>
+        <div className="inline-flex h-9 rounded-lg border border-border bg-card p-0.5 text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+              viewMode === 'list' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <List className="h-3.5 w-3.5" /> רשימה
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('kanban')}
+            className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+              viewMode === 'kanban' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" /> קנבן
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -222,6 +263,10 @@ export default function Factory() {
         />
       </div>
 
+      {viewMode === 'kanban' ? (
+        <FactoryKanban orders={factoryOrders} shipmentsByOrderId={shipmentsByOrderId} />
+      ) : (
+      <>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-white border w-full h-auto flex-wrap justify-start gap-1.5 p-1.5">
           <TabsTrigger
@@ -272,6 +317,8 @@ export default function Factory() {
         emptyMessage="לא נמצאו הזמנות לייצור"
         onRowClick={(row) => navigate(createPageUrl('OrderDetails') + `?id=${row.id}`)}
       />
+      </>
+      )}
     </div>
   );
 }
