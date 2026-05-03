@@ -4,6 +4,28 @@ const SLA_RED_MINUTES = 15;
 const EXPIRING_QUOTES_DAYS = 3;
 const FAILING_CAMPAIGN_MIN_VOLUME = 8;
 const FAILING_CAMPAIGN_MIN_CONVERSION = 2;
+const STUCK_LEAD_DAYS = 7;
+
+// Lead statuses that terminate the sales pipeline. Anything not in this set
+// is considered "open" for the unassigned/stuck-leads alerts. Mirrors
+// CLOSED_STATUSES in src/constants/leadOptions.js — kept in sync manually
+// since edge functions can't import frontend modules.
+const CLOSED_LEAD_STATUSES = [
+  'deal_closed',
+  'not_relevant_duplicate',
+  'mailing_remove_request',
+  'lives_far_phone_concern',
+  'products_not_available',
+  'not_relevant_bought_elsewhere',
+  'not_relevant_1000_nis',
+  'not_relevant_denies_contact',
+  'not_relevant_service',
+  'not_interested_hangs_up',
+  'not_relevant_no_explanation',
+  'heard_price_not_interested',
+  'not_relevant_wrong_number',
+  'closed_by_manager_to_mailing',
+];
 
 function normalizeLower(v: unknown) { return typeof v === 'string' ? v.trim().toLowerCase() : ''; }
 function normalizeString(v: unknown) { return typeof v === 'string' ? v.trim() : ''; }
@@ -92,7 +114,13 @@ Deno.serve(async (req) => {
     const startIso = start.toISOString();
     const endIso = end.toISOString();
 
-    const [rangeLeads, rangeOrders, rangeQuotes, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes] = await Promise.all([
+    // Manager-action alerts ignore the dashboard's date range — admins want
+    // "X leads waiting to be assigned" and "X leads neglected over a week"
+    // as facts about the live pipeline, not a slice of the selected window.
+    const stuckCutoffIso = new Date(now.getTime() - STUCK_LEAD_DAYS * 86400000).toISOString();
+    const closedStatusesList = `(${CLOSED_LEAD_STATUSES.join(',')})`;
+
+    const [rangeLeads, rangeOrders, rangeQuotes, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes, unassignedLeadsCountRes, stuckLeadsCountRes] = await Promise.all([
       fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }),
       fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }),
       fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }),
@@ -101,7 +129,22 @@ Deno.serve(async (req) => {
       fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, lt: { due_date: todayStart.toISOString() }, order: 'due_date' }),
       fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, gte: { due_date: todayStart.toISOString() }, lte: { due_date: todayEnd.toISOString() }, order: 'due_date' }),
       fetchAll(supabase, 'quotes', { eq: { status: 'sent' }, order: 'created_date' }),
+      supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .or('rep1.is.null,rep1.eq.""')
+        .not('status', 'in', closedStatusesList),
+      supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .not('rep1', 'is', null)
+        .neq('rep1', '')
+        .lt('effective_sort_date', stuckCutoffIso)
+        .not('status', 'in', closedStatusesList),
     ]);
+
+    const unassignedLeadsCount = unassignedLeadsCountRes?.count || 0;
+    const stuckLeadsCount = stuckLeadsCountRes?.count || 0;
 
     const openTaskCount = overdueTasks.length + todayTasks.length;
     const rangeLeadsById = new Map(rangeLeads.map((l: any) => [l.id, l]));
@@ -254,7 +297,9 @@ Deno.serve(async (req) => {
     // Smart alerts
     const smart_alerts: any[] = [];
     if (liveSlaRedCount > 0) smart_alerts.push({ id: 'sla_red_open', type: 'sla_red', severity: liveSlaRedCount >= 25 ? 'critical' : liveSlaRedCount >= 10 ? 'high' : 'medium', owner: 'צוות מכירות', impact: liveSlaRedCount, reason: `${liveSlaRedCount} לידים ללא מענה מעל ${SLA_RED_MINUTES} דקות` });
+    if (unassignedLeadsCount > 0) smart_alerts.push({ id: 'unassigned_leads', type: 'unassigned_leads', severity: unassignedLeadsCount >= 25 ? 'critical' : unassignedLeadsCount >= 10 ? 'high' : 'medium', owner: 'מנהל מכירות', impact: unassignedLeadsCount, reason: `${unassignedLeadsCount} לידים ממתינים לשיוך לנציג` });
     if (overdueTasks.length > 0) smart_alerts.push({ id: 'tasks_overdue', type: 'tasks_overdue', severity: overdueTasks.length >= 30 ? 'critical' : overdueTasks.length >= 12 ? 'high' : 'medium', owner: 'צוות מכירות', impact: overdueTasks.length, reason: `${overdueTasks.length} משימות באיחור דורשות טיפול` });
+    if (stuckLeadsCount > 0) smart_alerts.push({ id: 'stuck_leads', type: 'stuck_leads', severity: stuckLeadsCount >= 30 ? 'critical' : stuckLeadsCount >= 10 ? 'high' : 'medium', owner: 'מנהל מכירות', impact: stuckLeadsCount, reason: `${stuckLeadsCount} לידים פתוחים שלא נגעו בהם מעל ${STUCK_LEAD_DAYS} ימים` });
     if (failingCampaigns.length > 0) smart_alerts.push({ id: 'failing_campaigns', type: 'failing_campaign', severity: failingCampaigns.length >= 3 ? 'high' : 'medium', owner: 'שיווק', impact: failingCampaigns.slice(0, 3).reduce((a: number, i: any) => a + i.leads, 0), reason: `קמפיינים חלשים: ${failingCampaigns.slice(0, 3).map((i: any) => i.campaign).join(' • ')}` });
     if (expiringQuotes.length > 0) smart_alerts.push({ id: 'expiring_quotes', type: 'expiring_quotes', severity: expiringQuotes.length >= 10 ? 'high' : 'low', owner: 'צוות מכירות', impact: expiringQuotes.length, reason: `${expiringQuotes.length} הצעות יפוגו ב-${EXPIRING_QUOTES_DAYS} ימים הקרובים` });
     smart_alerts.sort((a, b) => getSeverityWeight(b.severity) - getSeverityWeight(a.severity));
