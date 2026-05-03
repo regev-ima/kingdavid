@@ -37,7 +37,7 @@ const filterOptions = [
 export default function Factory() {
   const [activeTab, setActiveTab] = useState('queue');
   const [filters, setFilters] = useState({ search: '', production_status: 'all' });
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'kanban'
+  const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -264,7 +264,19 @@ export default function Factory() {
       </div>
 
       {viewMode === 'kanban' ? (
-        <FactoryKanban orders={factoryOrders} shipmentsByOrderId={shipmentsByOrderId} />
+        <FactoryKanban
+          // The kanban is the factory's working board — once logistics
+          // takes the shipment over (status moved past need_scheduling),
+          // the order is no longer the factory's problem and shouldn't
+          // pile up in the "מוכן" column. Backward-compat: orders
+          // without a shipment yet always show.
+          orders={factoryOrders.filter((o) => {
+            const ship = shipmentsByOrderId[o.id];
+            if (!ship) return true;
+            return !ship.status || ship.status === 'need_scheduling';
+          })}
+          shipmentsByOrderId={shipmentsByOrderId}
+        />
       ) : (
       <>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
