@@ -528,10 +528,12 @@ export default function Leads() {
       render: (row) => {
         // Show pending_rep_email if rep1 is not assigned
         if (!row.rep1 && row.pending_rep_email) {
+          const pendingRep = users.find(u => u.email === row.pending_rep_email);
+          const pendingName = pendingRep?.full_name || row.pending_rep_email;
           return (
             <span className="text-amber-600 flex items-center gap-1 text-sm">
               <AlertCircle className="h-4 w-4" />
-              ממתין: {row.pending_rep_email}
+              ממתין: {pendingName}
             </span>
           );
         }
@@ -544,7 +546,7 @@ export default function Leads() {
           );
         }
         const rep = users.find(u => u.email === row.rep1);
-        const displayUser = rep || { email: row.rep1, full_name: row.rep1.split('@')[0] };
+        const displayUser = rep || { email: row.rep1, full_name: row.rep1 };
         return (
           <div className="flex items-center gap-2 min-w-0">
             <UserAvatar user={displayUser} size="sm" />

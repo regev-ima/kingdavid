@@ -69,7 +69,9 @@ function getSlaData(row) {
 
 function getRepDisplay(row, users) {
   if (!row.rep1 && row.pending_rep_email) {
-    return { pending: true, text: `ממתין: ${row.pending_rep_email}` };
+    const pendingRep = users.find((u) => u.email === row.pending_rep_email);
+    const pendingName = pendingRep?.full_name || row.pending_rep_email;
+    return { pending: true, text: `ממתין: ${pendingName}` };
   }
 
   if (!row.rep1 || row.rep1 === '') {
@@ -77,7 +79,7 @@ function getRepDisplay(row, users) {
   }
 
   const rep = users.find((u) => u.email === row.rep1);
-  return rep || { email: row.rep1, full_name: row.rep1.split('@')[0] };
+  return rep || { email: row.rep1, full_name: row.rep1 };
 }
 
 function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall }) {
