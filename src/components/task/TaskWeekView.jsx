@@ -65,10 +65,15 @@ function bucketTasks(tasks) {
     const dayKey = format(d, 'yyyy-MM-dd');
     const hour = d.getHours();
     const minutes = d.getMinutes();
+    // Bucket key MUST match the droppableId we render below — that's
+    // `${dayKey}|hour-${N}` for time slots, `${dayKey}|undated` for the
+    // date-only strip. The previous version stored just the bare hour
+    // number ("yyyy-MM-dd|14") and lookups against "yyyy-MM-dd|hour-14"
+    // never resolved, so the entire week grid rendered empty.
     const key =
       hour === 0 && minutes === 0
         ? `${dayKey}|undated`
-        : `${dayKey}|${Math.min(Math.max(hour, HOURS_START), HOURS_END - 1)}`;
+        : `${dayKey}|hour-${Math.min(Math.max(hour, HOURS_START), HOURS_END - 1)}`;
     const arr = map.get(key) || [];
     arr.push(t);
     map.set(key, arr);
