@@ -111,8 +111,10 @@ Deno.serve(async (req) => {
         leadData.status = 'new_lead';
       }
 
-      // Leads without an explicit rep stay unassigned for a manager to assign.
-      // Do NOT auto-assign to the importing user.
+      // Assign to current user if no rep specified
+      if (!leadData.rep1 && !leadData.pending_rep_email) {
+        leadData.rep1 = user.email;
+      }
 
       leads.push(leadData);
     }
