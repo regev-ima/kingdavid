@@ -76,9 +76,10 @@ function bucketTasks(tasks) {
   return map;
 }
 
-function TaskCard({ task, lead, isDragging, dragProvided, onClick }) {
+function TaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
   const Icon = TASK_TYPE_ICONS[task.task_type] || Paperclip;
   const leadName = lead?.full_name || task?.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד';
+  const phone = lead?.phone;
 
   return (
     <div
@@ -98,6 +99,19 @@ function TaskCard({ task, lead, isDragging, dragProvided, onClick }) {
       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{leadName}</span>
       {(task.status || lead?.status) && (
         <StatusBadge status={task.status || lead?.status} className="text-[9px] py-0 px-1" />
+      )}
+      {phone && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCall?.(phone);
+          }}
+          className="flex-shrink-0 rounded-full bg-green-100 hover:bg-green-200 active:bg-green-300 p-1 text-green-700 transition-colors"
+          title={`התקשר ל-${phone}`}
+        >
+          <Phone className="h-3 w-3" />
+        </button>
       )}
     </div>
   );
@@ -150,6 +164,16 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
   const leadsById = useMemo(() => Object.fromEntries(leadsRaw.map((l) => [l.id, l])), [leadsRaw]);
 
   const buckets = useMemo(() => bucketTasks(visibleTasks), [visibleTasks]);
+
+  const handleCall = async (phone) => {
+    if (!phone) return;
+    try {
+      await base44.functions.invoke('clickToCall', { customerPhone: phone });
+      toast.success(`מתקשר ל-${phone}`);
+    } catch (err) {
+      toast.error(`חיוג נכשל: ${err?.message || 'שגיאה'}`);
+    }
+  };
 
   // Drag updates due_date to the dropped (day, hour). 'undated' drops keep
   // the day but zero the time so they surface in the date-only strip.
@@ -264,6 +288,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                                 dragProvided={dragProvided}
                                 isDragging={dragSnapshot.isDragging}
                                 onClick={() => onTaskClick?.(task)}
+                                onCall={handleCall}
                               />
                             )}
                           </Draggable>
@@ -314,6 +339,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                                     dragProvided={dragProvided}
                                     isDragging={dragSnapshot.isDragging}
                                     onClick={() => onTaskClick?.(task)}
+                                    onCall={handleCall}
                                   />
                                 )}
                               </Draggable>
