@@ -19,6 +19,7 @@ import {
 import { Factory as FactoryIcon, Package, Clock, CheckCircle, AlertTriangle, List, LayoutGrid } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import FactoryKanban from '@/components/factory/FactoryKanban';
+import FactoryCalendarBoard from '@/components/factory/FactoryCalendarBoard';
 
 const filterOptions = [
   {
@@ -37,7 +38,7 @@ const filterOptions = [
 export default function Factory() {
   const [activeTab, setActiveTab] = useState('queue');
   const [filters, setFilters] = useState({ search: '', production_status: 'all' });
-  const [viewMode, setViewMode] = useState('kanban'); // 'kanban' | 'list'
+  const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'kanban' | 'list'
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -64,7 +65,7 @@ export default function Factory() {
       }
       return map;
     },
-    enabled: viewMode === 'kanban',
+    enabled: viewMode === 'kanban' || viewMode === 'calendar',
     staleTime: 60_000,
   });
 
@@ -213,12 +214,12 @@ export default function Factory() {
         <div className="inline-flex h-9 rounded-lg border border-border bg-card p-0.5 text-xs font-medium">
           <button
             type="button"
-            onClick={() => setViewMode('list')}
+            onClick={() => setViewMode('calendar')}
             className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
-              viewMode === 'list' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              viewMode === 'calendar' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            <List className="h-3.5 w-3.5" /> רשימה
+            <LayoutGrid className="h-3.5 w-3.5" /> קלנדר
           </button>
           <button
             type="button"
@@ -228,6 +229,15 @@ export default function Factory() {
             }`}
           >
             <LayoutGrid className="h-3.5 w-3.5" /> קנבן
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+              viewMode === 'list' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <List className="h-3.5 w-3.5" /> רשימה
           </button>
         </div>
       </div>
@@ -263,20 +273,29 @@ export default function Factory() {
         />
       </div>
 
-      {viewMode === 'kanban' ? (
-        <FactoryKanban
-          // The kanban is the factory's working board — once logistics
-          // takes the shipment over (status moved past need_scheduling),
-          // the order is no longer the factory's problem and shouldn't
-          // pile up in the "מוכן" column. Backward-compat: orders
-          // without a shipment yet always show.
-          orders={factoryOrders.filter((o) => {
-            const ship = shipmentsByOrderId[o.id];
-            if (!ship) return true;
-            return !ship.status || ship.status === 'need_scheduling';
-          })}
-          shipmentsByOrderId={shipmentsByOrderId}
-        />
+      {viewMode === 'calendar' || viewMode === 'kanban' ? (
+        viewMode === 'calendar' ? (
+          <FactoryCalendarBoard
+            // Same handoff rule: hide orders whose shipment has moved past
+            // need_scheduling. The calendar is the factory's plan, not a
+            // logistics archive.
+            orders={factoryOrders.filter((o) => {
+              const ship = shipmentsByOrderId[o.id];
+              if (!ship) return true;
+              return !ship.status || ship.status === 'need_scheduling';
+            })}
+            shipmentsByOrderId={shipmentsByOrderId}
+          />
+        ) : (
+          <FactoryKanban
+            orders={factoryOrders.filter((o) => {
+              const ship = shipmentsByOrderId[o.id];
+              if (!ship) return true;
+              return !ship.status || ship.status === 'need_scheduling';
+            })}
+            shipmentsByOrderId={shipmentsByOrderId}
+          />
+        )
       ) : (
       <>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
