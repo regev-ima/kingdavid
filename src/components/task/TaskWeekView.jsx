@@ -34,17 +34,19 @@ function useWeekTasks({ weekStart, isAdmin, userEmail, enabled }) {
     enabled,
     staleTime: 30_000,
     queryFn: async () => {
+      // Assignment tasks are an admin queue, not work-on-the-clock items —
+      // they don't belong on a calendar. Hide them for everyone; the
+      // dedicated "להקצות" tab in the list view is where they live.
       let q = base44.supabase
         .from('sales_tasks')
         .select('*')
         .eq('task_status', 'not_completed')
+        .neq('task_type', 'assignment')
         .gte('due_date', startIso)
         .lte('due_date', endIso)
         .order('due_date', { ascending: true });
       if (!isAdmin && userEmail) {
-        q = q
-          .neq('task_type', 'assignment')
-          .or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+        q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
       }
       const { data, error } = await q;
       if (error) throw error;
