@@ -293,6 +293,21 @@ export function isAssignmentTask(task) {
   return task?.task_type === 'assignment';
 }
 
+// Stale-assignment heuristic. Mirrors isStaleOverdueTask but keys off
+// created_date instead of due_date — assignment tasks are admin-workflow
+// items, the only thing that ages is "how long has nobody assigned this
+// lead". After 30 days the manager has implicitly decided the lead isn't
+// worth working, even if the task is still technically open.
+export function isStaleAssignmentTask(task, now = new Date(), thresholdDays = STALE_TASK_THRESHOLD_DAYS) {
+  if (!isAssignmentTask(task)) return false;
+  if (normalizeTaskStatus(task.task_status) !== 'not_completed') return false;
+  const created = parseGenericDate(task.created_date);
+  if (!created) return false;
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - thresholdDays);
+  return created < cutoff;
+}
+
 export function buildTaskActionItems(tasks, leadsById, now = new Date()) {
   return sortSalesTasks(
     tasks.filter((task) => ['overdue', 'today', 'upcoming', 'undated'].includes(getSalesTaskQueueBucket(task, now))),
