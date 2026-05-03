@@ -104,16 +104,22 @@ export default function SalesTasks() {
   const isAdmin = isAdminUser(effectiveUser);
   const userEmail = effectiveUser?.email;
 
-  // Mirrors what the page renders: non-admins see only their own tasks
-  // and never see assignment-type rows. Admins see everything. Pushing
-  // this down to the server keeps the KPI counts honest (a rep was
-  // seeing the global 8.5k total in their KPI strip) and avoids
-  // pulling 1000 unrelated rows for the rep's tab.
-  const applyUserScope = (q) => {
-    if (isAdmin || !userEmail) return q;
-    return q
-      .neq('task_type', 'assignment')
-      .or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+  // Effective rules:
+  //   - non-admin reps never see assignment tasks anywhere on this page
+  //   - admin sees them only on the dedicated "להקצות" tab, or when the
+  //     "כלול X משימות שיוך" toggle is on
+  //   - the toggle drives BOTH the counts and the list, so the badge on
+  //     "היום" can't say 73 while the list renders 1 (the bug we just hit)
+  // Counts ignore activeTab (they describe every bucket at once), so the
+  // assignment tab itself doesn't bring assignment rows into the count.
+  const includeAssignmentInCounts = isAdmin && showAssignmentTasks;
+  const includeAssignmentInList = isAdmin && (showAssignmentTasks || activeTab === 'assignment');
+  const applyUserScope = (q, { includeAssignment } = { includeAssignment: false }) => {
+    if (!includeAssignment) q = q.neq('task_type', 'assignment');
+    if (!isAdmin && userEmail) {
+      q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+    }
+    return q;
   };
 
   const { data: taskCounters = [] } = useQuery({
@@ -137,19 +143,32 @@ export default function SalesTasks() {
   const todayStartIso = startOfDay(today).toISOString();
   const todayEndIso = endOfDay(today).toISOString();
 
-  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0 } } = useQuery({
-    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0 } } = useQuery({
+    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
       const head = async (build) => {
         const { count, error } = await build(
-          applyUserScope(base44.supabase.from('sales_tasks').select('*', { count: 'exact', head: true })),
+          applyUserScope(base44.supabase.from('sales_tasks').select('*', { count: 'exact', head: true }), { includeAssignment: includeAssignmentInCounts }),
         );
         if (error) throw error;
         return count || 0;
       };
-      const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday] = await Promise.all([
+      // Assignment-tab badge needs its own count regardless of the
+      // includeAssignmentInCounts toggle — the badge is the whole reason
+      // an admin notices the queue exists.
+      const assignmentHead = async () => {
+        if (!isAdmin) return 0;
+        const { count, error } = await base44.supabase
+          .from('sales_tasks')
+          .select('*', { count: 'exact', head: true })
+          .eq('task_status', 'not_completed')
+          .eq('task_type', 'assignment');
+        if (error) throw error;
+        return count || 0;
+      };
+      const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen] = await Promise.all([
         head((q) => q),
         head((q) => q.eq('task_status', 'not_completed')),
         head((q) => q.eq('task_status', 'completed')),
@@ -158,8 +177,9 @@ export default function SalesTasks() {
         head((q) => q.eq('task_status', 'not_completed').gt('due_date', todayEndIso)),
         head((q) => q.eq('task_status', 'not_completed').is('due_date', null)),
         head((q) => q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso)),
+        assignmentHead(),
       ]);
-      return { total, open, completed, today: todayCnt, overdue, upcoming, undated, completedToday };
+      return { total, open, completed, today: todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen };
     },
   });
 
@@ -169,11 +189,11 @@ export default function SalesTasks() {
   // ~8k rows on every page load; this brings it down to ≤ 1000.
   const TASKS_FETCH_LIMIT = 1000;
   const { data: allSalesTasks = [], isLoading } = useQuery({
-    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
-      let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'));
+      let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'), { includeAssignment: includeAssignmentInList });
       if (activeTab === 'today') {
         q = q.eq('task_status', 'not_completed').gte('due_date', todayStartIso).lte('due_date', todayEndIso);
       } else if (activeTab === 'overdue') {
@@ -257,10 +277,9 @@ export default function SalesTasks() {
     () => ownedTasks.filter((t) => isStaleOverdueTask(t, now)).length,
     [ownedTasks, now],
   );
-  const assignmentTaskCount = useMemo(
-    () => ownedTasks.filter(isAssignmentTask).length,
-    [ownedTasks],
-  );
+  // Server-side count — survives the toggle, since otherwise hiding
+  // assignment tasks would also hide the only signal that they exist.
+  const assignmentTaskCount = counts.assignmentOpen || 0;
   // When the active tab's entire bucket is assignment-only (e.g. today
   // is dominated by `assignment` tasks the rep filter hides), the list
   // looks empty and the rep doesn't know why. Surface this as a CTA in
