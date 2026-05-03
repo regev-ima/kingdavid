@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Phone, ExternalLink, Truck, FileText, Package } from 'lucide-react';
@@ -21,19 +21,19 @@ export default function OrderQuickView({ order, shipment, isOpen, onClose, onCal
   const fullOrderUrl = createPageUrl('OrderDetails') + `?id=${order.id}`;
 
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose?.()}>
-      <SheetContent side="left" className="w-[400px] sm:max-w-[440px] overflow-y-auto" dir="rtl">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose?.()}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
             <span className="text-primary">#{order.order_number}</span>
             <span className="font-normal text-foreground">· {order.customer_name || 'לקוח'}</span>
-          </SheetTitle>
+          </DialogTitle>
           {order.created_date && (
-            <SheetDescription>
+            <DialogDescription>
               נוצרה {format(new Date(order.created_date), 'dd/MM/yyyy HH:mm')}
-            </SheetDescription>
+            </DialogDescription>
           )}
-        </SheetHeader>
+        </DialogHeader>
 
         <div className="mt-4 space-y-4">
           {/* Status row */}
@@ -117,7 +117,7 @@ export default function OrderQuickView({ order, shipment, isOpen, onClose, onCal
             </Button>
           </Link>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
