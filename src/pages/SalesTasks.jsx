@@ -227,10 +227,14 @@ export default function SalesTasks() {
   const todayStart = startOfDay(now);
   const todayEnd = endOfDay(now);
   const leadsById = useMemo(() => buildLeadsById(allLeads), [allLeads]);
-  const ownedTasks = useMemo(
-    () => filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById),
-    [effectiveUser, allSalesTasks, leadsById],
-  );
+  // Non-admin reps never see assignment tasks anywhere on this page —
+  // those belong to the manager workflow. Stripping them at the
+  // ownedTasks layer makes counts, toggles, and empty-state CTAs all
+  // collapse to 0/hidden automatically for non-admins.
+  const ownedTasks = useMemo(() => {
+    const base = filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById);
+    return isAdminUser(effectiveUser) ? base : base.filter((t) => !isAssignmentTask(t));
+  }, [effectiveUser, allSalesTasks, leadsById]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -264,6 +268,12 @@ export default function SalesTasks() {
   useEffect(() => {
     setTasksPage(0);
   }, [activeTab, search, sortBy, dateFilter, leadStatusFilter, showStale, showAssignmentTasks]);
+
+  // Assignment tab is admin-only. Bounce non-admins who land here via
+  // a stale URL (?tab=assignment) back to the default view.
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'assignment') setActiveTab('today');
+  }, [isAdmin, activeTab]);
 
   // 2. Filter & sort tasks BEFORE enriching with lead data (no lead data needed here)
   const { totalFilteredCount, paginatedTasks } = useMemo(() => {
