@@ -45,6 +45,7 @@ import ImportSalesTasks from '@/components/lead/ImportSalesTasks';
 import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import TaskDayView from '@/components/task/TaskDayView';
+import TaskWeekView from '@/components/task/TaskWeekView';
 import StatusBadge from '@/components/shared/StatusBadge';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
@@ -61,7 +62,7 @@ export default function SalesTasks() {
   const [dateFilter, setDateFilter] = useState('');
   const [showStale, setShowStale] = useState(false);
   const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'day'
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'day' | 'week'
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
@@ -481,6 +482,15 @@ export default function SalesTasks() {
             >
               <LayoutGrid className="h-3.5 w-3.5" /> יום
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('week')}
+              className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+                viewMode === 'week' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Calendar className="h-3.5 w-3.5" /> שבוע
+            </button>
           </div>
           <Button
             onClick={() => setShowImportDialog(true)}
@@ -504,6 +514,12 @@ export default function SalesTasks() {
 
       {viewMode === 'day' ? (
         <TaskDayView
+          effectiveUser={effectiveUser}
+          isAdmin={isAdmin}
+          onTaskClick={(task) => handleOpenTaskDetails(task)}
+        />
+      ) : viewMode === 'week' ? (
+        <TaskWeekView
           effectiveUser={effectiveUser}
           isAdmin={isAdmin}
           onTaskClick={(task) => handleOpenTaskDetails(task)}
