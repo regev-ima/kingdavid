@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import KPICard from '@/components/shared/KPICard';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -12,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, CheckCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid } from "lucide-react";
+import { Calendar, Clock, Phone, MessageCircle, CheckCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown } from "lucide-react";
 import { format, isValid, formatDistanceToNow, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 
@@ -523,26 +528,12 @@ export default function SalesTasks() {
         />
       ) : (
       <>
-      {/* ===== KPI ROW ===== */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <div className={`rounded-xl ${activeTab === 'today' ? 'ring-2 ring-indigo-400' : ''}`}>
-          <KPICard title="משימות היום" value={todayCount} icon={Calendar} color="indigo" onClick={() => setActiveTab('today')} />
-        </div>
-        <div className={`rounded-xl ${activeTab === 'overdue' ? 'ring-2 ring-red-400' : overdueCount > 0 ? 'ring-2 ring-red-300' : ''}`}>
-          <KPICard title="באיחור" value={overdueCount} icon={Clock} color="red" onClick={() => setActiveTab('overdue')} />
-        </div>
-        <div className={`rounded-xl ${activeTab === 'not_completed' ? 'ring-2 ring-amber-400' : ''}`}>
-          <KPICard title="ממתין לביצוע" value={notCompletedCount} icon={Clock} color="amber" onClick={() => setActiveTab('not_completed')} />
-        </div>
-        <div className={`rounded-xl ${activeTab === 'completed' ? 'ring-2 ring-green-400' : ''}`}>
-          <KPICard title="בוצע" value={completedCount} icon={CheckCircle} color="green" onClick={() => setActiveTab('completed')} />
-        </div>
-        <div className={`col-span-2 sm:col-span-1 rounded-xl ${activeTab === 'all' ? 'ring-2 ring-border' : ''}`}>
-          <KPICard title='סה"כ' value={totalCount} icon={FileText} color="gray" onClick={() => setActiveTab('all')} />
-        </div>
-      </div>
-
-      {/* ===== TABS - Scrollable pill strip ===== */}
+      {/* ===== TABS - Primary strip + "more" overflow =====
+          The KPI cards above this strip used to repeat the same numbers and
+          fire the same setActiveTab() calls — pure redundancy. Tabs alone
+          carry both the count and the filter affordance. Secondary statuses
+          (upcoming / undated / completed / not_done / cancelled / all) live
+          behind a "עוד" dropdown so daily-driver tabs stay legible. */}
       <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
         <TabsList
           className="w-full h-auto p-1 gap-1 bg-muted/80 rounded-xl flex flex-row flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
@@ -554,14 +545,6 @@ export default function SalesTasks() {
           <TabsTrigger value="overdue" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-red-600 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
             <AlertCircle className="w-3.5 h-3.5 me-1.5 inline-block" /> באיחור
             <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{overdueCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="upcoming" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-primary data-[state=active]:bg-primary/80 data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm">
-            <ArrowUpRight className="w-3.5 h-3.5 me-1.5 inline-block" /> עתידי
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{upcomingCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="undated" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-slate-700 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <List className="w-3.5 h-3.5 me-1.5 inline-block" /> ללא יעד
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{undatedCount}</span>
           </TabsTrigger>
           <TabsTrigger value="not_completed" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
             <Clock className="w-3.5 h-3.5 me-1.5 inline-block" /> ממתין
@@ -575,20 +558,60 @@ export default function SalesTasks() {
               )}
             </TabsTrigger>
           )}
-          <TabsTrigger value="completed" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-emerald-700 data-[state=active]:bg-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <CheckCircle2 className="w-3.5 h-3.5 me-1.5 inline-block" /> בוצע
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{completedCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="not_done" className="flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <XCircle className="w-3.5 h-3.5 me-1.5 inline-block" /> לא בוצע
-          </TabsTrigger>
-          <TabsTrigger value="cancelled" className="flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-muted-foreground data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm">
-            <Ban className="w-3.5 h-3.5 me-1.5 inline-block" /> בוטל
-          </TabsTrigger>
-          <TabsTrigger value="all" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-foreground data-[state=active]:text-background data-[state=active]:shadow-sm">
-            <List className="w-3.5 h-3.5 me-1.5 inline-block" /> הכל
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{totalCount}</span>
-          </TabsTrigger>
+
+          {/* "More" dropdown for the secondary states. Mirrors active styling
+              when one of its children is selected so the user always sees
+              where they are. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={`group flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold transition-colors ${
+                  ['upcoming', 'undated', 'completed', 'not_done', 'cancelled', 'all'].includes(activeTab)
+                    ? 'bg-foreground text-background shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                {(() => {
+                  const map = {
+                    upcoming: 'עתידי',
+                    undated: 'ללא יעד',
+                    completed: 'בוצע',
+                    not_done: 'לא בוצע',
+                    cancelled: 'בוטל',
+                    all: 'הכל',
+                  };
+                  return map[activeTab] || 'עוד';
+                })()}
+                <ChevronDown className="w-3 h-3 opacity-70" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[180px]">
+              <DropdownMenuItem onSelect={() => setActiveTab('upcoming')}>
+                <ArrowUpRight className="w-3.5 h-3.5 me-1.5" /> עתידי
+                <span className="ms-auto text-[10px] font-bold opacity-70">{upcomingCount}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setActiveTab('undated')}>
+                <List className="w-3.5 h-3.5 me-1.5" /> ללא יעד
+                <span className="ms-auto text-[10px] font-bold opacity-70">{undatedCount}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setActiveTab('completed')}>
+                <CheckCircle2 className="w-3.5 h-3.5 me-1.5" /> בוצע
+                <span className="ms-auto text-[10px] font-bold opacity-70">{completedCount}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setActiveTab('not_done')}>
+                <XCircle className="w-3.5 h-3.5 me-1.5" /> לא בוצע
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setActiveTab('cancelled')}>
+                <Ban className="w-3.5 h-3.5 me-1.5" /> בוטל
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setActiveTab('all')}>
+                <List className="w-3.5 h-3.5 me-1.5" /> הכל
+                <span className="ms-auto text-[10px] font-bold opacity-70">{totalCount}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </TabsList>
       </Tabs>
 
