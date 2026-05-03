@@ -639,7 +639,15 @@ export default function OrderDetails() {
               
               {shipment && (
                 <div className="mt-4 p-3 bg-muted rounded-lg text-sm">
-                  <p><span className="text-muted-foreground">מס' משלוח:</span> #{shipment.shipment_number}</p>
+                  <p>
+                    <span className="text-muted-foreground">מס' משלוח: </span>
+                    <Link
+                      to={createPageUrl('ShipmentDetails') + `?id=${shipment.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      #{shipment.shipment_number}
+                    </Link>
+                  </p>
                   {shipment.scheduled_date && (
                     <p><span className="text-muted-foreground">תאריך:</span> {format(new Date(shipment.scheduled_date), 'dd/MM/yyyy')}</p>
                   )}
