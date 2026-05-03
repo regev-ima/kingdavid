@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -7,6 +7,7 @@ import { Phone, Package, GripVertical, Truck } from 'lucide-react';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { format } from '@/lib/safe-date-fns';
 import { base44 } from '@/api/base44Client';
+import OrderQuickView from './OrderQuickView';
 
 // Three boards. Internally the DB tracks five production statuses
 // (not_started / materials_check / in_production / qc / ready) — we
@@ -46,16 +47,18 @@ async function ensureShipment(order) {
   return { created: true, shipment };
 }
 
-function OrderCard({ order, dragProvided, isDragging, hasShipment }) {
+function OrderCard({ order, dragProvided, isDragging, hasShipment, onPreview }) {
   return (
     <div
       ref={dragProvided?.innerRef}
       {...(dragProvided?.draggableProps || {})}
-      className={`group flex items-start gap-2 rounded-lg border bg-card p-3 text-sm shadow-sm transition-all
+      onClick={() => onPreview?.(order)}
+      className={`group flex items-start gap-2 rounded-lg border bg-card p-3 text-sm shadow-sm transition-all cursor-pointer
         ${isDragging ? 'shadow-lg ring-2 ring-primary' : 'hover:border-primary/40 hover:shadow-md'}`}
     >
       <span
         {...(dragProvided?.dragHandleProps || {})}
+        onClick={(e) => e.stopPropagation()}
         className="mt-0.5 text-muted-foreground/50 group-hover:text-muted-foreground"
         title="גרור כדי להעביר עמודה"
       >
@@ -93,6 +96,17 @@ function OrderCard({ order, dragProvided, isDragging, hasShipment }) {
 
 export default function FactoryKanban({ orders, shipmentsByOrderId = {} }) {
   const queryClient = useQueryClient();
+  const [previewOrderId, setPreviewOrderId] = useState(null);
+
+  const handleCall = async (phone) => {
+    if (!phone) return;
+    try {
+      await base44.functions.invoke('clickToCall', { customerPhone: phone });
+      toast.success(`מתקשר ל-${phone}`);
+    } catch (err) {
+      toast.error(`חיוג נכשל: ${err?.message || 'שגיאה'}`);
+    }
+  };
 
   const orderById = useMemo(() => {
     const m = new Map();
@@ -162,6 +176,7 @@ export default function FactoryKanban({ orders, shipmentsByOrderId = {} }) {
   };
 
   return (
+    <>
     <DragDropContext onDragEnd={handleDragEnd}>
       <div className="grid gap-4 md:grid-cols-3" dir="rtl">
         {COLUMNS.map((col) => {
@@ -200,6 +215,7 @@ export default function FactoryKanban({ orders, shipmentsByOrderId = {} }) {
                             dragProvided={dragProvided}
                             isDragging={dragSnapshot.isDragging}
                             hasShipment={!!shipmentsByOrderId[order.id]}
+                            onPreview={(o) => setPreviewOrderId(o.id)}
                           />
                         )}
                       </Draggable>
@@ -213,5 +229,13 @@ export default function FactoryKanban({ orders, shipmentsByOrderId = {} }) {
         })}
       </div>
     </DragDropContext>
+    <OrderQuickView
+      order={previewOrderId ? orderById.get(previewOrderId) : null}
+      shipment={previewOrderId ? shipmentsByOrderId[previewOrderId] : null}
+      isOpen={!!previewOrderId}
+      onClose={() => setPreviewOrderId(null)}
+      onCall={handleCall}
+    />
+    </>
   );
 }
