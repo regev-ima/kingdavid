@@ -82,16 +82,33 @@ export default function OrderQuickView({ order, shipment, isOpen, onClose, onCal
                 <Package className="h-3 w-3" /> פריטים ({order.items.length})
               </div>
               <ul className="space-y-1.5 text-sm">
-                {order.items.slice(0, 5).map((item, idx) => (
-                  <li key={idx} className="flex items-baseline justify-between gap-2 border-b border-border/40 pb-1.5 last:border-0 last:pb-0">
-                    <span className="min-w-0 truncate text-foreground">
-                      {item.product_name || item.name || item.sku || 'פריט'}
-                    </span>
-                    {item.quantity != null && (
-                      <span className="flex-shrink-0 text-xs font-medium text-muted-foreground tabular-nums">×{item.quantity}</span>
-                    )}
-                  </li>
-                ))}
+                {order.items.slice(0, 5).map((item, idx) => {
+                  const hasDims = item.length_cm && item.width_cm;
+                  const addonCount = (item.selected_addons || []).length;
+                  return (
+                    <li key={idx} className="border-b border-border/40 pb-1.5 last:border-0 last:pb-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-foreground">
+                          {item.product_name || item.name || item.sku || 'פריט'}
+                        </span>
+                        {item.quantity != null && (
+                          <span className="flex-shrink-0 text-xs font-medium text-muted-foreground tabular-nums">×{item.quantity}</span>
+                        )}
+                      </div>
+                      {(hasDims || item.sku || addonCount > 0) && (
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                          {hasDims && (
+                            <span className="font-medium text-primary">
+                              {item.length_cm}×{item.width_cm}{item.height_cm ? `×${item.height_cm}` : ''} ס"מ
+                            </span>
+                          )}
+                          {item.sku && <span dir="ltr">{item.sku}</span>}
+                          {addonCount > 0 && <span>+ {addonCount} תוספות</span>}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
                 {order.items.length > 5 && (
                   <li className="text-center text-xs text-muted-foreground/70">+ {order.items.length - 5} נוספים</li>
                 )}
