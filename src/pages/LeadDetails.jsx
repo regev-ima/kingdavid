@@ -1443,7 +1443,7 @@ export default function LeadDetails() {
                     const openTasks = tasks.filter(t => t.task_status === 'not_completed');
                     if (openTasks.length > 0) {
                       await Promise.all(openTasks.map(t =>
-                        base44.entities.SalesTask.update(t.id, { task_status: 'completed', completed_date: noAnswerNow })
+                        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
                       ));
                     }
 
@@ -1599,7 +1599,7 @@ export default function LeadDetails() {
                     const openTasks = tasks.filter(t => t.task_status === 'not_completed');
                     if (openTasks.length > 0) {
                       await Promise.all(openTasks.map(t =>
-                        base44.entities.SalesTask.update(t.id, { task_status: 'completed', completed_date: now })
+                        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
                       ));
                     }
 
