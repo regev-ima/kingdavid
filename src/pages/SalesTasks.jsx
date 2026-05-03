@@ -538,23 +538,23 @@ export default function SalesTasks() {
         <TabsList
           className="w-full h-auto p-1 gap-1 bg-muted/80 rounded-xl flex flex-row flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
-          <TabsTrigger value="today" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm">
-            <Calendar className="w-3.5 h-3.5 me-1.5 inline-block" /> היום
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{todayCount}</span>
+          <TabsTrigger value="today" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm">
+            <Calendar className="w-4 h-4 me-1.5 inline-block" /> היום
+            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{todayCount}</span>
           </TabsTrigger>
-          <TabsTrigger value="overdue" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-red-600 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <AlertCircle className="w-3.5 h-3.5 me-1.5 inline-block" /> באיחור
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{overdueCount}</span>
+          <TabsTrigger value="overdue" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-red-600 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
+            <AlertCircle className="w-4 h-4 me-1.5 inline-block" /> באיחור
+            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{overdueCount}</span>
           </TabsTrigger>
-          <TabsTrigger value="not_completed" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <Clock className="w-3.5 h-3.5 me-1.5 inline-block" /> ממתין
-            <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{notCompletedCount}</span>
+          <TabsTrigger value="not_completed" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
+            <Clock className="w-4 h-4 me-1.5 inline-block" /> ממתין
+            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{notCompletedCount}</span>
           </TabsTrigger>
           {isAdmin && (
-            <TabsTrigger value="assignment" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:text-violet-700 data-[state=active]:bg-violet-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-              <ClipboardList className="w-3.5 h-3.5 me-1.5 inline-block" /> להקצות
+            <TabsTrigger value="assignment" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-violet-700 data-[state=active]:bg-violet-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
+              <ClipboardList className="w-4 h-4 me-1.5 inline-block" /> להקצות
               {assignmentTaskCount > 0 && (
-                <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{assignmentTaskCount}</span>
+                <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{assignmentTaskCount}</span>
               )}
             </TabsTrigger>
           )}
@@ -566,13 +566,13 @@ export default function SalesTasks() {
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className={`group flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold transition-colors ${
+                className={`group flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold transition-colors ${
                   ['upcoming', 'undated', 'completed', 'not_done', 'cancelled', 'all'].includes(activeTab)
                     ? 'bg-foreground text-background shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <List className="w-3.5 h-3.5" />
+                <List className="w-4 h-4" />
                 {(() => {
                   const map = {
                     upcoming: 'עתידי',
@@ -590,15 +590,15 @@ export default function SalesTasks() {
             <DropdownMenuContent align="end" className="min-w-[180px]">
               <DropdownMenuItem onSelect={() => setActiveTab('upcoming')}>
                 <ArrowUpRight className="w-3.5 h-3.5 me-1.5" /> עתידי
-                <span className="ms-auto text-[10px] font-bold opacity-70">{upcomingCount}</span>
+                <span className="ms-auto text-xs font-bold opacity-70">{upcomingCount}</span>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setActiveTab('undated')}>
                 <List className="w-3.5 h-3.5 me-1.5" /> ללא יעד
-                <span className="ms-auto text-[10px] font-bold opacity-70">{undatedCount}</span>
+                <span className="ms-auto text-xs font-bold opacity-70">{undatedCount}</span>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setActiveTab('completed')}>
                 <CheckCircle2 className="w-3.5 h-3.5 me-1.5" /> בוצע
-                <span className="ms-auto text-[10px] font-bold opacity-70">{completedCount}</span>
+                <span className="ms-auto text-xs font-bold opacity-70">{completedCount}</span>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setActiveTab('not_done')}>
                 <XCircle className="w-3.5 h-3.5 me-1.5" /> לא בוצע
@@ -608,7 +608,7 @@ export default function SalesTasks() {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => setActiveTab('all')}>
                 <List className="w-3.5 h-3.5 me-1.5" /> הכל
-                <span className="ms-auto text-[10px] font-bold opacity-70">{totalCount}</span>
+                <span className="ms-auto text-xs font-bold opacity-70">{totalCount}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
