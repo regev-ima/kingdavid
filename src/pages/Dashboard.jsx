@@ -298,6 +298,8 @@ export default function Dashboard() {
     smart_alerts: {
       sla_red: { page: 'Leads', query: { tab: 'open' } },
       tasks_overdue: { page: 'SalesTasks', query: { tab: 'overdue' } },
+      unassigned_leads: { page: 'Leads', query: { tab: 'unassigned' } },
+      stuck_leads: { page: 'Leads', query: { tab: 'open' } },
       failing_campaign: { page: 'Marketing', query: {} },
       expiring_quotes: { page: 'Quotes', query: { tab: 'expiring' } },
     },
