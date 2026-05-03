@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
+import { getRepDisplayName } from '@/lib/repDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -889,7 +890,7 @@ export default function LeadDetails() {
                                         {lead?.full_name || 'ליד לא ידוע'}
                                       </span>
                                       <div className="text-sm text-muted-foreground truncate">
-                                        נציג מטפל: {task.rep1 ? (users.find(u => u.email === task.rep1)?.full_name || task.rep1.split('@')[0]) : 'לא משויך'}
+                                        נציג מטפל: {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
                                       </div>
                                     </div>
 
@@ -1223,7 +1224,7 @@ export default function LeadDetails() {
                 <div className="space-y-3">
                   <RepCard
                     label="נציג ראשי"
-                    rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: lead.rep1.split('@')[0] }) : null}
+                    rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: getRepDisplayName(lead.rep1, salesReps) }) : null}
                     isEmpty={!lead.rep1 && !lead.pending_rep_email}
                     canEdit={canEditLeadRep1}
                     salesReps={salesReps}

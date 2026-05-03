@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getRepDisplayName } from '@/lib/repDisplay';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -546,7 +547,7 @@ export default function CustomerDetails() {
                   <RepCard
                     label="נציג ראשי"
                     rep={customer.account_manager
-                      ? (salesReps.find((r) => r.email === customer.account_manager) || { email: customer.account_manager, full_name: customer.account_manager.split('@')[0] })
+                      ? (salesReps.find((r) => r.email === customer.account_manager) || { email: customer.account_manager, full_name: getRepDisplayName(customer.account_manager, salesReps) })
                       : null}
                     isEmpty={!customer.account_manager && !customer.pending_rep_email}
                     canEdit={canEditRep1}

@@ -7,6 +7,7 @@ import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
+import { getRepDisplayName } from '@/lib/repDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -295,10 +296,7 @@ export default function Finance() {
     },
   ];
 
-  const getRepName = (email) => {
-    const user = users.find(u => u.email === email);
-    return user?.full_name || email?.split('@')[0] || '-';
-  };
+  const getRepName = (email) => getRepDisplayName(email, users) || '-';
 
   const commissionColumns = [
     {

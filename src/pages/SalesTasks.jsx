@@ -51,6 +51,7 @@ import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser
 import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
 import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
+import { getRepDisplayName } from '@/lib/repDisplay';
 
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
@@ -231,11 +232,7 @@ export default function SalesTasks() {
     enabled: canAccessSales,
   });
 
-  const getRepName = (email) => {
-    if (!email) return '';
-    const u = allUsers.find(u => u.email === email);
-    return u?.full_name || email.split('@')[0];
-  };
+  const getRepName = (email) => getRepDisplayName(email, allUsers);
 
   const now = new Date();
   const todayStart = startOfDay(now);
