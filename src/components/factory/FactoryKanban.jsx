@@ -47,7 +47,7 @@ async function ensureShipment(order) {
   return { created: true, shipment };
 }
 
-function OrderCard({ order, dragProvided, isDragging, hasShipment, onPreview }) {
+function OrderCard({ order, dragProvided, isDragging, hasShipment, onPreview, onCall }) {
   return (
     <div
       ref={dragProvided?.innerRef}
@@ -76,7 +76,7 @@ function OrderCard({ order, dragProvided, isDragging, hasShipment, onPreview }) 
         <p className="truncate font-medium text-foreground">{order.customer_name || 'לקוח'}</p>
         {order.customer_phone && (
           <p className="truncate text-xs text-muted-foreground" dir="ltr">
-            <Phone className="me-1 inline-block h-3 w-3" /> {order.customer_phone}
+            {order.customer_phone}
           </p>
         )}
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -90,6 +90,20 @@ function OrderCard({ order, dragProvided, isDragging, hasShipment, onPreview }) 
           )}
         </div>
       </div>
+      {order.customer_phone && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // Card click opens the quick-view; we don't want both at once.
+            e.stopPropagation();
+            onCall?.(order.customer_phone);
+          }}
+          className="mt-0.5 flex-shrink-0 rounded-full bg-green-100 hover:bg-green-200 active:bg-green-300 p-1.5 text-green-700 transition-colors"
+          title={`התקשר ל-${order.customer_phone}`}
+        >
+          <Phone className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
@@ -216,6 +230,7 @@ export default function FactoryKanban({ orders, shipmentsByOrderId = {} }) {
                             isDragging={dragSnapshot.isDragging}
                             hasShipment={!!shipmentsByOrderId[order.id]}
                             onPreview={(o) => setPreviewOrderId(o.id)}
+                            onCall={handleCall}
                           />
                         )}
                       </Draggable>
