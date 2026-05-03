@@ -92,6 +92,20 @@ export default function SalesTasks() {
   const [tasksPage, setTasksPage] = useState(0);
   const TASKS_PER_PAGE = 50;
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
+  const isAdmin = isAdminUser(effectiveUser);
+  const userEmail = effectiveUser?.email;
+
+  // Mirrors what the page renders: non-admins see only their own tasks
+  // and never see assignment-type rows. Admins see everything. Pushing
+  // this down to the server keeps the KPI counts honest (a rep was
+  // seeing the global 8.5k total in their KPI strip) and avoids
+  // pulling 1000 unrelated rows for the rep's tab.
+  const applyUserScope = (q) => {
+    if (isAdmin || !userEmail) return q;
+    return q
+      .neq('task_type', 'assignment')
+      .or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+  };
 
   const { data: taskCounters = [] } = useQuery({
     queryKey: ['taskCounters'],
@@ -115,13 +129,13 @@ export default function SalesTasks() {
   const todayEndIso = endOfDay(today).toISOString();
 
   const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0 } } = useQuery({
-    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso],
+    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
       const head = async (build) => {
         const { count, error } = await build(
-          base44.supabase.from('sales_tasks').select('*', { count: 'exact', head: true }),
+          applyUserScope(base44.supabase.from('sales_tasks').select('*', { count: 'exact', head: true })),
         );
         if (error) throw error;
         return count || 0;
@@ -146,11 +160,11 @@ export default function SalesTasks() {
   // ~8k rows on every page load; this brings it down to ≤ 1000.
   const TASKS_FETCH_LIMIT = 1000;
   const { data: allSalesTasks = [], isLoading } = useQuery({
-    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso],
+    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
-      let q = base44.supabase.from('sales_tasks').select('*');
+      let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'));
       if (activeTab === 'today') {
         q = q.eq('task_status', 'not_completed').gte('due_date', todayStartIso).lte('due_date', todayEndIso);
       } else if (activeTab === 'overdue') {
@@ -219,9 +233,6 @@ export default function SalesTasks() {
     const u = allUsers.find(u => u.email === email);
     return u?.full_name || email.split('@')[0];
   };
-
-  const isAdmin = isAdminUser(effectiveUser);
-  const userEmail = effectiveUser?.email;
 
   const now = new Date();
   const todayStart = startOfDay(now);
