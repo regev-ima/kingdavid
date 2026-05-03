@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, CheckCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip } from "lucide-react";
+import { Calendar, Clock, Phone, MessageCircle, CheckCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid } from "lucide-react";
 import { format, isValid, formatDistanceToNow, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 
@@ -44,6 +44,7 @@ const safeFormat = (dateStr, fmt) => {
 import ImportSalesTasks from '@/components/lead/ImportSalesTasks';
 import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
+import TaskDayView from '@/components/task/TaskDayView';
 import StatusBadge from '@/components/shared/StatusBadge';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
@@ -60,6 +61,7 @@ export default function SalesTasks() {
   const [dateFilter, setDateFilter] = useState('');
   const [showStale, setShowStale] = useState(false);
   const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'day'
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
@@ -459,6 +461,27 @@ export default function SalesTasks() {
           </div>
         </div>
         <div className="flex items-center gap-2.5">
+          {/* View toggle: list ↔ day grid */}
+          <div className="inline-flex h-9 rounded-lg border border-border bg-card p-0.5 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+                viewMode === 'list' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <List className="h-3.5 w-3.5" /> רשימה
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('day')}
+              className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+                viewMode === 'day' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> יום
+            </button>
+          </div>
           <Button
             onClick={() => setShowImportDialog(true)}
             variant="outline"
@@ -479,6 +502,14 @@ export default function SalesTasks() {
         </div>
       </div>
 
+      {viewMode === 'day' ? (
+        <TaskDayView
+          effectiveUser={effectiveUser}
+          isAdmin={isAdmin}
+          onTaskClick={(task) => handleOpenTaskDetails(task)}
+        />
+      ) : (
+      <>
       {/* ===== KPI ROW ===== */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div className={`rounded-xl ${activeTab === 'today' ? 'ring-2 ring-indigo-400' : ''}`}>
@@ -873,9 +904,11 @@ export default function SalesTasks() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* New Task Dialog */}
-      <AddSalesTaskDialog 
+      <AddSalesTaskDialog
         isOpen={showNewTaskDialog} 
         onClose={() => setShowNewTaskDialog(false)}
         effectiveUser={effectiveUser}
