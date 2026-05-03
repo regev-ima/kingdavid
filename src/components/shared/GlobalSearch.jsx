@@ -12,7 +12,7 @@ import { Search, User, FileText, ShoppingCart, Headphones, UserPlus } from "luci
 import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
-import { getUserScope, USER_SCOPES } from "@/lib/rbac";
+import { getUserScope, USER_SCOPES, filterLeadsForUser } from "@/lib/rbac";
 import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 
 // The previous implementation pulled `.list('-created_date', 200)` for each
@@ -69,7 +69,7 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     }),
   });
 
-  const { data: leads = [] } = useQuery({
+  const { data: leadsRaw = [] } = useQuery({
     queryKey: ['gs-leads', debouncedQuery],
     enabled: enabled && canSearchLeads,
     staleTime: 60_000,
@@ -79,6 +79,9 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
       5,
     ),
   });
+
+  // Reps must only see leads assigned to them — admins see everything.
+  const leads = useMemo(() => filterLeadsForUser(user, leadsRaw), [user, leadsRaw]);
 
   const { data: orders = [] } = useQuery({
     queryKey: ['gs-orders', debouncedQuery],

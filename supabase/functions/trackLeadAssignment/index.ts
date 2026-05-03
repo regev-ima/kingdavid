@@ -106,6 +106,34 @@ Deno.serve(async (req) => {
           metadata: assignmentRecord,
         });
 
+      // When rep1 transitions from empty to assigned (admin assigning an
+      // unassigned lead), create the initial call task — the lead-create
+      // hook above only fires this when rep1 is set at insert time.
+      if (newRep1 && !previousRep1) {
+        const dueDate = new Date();
+        dueDate.setHours(dueDate.getHours() + 3);
+        await supabase
+          .from('sales_tasks')
+          .insert({
+            lead_id: leadData.id,
+            task_type: 'call',
+            task_status: 'not_completed',
+            summary: `יש להתקשר ללקוח ${leadData.full_name || ''}`,
+            due_date: dueDate.toISOString(),
+            work_start_date: new Date().toISOString(),
+            rep1: newRep1,
+            status: leadData.status || 'new_lead',
+          });
+
+        // Close the admin-side assignment task now that a rep was assigned.
+        await supabase
+          .from('sales_tasks')
+          .update({ task_status: 'completed' })
+          .eq('lead_id', leadData.id)
+          .eq('task_type', 'assignment')
+          .eq('task_status', 'not_completed');
+      }
+
       return Response.json({ message: 'Lead assignment tracked successfully' }, { headers: corsHeaders });
     }
 
