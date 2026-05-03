@@ -142,9 +142,17 @@ export default function SalesTasks() {
   const today = new Date();
   const todayStartIso = startOfDay(today).toISOString();
   const todayEndIso = endOfDay(today).toISOString();
+  // Cutoff for "stale" — applied to assignment tasks via created_date and
+  // (in the legacy hint UI) regular tasks via due_date. Same threshold so
+  // the toggle reads as one unified concept to the user.
+  const staleCutoffIso = useMemo(() => {
+    const c = new Date();
+    c.setDate(c.getDate() - STALE_TASK_THRESHOLD_DAYS);
+    return c.toISOString();
+  }, []);
 
-  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0 } } = useQuery({
-    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
+  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 } } = useQuery({
+    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
@@ -157,18 +165,34 @@ export default function SalesTasks() {
       };
       // Assignment-tab badge needs its own count regardless of the
       // includeAssignmentInCounts toggle — the badge is the whole reason
-      // an admin notices the queue exists.
+      // an admin notices the queue exists. The stale filter applies here
+      // too so the badge stays in sync with the list when showStale=false.
       const assignmentHead = async () => {
         if (!isAdmin) return 0;
-        const { count, error } = await base44.supabase
+        let q = base44.supabase
           .from('sales_tasks')
           .select('*', { count: 'exact', head: true })
           .eq('task_status', 'not_completed')
           .eq('task_type', 'assignment');
+        if (!showStale) q = q.gte('created_date', staleCutoffIso);
+        const { count, error } = await q;
         if (error) throw error;
         return count || 0;
       };
-      const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen] = await Promise.all([
+      // How many assignment tasks the stale filter is hiding right now —
+      // surfaced in the toggle button so the admin knows what's parked.
+      const staleAssignmentHiddenHead = async () => {
+        if (!isAdmin || showStale) return 0;
+        const { count, error } = await base44.supabase
+          .from('sales_tasks')
+          .select('*', { count: 'exact', head: true })
+          .eq('task_status', 'not_completed')
+          .eq('task_type', 'assignment')
+          .lt('created_date', staleCutoffIso);
+        if (error) throw error;
+        return count || 0;
+      };
+      const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden] = await Promise.all([
         head((q) => q),
         head((q) => q.eq('task_status', 'not_completed')),
         head((q) => q.eq('task_status', 'completed')),
@@ -178,8 +202,9 @@ export default function SalesTasks() {
         head((q) => q.eq('task_status', 'not_completed').is('due_date', null)),
         head((q) => q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso)),
         assignmentHead(),
+        staleAssignmentHiddenHead(),
       ]);
-      return { total, open, completed, today: todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen };
+      return { total, open, completed, today: todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden };
     },
   });
 
@@ -189,7 +214,7 @@ export default function SalesTasks() {
   // ~8k rows on every page load; this brings it down to ≤ 1000.
   const TASKS_FETCH_LIMIT = 1000;
   const { data: allSalesTasks = [], isLoading } = useQuery({
-    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList],
+    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
@@ -206,6 +231,7 @@ export default function SalesTasks() {
         q = q.eq('task_status', 'not_completed');
       } else if (activeTab === 'assignment') {
         q = q.eq('task_status', 'not_completed').eq('task_type', 'assignment');
+        if (!showStale) q = q.gte('created_date', staleCutoffIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
       }
@@ -715,27 +741,39 @@ export default function SalesTasks() {
         </div>
       </div>
 
-      {/* ===== HIDDEN-ITEMS HINT ===== */}
-      {(hiddenStaleCount > 0 || (assignmentTaskCount > 0 && !showAssignmentTasks && activeTab !== 'assignment')) && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
-          {hiddenStaleCount > 0 && (
-            <button
-              onClick={() => setShowStale((v) => !v)}
-              className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
-            >
-              {showStale ? 'הסתר' : 'הצג'} {hiddenStaleCount.toLocaleString()} משימות ישנות מ-{STALE_TASK_THRESHOLD_DAYS} ימים
-            </button>
-          )}
-          {assignmentTaskCount > 0 && activeTab !== 'assignment' && (
-            <button
-              onClick={() => setShowAssignmentTasks((v) => !v)}
-              className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
-            >
-              {showAssignmentTasks ? 'הסתר' : 'כלול'} {assignmentTaskCount.toLocaleString()} משימות שיוך
-            </button>
-          )}
-        </div>
-      )}
+      {/* ===== HIDDEN-ITEMS HINT =====
+          On the assignment tab the label swaps to talk about "stale
+          assignment tasks" so the admin doesn't think the regular
+          stale-overdue counter is what they're toggling. Same showStale
+          state — the user thinks of "stale" as one concept. */}
+      {(() => {
+        const onAssignmentTab = activeTab === 'assignment';
+        const staleCount = onAssignmentTab ? counts.staleAssignmentHidden : hiddenStaleCount;
+        const showStaleHint = staleCount > 0;
+        const showAssignmentHint = assignmentTaskCount > 0 && !showAssignmentTasks && !onAssignmentTab;
+        if (!showStaleHint && !showAssignmentHint) return null;
+        const staleLabel = onAssignmentTab ? 'משימות שיוך ישנות' : 'משימות ישנות';
+        return (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
+            {showStaleHint && (
+              <button
+                onClick={() => setShowStale((v) => !v)}
+                className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
+              >
+                {showStale ? 'הסתר' : 'הצג'} {staleCount.toLocaleString()} {staleLabel} מ-{STALE_TASK_THRESHOLD_DAYS} ימים
+              </button>
+            )}
+            {showAssignmentHint && (
+              <button
+                onClick={() => setShowAssignmentTasks((v) => !v)}
+                className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
+              >
+                {showAssignmentTasks ? 'הסתר' : 'כלול'} {assignmentTaskCount.toLocaleString()} משימות שיוך
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ===== TASK LIST ===== */}
       <div className="space-y-3">
