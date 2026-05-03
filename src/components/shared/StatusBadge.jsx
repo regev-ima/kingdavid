@@ -164,11 +164,13 @@ export default function StatusBadge({ status, className = '', label: labelOverri
 
   // Admin override (Settings → סטטוסים → color picker) takes precedence over
   // the built-in palette so a recolored status looks the same everywhere it's
-  // rendered. Falls back to the original tailwind classes when no override.
+  // rendered. Falls back to the original tailwind classes (ring classes
+  // included) when no override — without them the bg-{color}-100 backgrounds
+  // are too pale to see on a white card and badges read as colorless.
   const overridePreset = getStatusColorPreset(statusColors[status]);
   const colorClasses = overridePreset
     ? `${overridePreset.bg} ${overridePreset.text}`
-    : config.color.replace(/ring-1\s*/g, '').replace(/ring-\w+-\d+/g, '').trim();
+    : config.color;
   const dotColor = overridePreset ? overridePreset.dot : getDotColor(config.color);
 
   return (
