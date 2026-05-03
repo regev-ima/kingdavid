@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -35,6 +36,21 @@ const TASK_STATUS_STYLES = {
   cancelled: { on: 'border-border bg-muted text-foreground', off: 'border-border hover:border-border/80 hover:bg-muted/50 text-muted-foreground' },
 };
 
+// Touches every react-query cache key the SalesTasks page (and lead/leads
+// surfaces) relies on. The flows here used to invalidate `['salesTasks']`,
+// which never matched the parent's `['salesTasks-counts', ...]` and
+// `['salesTasks-tab', ...]` keys — so the dialog appeared to "do nothing"
+// even after a successful write.
+const invalidateTaskCaches = (queryClient) => {
+  queryClient.invalidateQueries({ queryKey: ['salesTasks-counts'] });
+  queryClient.invalidateQueries({ queryKey: ['salesTasks-tab'] });
+  queryClient.invalidateQueries({ queryKey: ['leads-for-paginated-tasks'] });
+  queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
+  queryClient.invalidateQueries({ queryKey: ['tasks'] });
+  queryClient.invalidateQueries({ queryKey: ['lead'] });
+  queryClient.invalidateQueries({ queryKey: ['leads'] });
+};
+
 const safeFormat = (dateStr, fmt) => {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -69,6 +85,7 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
   const [originalLeadStatus, setOriginalLeadStatus] = useState('');
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDate, selectedHour }
+  const [isSavingFollowup, setIsSavingFollowup] = useState(false);
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
 
   const { data: users = [] } = useQuery({
@@ -105,20 +122,22 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.SalesTask.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
+      invalidateTaskCaches(queryClient);
       onClose();
+    },
+    onError: (err) => {
+      toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     },
   });
 
   const deleteTaskMutation = useMutation({
     mutationFn: (id) => base44.entities.SalesTask.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
+      invalidateTaskCaches(queryClient);
       onClose();
+    },
+    onError: (err) => {
+      toast.error(`מחיקה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     },
   });
 
@@ -329,50 +348,48 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
                 </div>
                 <Button
                   className="w-full"
-                  disabled={!noAnswerFlow.selectedHours || updateTaskMutation.isPending}
+                  disabled={!noAnswerFlow.selectedHours || isSavingFollowup}
                   onClick={async () => {
                     if (!noAnswerFlow.selectedHours) return;
-                    const now = new Date().toISOString();
+                    setIsSavingFollowup(true);
+                    try {
+                      const now = new Date().toISOString();
 
-                    // 1. Update lead status
-                    if (editingTask.lead_id) {
-                      await base44.entities.Lead.update(editingTask.lead_id, { status: noAnswerFlow.status });
-                      queryClient.invalidateQueries({ queryKey: ['lead'] });
-                      queryClient.invalidateQueries({ queryKey: ['leads'] });
+                      if (editingTask.lead_id) {
+                        await base44.entities.Lead.update(editingTask.lead_id, { status: noAnswerFlow.status });
+                      }
+
+                      await base44.entities.SalesTask.update(editingTask.id, {
+                        task_status: 'completed',
+                        status: noAnswerFlow.status,
+                        completed_date: now,
+                      });
+
+                      const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
+                      await base44.entities.SalesTask.create({
+                        lead_id: editingTask.lead_id,
+                        rep1: editingTask.rep1,
+                        rep2: editingTask.rep2,
+                        task_type: 'call',
+                        task_status: 'not_completed',
+                        status: noAnswerFlow.status,
+                        due_date: dueDate.toISOString(),
+                        work_start_date: now,
+                        summary: `חזור ללקוח ${editingTask.lead?.full_name || ''} - ${noAnswerFlow.label}`,
+                      });
+
+                      invalidateTaskCaches(queryClient);
+                      toast.success('המשימה נשמרה ונקבעה משימה חדשה');
+                      onClose();
+                    } catch (err) {
+                      console.error('No-answer save failed', err);
+                      toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+                    } finally {
+                      setIsSavingFollowup(false);
                     }
-
-                    // 2. Mark current task as completed with timestamp
-                    const { lead: _lead, id: _id, ...noAnswerTaskFields } = editingTask;
-                    await base44.entities.SalesTask.update(editingTask.id, {
-                      ...noAnswerTaskFields,
-                      task_status: 'completed',
-                      status: noAnswerFlow.status,
-                      completed_date: now,
-                    });
-
-                    // 3. Create new call task with selected hours
-                    const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
-                    await base44.entities.SalesTask.create({
-                      lead_id: editingTask.lead_id,
-                      rep1: editingTask.rep1,
-                      rep2: editingTask.rep2,
-                      task_type: 'call',
-                      task_status: 'not_completed',
-                      status: noAnswerFlow.status,
-                      due_date: dueDate.toISOString(),
-                      work_start_date: now,
-                      created_date: now,
-                      summary: `חזור ללקוח ${editingTask.lead?.full_name || ''} - ${noAnswerFlow.label}`,
-                    });
-
-                    // 4. Refresh and close
-                    queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
-                    queryClient.invalidateQueries({ queryKey: ['tasks'] });
-                    queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
-                    onClose();
                   }}
                 >
-                  {updateTaskMutation.isPending ? 'שומר...' : 'אישור'}
+                  {isSavingFollowup ? 'שומר...' : 'אישור'}
                 </Button>
               </div>
             )}
@@ -451,52 +468,53 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
 
                 <Button
                   className="w-full bg-blue-600 hover:bg-blue-700"
-                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || updateTaskMutation.isPending}
+                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingFollowup}
                   onClick={async () => {
-                    const dueDate = new Date(followupFlow.selectedDate);
-                    dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
+                    setIsSavingFollowup(true);
+                    try {
+                      const dueDate = new Date(followupFlow.selectedDate);
+                      dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
 
-                    const now = new Date().toISOString();
-                    const statusLabel = followupFlow.status === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
+                      const now = new Date().toISOString();
+                      const statusLabel = followupFlow.status === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
 
-                    // 1. Update lead status
-                    if (editingTask.lead_id) {
-                      await base44.entities.Lead.update(editingTask.lead_id, { status: followupFlow.status });
-                      queryClient.invalidateQueries({ queryKey: ['lead'] });
-                      queryClient.invalidateQueries({ queryKey: ['leads'] });
+                      if (editingTask.lead_id) {
+                        await base44.entities.Lead.update(editingTask.lead_id, { status: followupFlow.status });
+                      }
+
+                      // Only send the fields that actually change. Spreading
+                      // editingTask used to drag along stale/computed columns
+                      // and silently fail the update.
+                      await base44.entities.SalesTask.update(editingTask.id, {
+                        task_status: 'completed',
+                        status: followupFlow.status,
+                        completed_date: now,
+                      });
+
+                      await base44.entities.SalesTask.create({
+                        lead_id: editingTask.lead_id,
+                        rep1: editingTask.rep1,
+                        rep2: editingTask.rep2,
+                        task_type: 'call',
+                        task_status: 'not_completed',
+                        status: followupFlow.status,
+                        due_date: dueDate.toISOString(),
+                        work_start_date: now,
+                        summary: `פולואפ - חזור ללקוח ${editingTask.lead?.full_name || ''} ${statusLabel}`,
+                      });
+
+                      invalidateTaskCaches(queryClient);
+                      toast.success('המשימה נשמרה ונקבעה משימה חדשה');
+                      onClose();
+                    } catch (err) {
+                      console.error('Followup save failed', err);
+                      toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+                    } finally {
+                      setIsSavingFollowup(false);
                     }
-
-                    // 2. Mark current task as completed with timestamp
-                    const { lead, id, ...taskFields } = editingTask;
-                    await base44.entities.SalesTask.update(editingTask.id, {
-                      ...taskFields,
-                      task_status: 'completed',
-                      status: followupFlow.status,
-                      completed_date: now,
-                    });
-
-                    // 3. Create new followup call task
-                    await base44.entities.SalesTask.create({
-                      lead_id: editingTask.lead_id,
-                      rep1: editingTask.rep1,
-                      rep2: editingTask.rep2,
-                      task_type: 'call',
-                      task_status: 'not_completed',
-                      status: followupFlow.status,
-                      due_date: dueDate.toISOString(),
-                      work_start_date: now,
-                      created_date: now,
-                      summary: `פולואפ - חזור ללקוח ${editingTask.lead?.full_name || ''} ${statusLabel}`,
-                    });
-
-                    // 4. Refresh and close
-                    queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
-                    queryClient.invalidateQueries({ queryKey: ['tasks'] });
-                    queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
-                    onClose();
                   }}
                 >
-                  {updateTaskMutation.isPending ? 'שומר...' : 'אישור'}
+                  {isSavingFollowup ? 'שומר...' : 'אישור'}
                 </Button>
               </div>
             )}
