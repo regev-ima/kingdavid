@@ -48,7 +48,6 @@ jobs:
             initBulkUpdate
             processBulkUpdateBatch
             processTransferBatch
-            saveVoicecenterCredentials
             scheduleShipments
             syncVoicenterCalls
             trackLeadAssignment
