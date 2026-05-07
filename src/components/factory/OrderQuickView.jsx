@@ -18,10 +18,8 @@ import { format } from '@/lib/safe-date-fns';
 import { base44 } from '@/api/base44Client';
 
 const PRODUCTION_STATUS_OPTIONS = [
-  { value: 'not_started', label: 'טרם התחיל' },
-  { value: 'materials_check', label: 'בדיקת חומרים' },
-  { value: 'in_production', label: 'בייצור' },
-  { value: 'qc', label: 'בקרת איכות' },
+  { value: 'not_started', label: 'בתור לייצור' },
+  { value: 'in_production', label: 'ייצור' },
   { value: 'ready', label: 'מוכן' },
 ];
 
@@ -87,7 +85,11 @@ export default function OrderQuickView({ order, shipment, isOpen, onClose, onCal
               סטטוס ייצור
             </div>
             <Select
-              value={order.production_status || 'not_started'}
+              value={
+                order.production_status === 'materials_check' || order.production_status === 'qc'
+                  ? 'in_production'
+                  : order.production_status || 'not_started'
+              }
               onValueChange={(value) => {
                 if (value === order.production_status) return;
                 updateStatusMutation.mutate({ orderId: order.id, status: value });

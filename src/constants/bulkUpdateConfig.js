@@ -12,8 +12,8 @@ const PAYMENT_STATUS_OPTIONS = [
 ];
 
 const PRODUCTION_STATUS_OPTIONS = [
-  { value: 'not_started', label: 'טרם התחיל' },
-  { value: 'in_production', label: 'בייצור' },
+  { value: 'not_started', label: 'בתור לייצור' },
+  { value: 'in_production', label: 'ייצור' },
   { value: 'ready', label: 'מוכן' },
 ];
 
