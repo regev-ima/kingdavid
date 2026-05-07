@@ -25,7 +25,6 @@ export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
   const [user, setUser] = useState(null);
   const [profileData, setProfileData] = useState({ full_name: '' });
-  const [voicecenterData, setVoicecenterData] = useState({ username: '', password: '' });
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -34,10 +33,6 @@ export default function Settings() {
         const userData = await base44.auth.me();
         setUser(userData);
         setProfileData({ full_name: userData.full_name || '' });
-        setVoicecenterData({ 
-          username: userData.voicenter_username || '', 
-          password: '' 
-        });
       } catch (err) {}
     };
     fetchUser();
@@ -58,22 +53,6 @@ export default function Settings() {
       setUser(updatedUser);
       toast.success('הפרטים עודכנו בהצלחה');
     },
-  });
-
-  const saveVoicecenterMutation = useMutation({
-    mutationFn: async (data) => {
-      const response = await base44.functions.invoke('saveVoicecenterCredentials', data);
-      return response.data;
-    },
-    onSuccess: async () => {
-      const updatedUser = await base44.auth.me();
-      setUser(updatedUser);
-      setVoicecenterData({ username: updatedUser.voicenter_username || '', password: '' });
-      toast.success('פרטי VoiceCenter נשמרו בהצלחה');
-    },
-    onError: (error) => {
-      toast.error('שגיאה בשמירת הפרטים: ' + error.message);
-    }
   });
 
   const roleLabels = {
@@ -224,56 +203,23 @@ export default function Settings() {
 
           <Card>
             <CardHeader>
-              <CardTitle>הגדרות VoiceCenter</CardTitle>
-              <CardDescription>התחבר למערכת ה-VoiceCenter שלך לתיעוד שיחות אוטומטי</CardDescription>
+              <CardTitle>VoiceCenter</CardTitle>
+              <CardDescription>חיבור למערכת VoiceCenter לתיעוד שיחות ופופ-אפ אוטומטי</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                הזן את פרטי ההתחברות שלך ל-VoiceCenter כדי לאפשר תיעוד שיחות אוטומטי ופופ-אפ למידע על לקוחות בזמן שיחה.
+                החיבור ל-VoiceCenter מנוהל ברמת המערכת. אין צורך בהזדהות אישית.
               </p>
-              
-              {user?.voicenter_username && (
+              {user?.voicenter_extension ? (
                 <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
                   <Phone className="h-4 w-4 text-green-600" />
-                  <span className="text-sm text-green-700">מחובר כ-{user.voicenter_username}</span>
+                  <span className="text-sm text-green-700">משויך לשלוחה {user.voicenter_extension}</span>
+                </div>
+              ) : (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                  לא משויכת אליך שלוחת VoiceCenter. פנה למנהל המערכת כדי לעדכן את מספר השלוחה שלך בעמוד "נציגים".
                 </div>
               )}
-
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>שם משתמש VoiceCenter</Label>
-                  <Input
-                    type="text"
-                    value={voicecenterData.username}
-                    onChange={(e) => setVoicecenterData({...voicecenterData, username: e.target.value})}
-                    placeholder="שם המשתמש שלך ב-VoiceCenter"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>סיסמה</Label>
-                  <Input
-                    type="password"
-                    value={voicecenterData.password}
-                    onChange={(e) => setVoicecenterData({...voicecenterData, password: e.target.value})}
-                    placeholder="הסיסמה שלך ב-VoiceCenter"
-                  />
-                  <p className="text-xs text-muted-foreground">הסיסמה תישמר מוצפנת במערכת</p>
-                </div>
-              </div>
-
-              <Button 
-                onClick={() => saveVoicecenterMutation.mutate(voicecenterData)}
-                disabled={isImpersonating || saveVoicecenterMutation.isPending || !voicecenterData.username || !voicecenterData.password}
-                className="bg-primary hover:bg-primary/90"
-              >
-                {saveVoicecenterMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 me-2 animate-spin" />
-                ) : (
-                  <Save className="h-4 w-4 me-2" />
-                )}
-                שמור פרטי VoiceCenter
-              </Button>
             </CardContent>
           </Card>
 

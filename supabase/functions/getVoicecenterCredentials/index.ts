@@ -8,15 +8,15 @@ Deno.serve(async (req) => {
     const user = await getUser(req);
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
 
-    const hasCredentials = !!(user.voicenter_username && user.voicenter_password_encrypted);
-    let password = '';
-    if (hasCredentials) {
-      try { password = atob(user.voicenter_password_encrypted); } catch { password = ''; }
-    }
+    const username = Deno.env.get('VOICENTER_MASTER_USERNAME') || '';
+    const password = Deno.env.get('VOICENTER_MASTER_PASSWORD') || '';
+    const extension = user.voicenter_extension || '';
+    const hasCredentials = !!(username && password && extension);
 
     return Response.json({
-      username: user.voicenter_username || '',
+      username,
       password,
+      extension,
       hasCredentials,
     }, { headers: corsHeaders });
   } catch (error) {

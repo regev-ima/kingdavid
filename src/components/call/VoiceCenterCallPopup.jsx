@@ -64,7 +64,17 @@ export default function VoiceCenterCallPopup() {
 
   const handleExtensionEvent = async (response) => {
     const eventData = response.data;
-    
+
+    // Only show popup for events on this user's own extension. The master
+    // VoiceCenter account receives events for every extension in the company,
+    // so each browser must filter to its own.
+    if (
+      credentialsData?.extension &&
+      String(eventData.extension) !== String(credentialsData.extension)
+    ) {
+      return;
+    }
+
     // Only show popup for ringing or answered calls
     if (eventData.reason !== 'ringing' && eventData.reason !== 'answered') {
       return;
