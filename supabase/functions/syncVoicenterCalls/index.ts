@@ -1,4 +1,4 @@
-import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
 
 /**
  * Unified VoiceCenter Call Sync
@@ -61,6 +61,7 @@ function extractRecordingUrl(xmlData: string): string | null {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

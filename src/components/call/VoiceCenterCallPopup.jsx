@@ -23,8 +23,7 @@ export default function VoiceCenterCallPopup() {
   const { data: credentialsData } = useQuery({
     queryKey: ['voicecenterCredentials'],
     queryFn: async () => {
-      const response = await base44.functions.invoke('getVoicecenterCredentials');
-      return response.data;
+      return await base44.functions.invoke('getVoicecenterCredentials');
     },
     retry: false,
     refetchOnWindowFocus: false,
