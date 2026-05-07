@@ -93,3 +93,46 @@ export function isPhoneShapedQuery(query) {
   const digits = String(query).replace(/\D/g, '');
   return digits.length >= 7;
 }
+
+/**
+ * Strict validation of an Israeli phone number. Accepts both local (0...)
+ * and international (+972 / 972...) formats, with or without separators.
+ *
+ * Valid shapes (after stripping non-digits and the country code / leading 0):
+ *   - Mobile:   5XXXXXXXX  (9 digits, e.g. 050-1234567)
+ *   - VoIP:     7[2-9]XXXXXXX (9 digits, e.g. 077-1234567)
+ *   - Landline: [23489]XXXXXXX (8 digits, e.g. 03-1234567)
+ */
+export function isValidIsraeliPhone(phone) {
+  if (!phone) return false;
+  const digits = String(phone).replace(/\D/g, '');
+  if (!digits) return false;
+
+  let local;
+  if (digits.startsWith('972')) {
+    local = digits.substring(3);
+  } else if (digits.startsWith('0')) {
+    local = digits.substring(1);
+  } else {
+    return false;
+  }
+
+  if (/^5\d{8}$/.test(local)) return true;       // mobile
+  if (/^7[2-9]\d{7}$/.test(local)) return true;  // VoIP / virtual
+  if (/^[23489]\d{7}$/.test(local)) return true; // landline
+  return false;
+}
+
+/**
+ * Sanitize raw input into a phone-friendly string: keep only digits, "+",
+ * spaces and dashes, and cap at a reasonable length so the user can't
+ * keep typing past a valid Israeli number. Used as an `onChange` filter
+ * on phone inputs across the app.
+ */
+export function sanitizePhoneInput(raw) {
+  if (raw == null) return '';
+  const cleaned = String(raw).replace(/[^\d+\-\s]/g, '');
+  // 13 covers "+972XXXXXXXXX" plus a separator. Past that the user is
+  // typing nonsense — the keystroke is silently dropped.
+  return cleaned.slice(0, 16);
+}

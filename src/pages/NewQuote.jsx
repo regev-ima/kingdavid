@@ -30,7 +30,8 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import DiscountPopover from '@/components/quote/DiscountPopover';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, canViewLead } from '@/lib/rbac';
-import { formatPhoneForWhatsApp } from '@/utils/phoneUtils';
+import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
+import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 
 function addBusinessDays(startDate, days) {
@@ -548,6 +549,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       setCurrentStep(missing.includes('לפחות מוצר אחד') ? 2 : 1);
       return;
     }
+    if (!isValidIsraeliPhone(formData.customer_phone)) {
+      toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
+      setCurrentStep(1);
+      return;
+    }
     createQuoteMutation.mutate(formData);
   };
 
@@ -839,10 +845,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               </div>
               <div className="space-y-2">
                 <Label>טלפון *</Label>
-                <Input
+                <IsraeliPhoneInput
                   value={formData.customer_phone}
-                  onChange={(e) => {
-                    setFormData({ ...formData, customer_phone: e.target.value });
+                  onChange={(value) => {
+                    setFormData({ ...formData, customer_phone: value });
                     if (linkedRecord) setLinkedRecord(null);
                   }}
                   required

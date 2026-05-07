@@ -1,11 +1,29 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { createPageUrl } from '@/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Phone, ExternalLink, Truck, FileText, Package } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
+import { base44 } from '@/api/base44Client';
+
+const PRODUCTION_STATUS_OPTIONS = [
+  { value: 'not_started', label: 'טרם התחיל' },
+  { value: 'materials_check', label: 'בדיקת חומרים' },
+  { value: 'in_production', label: 'בייצור' },
+  { value: 'qc', label: 'בקרת איכות' },
+  { value: 'ready', label: 'מוכן' },
+];
 
 function formatCurrency(value) {
   if (value == null || value === '') return '-';
@@ -16,6 +34,20 @@ function formatCurrency(value) {
 // kanban. Heavy detail (full items, price breakdown, notes history)
 // stays on the OrderDetails page — this is intentionally a summary.
 export default function OrderQuickView({ order, shipment, isOpen, onClose, onCall }) {
+  const queryClient = useQueryClient();
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ orderId, status }) =>
+      base44.entities.Order.update(orderId, { production_status: status }),
+    onSuccess: (_data, variables) => {
+      const label = PRODUCTION_STATUS_OPTIONS.find((o) => o.value === variables.status)?.label || variables.status;
+      toast.success(`הסטטוס עודכן ל"${label}"`);
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['factory-shipments'] });
+    },
+    onError: (err) => toast.error(`עדכון נכשל: ${err?.message || 'שגיאה'}`),
+  });
+
   if (!order) return null;
   const phone = order.customer_phone;
   const fullOrderUrl = createPageUrl('OrderDetails') + `?id=${order.id}`;
@@ -45,6 +77,32 @@ export default function OrderQuickView({ order, shipment, isOpen, onClose, onCal
                 <Truck className="h-3 w-3" /> משלוח: <StatusBadge status={shipment.status} className="!bg-transparent !ring-0 !p-0 !text-cyan-700" />
               </span>
             )}
+          </div>
+
+          {/* Status changer — saves immediately. The drag-and-drop boards
+              are great for bulk shuffles, but a single status flip from
+              an open card shouldn't require closing the modal first. */}
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              סטטוס ייצור
+            </div>
+            <Select
+              value={order.production_status || 'not_started'}
+              onValueChange={(value) => {
+                if (value === order.production_status) return;
+                updateStatusMutation.mutate({ orderId: order.id, status: value });
+              }}
+              disabled={updateStatusMutation.isPending}
+            >
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRODUCTION_STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Contact */}

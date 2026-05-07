@@ -19,6 +19,8 @@ import { ArrowRight, Save, Loader2 } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
+import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
+import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
 
@@ -71,6 +73,10 @@ export default function NewLead() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!isValidIsraeliPhone(formData.phone)) {
+      // Browser-native required already caught empty; this guards format.
+      return;
+    }
     createLeadMutation.mutate(formData);
   };
 
@@ -125,11 +131,10 @@ export default function NewLead() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">טלפון *</Label>
-                <Input
+                <IsraeliPhoneInput
                   id="phone"
-                  type="tel"
                   value={formData.phone}
-                  onChange={(e) => handleChange('phone', e.target.value)}
+                  onChange={(value) => handleChange('phone', value)}
                   required
                 />
               </div>

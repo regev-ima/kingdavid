@@ -31,6 +31,9 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
+import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
+import { isValidIsraeliPhone } from '@/utils/phoneUtils';
+import { toast } from 'sonner';
 
 // Strip everything but digits, then drop a leading country prefix so
 // "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
@@ -511,6 +514,10 @@ export default function NewOrder() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!isValidIsraeliPhone(formData.customer_phone)) {
+      toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
+      return;
+    }
     createOrderMutation.mutate(formData);
   };
 
@@ -559,9 +566,9 @@ export default function NewOrder() {
               </div>
               <div className="space-y-2">
                 <Label>טלפון *</Label>
-                <Input
+                <IsraeliPhoneInput
                   value={formData.customer_phone}
-                  onChange={(e) => setFormData({...formData, customer_phone: e.target.value})}
+                  onChange={(value) => setFormData({...formData, customer_phone: value})}
                   required
                 />
               </div>
@@ -658,6 +665,7 @@ export default function NewOrder() {
                   type="number"
                   min="0"
                   value={formData.floor}
+                  onFocus={(e) => { if (Number(e.target.value) === 0) e.target.select(); }}
                   onChange={(e) => setFormData({...formData, floor: parseInt(e.target.value) || 0})}
                 />
               </div>
