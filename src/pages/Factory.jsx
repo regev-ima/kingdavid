@@ -26,10 +26,8 @@ const filterOptions = [
     key: 'production_status',
     label: 'סטטוס',
     options: [
-      { value: 'not_started', label: 'טרם התחיל' },
-      { value: 'materials_check', label: 'בדיקת חומרים' },
-      { value: 'in_production', label: 'בייצור' },
-      { value: 'qc', label: 'בקרת איכות' },
+      { value: 'not_started', label: 'בתור לייצור' },
+      { value: 'in_production', label: 'ייצור' },
       { value: 'ready', label: 'מוכן' },
     ]
   },
@@ -97,7 +95,7 @@ export default function Factory() {
   if (activeTab === 'queue') {
     filteredOrders = filteredOrders.filter(o => o.production_status === 'not_started');
   } else if (activeTab === 'in_production') {
-    filteredOrders = filteredOrders.filter(o => ['materials_check', 'in_production', 'qc'].includes(o.production_status));
+    filteredOrders = filteredOrders.filter(o => o.production_status === 'in_production');
   } else if (activeTab === 'ready') {
     filteredOrders = filteredOrders.filter(o => o.production_status === 'ready');
   } else if (activeTab === 'delayed') {
@@ -120,7 +118,7 @@ export default function Factory() {
   }
 
   const queueCount = visibleFactoryOrders.filter(o => o.production_status === 'not_started').length;
-  const inProductionCount = visibleFactoryOrders.filter(o => ['materials_check', 'in_production', 'qc'].includes(o.production_status)).length;
+  const inProductionCount = visibleFactoryOrders.filter(o => o.production_status === 'in_production').length;
   const readyCount = visibleFactoryOrders.filter(o => o.production_status === 'ready').length;
   const lowStockCount = inventory.filter(i => i.qty_on_hand <= (i.min_threshold || 0)).length;
 
@@ -196,10 +194,8 @@ export default function Factory() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="not_started">טרם התחיל</SelectItem>
-            <SelectItem value="materials_check">בדיקת חומרים</SelectItem>
-            <SelectItem value="in_production">בייצור</SelectItem>
-            <SelectItem value="qc">בקרת איכות</SelectItem>
+            <SelectItem value="not_started">בתור לייצור</SelectItem>
+            <SelectItem value="in_production">ייצור</SelectItem>
             <SelectItem value="ready">מוכן</SelectItem>
           </SelectContent>
         </Select>
@@ -262,7 +258,7 @@ export default function Factory() {
           onClick={() => setActiveTab('queue')}
         />
         <KPICard
-          title="בייצור"
+          title="ייצור"
           value={inProductionCount}
           icon={FactoryIcon}
           color="indigo"
@@ -316,7 +312,7 @@ export default function Factory() {
             value="in_production"
             className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md data-[state=active]:font-bold"
           >
-            בייצור ({inProductionCount})
+            ייצור ({inProductionCount})
           </TabsTrigger>
           <TabsTrigger
             value="ready"

@@ -28,8 +28,8 @@ const filterOptions = [
     key: 'production_status',
     label: 'ייצור',
     options: [
-      { value: 'not_started', label: 'טרם התחיל' },
-      { value: 'in_production', label: 'בייצור' },
+      { value: 'not_started', label: 'בתור לייצור' },
+      { value: 'in_production', label: 'ייצור' },
       { value: 'ready', label: 'מוכן' },
     ]
   },
@@ -65,7 +65,7 @@ export default function Orders() {
   if (activeTab === 'pending_payment') {
     filteredOrders = filteredOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid');
   } else if (activeTab === 'in_production') {
-    filteredOrders = filteredOrders.filter(o => ['materials_check', 'in_production', 'qc'].includes(o.production_status));
+    filteredOrders = filteredOrders.filter(o => o.production_status === 'in_production');
   } else if (activeTab === 'ready_delivery') {
     filteredOrders = filteredOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered');
   }
@@ -157,7 +157,7 @@ export default function Orders() {
   }
 
   const pendingPaymentCount = scopedOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
-  const inProductionCount = scopedOrders.filter(o => ['materials_check', 'in_production', 'qc'].includes(o.production_status)).length;
+  const inProductionCount = scopedOrders.filter(o => o.production_status === 'in_production').length;
   const readyDeliveryCount = scopedOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
 
   return (
@@ -182,7 +182,7 @@ export default function Orders() {
             ממתין לתשלום ({pendingPaymentCount})
           </TabsTrigger>
           <TabsTrigger value="in_production" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            בייצור ({inProductionCount})
+            ייצור ({inProductionCount})
           </TabsTrigger>
           <TabsTrigger value="ready_delivery" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             מוכן למשלוח ({readyDeliveryCount})

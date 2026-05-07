@@ -9,15 +9,13 @@ import { format } from '@/lib/safe-date-fns';
 import { base44 } from '@/api/base44Client';
 import OrderQuickView from './OrderQuickView';
 
-// Three boards. Internally the DB tracks five production statuses
-// (not_started / materials_check / in_production / qc / ready) — we
-// keep them but render the three middle ones under a single "בייצור"
-// column. Dropping into "בייצור" sets the leaf status to in_production
-// so we don't silently lose materials_check / qc unless the manager
-// goes back to the list view to set them.
+// Three boards mirroring the production statuses. Legacy values
+// (materials_check / qc) still bucket into the "ייצור" column so old
+// rows render in the right place — they're folded onto in_production
+// when dragged.
 const COLUMNS = [
-  { id: 'queue', label: 'חדש', leafStatus: 'not_started', members: ['not_started'], accent: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500' },
-  { id: 'in_production', label: 'בייצור', leafStatus: 'in_production', members: ['materials_check', 'in_production', 'qc'], accent: 'bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
+  { id: 'queue', label: 'בתור לייצור', leafStatus: 'not_started', members: ['not_started'], accent: 'bg-amber-50 border-amber-200', dot: 'bg-amber-500' },
+  { id: 'in_production', label: 'ייצור', leafStatus: 'in_production', members: ['in_production', 'materials_check', 'qc'], accent: 'bg-blue-50 border-blue-200', dot: 'bg-blue-500' },
   { id: 'ready', label: 'מוכן', leafStatus: 'ready', members: ['ready'], accent: 'bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500' },
 ];
 

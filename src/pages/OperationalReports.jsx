@@ -153,15 +153,15 @@ export default function OperationalReports() {
   const productionStatusData = useMemo(() => {
     const statusCounts = {};
     filteredData.orders.forEach(o => {
-      const status = o.production_status || 'not_started';
+      let status = o.production_status || 'not_started';
+      // Legacy values collapse into the consolidated "ייצור" bucket.
+      if (status === 'materials_check' || status === 'qc') status = 'in_production';
       statusCounts[status] = (statusCounts[status] || 0) + 1;
     });
 
     const labels = {
-      not_started: 'לא התחיל',
-      materials_check: 'בדיקת חומרים',
-      in_production: 'בייצור',
-      qc: 'בקרת איכות',
+      not_started: 'בתור לייצור',
+      in_production: 'ייצור',
       ready: 'מוכן',
     };
 

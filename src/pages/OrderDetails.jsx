@@ -595,17 +595,19 @@ export default function OrderDetails() {
             </CardHeader>
             <CardContent>
               <Select
-                value={order.production_status}
+                value={
+                  order.production_status === 'materials_check' || order.production_status === 'qc'
+                    ? 'in_production'
+                    : order.production_status
+                }
                 onValueChange={(val) => updateOrderMutation.mutate({ production_status: val })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="not_started">טרם התחיל</SelectItem>
-                  <SelectItem value="materials_check">בדיקת חומרים</SelectItem>
-                  <SelectItem value="in_production">בייצור</SelectItem>
-                  <SelectItem value="qc">בקרת איכות</SelectItem>
+                  <SelectItem value="not_started">בתור לייצור</SelectItem>
+                  <SelectItem value="in_production">ייצור</SelectItem>
                   <SelectItem value="ready">מוכן</SelectItem>
                 </SelectContent>
               </Select>
