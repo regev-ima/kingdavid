@@ -77,9 +77,20 @@ export default function Factory() {
   });
 
   // Only show paid orders in factory queue
-  const factoryOrders = orders.filter(o => 
+  const factoryOrders = orders.filter(o =>
     o.payment_status === 'paid' || o.payment_status === 'deposit_paid'
   );
+
+  // The kanban / calendar boards hide orders whose shipment has moved past
+  // need_scheduling — the factory has handed those off to logistics. The
+  // KPI cards must use the same filter or the "בתור לייצור" / "בייצור"
+  // counters drift away from what's visible on the board (we've seen the
+  // queue counter stick at 1 after a successful drag because of this).
+  const visibleFactoryOrders = factoryOrders.filter((o) => {
+    const ship = shipmentsByOrderId[o.id];
+    if (!ship) return true;
+    return !ship.status || ship.status === 'need_scheduling';
+  });
 
   let filteredOrders = factoryOrders;
 
@@ -108,9 +119,9 @@ export default function Factory() {
     filteredOrders = filteredOrders.filter(o => o.production_status === filters.production_status);
   }
 
-  const queueCount = factoryOrders.filter(o => o.production_status === 'not_started').length;
-  const inProductionCount = factoryOrders.filter(o => ['materials_check', 'in_production', 'qc'].includes(o.production_status)).length;
-  const readyCount = factoryOrders.filter(o => o.production_status === 'ready').length;
+  const queueCount = visibleFactoryOrders.filter(o => o.production_status === 'not_started').length;
+  const inProductionCount = visibleFactoryOrders.filter(o => ['materials_check', 'in_production', 'qc'].includes(o.production_status)).length;
+  const readyCount = visibleFactoryOrders.filter(o => o.production_status === 'ready').length;
   const lowStockCount = inventory.filter(i => i.qty_on_hand <= (i.min_threshold || 0)).length;
 
   const handleStatusChange = useCallback((orderId, newStatus) => {
@@ -276,23 +287,12 @@ export default function Factory() {
       {viewMode === 'calendar' || viewMode === 'kanban' ? (
         viewMode === 'calendar' ? (
           <FactoryCalendarBoard
-            // Same handoff rule: hide orders whose shipment has moved past
-            // need_scheduling. The calendar is the factory's plan, not a
-            // logistics archive.
-            orders={factoryOrders.filter((o) => {
-              const ship = shipmentsByOrderId[o.id];
-              if (!ship) return true;
-              return !ship.status || ship.status === 'need_scheduling';
-            })}
+            orders={visibleFactoryOrders}
             shipmentsByOrderId={shipmentsByOrderId}
           />
         ) : (
           <FactoryKanban
-            orders={factoryOrders.filter((o) => {
-              const ship = shipmentsByOrderId[o.id];
-              if (!ship) return true;
-              return !ship.status || ship.status === 'need_scheduling';
-            })}
+            orders={visibleFactoryOrders}
             shipmentsByOrderId={shipmentsByOrderId}
           />
         )
