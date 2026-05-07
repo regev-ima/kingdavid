@@ -125,14 +125,25 @@ export function isValidIsraeliPhone(phone) {
 
 /**
  * Sanitize raw input into a phone-friendly string: keep only digits, "+",
- * spaces and dashes, and cap at a reasonable length so the user can't
- * keep typing past a valid Israeli number. Used as an `onChange` filter
- * on phone inputs across the app.
+ * spaces and dashes, and hard-cap the digit count at 12 (the longest
+ * valid Israeli phone shape — "9725XXXXXXXX"). Extra digits are silently
+ * dropped so the input simply refuses keystrokes past a valid number.
+ * Used as an `onChange` filter on phone inputs across the app.
  */
 export function sanitizePhoneInput(raw) {
   if (raw == null) return '';
   const cleaned = String(raw).replace(/[^\d+\-\s]/g, '');
-  // 13 covers "+972XXXXXXXXX" plus a separator. Past that the user is
-  // typing nonsense — the keystroke is silently dropped.
-  return cleaned.slice(0, 16);
+
+  // Walk the string and drop any digit beyond the 12th. Non-digit
+  // separators (spaces, dashes, the leading "+") are preserved as-is.
+  let digitCount = 0;
+  let out = '';
+  for (const c of cleaned) {
+    if (/\d/.test(c)) {
+      if (digitCount >= 12) continue;
+      digitCount++;
+    }
+    out += c;
+  }
+  return out;
 }

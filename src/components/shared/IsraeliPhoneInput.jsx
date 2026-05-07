@@ -17,7 +17,15 @@ export default function IsraeliPhoneInput({
   ...inputProps
 }) {
   const [touched, setTouched] = useState(false);
-  const isInvalid = touched && value && !isValidIsraeliPhone(value);
+
+  // Show the error eagerly once the user has typed enough digits to have
+  // a "complete" Israeli phone (≥9 digits — the shortest valid local
+  // form, e.g. 03-1234567). Short partials don't nag; once the number
+  // looks done-but-broken (e.g. "0552627277777") we surface the message
+  // without waiting for blur.
+  const digitCount = value ? String(value).replace(/\D/g, '').length : 0;
+  const looksComplete = digitCount >= 9;
+  const isInvalid = !!value && !isValidIsraeliPhone(value) && (touched || looksComplete);
 
   const handleChange = (e) => {
     const next = sanitizePhoneInput(e.target.value);
