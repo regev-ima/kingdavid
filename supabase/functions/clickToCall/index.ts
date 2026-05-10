@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       errorMessage = msgMatch ? msgMatch[1] : null;
     }
 
-    if ((errorCode !== null && errorCode !== '0') || !callId) {
+    if (errorCode !== null && errorCode !== '0') {
       return Response.json({
         error: errorMessage || 'Voicenter rejected the call',
         errorCode,
