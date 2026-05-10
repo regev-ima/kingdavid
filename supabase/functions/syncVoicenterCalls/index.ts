@@ -111,10 +111,6 @@ Deno.serve(async (req) => {
           console.log('[sync] CDR JSON keys:', Object.keys(data));
         } else {
           console.log('[sync] CDR_LIST length:', cdrList.length);
-          if (cdrList.length > 0) {
-            console.log('[sync] sample CDR keys:', Object.keys(cdrList[0]));
-            console.log('[sync] sample CDR record:', JSON.stringify(cdrList[0]));
-          }
         }
 
         if (cdrList && Array.isArray(cdrList) && cdrList.length > 0) {
@@ -126,6 +122,11 @@ Deno.serve(async (req) => {
             try {
               if (!call.callid) continue;
 
+              // Click2Call leg1 is the "ring the rep" half: same conversation as
+              // leg2 but no recording and inverted caller/target. Skip it so we
+              // store one row per actual call with the recording URL.
+              if (call.type === 'Click2Call leg1') continue;
+
               // Resolve rep by name
               let repEmail: string | null = null;
               if (call.representativename) {
@@ -133,19 +134,19 @@ Deno.serve(async (req) => {
                 if (matchingUser) repEmail = matchingUser.email;
               }
 
-              // Resolve lead by phone
-              let leadId: string | null = null;
-              const callerNorm = normalizePhoneNumber(call.callernumber);
-              const targetNorm = normalizePhoneNumber(call.targetnumber);
+              // Resolve lead by phone. The customer number is in `targetnumber`
+              // for outbound and `callernumber` for inbound.
               const isOutbound = call.type === 'Extension Outgoing' || call.type?.includes('Click2Call leg2');
+              const customerNorm = normalizePhoneNumber(isOutbound ? call.targetnumber : call.callernumber);
+              const otherNorm = normalizePhoneNumber(isOutbound ? call.callernumber : call.targetnumber);
 
-              // Try primary phone first, then fallback
+              let leadId: string | null = null;
               let foundLead = (allLeads || []).find((lead: any) =>
-                normalizePhoneNumber(lead.phone) === (isOutbound ? targetNorm : callerNorm)
+                normalizePhoneNumber(lead.phone) === customerNorm
               );
-              if (!foundLead) {
+              if (!foundLead && otherNorm) {
                 foundLead = (allLeads || []).find((lead: any) =>
-                  normalizePhoneNumber(lead.phone) === (isOutbound ? callerNorm : targetNorm)
+                  normalizePhoneNumber(lead.phone) === otherNorm
                 );
               }
               if (foundLead) leadId = foundLead.id;
