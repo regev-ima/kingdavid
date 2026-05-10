@@ -74,14 +74,30 @@ Deno.serve(async (req) => {
       throw new Error('VOICENTER_API_KEY not set in environment');
     }
 
+    // Optional manual backfill: POST { "from": ISO, "to": ISO } or { "hours": N }.
+    // Default behaviour (cron / SDK trigger) is the last 30 minutes.
+    let body: any = null;
+    if (req.method === 'POST') {
+      try { body = await req.json(); } catch { body = null; }
+    }
+
     const results = { newCalls: 0, pendingResolved: 0, errors: 0 };
 
     // --- PHASE 1: Import new calls from VoiceCenter CDR ---
     try {
       const now = new Date();
-      const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-      const fromDate = thirtyMinutesAgo.toISOString().slice(0, 19);
-      const toDate = now.toISOString().slice(0, 19);
+      let windowStart: Date;
+      if (body?.from) {
+        windowStart = new Date(body.from);
+      } else if (typeof body?.hours === 'number' && body.hours > 0) {
+        windowStart = new Date(now.getTime() - body.hours * 60 * 60 * 1000);
+      } else {
+        windowStart = new Date(now.getTime() - 30 * 60 * 1000);
+      }
+      const windowEnd = body?.to ? new Date(body.to) : now;
+      const fromDate = windowStart.toISOString().slice(0, 19);
+      const toDate = windowEnd.toISOString().slice(0, 19);
+      console.log('[sync] window', fromDate, '→', toDate);
 
       const apiUrl = new URL('http://46.224.211.60/hub/cdr/');
       apiUrl.searchParams.append('code', voicenterApiKey);
