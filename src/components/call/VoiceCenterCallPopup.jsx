@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogContent,
@@ -13,11 +13,31 @@ import { Button } from "@/components/ui/button";
 import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, X } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 
+// VoiceCenter ExtensionEvent reasons that indicate a call has finished and the
+// CDR (with duration + recording URL) is now available on Voicenter's side.
+const CALL_END_REASONS = new Set([
+  'hangup',
+  'ended',
+  'finished',
+  'completed',
+  'busy',
+  'no_answer',
+  'noanswer',
+  'cancel',
+  'canceled',
+  'cancelled',
+  'rejected',
+  'failed',
+  'disconnected',
+]);
+
 export default function VoiceCenterCallPopup() {
   const [sdk, setSdk] = useState(null);
   const [currentCall, setCurrentCall] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [leadData, setLeadData] = useState(null);
+  const queryClient = useQueryClient();
+  const syncTimerRef = useRef(null);
 
   // Fetch user credentials
   const { data: credentialsData } = useQuery({
@@ -59,13 +79,17 @@ export default function VoiceCenterCallPopup() {
       if (newSdk) {
         newSdk.disconnect();
       }
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
     };
   }, [credentialsData]);
 
   const handleExtensionEvent = async (response) => {
     const eventData = response.data;
 
-    // Only show popup for events on this user's own extension. The master
+    // Only handle events on this user's own extension. The master
     // VoiceCenter account receives events for every extension in the company,
     // so each browser must filter to its own.
     if (
@@ -75,8 +99,29 @@ export default function VoiceCenterCallPopup() {
       return;
     }
 
+    // When a call ends, trigger the CDR sync so the dashboard updates with
+    // duration / result / recording URL within seconds instead of waiting for
+    // the next cron run. Debounced to absorb a burst of end-events for one call.
+    const reason = String(eventData.reason || '').toLowerCase();
+    if (CALL_END_REASONS.has(reason)) {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(async () => {
+        try {
+          await base44.functions.invoke('syncVoicenterCalls');
+          queryClient.invalidateQueries(['callLogs']);
+          if (leadData?.id) {
+            queryClient.invalidateQueries(['callLogs', leadData.id]);
+            queryClient.invalidateQueries(['communications', leadData.id]);
+          }
+        } catch (err) {
+          console.error('syncVoicenterCalls trigger failed:', err);
+        }
+      }, 5000);
+      return;
+    }
+
     // Only show popup for ringing or answered calls
-    if (eventData.reason !== 'ringing' && eventData.reason !== 'answered') {
+    if (reason !== 'ringing' && reason !== 'answered') {
       return;
     }
 
