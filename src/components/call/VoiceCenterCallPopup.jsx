@@ -10,8 +10,9 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, X } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, Headphones, X } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
+import { isAdmin } from '@/lib/rbac';
 
 // VoiceCenter ExtensionEvent reasons that indicate a call has finished and the
 // CDR (with duration + recording URL) is now available on Voicenter's side.
@@ -31,6 +32,20 @@ const CALL_END_REASONS = new Set([
   'disconnected',
 ]);
 
+// Match syncVoicenterCalls so popup lookup behaves the same way as the CDR
+// matcher: leads stored as 0537772829 still resolve when Voicenter sends
+// 972537772829 (or vice versa).
+function normalizePhoneNumber(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('05') && digits.length === 10) return '972' + digits.substring(1);
+  if (digits.startsWith('9725') && digits.length === 12) return digits;
+  if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) return '972' + digits.substring(1);
+  if (digits.startsWith('972') && digits.length >= 11) return digits;
+  return digits;
+}
+
 export default function VoiceCenterCallPopup() {
   const [sdk, setSdk] = useState(null);
   const [currentCall, setCurrentCall] = useState(null);
@@ -48,6 +63,16 @@ export default function VoiceCenterCallPopup() {
     retry: false,
     refetchOnWindowFocus: false,
   });
+
+  // Current logged-in user — used to decide whether to skip the per-extension
+  // filter (admins see every extension's events, agents only see their own).
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser', 'forCallPopup'],
+    queryFn: () => base44.auth.me(),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const watchAllExtensions = isAdmin(currentUser);
 
   useEffect(() => {
     if (!credentialsData?.hasCredentials) return;
@@ -89,10 +114,10 @@ export default function VoiceCenterCallPopup() {
   const handleExtensionEvent = async (response) => {
     const eventData = response.data;
 
-    // Only handle events on this user's own extension. The master
-    // VoiceCenter account receives events for every extension in the company,
-    // so each browser must filter to its own.
+    // Agents only see their own extension. Admins / supervisors see every
+    // extension on the master account so they can monitor the floor.
     if (
+      !watchAllExtensions &&
       credentialsData?.extension &&
       String(eventData.extension) !== String(credentialsData.extension)
     ) {
@@ -129,24 +154,47 @@ export default function VoiceCenterCallPopup() {
     const direction = eventData.callerid ? 'incoming' : 'outgoing';
     const phoneNumber = eventData.callerid || eventData.destination;
 
+    // Resolve the rep handling this call (only matters in admin/supervisor
+    // mode where the popup may belong to a different extension).
+    let repName = null;
+    if (watchAllExtensions && eventData.extension) {
+      try {
+        const matches = await base44.entities.User.filter({
+          voicenter_extension: String(eventData.extension),
+        });
+        repName = matches[0]?.full_name || null;
+      } catch {}
+    }
+
     setCurrentCall({
       direction,
       phoneNumber,
       reason: eventData.reason,
       callId: eventData.ivrid,
       extension: eventData.extension,
+      repName,
     });
     setIsOpen(true);
 
-    // Fetch lead information based on phone number
+    // Fetch lead by phone, normalising both sides so 0537772829 / 972537772829
+    // / +972537772829 all resolve to the same lead.
     if (phoneNumber) {
       try {
-        const leads = await base44.entities.Lead.filter({ phone: phoneNumber });
-        if (leads.length > 0) {
-          setLeadData(leads[0]);
+        const norm = normalizePhoneNumber(phoneNumber);
+        let leads = [];
+        if (norm) {
+          // Try a few common stored shapes: original, normalised (972...),
+          // and normalised-with-leading-zero (0...).
+          const candidates = Array.from(new Set([
+            String(phoneNumber),
+            norm,
+            norm.startsWith('972') ? '0' + norm.slice(3) : norm,
+          ]));
+          leads = await base44.entities.Lead.filter({ phone: { $in: candidates } });
         } else {
-          setLeadData(null);
+          leads = await base44.entities.Lead.filter({ phone: String(phoneNumber) });
         }
+        setLeadData(leads[0] || null);
       } catch (error) {
         console.error('Error fetching lead:', error);
         setLeadData(null);
@@ -175,6 +223,11 @@ export default function VoiceCenterCallPopup() {
                 <PhoneOutgoing className="h-5 w-5 text-blue-600" />
                 שיחה יוצאת
               </>
+            )}
+            {currentCall.repName && (
+              <span className="text-sm text-muted-foreground font-normal me-auto">
+                · {currentCall.repName}
+              </span>
             )}
           </DialogTitle>
         </DialogHeader>
