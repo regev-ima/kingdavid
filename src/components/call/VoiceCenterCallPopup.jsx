@@ -58,8 +58,8 @@ export default function VoiceCenterCallPopup() {
 
     // Initialize VoiceCenter Events SDK
     const newSdk = new window.EventsSDK({
-      loginType: 'user',
-      email: credentialsData.username,
+      loginType: 'account',
+      username: credentialsData.username,
       password: credentialsData.password,
     });
 
