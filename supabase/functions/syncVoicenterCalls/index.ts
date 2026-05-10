@@ -103,20 +103,23 @@ Deno.serve(async (req) => {
         let data: any;
         try { data = JSON.parse(responseText); } catch { data = null; }
 
+        const cdrList = data?.CDR_LIST ?? data?.CDRList;
+
         if (!data) {
           console.log('[sync] CDR response was not JSON');
-        } else if (!data.CDRList) {
+        } else if (!cdrList) {
           console.log('[sync] CDR JSON keys:', Object.keys(data));
         } else {
-          console.log('[sync] CDRList length:', data.CDRList.length);
+          console.log('[sync] CDR_LIST length:', cdrList.length);
+          if (cdrList.length > 0) console.log('[sync] sample CDR keys:', Object.keys(cdrList[0]));
         }
 
-        if (data?.CDRList && Array.isArray(data.CDRList) && data.CDRList.length > 0) {
+        if (cdrList && Array.isArray(cdrList) && cdrList.length > 0) {
           // Fetch users and leads once for efficient lookup
           const { data: allUsers } = await supabase.from('users').select('*');
           const { data: allLeads } = await supabase.from('leads').select('*');
 
-          for (const call of data.CDRList) {
+          for (const call of cdrList) {
             try {
               if (!call.callid) continue;
 
