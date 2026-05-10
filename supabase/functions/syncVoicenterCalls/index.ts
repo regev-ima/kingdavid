@@ -111,7 +111,10 @@ Deno.serve(async (req) => {
           console.log('[sync] CDR JSON keys:', Object.keys(data));
         } else {
           console.log('[sync] CDR_LIST length:', cdrList.length);
-          if (cdrList.length > 0) console.log('[sync] sample CDR keys:', Object.keys(cdrList[0]));
+          if (cdrList.length > 0) {
+            console.log('[sync] sample CDR keys:', Object.keys(cdrList[0]));
+            console.log('[sync] sample CDR record:', JSON.stringify(cdrList[0]));
+          }
         }
 
         if (cdrList && Array.isArray(cdrList) && cdrList.length > 0) {
