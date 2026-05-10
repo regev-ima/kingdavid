@@ -7,7 +7,13 @@ import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { getRepDisplayName } from '@/lib/repDisplay';
-import { Phone, PhoneIncoming, Clock, Target, AlertCircle } from "lucide-react";
+import { Phone, PhoneIncoming, Clock, Target, AlertCircle, Headphones } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { format } from '@/lib/safe-date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
@@ -33,6 +39,7 @@ export default function CallAnalytics() {
   const { getEffectiveUser } = useImpersonation();
   const [user, setUser] = useState(null);
   const [callingPhone, setCallingPhone] = useState(null);
+  const [recordingUrl, setRecordingUrl] = useState(null);
   const [filters, setFilters] = useState({
     search: '',
     result: 'all',
@@ -230,17 +237,13 @@ export default function CallAnalytics() {
       accessor: 'recording_url',
       render: (log) => (
         log.recording_url ? (
-          <div className="flex items-center gap-2">
-            <audio controls src={log.recording_url} className="h-8 w-48" preload="none" />
-            <a
-              href={log.recording_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-primary underline whitespace-nowrap"
-            >
-              פתח
-            </a>
-          </div>
+          <button
+            onClick={() => setRecordingUrl(log.recording_url)}
+            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+          >
+            <Headphones className="h-3.5 w-3.5" />
+            <span>האזן להקלטה</span>
+          </button>
         ) : (
           <span className="text-muted-foreground/70 text-xs">אין הקלטה</span>
         )
@@ -362,6 +365,30 @@ export default function CallAnalytics() {
         isLoading={isLoading}
         emptyMessage="אין שיחות להצגה"
       />
+
+      <Dialog open={!!recordingUrl} onOpenChange={() => setRecordingUrl(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Headphones className="h-5 w-5 text-primary" />
+              הקלטת שיחה
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-gradient-to-br from-primary/5 to-purple-50/50 rounded-lg p-4">
+              <iframe
+                src={recordingUrl}
+                className="w-full h-[120px] border-0 rounded-lg"
+                title="הקלטת שיחה"
+                allow="autoplay"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-3 text-center">
+              ההקלטה מתנגנת מ-VoiceCenter
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
