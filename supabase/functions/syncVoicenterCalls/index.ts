@@ -114,9 +114,29 @@ Deno.serve(async (req) => {
         }
 
         if (cdrList && Array.isArray(cdrList) && cdrList.length > 0) {
-          // Fetch users and leads once for efficient lookup
-          const { data: allUsers } = await supabase.from('users').select('*');
-          const { data: allLeads } = await supabase.from('leads').select('*');
+          // Fetch users and leads once for efficient lookup. PostgREST caps
+          // each .select() at 1000 rows, so we paginate until we have all of
+          // them — otherwise leads beyond row 1000 silently fail to match.
+          async function fetchAll(table: string, columns: string) {
+            const pageSize = 1000;
+            const all: any[] = [];
+            let from = 0;
+            for (;;) {
+              const { data, error } = await supabase
+                .from(table)
+                .select(columns)
+                .range(from, from + pageSize - 1);
+              if (error) throw error;
+              if (!data || data.length === 0) break;
+              all.push(...data);
+              if (data.length < pageSize) break;
+              from += pageSize;
+            }
+            return all;
+          }
+          const allUsers = await fetchAll('users', 'email,full_name,voicenter_extension');
+          const allLeads = await fetchAll('leads', 'id,phone');
+          console.log('[sync] loaded', allUsers.length, 'users and', allLeads.length, 'leads');
 
           for (const call of cdrList) {
             try {
