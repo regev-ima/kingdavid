@@ -88,15 +88,28 @@ Deno.serve(async (req) => {
       apiUrl.searchParams.append('fromdate', fromDate);
       apiUrl.searchParams.append('todate', toDate);
 
+      console.log('[sync] CDR fetch:', apiUrl.toString());
+
       const response = await fetch(apiUrl.toString(), {
         method: 'GET',
         headers: { 'X-Destination': 'voicenter' },
       });
 
+      console.log('[sync] CDR status:', response.status);
+
       if (response.ok) {
         const responseText = await response.text();
+        console.log('[sync] CDR body (first 1000 chars):', responseText.slice(0, 1000));
         let data: any;
         try { data = JSON.parse(responseText); } catch { data = null; }
+
+        if (!data) {
+          console.log('[sync] CDR response was not JSON');
+        } else if (!data.CDRList) {
+          console.log('[sync] CDR JSON keys:', Object.keys(data));
+        } else {
+          console.log('[sync] CDRList length:', data.CDRList.length);
+        }
 
         if (data?.CDRList && Array.isArray(data.CDRList) && data.CDRList.length > 0) {
           // Fetch users and leads once for efficient lookup
