@@ -308,7 +308,7 @@ export default function CallAnalytics() {
         <KPICard
           title="אחוז מענה"
           value={`${answerRate}%`}
-          subtitle={`${answeredCalls} מענות`}
+          subtitle={`${answeredCalls} נענו`}
           icon={PhoneIncoming}
           color="emerald"
         />
@@ -370,7 +370,7 @@ export default function CallAnalytics() {
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="calls" fill="#6366f1" name="שיחות" />
-                <Bar dataKey="answered" fill="#10b981" name="מענות" />
+                <Bar dataKey="answered" fill="#10b981" name="נענו" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
