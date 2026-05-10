@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
     }
 
     const voicenterApiKey = Deno.env.get('VOICENTER_API_KEY');
-    const url = `https://46.224.211.60/ForwardDialer/click2call.aspx?phone=${user.voicenter_extension}&target=${customerPhone}&code=${voicenterApiKey}&action=call&record=True`;
+    const url = `http://46.224.211.60/ForwardDialer/click2call.aspx?phone=${user.voicenter_extension}&target=${customerPhone}&code=${voicenterApiKey}&action=call&record=True`;
 
     const response = await fetch(url, {
       method: 'GET',
