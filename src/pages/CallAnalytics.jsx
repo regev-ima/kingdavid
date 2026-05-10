@@ -81,14 +81,29 @@ export default function CallAnalytics() {
     queryFn: () => fetchAllList(base44.entities.CallLog, '-call_started_at'),
   });
 
+  // Only fetch leads / users that are actually referenced by the call logs we
+  // just loaded. The previous "fetch all leads" approach pulled 8000+ rows
+  // across 16 paginated requests (~15s) and the table rendered with empty
+  // names until everything finished.
+  const referencedLeadIds = [...new Set(callLogs.map(l => l.lead_id).filter(Boolean))];
+  const referencedRepIds = [...new Set(callLogs.map(l => l.rep_id).filter(Boolean))];
+
   const { data: leads = [] } = useQuery({
-    queryKey: ['leads'],
-    queryFn: () => fetchAllList(base44.entities.Lead),
+    queryKey: ['leads', 'byIds', referencedLeadIds.sort().join(',')],
+    queryFn: () =>
+      referencedLeadIds.length === 0
+        ? Promise.resolve([])
+        : base44.entities.Lead.filter({ id: { $in: referencedLeadIds } }, undefined, referencedLeadIds.length),
+    enabled: callLogs.length > 0,
   });
 
   const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => fetchAllList(base44.entities.User),
+    queryKey: ['users', 'byEmails', referencedRepIds.sort().join(',')],
+    queryFn: () =>
+      referencedRepIds.length === 0
+        ? Promise.resolve([])
+        : base44.entities.User.filter({ email: { $in: referencedRepIds } }, undefined, referencedRepIds.length),
+    enabled: callLogs.length > 0,
   });
 
   // Filter logs
