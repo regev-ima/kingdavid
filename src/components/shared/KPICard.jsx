@@ -3,10 +3,15 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 
 const formatNumber = (num) => {
   if (typeof num === 'string') {
-    // Check if the string is purely numeric
-    const parsed = parseFloat(num.replace(/,/g, ''));
+    // Preserve a trailing "%" so percentage KPIs ("6%", "58.8%") don't lose
+    // their unit when we round-trip through Intl.NumberFormat.
+    const trimmed = num.trim();
+    const hasPercent = trimmed.endsWith('%');
+    const core = hasPercent ? trimmed.slice(0, -1) : trimmed;
+    const parsed = parseFloat(core.replace(/,/g, ''));
     if (!isNaN(parsed)) {
-      return new Intl.NumberFormat('en-US').format(parsed);
+      const formatted = new Intl.NumberFormat('en-US').format(parsed);
+      return hasPercent ? `${formatted}%` : formatted;
     }
     return num; // Return as-is if it contains non-numeric characters like "5 דק׳"
   }
