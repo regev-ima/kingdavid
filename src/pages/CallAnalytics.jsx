@@ -211,7 +211,19 @@ export default function CallAnalytics() {
       accessor: 'lead_id',
       render: (log) => {
         const lead = leads.find(l => l.id === log.lead_id);
-        return lead?.full_name || '-';
+        if (!lead) return '-';
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(createPageUrl('LeadDetails') + `?id=${lead.id}`);
+            }}
+            className="text-primary hover:underline text-right"
+          >
+            {lead.full_name}
+          </button>
+        );
       }
     },
     {
