@@ -222,10 +222,12 @@ Deno.serve(async (req) => {
                 .eq('call_id', call.callid)
                 .limit(1);
 
+              const customerPhone = isOutbound ? call.targetnumber : call.callernumber;
               const callData = {
                 call_id: call.callid,
                 lead_id: leadId,
                 rep_id: repEmail,
+                phone_number: customerPhone || null,
                 call_started_at: call.date ? new Date(call.date).toISOString() : new Date().toISOString(),
                 call_duration_seconds: call.duration ? parseInt(call.duration) : 0,
                 call_ended_at: call.date && call.duration
