@@ -28,15 +28,31 @@ Deno.serve(async (req) => {
     });
 
     const responseData = await response.text();
-    if (!response.ok) return Response.json({ error: 'Failed to initiate call', details: responseData }, { status: 500, headers: corsHeaders });
+    if (!response.ok) return Response.json({ error: 'Failed to initiate call', status: response.status, details: responseData }, { status: 502, headers: corsHeaders });
 
-    let callId = null;
+    let callId: string | null = null;
+    let errorCode: string | null = null;
+    let errorMessage: string | null = null;
     try {
       const jsonResponse = JSON.parse(responseData);
-      callId = jsonResponse.callid || jsonResponse.CallId || jsonResponse.call_id;
+      callId = jsonResponse.callid || jsonResponse.CallId || jsonResponse.call_id || jsonResponse.CALLID || null;
+      errorCode = jsonResponse.errorcode ?? jsonResponse.ERRORCODE ?? null;
+      errorMessage = jsonResponse.errormessage ?? jsonResponse.ERRORMESSAGE ?? null;
     } catch {
-      const match = responseData.match(/<name>CALLID<\/name>\s*<value>\s*<string>([^<]+)<\/string>/);
-      callId = match ? match[1] : null;
+      const callMatch = responseData.match(/<name>CALLID<\/name>\s*<value>\s*<string>([^<]*)<\/string>/i);
+      callId = callMatch ? callMatch[1] : null;
+      const codeMatch = responseData.match(/<name>ERRORCODE<\/name>\s*<value>\s*<(?:int|string|i4)>([^<]+)<\/(?:int|string|i4)>/i);
+      errorCode = codeMatch ? codeMatch[1] : null;
+      const msgMatch = responseData.match(/<name>ERRORMESSAGE<\/name>\s*<value>\s*<string>([^<]*)<\/string>/i);
+      errorMessage = msgMatch ? msgMatch[1] : null;
+    }
+
+    if ((errorCode !== null && errorCode !== '0') || !callId) {
+      return Response.json({
+        error: errorMessage || 'Voicenter rejected the call',
+        errorCode,
+        details: responseData,
+      }, { status: 502, headers: corsHeaders });
     }
 
     if (leadId && callId) {
@@ -55,6 +71,7 @@ Deno.serve(async (req) => {
     return Response.json({ success: true, message: 'השיחה התחילה בהצלחה', callId }, { headers: corsHeaders });
   } catch (error) {
     console.error('Function error:', error);
-    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: message || 'Internal server error' }, { status: 500, headers: corsHeaders });
   }
 });
