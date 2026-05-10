@@ -76,12 +76,12 @@ export default function CallAnalytics() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
-    queryFn: () => base44.entities.Lead.list(),
+    queryFn: () => fetchAllList(base44.entities.Lead),
   });
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
-    queryFn: () => base44.entities.User.list(),
+    queryFn: () => fetchAllList(base44.entities.User),
   });
 
   // Filter logs
