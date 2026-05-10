@@ -125,12 +125,21 @@ export default function CallAnalytics() {
   ).length;
   const answerRate = totalCalls > 0 ? ((answeredCalls / totalCalls) * 100).toFixed(1) : 0;
   
-  const avgDuration = callLogs.length > 0
-    ? Math.round(callLogs.reduce((sum, log) => sum + (log.call_duration_seconds || 0), 0) / callLogs.length)
+  // Average over answered calls only; including unanswered (0-duration)
+  // calls drags the average toward zero without saying anything useful.
+  const answeredOnly = callLogs.filter(log => log.call_result?.startsWith('answered'));
+  const avgDuration = answeredOnly.length > 0
+    ? Math.round(answeredOnly.reduce((sum, log) => sum + (log.call_duration_seconds || 0), 0) / answeredOnly.length)
     : 0;
 
-  const positiveCalls = callLogs.filter(log => log.call_result === 'answered_positive').length;
-  const conversionRate = answeredCalls > 0 ? ((positiveCalls / answeredCalls) * 100).toFixed(1) : 0;
+  // "המרה לעסקה": of the unique leads we called, how many ended up with
+  // status = deal_closed. Counts each lead once regardless of how many
+  // calls it received, and ignores calls to numbers that aren't a lead.
+  const calledLeadIds = new Set(callLogs.map(l => l.lead_id).filter(Boolean));
+  const closedLeadCount = leads.filter(l => calledLeadIds.has(l.id) && l.status === 'deal_closed').length;
+  const conversionRate = calledLeadIds.size > 0
+    ? ((closedLeadCount / calledLeadIds.size) * 100).toFixed(1)
+    : 0;
 
   // Prepare chart data - Results distribution
   const resultCounts = {};
@@ -320,9 +329,9 @@ export default function CallAnalytics() {
           color="blue"
         />
         <KPICard
-          title="המרה לחיובי"
+          title="המרה לעסקה"
           value={`${conversionRate}%`}
-          subtitle={`${positiveCalls} שיחות`}
+          subtitle={`${closedLeadCount} מתוך ${calledLeadIds.size} לידים`}
           icon={Target}
           color="purple"
         />
