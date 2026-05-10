@@ -230,7 +230,17 @@ export default function CallAnalytics() {
       accessor: 'recording_url',
       render: (log) => (
         log.recording_url ? (
-          <audio controls src={log.recording_url} className="h-8 w-48" preload="none" />
+          <div className="flex items-center gap-2">
+            <audio controls src={log.recording_url} className="h-8 w-48" preload="none" />
+            <a
+              href={log.recording_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary underline whitespace-nowrap"
+            >
+              פתח
+            </a>
+          </div>
         ) : (
           <span className="text-muted-foreground/70 text-xs">אין הקלטה</span>
         )

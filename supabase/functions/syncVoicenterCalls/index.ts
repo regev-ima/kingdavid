@@ -127,16 +127,28 @@ Deno.serve(async (req) => {
               // store one row per actual call with the recording URL.
               if (call.type === 'Click2Call leg1') continue;
 
-              // Resolve rep by name
+              // Resolve rep — prefer matching the Voicenter extension stored on
+              // the user (stable, language-agnostic) over the free-text name
+              // representativename, which doesn't always equal users.full_name.
+              const isOutbound = call.type === 'Extension Outgoing' || call.type?.includes('Click2Call leg2');
+              const repExtension = isOutbound ? call.callerextension : call.targetextension;
+
               let repEmail: string | null = null;
-              if (call.representativename) {
-                const matchingUser = (allUsers || []).find((user: any) => user.full_name === call.representativename);
-                if (matchingUser) repEmail = matchingUser.email;
+              if (repExtension) {
+                const byExtension = (allUsers || []).find((user: any) =>
+                  user.voicenter_extension && String(user.voicenter_extension) === String(repExtension)
+                );
+                if (byExtension) repEmail = byExtension.email;
+              }
+              if (!repEmail && call.representativename) {
+                const byName = (allUsers || []).find((user: any) =>
+                  user.full_name && user.full_name.trim() === String(call.representativename).trim()
+                );
+                if (byName) repEmail = byName.email;
               }
 
               // Resolve lead by phone. The customer number is in `targetnumber`
               // for outbound and `callernumber` for inbound.
-              const isOutbound = call.type === 'Extension Outgoing' || call.type?.includes('Click2Call leg2');
               const customerNorm = normalizePhoneNumber(isOutbound ? call.targetnumber : call.callernumber);
               const otherNorm = normalizePhoneNumber(isOutbound ? call.callernumber : call.targetnumber);
 
@@ -150,6 +162,22 @@ Deno.serve(async (req) => {
                 );
               }
               if (foundLead) leadId = foundLead.id;
+
+              if (!leadId || !repEmail) {
+                console.log('[sync] unmatched call', JSON.stringify({
+                  callid: call.callid,
+                  type: call.type,
+                  callernumber: call.callernumber,
+                  targetnumber: call.targetnumber,
+                  callerextension: call.callerextension,
+                  targetextension: call.targetextension,
+                  representativename: call.representativename,
+                  customerNorm,
+                  repExtension,
+                  matchedLead: !!leadId,
+                  matchedRep: !!repEmail,
+                }));
+              }
 
               // Upsert: check if call_id exists, then insert or update
               const { data: existingCall } = await supabase
