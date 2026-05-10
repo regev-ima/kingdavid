@@ -6,6 +6,7 @@ on:
       - main
       - claude/check-production-requirements-hO64j
       - claude/fix-lead-notifications-M2jB4
+      - claude/wise-center-extension-BYxGw
     paths:
       - 'supabase/functions/**'
 
