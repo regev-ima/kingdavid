@@ -71,7 +71,7 @@ export default function CallAnalytics() {
 
   const { data: callLogs = [], isLoading, refetch: refetchCallLogs } = useQuery({
     queryKey: ['callLogs'],
-    queryFn: () => fetchAllList(base44.entities.CallLog, '-created_date'),
+    queryFn: () => fetchAllList(base44.entities.CallLog, '-call_started_at'),
   });
 
   const { data: leads = [] } = useQuery({
