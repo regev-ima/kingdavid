@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
+import RecordingPlayer from '@/components/call/RecordingPlayer';
 
 const RESULT_COLORS = {
   answered_positive: '#10b981',
@@ -229,11 +230,7 @@ export default function CallAnalytics() {
       header: 'הקלטה',
       accessor: 'recording_url',
       render: (log) => (
-        log.recording_url ? (
-          <audio controls src={log.recording_url} className="h-8 w-48" preload="none" />
-        ) : (
-          <span className="text-muted-foreground/70 text-xs">אין הקלטה</span>
-        )
+        <RecordingPlayer callLogId={log.id} hasRecording={!!log.recording_url} />
       )
     }
   ];

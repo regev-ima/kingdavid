@@ -50,6 +50,7 @@ jobs:
             processBulkUpdateBatch
             processTransferBatch
             scheduleShipments
+            streamRecording
             syncVoicenterCalls
             trackLeadAssignment
             transferRepData
