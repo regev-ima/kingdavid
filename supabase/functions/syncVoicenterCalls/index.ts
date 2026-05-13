@@ -98,12 +98,20 @@ Deno.serve(async (req) => {
         let data: any;
         try { data = JSON.parse(responseText); } catch { data = null; }
 
-        if (data?.CDRList && Array.isArray(data.CDRList) && data.CDRList.length > 0) {
+        // Voicenter returns the array under CDR_LIST (snake_case). Accept the
+        // camelCase variant too in case the upstream API ever changes.
+        const cdrList = Array.isArray(data?.CDR_LIST)
+          ? data.CDR_LIST
+          : Array.isArray(data?.CDRList)
+          ? data.CDRList
+          : [];
+
+        if (cdrList.length > 0) {
           // Fetch users and leads once for efficient lookup
           const { data: allUsers } = await supabase.from('users').select('*');
           const { data: allLeads } = await supabase.from('leads').select('*');
 
-          for (const call of data.CDRList) {
+          for (const call of cdrList) {
             try {
               if (!call.callid) continue;
 
