@@ -37,12 +37,14 @@ import {
   Plus,
   Trash2,
   Wallet,
-  Headphones
+  Headphones,
+  CreditCard
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrder, isAdmin as isAdminUser } from '@/lib/rbac';
 import NewServiceTicketDialog from '@/components/support/NewServiceTicketDialog';
+import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -64,6 +66,7 @@ function calcPaymentStatus(payments, total) {
 export default function OrderDetails() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
+  const [showHypPayment, setShowHypPayment] = useState(false);
   const [showServiceTicket, setShowServiceTicket] = useState(false);
   const [newPayment, setNewPayment] = useState({
     amount: '',
@@ -553,15 +556,27 @@ export default function OrderDetails() {
                   </div>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowAddPayment(true)}
-                >
-                  <Plus className="h-3.5 w-3.5 me-1.5" />
-                  הוסף תשלום
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowHypPayment(true)}
+                    disabled={(order?.total || 0) - (order?.amount_paid || 0) <= 0}
+                  >
+                    <CreditCard className="h-3.5 w-3.5 me-1.5" />
+                    תשלום באשראי (Hyp)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowAddPayment(true)}
+                  >
+                    <Plus className="h-3.5 w-3.5 me-1.5" />
+                    הוסף תשלום ידני
+                  </Button>
+                </div>
               )}
 
               {/* Manual status override for refunds */}
@@ -753,6 +768,21 @@ export default function OrderDetails() {
         onOpenChange={setShowServiceTicket}
         order={order}
         currentUser={effectiveUser}
+      />
+
+      {/* Hyp Payment Dialog */}
+      <HypPaymentDialog
+        open={showHypPayment}
+        onOpenChange={setShowHypPayment}
+        order={order}
+        onPaid={() => {
+          toast.success('התשלום התקבל');
+          // The server-to-server hyp-notify writes the payment row. Give it a
+          // moment before refreshing so the order reflects the new state.
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ['order', orderId] });
+          }, 1500);
+        }}
       />
     </div>
   );
