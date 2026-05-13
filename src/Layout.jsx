@@ -365,7 +365,7 @@ function LayoutContent({ children, currentPageName }) {
 
 
       {/* VoiceCenter Call Popup */}
-      <VoiceCenterCallPopup sdkLoaded={sdkLoaded} />
+      {sdkLoaded && <VoiceCenterCallPopup />}
       </div>
       );
       }
