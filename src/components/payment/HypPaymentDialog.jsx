@@ -47,22 +47,38 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
   // signal the parent to refetch the order.
   useEffect(() => {
     if (!open) return;
-    const handler = (event) => {
+    const handler = async (event) => {
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.source !== 'hyp-return') return;
       lastResultRef.current = data;
-      if (data.status === 'success') {
-        onPaid?.(data);
+      if (data.status === 'success' && data.transaction_id) {
+        // Browser said success — confirm with Hyp's own VERIFY endpoint
+        // before we trust it. hyp-verify writes the payment row.
+        try {
+          const verifyResult = await base44.functions.invoke('hyp-verify', {
+            order_id: order?.id,
+            transaction_id: data.transaction_id,
+          });
+          if (verifyResult?.verified) {
+            onPaid?.({ ...data, ...verifyResult });
+          } else {
+            setError(
+              `Hyp לא אישר את העסקה (CCode=${verifyResult?.ccode || data.ccode || '-'}). אל תסגור את הדף — בדוק ב-Hyp dashboard.`,
+            );
+          }
+        } catch (err) {
+          setError(`אימות מול Hyp נכשל: ${err?.message || err}`);
+        }
       } else {
         setError(`Hyp דחה את התשלום (CCode=${data.ccode || '-'})`);
       }
       // small delay so the user briefly sees the result inside the iframe
-      setTimeout(() => onOpenChange(false), 800);
+      setTimeout(() => onOpenChange(false), 1200);
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [open, onOpenChange, onPaid]);
+  }, [open, onOpenChange, onPaid, order?.id]);
 
   const startPayment = async () => {
     setError(null);
