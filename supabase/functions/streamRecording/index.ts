@@ -63,7 +63,17 @@ Deno.serve(async (req) => {
     const voicenterApiKey = Deno.env.get('VOICENTER_API_KEY') ?? '';
     const fetchUrl = withAuthCode(callLog.recording_url, voicenterApiKey);
 
-    const upstream = await fetch(fetchUrl);
+    // Voicenter parks recording downloads behind Cloudflare. Without a
+    // browser-like User-Agent and Accept header, Cloudflare answers with a
+    // 403 "Just a moment..." JavaScript challenge instead of the audio file.
+    const upstream = await fetch(fetchUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'audio/mpeg, audio/*, */*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
     const upstreamContentType = upstream.headers.get('content-type') ?? '';
 
     if (!upstream.ok || !upstream.body) {
