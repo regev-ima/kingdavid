@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Phone, MessageCircle, Mail, Calendar, Clock, Headphones, X, History } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
+import RecordingPlayer from '@/components/call/RecordingPlayer';
 
 const communicationIcons = {
   call: Phone,
@@ -34,7 +35,7 @@ const outcomeColors = {
 };
 
 export default function CommunicationHistory({ leadId }) {
-  const [recordingUrl, setRecordingUrl] = useState(null);
+  const [recordingCallId, setRecordingCallId] = useState(null);
   
   // Single parallel fetch for both entities
   const { data: combinedData, isLoading } = useQuery({
@@ -183,7 +184,7 @@ export default function CommunicationHistory({ leadId }) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setRecordingUrl(item.recording_url)}
+                    onClick={() => setRecordingCallId(item.id)}
                     className="inline-flex items-center gap-1 mt-2 h-auto p-0 text-xs text-primary hover:text-primary/80 hover:bg-transparent"
                   >
                     <Headphones className="h-3 w-3" />
@@ -196,7 +197,7 @@ export default function CommunicationHistory({ leadId }) {
         );
       })}
 
-      <Dialog open={!!recordingUrl} onOpenChange={() => setRecordingUrl(null)}>
+      <Dialog open={!!recordingCallId} onOpenChange={() => setRecordingCallId(null)}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -205,13 +206,14 @@ export default function CommunicationHistory({ leadId }) {
             </DialogTitle>
           </DialogHeader>
           <div className="py-4">
-            <div className="bg-gradient-to-br from-primary/5 to-purple-50/50 rounded-lg p-4">
-              <iframe
-                src={recordingUrl}
-                className="w-full h-[120px] border-0 rounded-lg"
-                title="הקלטת שיחה"
-                allow="autoplay"
-              />
+            <div className="bg-gradient-to-br from-primary/5 to-purple-50/50 rounded-lg p-4 flex justify-center">
+              {recordingCallId && (
+                <RecordingPlayer
+                  callLogId={recordingCallId}
+                  hasRecording
+                  autoLoad
+                />
+              )}
             </div>
             <p className="text-xs text-muted-foreground mt-3 text-center">
               ההקלטה מתנגנת מ-VoiceCenter
