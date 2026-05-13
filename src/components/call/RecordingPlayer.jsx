@@ -1,93 +1,58 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/api/supabaseClient';
-import { Loader2, Play } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Headphones, Play } from 'lucide-react';
 
-// Voicenter exposes recording URLs over HTTP only, so the browser blocks them
-// as Mixed Content when the app is served over HTTPS. We fetch them through
-// the streamRecording edge function (authenticated) and play a blob URL.
-export default function RecordingPlayer({ callLogId, hasRecording, autoLoad = false }) {
-  const [blobUrl, setBlobUrl] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const audioRef = useRef(null);
+// Voicenter recordings live behind their cPanel, which authenticates the
+// listener via a browser session cookie on cpanel.voicenter.co.il. A
+// server-side proxy can't carry that cookie, so we just open the URL inside
+// an iframe (or new tab) and let the browser handle the session.
+export default function RecordingPlayer({ recordingUrl, hasRecording }) {
+  const [open, setOpen] = useState(false);
 
-  const handleLoad = useCallback(async () => {
-    if (!hasRecording || !callLogId) return;
-    setLoading((current) => {
-      if (current) return current;
-      return true;
-    });
-    setError(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const resp = await fetch(
-        `${supabaseUrl}/functions/v1/streamRecording?id=${encodeURIComponent(callLogId)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${session?.access_token ?? ''}`,
-            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-        },
-      );
-      if (!resp.ok) {
-        let detail = '';
-        try {
-          const data = await resp.json();
-          detail = data?.error || data?.upstreamBodyPreview || '';
-        } catch {
-          // ignore
-        }
-        throw new Error(detail ? `${resp.status}: ${detail}` : `HTTP ${resp.status}`);
-      }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      setBlobUrl(url);
-      setTimeout(() => audioRef.current?.play().catch(() => {}), 0);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'שגיאה');
-    } finally {
-      setLoading(false);
-    }
-  }, [callLogId, hasRecording]);
-
-  useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
-
-  useEffect(() => {
-    if (autoLoad && hasRecording && !blobUrl && !loading) {
-      handleLoad();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoLoad, hasRecording, callLogId]);
-
-  if (!hasRecording) {
+  if (!hasRecording || !recordingUrl) {
     return <span className="text-muted-foreground/70 text-xs">אין הקלטה</span>;
   }
 
-  if (blobUrl) {
-    return <audio ref={audioRef} controls src={blobUrl} className="h-8 w-48" />;
-  }
-
   return (
-    <Button
-      size="sm"
-      variant="outline"
-      className="h-8"
-      onClick={handleLoad}
-      disabled={loading}
-      title={error || undefined}
-    >
-      {loading ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8"
+        onClick={() => setOpen(true)}
+      >
         <Play className="h-3.5 w-3.5 me-1" />
-      )}
-      {loading ? 'טוען...' : error ? 'נסה שוב' : 'נגן הקלטה'}
-    </Button>
+        נגן הקלטה
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Headphones className="h-5 w-5 text-primary" />
+              הקלטת שיחה
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="bg-gradient-to-br from-primary/5 to-purple-50/50 rounded-lg p-4">
+              <iframe
+                src={recordingUrl}
+                className="w-full h-[120px] border-0 rounded-lg"
+                title="הקלטת שיחה"
+                allow="autoplay"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-3 text-center">
+              ההקלטה מתנגנת מ-VoiceCenter
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
