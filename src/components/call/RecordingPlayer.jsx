@@ -32,7 +32,14 @@ export default function RecordingPlayer({ callLogId, hasRecording, autoLoad = fa
         },
       );
       if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
+        let detail = '';
+        try {
+          const data = await resp.json();
+          detail = data?.error || data?.upstreamBodyPreview || '';
+        } catch {
+          // ignore
+        }
+        throw new Error(detail ? `${resp.status}: ${detail}` : `HTTP ${resp.status}`);
       }
       const blob = await resp.blob();
       const url = URL.createObjectURL(blob);

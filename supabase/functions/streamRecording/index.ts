@@ -5,6 +5,21 @@ import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabas
 // (Mixed Content). This function fetches the recording server-side and
 // streams it back over our HTTPS origin.
 
+// Ensure ?code=<VOICENTER_API_KEY> is on the URL — most Voicenter HTTP
+// endpoints require it (clickToCall, CDR, etc.) and recording downloads
+// behave the same. If Voicenter already included the code we leave it as-is.
+function withAuthCode(rawUrl: string, code: string): string {
+  try {
+    const u = new URL(rawUrl);
+    if (!u.searchParams.has('code') && code) {
+      u.searchParams.set('code', code);
+    }
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = {
     ...getCorsHeaders(req),
@@ -18,8 +33,6 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
     }
 
-    // Accept call_log id from either query string (GET, easy for <audio src>)
-    // or JSON body (POST, used by base44.functions.invoke).
     let callLogId: string | null = null;
     const url = new URL(req.url);
     callLogId = url.searchParams.get('id');
@@ -47,20 +60,59 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Recording not found' }, { status: 404, headers: corsHeaders });
     }
 
-    const upstream = await fetch(callLog.recording_url);
+    const voicenterApiKey = Deno.env.get('VOICENTER_API_KEY') ?? '';
+    const fetchUrl = withAuthCode(callLog.recording_url, voicenterApiKey);
+
+    const upstream = await fetch(fetchUrl);
+    const upstreamContentType = upstream.headers.get('content-type') ?? '';
+
     if (!upstream.ok || !upstream.body) {
+      const bodyText = await upstream.text().catch(() => '');
+      console.error('streamRecording upstream error', {
+        status: upstream.status,
+        contentType: upstreamContentType,
+        fetchUrl,
+        bodyPreview: bodyText.slice(0, 200),
+      });
       return Response.json(
-        { error: `Upstream returned ${upstream.status}` },
+        {
+          error: `Upstream returned ${upstream.status}`,
+          upstreamContentType,
+          upstreamBodyPreview: bodyText.slice(0, 200),
+        },
         { status: 502, headers: corsHeaders },
       );
     }
 
-    const contentType = upstream.headers.get('content-type') ?? 'audio/mpeg';
-    const contentLength = upstream.headers.get('content-length');
+    // Voicenter sometimes responds 200 with an HTML error page instead of audio
+    // (e.g. when the recording is gone). Catch that here so the client gets a
+    // useful error instead of a silently-broken audio element.
+    if (
+      upstreamContentType &&
+      !upstreamContentType.startsWith('audio/') &&
+      !upstreamContentType.startsWith('application/octet-stream') &&
+      !upstreamContentType.startsWith('binary/')
+    ) {
+      const bodyText = await upstream.text().catch(() => '');
+      console.error('streamRecording non-audio response', {
+        contentType: upstreamContentType,
+        fetchUrl,
+        bodyPreview: bodyText.slice(0, 200),
+      });
+      return Response.json(
+        {
+          error: 'Upstream returned non-audio content',
+          upstreamContentType,
+          upstreamBodyPreview: bodyText.slice(0, 200),
+        },
+        { status: 502, headers: corsHeaders },
+      );
+    }
 
+    const contentLength = upstream.headers.get('content-length');
     const headers: Record<string, string> = {
       ...corsHeaders,
-      'Content-Type': contentType,
+      'Content-Type': upstreamContentType || 'audio/mpeg',
       'Cache-Control': 'private, max-age=300',
     };
     if (contentLength) headers['Content-Length'] = contentLength;
