@@ -115,18 +115,30 @@ Deno.serve(async (req) => {
             try {
               if (!call.callid) continue;
 
-              // Resolve rep by name
-              let repEmail: string | null = null;
-              if (call.representativename) {
-                const matchingUser = (allUsers || []).find((user: any) => user.full_name === call.representativename);
-                if (matchingUser) repEmail = matchingUser.email;
-              }
-
               // Resolve lead by phone
               let leadId: string | null = null;
               const callerNorm = normalizePhoneNumber(call.callernumber);
               const targetNorm = normalizePhoneNumber(call.targetnumber);
               const isOutbound = call.type === 'Extension Outgoing' || call.type?.includes('Click2Call leg2');
+
+              // Resolve rep by Voicenter extension. The extension is stable
+              // (unlike the Hebrew full_name which has to match exactly), so
+              // we prefer it. The rep is whoever's extension is on the
+              // appropriate side of the call: caller for outbound, target
+              // for inbound. Falls back to representativename for legacy
+              // calls that don't carry an extension.
+              let repEmail: string | null = null;
+              const repExtension = isOutbound ? call.callerextension : call.targetextension;
+              if (repExtension) {
+                const matchingUser = (allUsers || []).find(
+                  (user: any) => user.voicenter_extension && String(user.voicenter_extension) === String(repExtension),
+                );
+                if (matchingUser) repEmail = matchingUser.email;
+              }
+              if (!repEmail && call.representativename) {
+                const matchingUser = (allUsers || []).find((user: any) => user.full_name === call.representativename);
+                if (matchingUser) repEmail = matchingUser.email;
+              }
 
               // Try primary phone first, then fallback
               let foundLead = (allLeads || []).find((lead: any) =>
