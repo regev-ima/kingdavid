@@ -443,6 +443,21 @@ export default function OrderDetails() {
                             {payment.date ? format(new Date(payment.date), 'dd/MM/yyyy') : ''}
                             {payment.notes ? ` · ${payment.notes}` : ''}
                           </div>
+                          {(payment.hyp_transaction_id || payment.hyp_acode || payment.hyp_brand || payment.hyp_l4digit) && (
+                            <div className="text-[11px] text-muted-foreground/80 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5" dir="rtl">
+                              {payment.hyp_transaction_id && (
+                                <span>מס׳ עסקה: <span dir="ltr">{payment.hyp_transaction_id}</span></span>
+                              )}
+                              {payment.hyp_acode && (
+                                <span>אישור: <span dir="ltr">{payment.hyp_acode}</span></span>
+                              )}
+                              {(payment.hyp_brand || payment.hyp_l4digit) && (
+                                <span>
+                                  כרטיס: {payment.hyp_brand || ''}{payment.hyp_l4digit ? ` **** ${payment.hyp_l4digit}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <Button
                           variant="ghost"
