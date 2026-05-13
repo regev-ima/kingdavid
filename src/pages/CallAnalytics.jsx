@@ -230,7 +230,7 @@ export default function CallAnalytics() {
       header: 'הקלטה',
       accessor: 'recording_url',
       render: (log) => (
-        <RecordingPlayer callLogId={log.id} hasRecording={!!log.recording_url} />
+        <RecordingPlayer recordingUrl={log.recording_url} hasRecording={!!log.recording_url} />
       )
     }
   ];
