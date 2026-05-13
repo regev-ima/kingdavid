@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
+const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -96,6 +97,13 @@ function App() {
             <Route path="/login" element={
               <Suspense fallback={<PageLoadingFallback />}>
                 <LazyLogin />
+              </Suspense>
+            } />
+            {/* HypReturn renders inside Hyp's payment iframe; skip the
+                authenticated Layout chrome since it'd be useless at 500px. */}
+            <Route path="/HypReturn" element={
+              <Suspense fallback={null}>
+                <LazyHypReturn />
               </Suspense>
             } />
             <Route path="*" element={<AuthenticatedApp />} />

@@ -42,6 +42,8 @@ jobs:
             fetchSheetsColumns
             getDashboardStats
             getVoicecenterCredentials
+            hyp-sign
+            hyp-notify
             importCustomersFromSheets
             importLeadsFromSheets
             importSalesTasksFromSheets

@@ -60,6 +60,7 @@ import ExtraCharges from './pages/ExtraCharges';
 import Factory from './pages/Factory';
 import FactoryDashboard from './pages/FactoryDashboard';
 import Finance from './pages/Finance';
+import HypReturn from './pages/HypReturn';
 import Inventory from './pages/Inventory';
 import LandingPages from './pages/LandingPages';
 import LeadDetails from './pages/LeadDetails';
@@ -102,6 +103,7 @@ export const PAGES = {
     "Factory": Factory,
     "FactoryDashboard": FactoryDashboard,
     "Finance": Finance,
+    "HypReturn": HypReturn,
     "Inventory": Inventory,
     "LandingPages": LandingPages,
     "LeadDetails": LeadDetails,
