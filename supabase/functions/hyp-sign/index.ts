@@ -42,15 +42,32 @@ Deno.serve(async (req) => {
     const supabase = createServiceClient();
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('id, order_number, customer_name, customer_phone, customer_email, total, amount_paid')
+      .select('*')
       .eq('id', orderId)
-      .single();
+      .maybeSingle();
 
-    if (orderError || !order) {
-      return Response.json({ error: 'Order not found' }, { status: 404, headers: corsHeaders });
+    if (orderError) {
+      console.error('hyp-sign order lookup error', { orderId, orderError });
+      return Response.json(
+        { error: `Order lookup failed: ${orderError.message || orderError.code}` },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+    if (!order) {
+      return Response.json(
+        { error: `Order not found (id=${orderId})` },
+        { status: 404, headers: corsHeaders },
+      );
     }
 
-    const remaining = Math.max(0, Number(order.total ?? 0) - Number(order.amount_paid ?? 0));
+    // amount_paid may not be a stored column on every schema — fall back to
+    // summing the payments JSONB array, which is the source of truth in this
+    // codebase (see calcPaymentStatus in OrderDetails).
+    const paymentsSum = Array.isArray(order.payments)
+      ? order.payments.reduce((sum: number, p: any) => sum + (Number(p?.amount) || 0), 0)
+      : 0;
+    const amountPaid = Number(order.amount_paid ?? paymentsSum) || 0;
+    const remaining = Math.max(0, Number(order.total ?? 0) - amountPaid);
     if (requestedAmount > remaining + 0.001) {
       return Response.json(
         { error: `Amount exceeds remaining balance (${remaining})` },
