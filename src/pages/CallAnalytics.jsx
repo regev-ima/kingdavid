@@ -190,7 +190,11 @@ export default function CallAnalytics() {
       accessor: 'lead_id',
       render: (log) => {
         const lead = leads.find(l => l.id === log.lead_id);
-        return lead?.full_name || '-';
+        if (lead?.full_name) return lead.full_name;
+        if (log.phone_number) {
+          return <span className="text-muted-foreground" dir="ltr">{log.phone_number}</span>;
+        }
+        return '-';
       }
     },
     {
