@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       const fromDate = thirtyMinutesAgo.toISOString().slice(0, 19);
       const toDate = now.toISOString().slice(0, 19);
 
-      const apiUrl = new URL('https://46.224.211.60/hub/cdr/');
+      const apiUrl = new URL('http://46.224.211.60/hub/cdr/');
       apiUrl.searchParams.append('code', voicenterApiKey);
       apiUrl.searchParams.append('fromdate', fromDate);
       apiUrl.searchParams.append('todate', toDate);
@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
           const fromDate = startOfToday.toISOString().slice(0, 19);
           const toDate = now.toISOString().slice(0, 19);
 
-          const statusUrl = `https://46.224.211.60/hub/cdr/?callid=${callLog.call_id}&code=${voicenterApiKey}&fromdate=${fromDate}&todate=${toDate}`;
+          const statusUrl = `http://46.224.211.60/hub/cdr/?callid=${callLog.call_id}&code=${voicenterApiKey}&fromdate=${fromDate}&todate=${toDate}`;
 
           const statusResponse = await fetch(statusUrl, {
             method: 'GET',
