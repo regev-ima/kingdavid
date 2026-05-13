@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, X } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 
-export default function VoiceCenterCallPopup({ sdkLoaded = true }) {
+export default function VoiceCenterCallPopup() {
   const [sdk, setSdk] = useState(null);
   const [currentCall, setCurrentCall] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -30,7 +30,6 @@ export default function VoiceCenterCallPopup({ sdkLoaded = true }) {
   });
 
   useEffect(() => {
-    if (!sdkLoaded) return;
     if (!credentialsData?.hasCredentials) return;
     if (!window.EventsSDK) {
       console.error('VoiceCenter EventsSDK not loaded');
@@ -61,7 +60,7 @@ export default function VoiceCenterCallPopup({ sdkLoaded = true }) {
         newSdk.disconnect();
       }
     };
-  }, [credentialsData, sdkLoaded]);
+  }, [credentialsData]);
 
   const handleExtensionEvent = async (response) => {
     const eventData = response.data;
@@ -114,53 +113,9 @@ export default function VoiceCenterCallPopup({ sdkLoaded = true }) {
     setIsOpen(false);
   };
 
-  const simulateCall = async (direction) => {
-    const phoneNumber = direction === 'incoming' ? '0501234567' : '0529876543';
-    setCurrentCall({
-      direction,
-      phoneNumber,
-      reason: 'ringing',
-      callId: `debug-${Date.now()}`,
-      extension: credentialsData?.extension || 'debug',
-    });
-    setIsOpen(true);
-    try {
-      const leads = await base44.entities.Lead.filter({ phone: phoneNumber });
-      setLeadData(leads.length > 0 ? leads[0] : null);
-    } catch {
-      setLeadData(null);
-    }
-  };
-
-  const debugEnabled =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).has('debug');
-
-  const debugPanel = debugEnabled ? (
-    <div
-      style={{
-        position: 'fixed',
-        bottom: 16,
-        insetInlineEnd: 16,
-        zIndex: 9999,
-        display: 'flex',
-        gap: 8,
-      }}
-    >
-      <Button size="sm" variant="secondary" onClick={() => simulateCall('incoming')}>
-        סמלץ שיחה נכנסת
-      </Button>
-      <Button size="sm" variant="secondary" onClick={() => simulateCall('outgoing')}>
-        סמלץ שיחה יוצאת
-      </Button>
-    </div>
-  ) : null;
-
-  if (!currentCall) return debugPanel;
+  if (!currentCall) return null;
 
   return (
-    <>
-    {debugPanel}
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -252,6 +207,5 @@ export default function VoiceCenterCallPopup({ sdkLoaded = true }) {
         </div>
       </DialogContent>
     </Dialog>
-    </>
   );
 }
