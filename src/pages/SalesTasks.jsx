@@ -68,7 +68,7 @@ export default function SalesTasks() {
   const [dateFilter, setDateFilter] = useState('');
   const [showStale, setShowStale] = useState(false);
   const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
-  const [viewMode, setViewMode] = useState('list'); // 'list' | 'day' | 'week'
+  const [viewMode, setViewMode] = useState('week'); // 'list' | 'day' | 'week'
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);

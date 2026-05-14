@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
@@ -6,12 +6,33 @@ import { ChevronUp, ChevronDown, Calendar as CalendarIcon } from "lucide-react";
 import { format } from "@/lib/safe-date-fns";
 import { he } from "date-fns/locale";
 
+// Auto-commits internal state to the parent on every change so the value
+// is always live — closing the dialog by clicking outside, hitting Esc,
+// or pressing the close button never silently drops the user's pick.
+// Earlier behaviour required pressing an explicit "Select" button before
+// onChange fired, which produced "saved my date but it didn't update"
+// surprises when the user closed the dialog any other way.
 export function DateTimePicker({ value, onChange, placeholder = "בחר תאריך ושעה" }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(value ? new Date(value) : new Date());
-  const [hours, setHours] = useState(value ? new Date(value).getHours() : 9);
-  const [minutes, setMinutes] = useState(value ? new Date(value).getMinutes() : 0);
 
+  // Sensible default: if no value (or a past value), point at the next
+  // upcoming hour today instead of dragging a stale month forward.
+  const computeDefaultDate = () => {
+    if (!value) {
+      const d = new Date();
+      d.setMinutes(0, 0, 0);
+      d.setHours(d.getHours() + 1);
+      return d;
+    }
+    return new Date(value);
+  };
+
+  const [selectedDate, setSelectedDate] = useState(computeDefaultDate);
+  const [hours, setHours] = useState(() => computeDefaultDate().getHours());
+  const [minutes, setMinutes] = useState(() => computeDefaultDate().getMinutes());
+
+  // Keep internal state in sync when the parent provides a new value
+  // (e.g. switching tasks).
   useEffect(() => {
     if (value) {
       const date = new Date(value);
@@ -21,18 +42,30 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
     }
   }, [value]);
 
-  const handleSelect = () => {
-    const newDate = new Date(selectedDate);
-    newDate.setHours(hours);
-    newDate.setMinutes(minutes);
-    onChange(newDate.toISOString());
-    setIsOpen(false);
+  const commit = (date, h, m) => {
+    const next = new Date(date);
+    next.setHours(h, m, 0, 0);
+    onChange(next.toISOString());
   };
 
-  const incrementHours = () => setHours((h) => (h + 1) % 24);
-  const decrementHours = () => setHours((h) => (h - 1 + 24) % 24);
-  const incrementMinutes = () => setMinutes((m) => (m + 1) % 60);
-  const decrementMinutes = () => setMinutes((m) => (m - 1 + 60) % 60);
+  const setDate = (d) => {
+    if (!d) return;
+    setSelectedDate(d);
+    commit(d, hours, minutes);
+  };
+  const setHoursAndCommit = (h) => {
+    setHours(h);
+    commit(selectedDate, h, minutes);
+  };
+  const setMinutesAndCommit = (m) => {
+    setMinutes(m);
+    commit(selectedDate, hours, m);
+  };
+
+  const incrementHours = () => setHoursAndCommit((hours + 1) % 24);
+  const decrementHours = () => setHoursAndCommit((hours - 1 + 24) % 24);
+  const incrementMinutes = () => setMinutesAndCommit((minutes + 1) % 60);
+  const decrementMinutes = () => setMinutesAndCommit((minutes - 1 + 60) % 60);
 
   return (
     <>
@@ -47,20 +80,20 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
       </Button>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-[580px] bg-white" dir="ltr">
+        <DialogContent className="max-w-[580px] bg-white" dir="rtl">
           <div className="border-b border-border pb-3 mb-4">
             <h2 className="text-center text-lg font-semibold text-foreground">
-              Select Date and Time
+              בחירת תאריך ושעה
             </h2>
           </div>
 
-          <div className="flex gap-6">
+          <div className="flex gap-6" dir="ltr">
             {/* Time Picker */}
             <div className="flex flex-col items-center justify-between py-2 px-4 min-w-[180px]">
               <div className="text-sm text-muted-foreground mb-4 text-center">
-                {format(selectedDate, 'dd-MM-yyyy')} {String(hours).padStart(2, '0')}:{String(minutes).padStart(2, '0')}
+                {format(selectedDate, 'dd.MM.yyyy')} {String(hours).padStart(2, '0')}:{String(minutes).padStart(2, '0')}
               </div>
-              
+
               <div className="flex items-center gap-3 mb-6">
                 {/* Hours */}
                 <div className="flex flex-col items-center">
@@ -107,12 +140,8 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
                 </div>
               </div>
 
-              <Button
-                type="button"
-                onClick={handleSelect}
-                className="px-10 py-2"
-              >
-                Select
+              <Button type="button" onClick={() => setIsOpen(false)} className="px-10 py-2">
+                סיום
               </Button>
             </div>
 
@@ -124,7 +153,7 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
               <Calendar
                 mode="single"
                 selected={selectedDate}
-                onSelect={(date) => date && setSelectedDate(date)}
+                onSelect={setDate}
                 initialFocus
                 className="rounded-lg border-0"
               />
