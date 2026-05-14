@@ -25,10 +25,14 @@ export default function HypReturn() {
     return null;
   };
 
-  const status = get('status') || 'unknown';
-  const orderId = get('order') || '';
   const ccode = get('CCode') || '';
   const transactionId = get('Id') || get('TransId') || get('TransactionId') || '';
+  // Hyp drops the query string we put on Succesful/Failed and replaces it
+  // with its own params, so the `status` we set in hyp-sign never makes it
+  // back. Compute it from CCode instead — Hyp's source of truth.
+  const explicitStatus = get('status');
+  const status = explicitStatus || (ccode === '0' ? 'success' : ccode ? 'failed' : 'unknown');
+  const orderId = get('order') || '';
   const allParams = useMemo(() => Object.fromEntries(params.entries()), [params]);
 
   useEffect(() => {
