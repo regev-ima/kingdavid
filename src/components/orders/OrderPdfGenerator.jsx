@@ -327,7 +327,7 @@ const OrderPdfGenerator = async (orderData) => {
             </div>
             <div class="cell remaining">
               <span class="k">${remaining > 0 ? "יתרה לתשלום" : "שולם במלואו"}</span>
-              <span class="v">${money(remaining)}</span>
+              <span class="v">${remaining > 0 ? money(remaining) : "✓"}</span>
             </div>
           </div>
           ${
