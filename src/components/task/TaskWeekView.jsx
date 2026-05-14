@@ -8,7 +8,6 @@ import { ChevronRight, ChevronLeft, Phone, MessageCircle, Mail, Users, FileText,
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { base44 } from '@/api/base44Client';
-import StatusBadge from '@/components/shared/StatusBadge';
 import { isAssignmentTask } from '@/lib/salesTaskWorkbench';
 
 const HOURS_START = 7;
@@ -17,6 +16,21 @@ const TASK_TYPE_ICONS = {
   call: Phone, whatsapp: MessageCircle, email: Mail, meeting: Users,
   quote_preparation: FileText, followup: RefreshCw, assignment: ClipboardList, other: Paperclip,
 };
+
+// Colour map per task type so reps can tell a call from a meeting at a glance
+// in both the grid and the sidebar. Keep contrast on the colored stripe high
+// enough to remain readable on the lavender hover state.
+const TASK_TYPE_STYLES = {
+  call:              { stripe: 'bg-blue-500',    bg: 'bg-blue-50',    icon: 'text-blue-600',    label: 'שיחה' },
+  whatsapp:          { stripe: 'bg-emerald-500', bg: 'bg-emerald-50', icon: 'text-emerald-600', label: 'וואטסאפ' },
+  email:             { stripe: 'bg-amber-500',   bg: 'bg-amber-50',   icon: 'text-amber-600',   label: 'מייל' },
+  meeting:           { stripe: 'bg-violet-500',  bg: 'bg-violet-50',  icon: 'text-violet-600',  label: 'פגישה' },
+  quote_preparation: { stripe: 'bg-indigo-500',  bg: 'bg-indigo-50',  icon: 'text-indigo-600',  label: 'הצעת מחיר' },
+  followup:          { stripe: 'bg-orange-500',  bg: 'bg-orange-50',  icon: 'text-orange-600',  label: 'מעקב' },
+  assignment:        { stripe: 'bg-slate-500',   bg: 'bg-slate-50',   icon: 'text-slate-600',   label: 'הקצאה' },
+  other:             { stripe: 'bg-gray-400',    bg: 'bg-gray-50',    icon: 'text-gray-600',    label: 'אחר' },
+};
+const getTaskTypeStyle = (type) => TASK_TYPE_STYLES[type] || TASK_TYPE_STYLES.other;
 
 // Working week is Sun→Thu (5 days, skip Friday/Saturday). Picking a "week
 // start" lets us compute weekOffset relative to today consistently.
@@ -109,6 +123,7 @@ function bucketTasks(tasks) {
 
 function TaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
   const Icon = TASK_TYPE_ICONS[task.task_type] || Paperclip;
+  const style = getTaskTypeStyle(task.task_type);
   const leadName = lead?.full_name || task?.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד';
   const phone = lead?.phone;
 
@@ -117,20 +132,19 @@ function TaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
       ref={dragProvided?.innerRef}
       {...(dragProvided?.draggableProps || {})}
       onClick={onClick}
-      className={`group flex items-center gap-1.5 rounded-md border bg-card px-1.5 py-1 text-[11px] shadow-sm transition-all cursor-pointer
+      title={style.label}
+      className={`group relative flex items-center gap-1.5 overflow-hidden rounded-md border ${style.bg} pe-1.5 ps-2 py-1 text-[11px] shadow-sm transition-all cursor-pointer
         ${isDragging ? 'shadow-lg ring-2 ring-primary' : 'hover:border-primary/40 hover:shadow-md'}`}
     >
+      <span className={`absolute inset-y-0 right-0 w-1 ${style.stripe}`} aria-hidden />
       <span
         {...(dragProvided?.dragHandleProps || {})}
         className="text-muted-foreground/50 group-hover:text-muted-foreground"
       >
         <GripVertical className="h-3 w-3" />
       </span>
-      <Icon className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+      <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${style.icon}`} />
       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{leadName}</span>
-      {(task.status || lead?.status) && (
-        <StatusBadge status={task.status || lead?.status} className="text-[9px] py-0 px-1" />
-      )}
       {phone && (
         <button
           type="button"
@@ -554,6 +568,7 @@ function BacklogSidebar({ tab, onTabChange, counts, tasks, leadsById, onTaskClic
 
 function SidebarTaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
   const Icon = TASK_TYPE_ICONS[task.task_type] || Paperclip;
+  const style = getTaskTypeStyle(task.task_type);
   const leadName = lead?.full_name || task?.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד';
   const phone = lead?.phone;
   const due = task.due_date ? new Date(task.due_date) : null;
@@ -567,23 +582,22 @@ function SidebarTaskCard({ task, lead, isDragging, dragProvided, onClick, onCall
       ref={dragProvided?.innerRef}
       {...(dragProvided?.draggableProps || {})}
       onClick={onClick}
-      className={`group flex items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-xs shadow-sm transition-all cursor-pointer
+      title={style.label}
+      className={`group relative flex items-center gap-1.5 overflow-hidden rounded-md border ${style.bg} pe-2 ps-3 py-1.5 text-xs shadow-sm transition-all cursor-pointer
         ${isDragging ? 'shadow-lg ring-2 ring-primary' : 'hover:border-primary/40 hover:shadow-md'}`}
     >
+      <span className={`absolute inset-y-0 right-0 w-1 ${style.stripe}`} aria-hidden />
       <span
         {...(dragProvided?.dragHandleProps || {})}
         className="text-muted-foreground/50 group-hover:text-muted-foreground"
       >
         <GripVertical className="h-3.5 w-3.5" />
       </span>
-      <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+      <Icon className={`h-4 w-4 flex-shrink-0 ${style.icon}`} />
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium text-foreground">{leadName}</div>
         <div className="truncate text-[10px] text-muted-foreground tabular-nums">{dueLabel}</div>
       </div>
-      {(task.status || lead?.status) && (
-        <StatusBadge status={task.status || lead?.status} className="text-[9px] py-0 px-1" />
-      )}
       {phone && (
         <button
           type="button"
