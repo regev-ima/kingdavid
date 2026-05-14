@@ -553,6 +553,22 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
 
             {/* שיוך נציג הועבר למעלה - מתחת להודעה האדומה */}
 
+            {/* מועד המשימה — תאריך + שעה */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                {editingTask.task_type === 'meeting'
+                  ? 'מועד הפגישה'
+                  : editingTask.task_type === 'call'
+                  ? 'מתי להתקשר?'
+                  : 'מועד יעד'}
+              </Label>
+              <DateTimePicker
+                value={editingTask.due_date || ''}
+                onChange={(value) => setEditingTask({ ...editingTask, due_date: value })}
+                placeholder="בחר תאריך ושעה"
+              />
+            </div>
+
             {/* סטטוס משימה - hidden, managed automatically by status flows */}
             <div className="space-y-2 hidden">
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">סטטוס משימה</Label>
