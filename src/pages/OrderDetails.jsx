@@ -39,7 +39,8 @@ import {
   Wallet,
   Headphones,
   CreditCard,
-  Download
+  Download,
+  CheckCircle2
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -438,8 +439,10 @@ export default function OrderDetails() {
                       <span className={remaining > 0 ? 'text-red-600 font-medium' : 'text-emerald-600 font-medium'}>
                         {remaining > 0 ? 'יתרה לתשלום' : 'שולם במלואו'}
                       </span>
-                      <span className={`font-bold ${remaining > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                        ₪{Math.abs(remaining).toLocaleString()}
+                      <span className={`font-bold flex items-center gap-1 ${remaining > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {remaining > 0
+                          ? `₪${Math.abs(remaining).toLocaleString()}`
+                          : <CheckCircle2 className="h-4 w-4" />}
                       </span>
                     </div>
                     {/* Progress bar */}
