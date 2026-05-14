@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone } from "lucide-react";
+import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle } from "lucide-react";
+import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { useToast } from "@/components/ui/use-toast";
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
@@ -323,8 +324,69 @@ export default function Leads() {
     },
   });
 
-  // All filtering is now server-side
-  const filteredLeads = leads;
+  // Fetch the open task per loaded lead so we can show next-action info
+  // and re-sort by overdue/today first. Limited to lead ids we already
+  // have in memory (server-side leads query is paginated), so the
+  // additional request stays small.
+  const leadIds = React.useMemo(() => leads.map((l) => l.id).filter(Boolean), [leads]);
+  const { data: leadActiveTasks = [] } = useQuery({
+    queryKey: ['leads-active-tasks', leadIds.join(',')],
+    queryFn: async () => {
+      if (leadIds.length === 0) return [];
+      return base44.entities.SalesTask.filter(
+        { lead_id: { '$in': leadIds }, task_status: 'not_completed' },
+        'due_date',
+        leadIds.length * 5, // a few active tasks per lead at most
+      );
+    },
+    enabled: leadIds.length > 0,
+    staleTime: 30000,
+  });
+
+  // Keep only the earliest active task per lead (= "next action").
+  const nextActiveTaskByLead = React.useMemo(() => {
+    const map = new Map();
+    for (const t of leadActiveTasks) {
+      if (!t?.lead_id) continue;
+      const existing = map.get(t.lead_id);
+      if (!existing) { map.set(t.lead_id, t); continue; }
+      const a = t.due_date ? new Date(t.due_date).getTime() : Infinity;
+      const b = existing.due_date ? new Date(existing.due_date).getTime() : Infinity;
+      if (a < b) map.set(t.lead_id, t);
+    }
+    return map;
+  }, [leadActiveTasks]);
+
+  // Re-sort the loaded leads so overdue tasks bubble up. Within each
+  // bucket, earlier due dates win.
+  const filteredLeads = React.useMemo(() => {
+    const bucketOf = (lead) => {
+      const t = nextActiveTaskByLead.get(lead.id);
+      if (!t?.due_date) return 3; // no task → bottom bucket
+      const due = new Date(t.due_date).getTime();
+      const now = Date.now();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+      const todayEnd = new Date(todayStart.getTime() + dayMs);
+      if (due < todayStart.getTime()) return 0; // overdue
+      if (due < todayEnd.getTime()) return 1;   // today
+      return 2;                                  // future
+    };
+    return [...leads].sort((a, b) => {
+      const ba = bucketOf(a);
+      const bb = bucketOf(b);
+      if (ba !== bb) return ba - bb;
+      const ta = nextActiveTaskByLead.get(a.id);
+      const tb = nextActiveTaskByLead.get(b.id);
+      if (ta?.due_date && tb?.due_date) {
+        return new Date(ta.due_date).getTime() - new Date(tb.due_date).getTime();
+      }
+      return 0;
+    });
+  }, [leads, nextActiveTaskByLead]);
+
+  // Drives the "מה קרה?" dialog after the rep clicks a quick action.
+  const [completingTask, setCompletingTask] = React.useState(null);
 
 
   const handleSelectAll = (checked) => {
@@ -555,6 +617,59 @@ export default function Leads() {
         );
       },
       width: '190px'
+    },
+    {
+      header: 'משימה הבאה',
+      accessor: 'next_active_task',
+      width: '230px',
+      render: (row) => {
+        const task = nextActiveTaskByLead.get(row.id);
+        if (!task) {
+          return <span className="text-xs text-muted-foreground/70">—</span>;
+        }
+        const TYPE_META = {
+          call: { Icon: Phone, label: 'שיחה', color: 'text-blue-600' },
+          meeting: { Icon: Users, label: 'פגישה', color: 'text-amber-600' },
+          quote_preparation: { Icon: FileText, label: 'הצעת מחיר', color: 'text-primary' },
+          close_order: { Icon: ShoppingCart, label: 'סגירת הזמנה', color: 'text-emerald-600' },
+          whatsapp: { Icon: MessageCircle, label: 'וואטסאפ', color: 'text-green-600' },
+        };
+        const meta = TYPE_META[task.task_type] || { Icon: Phone, label: task.task_type, color: 'text-muted-foreground' };
+        const due = task.due_date ? new Date(task.due_date) : null;
+        const now = new Date();
+        const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+        const todayEnd = new Date(todayStart.getTime() + 86400000);
+        const overdueDays = due && due.getTime() < todayStart.getTime()
+          ? Math.floor((todayStart.getTime() - due.getTime()) / 86400000)
+          : 0;
+        const isToday = due && due.getTime() >= todayStart.getTime() && due.getTime() < todayEnd.getTime();
+        let timeLabel = '—';
+        if (due) {
+          if (overdueDays > 0) timeLabel = `בפיגור ${overdueDays} ימים`;
+          else if (isToday) timeLabel = `היום ${formatInTimeZone(due, 'Asia/Jerusalem', 'HH:mm')}`;
+          else timeLabel = formatInTimeZone(due, 'Asia/Jerusalem', 'dd/MM HH:mm');
+        }
+        const handleQuickComplete = (e) => {
+          e.stopPropagation();
+          setCompletingTask({ ...task, rep1: task.rep1 || row.rep1, rep2: task.rep2 || row.rep2 });
+        };
+        return (
+          <div onClick={(e) => e.stopPropagation()} className="space-y-1">
+            <div className="flex items-center gap-1.5 text-sm">
+              <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+              <span className="font-medium">{meta.label}</span>
+            </div>
+            <div className={`text-xs font-medium whitespace-nowrap ${
+              overdueDays > 0 ? 'text-red-600' : isToday ? 'text-amber-600' : 'text-muted-foreground'
+            }`}>
+              {timeLabel}
+            </div>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={handleQuickComplete}>
+              סיים משימה
+            </Button>
+          </div>
+        );
+      },
     },
     {
       header: 'תאריך',
@@ -846,6 +961,14 @@ export default function Leads() {
       <ImportFromSheets
         isOpen={showImportFromSheets}
         onClose={() => setShowImportFromSheets(false)}
+      />
+
+      {/* Complete-task dialog opened by the row's "סיים משימה" button */}
+      <CompleteTaskDialog
+        isOpen={!!completingTask}
+        task={completingTask}
+        onClose={() => setCompletingTask(null)}
+        onCompleted={() => queryClient.invalidateQueries({ queryKey: ['leads-active-tasks'] })}
       />
     </div>
   );
