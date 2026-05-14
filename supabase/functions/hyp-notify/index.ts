@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
     const supabase = createServiceClient();
     const { data: order, error: orderErr } = await supabase
       .from('orders')
-      .select('id, total, payments, amount_paid')
+      .select('id, total, payments')
       .eq('id', orderId)
       .single();
 
@@ -157,14 +157,14 @@ Deno.serve(async (req) => {
     };
 
     const updatedPayments = [...existingPayments, paymentEntry];
-    const totalPaid = updatedPayments.reduce((sum, p) => sum + (Number((p as any)?.amount) || 0), 0);
     const newStatus = calcPaymentStatus(updatedPayments, Number(order.total ?? 0));
 
+    // amount_paid is not a real column on this schema (derived from the
+    // payments JSONB by the UI). Writing it PostgREST-errors out.
     const { error: updateErr } = await supabase
       .from('orders')
       .update({
         payments: updatedPayments,
-        amount_paid: totalPaid,
         payment_status: newStatus,
       })
       .eq('id', order.id);

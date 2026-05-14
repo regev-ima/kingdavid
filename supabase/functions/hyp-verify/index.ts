@@ -214,14 +214,15 @@ Deno.serve(async (req) => {
     };
 
     const updatedPayments = [...existingPayments, paymentEntry];
-    const totalPaid = updatedPayments.reduce((sum, p) => sum + (Number((p as any)?.amount) || 0), 0);
     const newStatus = calcPaymentStatus(updatedPayments, Number(order.total ?? 0));
 
+    // amount_paid is not a real column on this schema — it's derived from
+    // the payments JSONB by the UI's calcPaymentStatus. Writing to it
+    // PostgREST-errors with "Could not find the 'amount_paid' column".
     const { error: updateErr } = await supabase
       .from('orders')
       .update({
         payments: updatedPayments,
-        amount_paid: totalPaid,
         payment_status: newStatus,
       })
       .eq('id', order.id);
