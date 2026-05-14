@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { addDays, format, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
-import { ChevronRight, ChevronLeft, Phone, MessageCircle, Mail, Users, FileText, RefreshCw, ClipboardList, Paperclip, Clock, GripVertical, CalendarDays } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Phone, MessageCircle, Mail, Users, FileText, RefreshCw, ClipboardList, Paperclip, Clock, GripVertical, CalendarDays, PanelRightOpen, PanelRightClose, AlertCircle, Hourglass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { base44 } from '@/api/base44Client';
@@ -24,6 +24,32 @@ function getWeekStart(refDate) {
   const d = startOfDay(refDate);
   const day = d.getDay(); // 0=Sun
   return addDays(d, -day);
+}
+
+// Sidebar feed: not-completed tasks the user owns, regardless of which week
+// is shown in the grid. Split in memory by today / overdue / upcoming so we
+// only hit the server once per (user, isAdmin) pair instead of three times.
+function useBacklogTasks({ isAdmin, userEmail, enabled }) {
+  return useQuery({
+    queryKey: ['salesTasks-backlog', isAdmin ? 'admin' : userEmail || 'anon'],
+    enabled,
+    staleTime: 30_000,
+    queryFn: async () => {
+      let q = base44.supabase
+        .from('sales_tasks')
+        .select('*')
+        .eq('task_status', 'not_completed')
+        .neq('task_type', 'assignment')
+        .order('due_date', { ascending: true })
+        .limit(500);
+      if (!isAdmin && userEmail) {
+        q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
 }
 
 function useWeekTasks({ weekStart, isAdmin, userEmail, enabled }) {
@@ -124,6 +150,8 @@ function TaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
 
 export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState('today'); // 'today' | 'overdue' | 'upcoming'
   const queryClient = useQueryClient();
   const userEmail = effectiveUser?.email;
 
@@ -170,6 +198,62 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
 
   const buckets = useMemo(() => bucketTasks(visibleTasks), [visibleTasks]);
 
+  // Sidebar feed lives outside the week filter so reps can drag tomorrow's /
+  // last week's open tasks into the visible grid.
+  const { data: backlog = [] } = useBacklogTasks({
+    isAdmin,
+    userEmail,
+    enabled: !!effectiveUser && sidebarOpen,
+  });
+  const backlogLeadIds = useMemo(
+    () => [...new Set(backlog.map((t) => t.lead_id).filter((id) => id && !leadsById[id]))],
+    [backlog, leadsById],
+  );
+  const { data: backlogLeadsRaw = [] } = useQuery({
+    queryKey: ['week-view-backlog-leads', backlogLeadIds.join(',')],
+    enabled: backlogLeadIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await base44.supabase
+        .from('leads')
+        .select('id, full_name, phone, status')
+        .in('id', backlogLeadIds);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+  const allLeadsById = useMemo(
+    () => ({ ...leadsById, ...Object.fromEntries(backlogLeadsRaw.map((l) => [l.id, l])) }),
+    [leadsById, backlogLeadsRaw],
+  );
+
+  // Split the backlog into the three tabs. "today" = same calendar day,
+  // "overdue" = strictly before today and still not_completed, "upcoming" =
+  // anything in the future (incl. undated tasks pinned to a day's midnight).
+  const backlogTabs = useMemo(() => {
+    const now = new Date();
+    const startToday = startOfDay(now).getTime();
+    const endToday = endOfDay(now).getTime();
+    const today = [];
+    const overdue = [];
+    const upcoming = [];
+    for (const t of backlog) {
+      if (!t.due_date) {
+        upcoming.push(t);
+        continue;
+      }
+      const ts = new Date(t.due_date).getTime();
+      if (ts < startToday) overdue.push(t);
+      else if (ts <= endToday) today.push(t);
+      else upcoming.push(t);
+    }
+    // Overdue: oldest first so the most-late items surface at the top.
+    overdue.sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+    return { today, overdue, upcoming };
+  }, [backlog]);
+
+  const sidebarTasks = backlogTabs[sidebarTab] || [];
+
   const handleCall = async (phone) => {
     if (!phone) return;
     try {
@@ -193,6 +277,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
       queryClient.invalidateQueries({ queryKey: ['salesTasks-day'] });
       queryClient.invalidateQueries({ queryKey: ['salesTasks-counts'] });
       queryClient.invalidateQueries({ queryKey: ['salesTasks-tab'] });
+      queryClient.invalidateQueries({ queryKey: ['salesTasks-backlog'] });
       toast.success('המשימה תוזמנה מחדש');
     },
     onError: (err) => toast.error(`תזמון נכשל: ${err?.message || 'שגיאה'}`),
@@ -239,13 +324,24 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
             {format(weekStart, 'd/M', { locale: he })} – {format(addDays(weekStart, 4), 'd/M', { locale: he })} · {totalCount} משימות
           </span>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSidebarOpen((v) => !v)}
+          className="h-8"
+          title={sidebarOpen ? 'הסתר רשימת משימות' : 'הצג רשימת משימות'}
+        >
+          {sidebarOpen ? <PanelRightClose className="h-4 w-4 me-1" /> : <PanelRightOpen className="h-4 w-4 me-1" />}
+          {sidebarOpen ? 'הסתר רשימה' : 'הצג רשימה'}
+        </Button>
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">טוען...</div>
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
-          <Card className="overflow-hidden">
+        <div className="flex gap-3 items-start">
+          <Card className="overflow-hidden flex-1 min-w-0">
             {/* Header row: empty corner + 5 day labels */}
             <div className="grid grid-cols-[56px_repeat(5,_1fr)] border-b border-border bg-muted/40 text-xs font-bold text-foreground">
               <div />
@@ -289,7 +385,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                             {(dragProvided, dragSnapshot) => (
                               <TaskCard
                                 task={task}
-                                lead={leadsById[task.lead_id]}
+                                lead={allLeadsById[task.lead_id]}
                                 dragProvided={dragProvided}
                                 isDragging={dragSnapshot.isDragging}
                                 onClick={() => onTaskClick?.(task)}
@@ -340,7 +436,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                                 {(dragProvided, dragSnapshot) => (
                                   <TaskCard
                                     task={task}
-                                    lead={leadsById[task.lead_id]}
+                                    lead={allLeadsById[task.lead_id]}
                                     dragProvided={dragProvided}
                                     isDragging={dragSnapshot.isDragging}
                                     onClick={() => onTaskClick?.(task)}
@@ -359,7 +455,147 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
               );
             })}
           </Card>
+
+          {sidebarOpen && (
+            <BacklogSidebar
+              tab={sidebarTab}
+              onTabChange={setSidebarTab}
+              counts={{
+                today: backlogTabs.today.length,
+                overdue: backlogTabs.overdue.length,
+                upcoming: backlogTabs.upcoming.length,
+              }}
+              tasks={sidebarTasks}
+              leadsById={allLeadsById}
+              onTaskClick={onTaskClick}
+              onCall={handleCall}
+            />
+          )}
+        </div>
         </DragDropContext>
+      )}
+    </div>
+  );
+}
+
+const SIDEBAR_TABS = [
+  { id: 'today', label: 'היום', Icon: CalendarDays },
+  { id: 'overdue', label: 'באיחור', Icon: AlertCircle },
+  { id: 'upcoming', label: 'ממתין', Icon: Hourglass },
+];
+
+function BacklogSidebar({ tab, onTabChange, counts, tasks, leadsById, onTaskClick, onCall }) {
+  return (
+    <Card className="w-72 flex-shrink-0 flex flex-col max-h-[calc(100vh-220px)]" dir="rtl">
+      <div className="flex border-b border-border">
+        {SIDEBAR_TABS.map(({ id, label, Icon }) => {
+          const isActive = tab === id;
+          const count = counts[id] || 0;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onTabChange(id)}
+              className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-xs font-semibold transition-colors ${
+                isActive
+                  ? 'bg-primary/10 text-primary border-b-2 border-primary'
+                  : 'text-muted-foreground hover:bg-muted/50'
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              <span>{label}</span>
+              <span
+                className={`rounded-full px-1.5 text-[10px] font-bold leading-tight ${
+                  isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <Droppable droppableId="sidebar-backlog" isDropDisabled={true}>
+        {(dropProvided) => (
+          <div
+            ref={dropProvided.innerRef}
+            {...dropProvided.droppableProps}
+            className="flex-1 overflow-y-auto p-2 space-y-1.5"
+          >
+            {tasks.length === 0 ? (
+              <div className="text-center text-xs text-muted-foreground py-6">
+                {tab === 'today' && 'אין משימות להיום'}
+                {tab === 'overdue' && 'אין משימות באיחור'}
+                {tab === 'upcoming' && 'אין משימות ממתינות'}
+              </div>
+            ) : (
+              tasks.map((task, idx) => (
+                <Draggable key={task.id} draggableId={task.id} index={idx}>
+                  {(dragProvided, dragSnapshot) => (
+                    <SidebarTaskCard
+                      task={task}
+                      lead={leadsById[task.lead_id]}
+                      dragProvided={dragProvided}
+                      isDragging={dragSnapshot.isDragging}
+                      onClick={() => onTaskClick?.(task)}
+                      onCall={onCall}
+                    />
+                  )}
+                </Draggable>
+              ))
+            )}
+            {dropProvided.placeholder}
+          </div>
+        )}
+      </Droppable>
+    </Card>
+  );
+}
+
+function SidebarTaskCard({ task, lead, isDragging, dragProvided, onClick, onCall }) {
+  const Icon = TASK_TYPE_ICONS[task.task_type] || Paperclip;
+  const leadName = lead?.full_name || task?.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד';
+  const phone = lead?.phone;
+  const due = task.due_date ? new Date(task.due_date) : null;
+  const dueLabel = due
+    ? (due.getHours() === 0 && due.getMinutes() === 0
+        ? format(due, 'dd/MM', { locale: he })
+        : format(due, 'dd/MM HH:mm', { locale: he }))
+    : 'ללא תאריך';
+  return (
+    <div
+      ref={dragProvided?.innerRef}
+      {...(dragProvided?.draggableProps || {})}
+      onClick={onClick}
+      className={`group flex items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-xs shadow-sm transition-all cursor-pointer
+        ${isDragging ? 'shadow-lg ring-2 ring-primary' : 'hover:border-primary/40 hover:shadow-md'}`}
+    >
+      <span
+        {...(dragProvided?.dragHandleProps || {})}
+        className="text-muted-foreground/50 group-hover:text-muted-foreground"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </span>
+      <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-medium text-foreground">{leadName}</div>
+        <div className="truncate text-[10px] text-muted-foreground tabular-nums">{dueLabel}</div>
+      </div>
+      {(task.status || lead?.status) && (
+        <StatusBadge status={task.status || lead?.status} className="text-[9px] py-0 px-1" />
+      )}
+      {phone && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCall?.(phone);
+          }}
+          className="flex-shrink-0 rounded-full bg-green-100 hover:bg-green-200 active:bg-green-300 p-1 text-green-700 transition-colors"
+          title={`התקשר ל-${phone}`}
+        >
+          <Phone className="h-3 w-3" />
+        </button>
       )}
     </div>
   );
