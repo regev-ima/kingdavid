@@ -60,6 +60,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
           const verifyResult = await base44.functions.invoke('hyp-verify', {
             order_id: order?.id,
             transaction_id: data.transaction_id,
+            hyp_params: data.all_params || null,
           });
           console.log('[HypPaymentDialog] hyp-verify result:', verifyResult);
           if (verifyResult?.verified) {
