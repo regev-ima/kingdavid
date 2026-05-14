@@ -104,6 +104,7 @@ const OrderPdfGenerator = async (orderData) => {
         PAYMENT_METHOD_LABELS[p?.method] || esc(p?.method || "—");
       const date = p?.date ? format(new Date(p.date), "dd/MM/yyyy") : "—";
       const refParts = [];
+      if (p?.hyp_transaction_id) refParts.push(`מס׳ עסקה ${esc(p.hyp_transaction_id)}`);
       if (p?.hyp_acode) refParts.push(`אישור ${esc(p.hyp_acode)}`);
       if (p?.hyp_brand || p?.hyp_l4digit) {
         refParts.push(
