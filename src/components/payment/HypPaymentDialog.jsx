@@ -51,6 +51,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.source !== 'hyp-return') return;
+      console.log('[HypPaymentDialog] received from HypReturn:', data);
       lastResultRef.current = data;
       if (data.status === 'success' && data.transaction_id) {
         // Browser said success — confirm with Hyp's own VERIFY endpoint
@@ -60,6 +61,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             order_id: order?.id,
             transaction_id: data.transaction_id,
           });
+          console.log('[HypPaymentDialog] hyp-verify result:', verifyResult);
           if (verifyResult?.verified) {
             onPaid?.({ ...data, ...verifyResult });
           } else {
@@ -68,8 +70,16 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             );
           }
         } catch (err) {
+          console.error('[HypPaymentDialog] hyp-verify error:', err);
           setError(`אימות מול Hyp נכשל: ${err?.message || err}`);
         }
+      } else if (data.status === 'success') {
+        // Hyp said success but didn't give us an Id — can't verify or record.
+        setError(
+          `Hyp דיווח על הצלחה אך לא החזיר Id של העסקה. פרמטרים שהתקבלו: ${
+            JSON.stringify(data.all_params || {})
+          }`,
+        );
       } else {
         setError(`Hyp דחה את התשלום (CCode=${data.ccode || '-'})`);
       }

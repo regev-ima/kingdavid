@@ -12,12 +12,28 @@ export default function HypReturn() {
     [],
   );
 
-  const status = params.get('status') || 'unknown';
-  const orderId = params.get('order') || '';
-  const ccode = params.get('CCode') || '';
-  const transactionId = params.get('Id') || '';
+  // Hyp uses inconsistent casing across deployments — read the key in any
+  // case so we don't miss the transaction Id just because it's `id` or
+  // `TransId` instead of `Id`.
+  const get = (name) => {
+    const direct = params.get(name);
+    if (direct !== null) return direct;
+    const target = name.toLowerCase();
+    for (const [k, v] of params.entries()) {
+      if (k.toLowerCase() === target) return v;
+    }
+    return null;
+  };
+
+  const status = get('status') || 'unknown';
+  const orderId = get('order') || '';
+  const ccode = get('CCode') || '';
+  const transactionId = get('Id') || get('TransId') || get('TransactionId') || '';
+  const allParams = useMemo(() => Object.fromEntries(params.entries()), [params]);
 
   useEffect(() => {
+    // Keep a copy of everything for support / devtools.
+    console.log('[HypReturn] params from Hyp:', allParams);
     if (typeof window === 'undefined' || !window.parent || window.parent === window) {
       return;
     }
@@ -29,6 +45,7 @@ export default function HypReturn() {
           order: orderId,
           ccode,
           transaction_id: transactionId,
+          all_params: allParams,
         },
         window.location.origin,
       );
@@ -36,7 +53,7 @@ export default function HypReturn() {
       // ignore — parent on a different origin would block postMessage, but
       // our flow keeps everything on the same origin.
     }
-  }, [status, orderId, ccode, transactionId]);
+  }, [status, orderId, ccode, transactionId, allParams]);
 
   const isSuccess = status === 'success';
 
@@ -61,6 +78,14 @@ export default function HypReturn() {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           <p className="text-sm text-muted-foreground">מעבד תשלום…</p>
         </>
+      )}
+      {Object.keys(allParams).length > 0 && (
+        <details className="mt-3 text-[10px] text-muted-foreground/70 max-w-xs">
+          <summary className="cursor-pointer">פרטי טכניים</summary>
+          <pre className="text-start whitespace-pre-wrap break-all" dir="ltr">
+            {JSON.stringify(allParams, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );
