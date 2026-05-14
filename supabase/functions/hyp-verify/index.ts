@@ -167,13 +167,20 @@ Deno.serve(async (req) => {
     const supabase = createServiceClient();
     const { data: order, error: orderErr } = await supabase
       .from('orders')
-      .select('id, total, payments, amount_paid')
+      .select('*')
       .eq('id', orderId)
       .maybeSingle();
 
-    if (orderErr || !order) {
+    if (orderErr) {
+      console.error('hyp-verify order lookup error', { orderId, orderErr });
       return Response.json(
-        { error: 'Order not found' },
+        { error: `Order lookup failed: ${orderErr.message || orderErr.code}` },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+    if (!order) {
+      return Response.json(
+        { error: `Order not found (id=${orderId})` },
         { status: 404, headers: corsHeaders },
       );
     }
