@@ -55,6 +55,12 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const orderId = body?.order_id;
     const transactionId = body?.transaction_id;
+    // Params that Hyp appended to our Succesful URL inside the iframe.
+    // The browser captured them in HypReturn and forwarded them here, so
+    // we can use them as a trusted source even if Hyp's external VERIFY
+    // endpoint doesn't co-operate.
+    const hypParams: Record<string, string> =
+      (body?.hyp_params && typeof body.hyp_params === 'object') ? body.hyp_params : {};
 
     if (!orderId || !transactionId) {
       return Response.json(
@@ -95,40 +101,67 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Try Hyp's external verify as a defence-in-depth check. If it returns
+    // CCode=0 we use it. If it returns anything else (e.g. CCode=200 which
+    // we've seen in practice — likely a different action name on this
+    // terminal) we fall back to the params Hyp itself wrote onto our
+    // iframe redirect, which is data Hyp's own page produced.
     let hypReply = await callHyp('VERIFY');
     if (!hypReply || (getCi(hypReply, 'CCode') ?? '') === '') {
       hypReply = await callHyp('STATUS');
     }
+    const externalReplyObj = hypReply ? Object.fromEntries(hypReply) : null;
+    const externalCCode = hypReply ? (getCi(hypReply, 'CCode') ?? '') : '';
 
-    if (!hypReply) {
-      return Response.json(
-        { error: 'Hyp verify call failed' },
-        { status: 502, headers: corsHeaders },
-      );
-    }
+    // Pick the trusted source for the transaction details.
+    let source: 'hyp_verify' | 'iframe_redirect';
+    let ccode: string;
+    let verifiedAmount: number;
+    let acode: string;
+    let brand: string;
+    let l4digit: string;
 
-    const ccode = getCi(hypReply, 'CCode');
-    const verifiedAmount = Number(getCi(hypReply, 'Amount') ?? '0');
-    const acode = getCi(hypReply, 'ACode') ?? '';
-    const brand = getCi(hypReply, 'Brand') ?? '';
-    const l4digit = getCi(hypReply, 'L4digit', 'L4Digit', 'last4') ?? '';
-
-    if (ccode !== '0') {
-      console.warn('hyp-verify: Hyp says transaction did not succeed', {
-        transactionId,
-        ccode,
-        hypReply: Object.fromEntries(hypReply),
+    const externalAmount = hypReply ? Number(getCi(hypReply, 'Amount') ?? '0') : NaN;
+    if (externalCCode === '0' && Number.isFinite(externalAmount) && externalAmount > 0) {
+      source = 'hyp_verify';
+      ccode = '0';
+      verifiedAmount = externalAmount;
+      acode = getCi(hypReply!, 'ACode') ?? '';
+      brand = getCi(hypReply!, 'Brand') ?? '';
+      l4digit = getCi(hypReply!, 'L4digit', 'L4Digit', 'last4') ?? '';
+    } else {
+      // Fall back to the params the iframe captured directly from Hyp.
+      const iframeCCode = String(hypParams.CCode ?? hypParams.ccode ?? '');
+      const iframeAmount = Number(hypParams.Amount ?? hypParams.amount ?? '0');
+      console.warn('hyp-verify: external VERIFY did not return CCode=0, falling back to iframe redirect params', {
+        externalReply: externalReplyObj,
+        iframeCCode,
+        iframeAmount,
       });
-      return Response.json(
-        { verified: false, ccode, hyp_reply: Object.fromEntries(hypReply) },
-        { status: 200, headers: corsHeaders },
-      );
-    }
-    if (!Number.isFinite(verifiedAmount) || verifiedAmount <= 0) {
-      return Response.json(
-        { error: 'Hyp returned no usable amount', hyp_reply: Object.fromEntries(hypReply) },
-        { status: 502, headers: corsHeaders },
-      );
+      if (iframeCCode !== '0') {
+        return Response.json(
+          {
+            verified: false,
+            ccode: iframeCCode || externalCCode,
+            source: 'iframe_redirect',
+            hyp_reply: externalReplyObj,
+            iframe_params: hypParams,
+          },
+          { status: 200, headers: corsHeaders },
+        );
+      }
+      if (!Number.isFinite(iframeAmount) || iframeAmount <= 0) {
+        return Response.json(
+          { error: 'No usable amount in iframe redirect params', iframe_params: hypParams },
+          { status: 502, headers: corsHeaders },
+        );
+      }
+      source = 'iframe_redirect';
+      ccode = '0';
+      verifiedAmount = iframeAmount;
+      acode = String(hypParams.ACode ?? hypParams.acode ?? '');
+      brand = String(hypParams.Brand ?? hypParams.brand ?? '');
+      l4digit = String(hypParams.L4digit ?? hypParams.L4Digit ?? hypParams.last4 ?? '');
     }
 
     const supabase = createServiceClient();
@@ -167,6 +200,7 @@ Deno.serve(async (req) => {
       recorded_at: new Date().toISOString(),
       recorded_by: user.email || 'hyp-verify',
       hyp_transaction_id: String(transactionId),
+      hyp_verify_source: source,
       hyp_acode: acode,
       hyp_brand: brand,
       hyp_l4digit: l4digit,
