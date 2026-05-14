@@ -123,9 +123,11 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
     mutationFn: ({ id, data }) => base44.entities.SalesTask.update(id, data),
     onSuccess: () => {
       invalidateTaskCaches(queryClient);
+      toast.success('המשימה נשמרה');
       onClose();
     },
     onError: (err) => {
+      console.error('SalesTask update failed', err);
       toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     },
   });
@@ -144,48 +146,70 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
   const handleUpdateTask = async () => {
     if (!editingTask) return;
     if (!editingTask.task_type) { setValidationError('יש לבחור סוג משימה'); return; }
-    if (!editingTask.task_status) { setValidationError('יש לבחור סטטוס משימה'); return; }
-    
+    // task_status is hidden from the form and managed by the automation
+    // flows. Default it to 'not_completed' if somehow missing so a save
+    // never silently no-ops behind a hidden validation error.
+    const task_status = editingTask.task_status || 'not_completed';
+
     // Validate next task if form is showing
     if (showNextTaskForm) {
       if (!nextTask.task_type) { setValidationError('יש לבחור סוג למשימה הבאה'); return; }
       if (!nextTask.due_date && !nextTask.due_hours) { setValidationError('יש לבחור תאריך יעד או טווח למשימה הבאה'); return; }
     }
-    
+
     setValidationError('');
 
-    // Always update the Lead entity status to match
-    const leadId = editingTask.lead_id;
-    if (editingTask.status && leadId && editingTask.status !== originalLeadStatus) {
-      await base44.entities.Lead.update(leadId, { status: editingTask.status });
-      queryClient.invalidateQueries({ queryKey: ['lead'] });
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    try {
+      // Always update the Lead entity status to match
+      const leadId = editingTask.lead_id;
+      if (editingTask.status && leadId && editingTask.status !== originalLeadStatus) {
+        await base44.entities.Lead.update(leadId, { status: editingTask.status });
+        queryClient.invalidateQueries({ queryKey: ['lead'] });
+        queryClient.invalidateQueries({ queryKey: ['leads'] });
+      }
+
+      // Create next task if requested
+      if (showNextTaskForm) {
+        const dueDate = nextTask.due_hours
+          ? addHours(new Date(), nextTask.due_hours).toISOString()
+          : nextTask.due_date;
+
+        await base44.entities.SalesTask.create({
+          lead_id: leadId,
+          rep1: editingTask.rep1,
+          rep2: editingTask.rep2,
+          task_type: nextTask.task_type,
+          task_status: 'not_completed',
+          status: editingTask.status,
+          due_date: dueDate,
+          work_start_date: new Date().toISOString(),
+          summary: nextTask.summary || '',
+        });
+      }
+    } catch (err) {
+      console.error('Pre-save step failed', err);
+      toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+      return;
     }
 
-    // Create next task if requested
-    if (showNextTaskForm) {
-      const dueDate = nextTask.due_hours
-        ? addHours(new Date(), nextTask.due_hours).toISOString()
-        : nextTask.due_date;
-
-      await base44.entities.SalesTask.create({
-        lead_id: leadId,
-        rep1: editingTask.rep1,
-        rep2: editingTask.rep2,
-        task_type: nextTask.task_type,
-        task_status: 'not_completed',
-        status: editingTask.status,
-        due_date: dueDate,
-        work_start_date: new Date().toISOString(),
-        summary: nextTask.summary || '',
-      });
+    // Whitelist editable columns. Spreading the entire editingTask used
+    // to drag along read-only / computed columns (e.g. created_date,
+    // updated_date, id mirrors, JOIN snapshots) which sometimes made
+    // PostgREST reject the PATCH — and the rejection looked to the
+    // user like "clicking save did nothing".
+    const updateData = {
+      task_type: editingTask.task_type,
+      task_status,
+      due_date: editingTask.due_date ?? null,
+      work_start_date: editingTask.work_start_date ?? null,
+      summary: editingTask.summary ?? null,
+      status: editingTask.status ?? null,
+      manual_created_date: editingTask.manual_created_date ?? null,
+    };
+    if (isAdmin) {
+      updateData.rep1 = editingTask.rep1 ?? null;
+      updateData.rep2 = editingTask.rep2 ?? null;
     }
-
-    // Extract only SalesTask fields — exclude the nested `lead` object
-    const { lead, id, ...taskFields } = editingTask;
-    const updateData = isAdmin
-      ? taskFields
-      : { ...taskFields, rep1: task?.rep1 || taskFields.rep1, rep2: task?.rep2 || taskFields.rep2 };
 
     updateTaskMutation.mutate({ id: editingTask.id, data: updateData });
   };
