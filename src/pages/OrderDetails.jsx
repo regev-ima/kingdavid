@@ -38,13 +38,15 @@ import {
   Trash2,
   Wallet,
   Headphones,
-  CreditCard
+  CreditCard,
+  Download
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrder, isAdmin as isAdminUser } from '@/lib/rbac';
 import NewServiceTicketDialog from '@/components/support/NewServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
+import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -136,6 +138,20 @@ export default function OrderDetails() {
     },
   });
 
+  const generatePdfMutation = useMutation({
+    mutationFn: async () => {
+      const pdfUrl = await OrderPdfGenerator(order);
+      return pdfUrl;
+    },
+    onSuccess: (pdfUrl) => {
+      window.open(pdfUrl, '_blank');
+      toast.success('PDF נוצר בהצלחה');
+    },
+    onError: (err) => {
+      toast.error(`יצירת PDF נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+    },
+  });
+
   const isAdmin = isAdminUser(effectiveUser);
 
   if (isLoadingUser || isLoading) {
@@ -209,6 +225,18 @@ export default function OrderDetails() {
           <Button variant="outline" onClick={handleWhatsApp} className="[&_svg]:text-green-600">
             <MessageCircle className="h-4 w-4 me-2" />
             WhatsApp
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => generatePdfMutation.mutate()}
+            disabled={generatePdfMutation.isPending}
+          >
+            {generatePdfMutation.isPending ? (
+              <Loader2 className="h-4 w-4 me-2 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4 me-2" />
+            )}
+            הורד PDF
           </Button>
           <Button variant="outline" onClick={() => setShowServiceTicket(true)}>
             <Headphones className="h-4 w-4 me-2" />
