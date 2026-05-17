@@ -126,7 +126,11 @@ Deno.serve(async (req) => {
     const fromEmail = Deno.env.get('FROM_EMAIL') || 'King David CRM <noreply@kingdavid.co.il>';
 
     if (!resendApiKey) {
-      console.log(`[EMAIL] To: ${to}, Subject: ${subject}`);
+      // Dev / unconfigured mode — still log that an email would have
+      // gone out, but redact recipient + subject so log readers don't
+      // get a free customer-correspondence audit trail.
+      const recipientDomain = (typeof to === 'string' ? to.split('@')[1] : null) || 'unknown';
+      console.log(`[EMAIL] (RESEND_API_KEY not set) would send to *@${recipientDomain}, subject length=${(subject || '').length}`);
       return Response.json({ success: true, message: 'Email logged (RESEND_API_KEY not configured)', to, subject }, { headers: corsHeaders });
     }
 

@@ -179,7 +179,10 @@ async function handleDirectInvite(body: Record<string, any>) {
   const fullName: string | undefined = body.full_name || body.fullName;
   const redirectTo: string | undefined = body.redirectTo;
 
-  console.log('[directInvite] start', { email, role, hasFullName: !!fullName, redirectTo });
+  // Don't log the raw email — anyone with Supabase log access shouldn't
+  // see an audit trail of who got invited. The domain alone is enough
+  // for routing diagnostics (gmail vs custom-domain etc.).
+  console.log('[directInvite] start', { emailDomain: email?.split('@')[1] || null, role, hasFullName: !!fullName, redirectTo: !!redirectTo });
 
   if (!email) {
     return Response.json({ error: 'Missing required field: email' }, { status: 400, headers: corsHeaders });
@@ -242,7 +245,10 @@ async function handleDirectInvite(body: Record<string, any>) {
 
   if (inviteError) {
     const msg = inviteError.message?.toLowerCase() || '';
+    // Error message only — no email. The category (already-registered
+    // vs SMTP failure) is enough to debug without exposing the address.
     console.log('[directInvite] inviteUserByEmail error', { message: inviteError.message });
+    // (no PII here — `inviteError.message` is supabase-canned, not user content)
     if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
       alreadyRegistered = true;
       // Link the existing auth user to the profile so future logins resolve.
@@ -253,6 +259,7 @@ async function handleDirectInvite(body: Record<string, any>) {
       emailError = inviteError.message;
     }
   } else {
+    // authUserId is a UUID, not PII — fine to keep for cross-referencing.
     console.log('[directInvite] invite email sent', { authUserId });
   }
 
@@ -264,7 +271,8 @@ async function handleDirectInvite(body: Record<string, any>) {
     }
   }
 
-  console.log('[directInvite] done', { email, role, emailSent, alreadyRegistered, emailError });
+  // Same redaction policy as the [start] log line above: domain only.
+  console.log('[directInvite] done', { emailDomain: email?.split('@')[1] || null, role, emailSent, alreadyRegistered, emailError });
 
   // Profile exists either way. Surface email outcome so the UI can message correctly.
   const message = emailSent

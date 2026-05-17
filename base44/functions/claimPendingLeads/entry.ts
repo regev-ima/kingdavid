@@ -29,19 +29,23 @@ async function fetchWithRetry(fn, retries = 3, backoff = 5000) {
 async function processSync(base44, email) {
   let updatedLeads = 0;
   let updatedTasks = 0;
+  // Domain-only label used in info logs throughout the sync — gives
+  // enough context to group lines per rep without writing the full
+  // email (or the customer's name) into shared log storage.
+  const emailDomain = (typeof email === 'string' ? email.split('@')[1] : null) || 'unknown';
 
-  console.info(`\n🚀 Starting sync for rep: ${email}`);
+  console.info(`\n🚀 Starting sync for rep *@${emailDomain}`);
 
   try {
     // 1. טיפול בלידים
-    const leads = await fetchWithRetry(() => 
+    const leads = await fetchWithRetry(() =>
       base44.asServiceRole.entities.Lead.filter({
         pending_rep_email: email
       }, '', BATCH_SIZE)
     );
 
     if (leads && leads.length > 0) {
-      console.info(`📂 Found ${leads.length} leads waiting for ${email}`);
+      console.info(`📂 Found ${leads.length} leads waiting for *@${emailDomain}`);
       for (const lead of leads) {
         const success = await fetchWithRetry(async () => {
           await base44.asServiceRole.entities.Lead.update(lead.id, {
@@ -53,18 +57,18 @@ async function processSync(base44, email) {
 
         if (success) {
           updatedLeads++;
-          const leadName = lead.first_name ? `${lead.first_name} ${lead.last_name || ''}` : (lead.name || lead.email || lead.id);
-          console.info(`   ✅ [LEAD] Assigned: "${leadName}" to ${email}`);
+          // Lead id only — no customer name / phone in the log.
+          console.info(`   ✅ [LEAD] Assigned id=${lead.id} to *@${emailDomain}`);
           await delay(REQUEST_GAP);
         }
       }
     } else {
-      console.info(`∅ No pending leads found for ${email}`);
+      console.info(`∅ No pending leads found for *@${emailDomain}`);
     }
 
     // 2. טיפול במשימות (אם נשאר מקום במנה)
     if (updatedLeads < BATCH_SIZE) {
-      const tasks = await fetchWithRetry(() => 
+      const tasks = await fetchWithRetry(() =>
         base44.asServiceRole.entities.SalesTask.filter({
           pending_rep_email: email
         }, '', BATCH_SIZE - updatedLeads)
@@ -81,7 +85,7 @@ async function processSync(base44, email) {
 
         if (success) {
           updatedTasks++;
-          console.info(`   ✅ [TASK] Assigned task ID ${task.id} to ${email}`);
+          console.info(`   ✅ [TASK] Assigned task id=${task.id} to *@${emailDomain}`);
           await delay(REQUEST_GAP);
         }
       }
@@ -90,7 +94,8 @@ async function processSync(base44, email) {
     console.info(`🏁 Batch finished. Updated: ${updatedLeads} leads, ${updatedTasks} tasks.`);
     return { updatedLeads, updatedTasks, hasMore: (updatedLeads + updatedTasks) >= BATCH_SIZE };
   } catch (err) {
-    console.error(`❌ Sync failed for ${email}:`, err.message);
+    // Domain-only (same redaction as the info logs above).
+    console.error(`❌ Sync failed for *@${emailDomain}:`, err.message);
     throw err;
   }
 }

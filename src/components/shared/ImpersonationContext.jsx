@@ -46,13 +46,28 @@ export const ImpersonationProvider = ({ children }) => {
 
   const getEffectiveUser = (currentUser) => {
     if (impersonatedRep && originalAdmin) {
+      // When admin impersonates a rep, we need to surface the rep's
+      // *actual* role so route gating works (a bookkeeper sees her
+      // workspace, a factory user sees the factory dashboard, etc.).
+      // Previously this branch coerced everything to 'user' /
+      // 'factory_user', which silently downgraded bookkeepers to sales
+      // reps and made the user think the role wasn't saved at all.
       const isFactoryImpersonation =
         impersonatedRep.department === 'factory' ||
         impersonatedRep.role === 'factory_user';
+      const isBookkeeperImpersonation =
+        impersonatedRep.department === 'bookkeeping' ||
+        impersonatedRep.role === 'bookkeeper';
+
+      const effectiveRole = isFactoryImpersonation
+        ? 'factory_user'
+        : isBookkeeperImpersonation
+          ? 'bookkeeper'
+          : 'user';
 
       return {
         ...impersonatedRep,
-        role: isFactoryImpersonation ? 'factory_user' : 'user',
+        role: effectiveRole,
         _originalRole: impersonatedRep.role,
         _isImpersonated: true,
         _originalAdmin: originalAdmin
