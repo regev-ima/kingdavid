@@ -48,6 +48,7 @@
  *
  * The mainPage value must match a key in the PAGES object exactly.
  */
+import Bookkeeping from './pages/Bookkeeping';
 import BulkUpdate from './pages/BulkUpdate';
 import CallAnalytics from './pages/CallAnalytics';
 import ClubSignups from './pages/ClubSignups';
@@ -91,6 +92,7 @@ import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
+    "Bookkeeping": Bookkeeping,
     "BulkUpdate": BulkUpdate,
     "CallAnalytics": CallAnalytics,
     "ClubSignups": ClubSignups,

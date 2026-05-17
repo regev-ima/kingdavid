@@ -33,6 +33,7 @@ import {
   Crown,
   Phone,
   CheckSquare,
+  Receipt,
 
   RefreshCw
 } from "lucide-react";
@@ -67,6 +68,7 @@ const navigationByRole = {
     { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown },
     { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },
     { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: DollarSign },
+    { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
     { name: 'עדכון המוני', href: 'BulkUpdate', icon: RefreshCw },
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
@@ -88,7 +90,12 @@ const navigationByRole = {
     { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
     { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
-  ]
+  ],
+  bookkeeper: [
+    // מנהלת חשבונות sees only the invoicing area — no leads, no
+    // production, no settings. Single page, three tabs inside it.
+    { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
+  ],
 };
 
 function LayoutContent({ children, currentPageName }) {
@@ -183,8 +190,10 @@ function LayoutContent({ children, currentPageName }) {
   let userRole = 'sales_user';
   if (effectiveUser?.role === 'admin') {
     userRole = 'admin';
-  } else if (effectiveUser?.department === 'factory') {
+  } else if (effectiveUser?.department === 'factory' || effectiveUser?.role === 'factory_user') {
     userRole = 'factory_user';
+  } else if (effectiveUser?.department === 'bookkeeping' || effectiveUser?.role === 'bookkeeper') {
+    userRole = 'bookkeeper';
   } else {
     userRole = 'sales_user';
   }

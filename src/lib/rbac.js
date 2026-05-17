@@ -2,6 +2,11 @@ export const USER_SCOPES = {
   ADMIN: 'admin',
   SALES: 'sales_user',
   FACTORY: 'factory_user',
+  // מנהלת חשבונות: narrow scope that only sees the invoicing area
+  // (orders waiting for / with an issued invoice). Detected via
+  // `role === 'bookkeeper'` OR `department === 'bookkeeping'` so
+  // existing user records can be flagged either way.
+  BOOKKEEPER: 'bookkeeper',
   ANON: 'anonymous',
 };
 
@@ -9,6 +14,7 @@ export function getUserScope(user) {
   if (!user) return USER_SCOPES.ANON;
   if (user.role === 'admin') return USER_SCOPES.ADMIN;
   if (user.department === 'factory' || user.role === 'factory_user') return USER_SCOPES.FACTORY;
+  if (user.department === 'bookkeeping' || user.role === 'bookkeeper') return USER_SCOPES.BOOKKEEPER;
   return USER_SCOPES.SALES;
 }
 
@@ -24,12 +30,20 @@ export function isFactoryUser(user) {
   return getUserScope(user) === USER_SCOPES.FACTORY;
 }
 
+export function isBookkeeperUser(user) {
+  return getUserScope(user) === USER_SCOPES.BOOKKEEPER;
+}
+
 export function canAccessSalesWorkspace(user) {
   return isAdmin(user) || isSalesUser(user);
 }
 
 export function canAccessFactoryWorkspace(user) {
   return isAdmin(user) || isFactoryUser(user);
+}
+
+export function canAccessBookkeepingWorkspace(user) {
+  return isAdmin(user) || isBookkeeperUser(user);
 }
 
 export function canAccessSupportWorkspace(user) {
