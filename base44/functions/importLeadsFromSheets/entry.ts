@@ -61,20 +61,50 @@ Deno.serve(async (req) => {
     const leads = [];
     const errors = [];
 
+    // Whitelist of lead fields a sheet import is allowed to set. A
+    // poisoned sheet (or a curious admin building a mapping) otherwise
+    // sprouts fields like `is_hidden`, `internal_score`, `commission_rate`,
+    // or even role-affecting flags via mass-assignment. Stick to the
+    // columns the import UI actually offers.
+    const ALLOWED_LEAD_FIELDS = new Set([
+      'unique_id',
+      'full_name',
+      'phone',
+      'email',
+      'city',
+      'address',
+      'source',
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_content',
+      'utm_term',
+      'click_id',
+      'landing_page',
+      'rep1',
+      'rep2',
+      'pending_rep_email',
+      'notes',
+      'preferred_product',
+      'budget',
+      'status',
+    ]);
+
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       const leadData = {};
 
       // Map columns to lead fields
       for (const [leadField, columnIndex] of Object.entries(mapping)) {
+        if (!ALLOWED_LEAD_FIELDS.has(leadField)) continue;
         if (columnIndex !== null && columnIndex !== undefined && row[columnIndex]) {
           let value = row[columnIndex];
-          
+
           // Trim whitespace
           if (typeof value === 'string') {
             value = value.trim();
           }
-          
+
           leadData[leadField] = value;
         }
       }

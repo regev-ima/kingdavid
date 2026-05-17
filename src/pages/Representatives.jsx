@@ -134,8 +134,25 @@ export default function Representatives() {
 
   const updateRepMutation = useMutation({
     mutationFn: ({ repId, data }) => base44.entities.User.update(repId, data),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       queryClient.invalidateQueries(['reps']);
+      // Confirm the specific change so the admin knows it stuck — role
+      // and similar inline edits used to look silent on success, which
+      // was indistinguishable from silent failure.
+      if (variables?.data?.role !== undefined) {
+        toast.success('התפקיד עודכן');
+      } else {
+        toast.success('הנציג עודכן');
+      }
+    },
+    onError: (err) => {
+      // The role / extension / commission updates were failing silently
+      // when the users table rejected the PATCH (RLS, missing column,
+      // wrong field type). Surface the raw error so the admin can see
+      // what's wrong instead of "the dropdown does nothing".
+      const message = err?.message || String(err) || 'שגיאה לא ידועה';
+      toast.error(`עדכון נכשל: ${message}`, { duration: 8000 });
+      console.error('Representative update failed', err);
     },
   });
 
