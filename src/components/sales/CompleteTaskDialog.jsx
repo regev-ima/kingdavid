@@ -40,6 +40,7 @@ import {
   TONE_CLASSES,
   resolveOutcomeStatus,
 } from '@/lib/taskCompletionFlow';
+import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 
 // The "מה קרה?" dialog. Opens after a rep clicks "סיים משימה" on a task.
 // Flow:
@@ -163,6 +164,18 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
           : notes.trim();
       }
       await base44.entities.SalesTask.update(task.id, taskUpdate);
+
+      // 2.5 If this completion closes the deal, sweep every other open
+      // task for the lead — they're obsolete the moment the deal is in.
+      // Pass exceptTaskId = current task.id so we don't race the update
+      // we just made above.
+      if (
+        task.lead_id &&
+        nextLeadStatus === 'deal_closed' &&
+        currentLeadStatus !== 'deal_closed'
+      ) {
+        await cancelOpenTasksForClosedDeal(task.lead_id, task.id);
+      }
 
       // 3. Create the rep-configured follow-up task (when enabled).
       if (followUpEnabled && followUpDueDate) {
