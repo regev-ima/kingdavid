@@ -14,6 +14,7 @@ import {
 import DataTable from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Copy, Receipt, Send, Search, FileCheck2, Clock } from 'lucide-react';
+import { toast } from 'sonner';
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessBookkeepingWorkspace } from '@/lib/rbac';
@@ -87,6 +88,26 @@ export default function Bookkeeping() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookkeeping-orders'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+    onError: (err) => {
+      // The toggle used to fail silently when the orders table didn't
+      // yet have the invoice_* columns — supabase rejected the PATCH
+      // and nothing surfaced. Surface it now with a useful Hebrew
+      // message + the raw error for the console so the diagnosis is
+      // immediate rather than "the button is broken".
+      const message = err?.message || String(err) || 'שגיאה לא ידועה';
+      const missingColumn =
+        /column .*(invoice_issued|invoice_number|invoice_issued_at).*does not exist/i.test(message) ||
+        /could not find the (.*) column/i.test(message);
+      if (missingColumn) {
+        toast.error(
+          'הטבלה עוד לא עודכנה — צריך להריץ את המיגרציה האחרונה (invoice_issued וכו׳)',
+          { duration: 8000 },
+        );
+      } else {
+        toast.error(`שמירה נכשלה: ${message}`);
+      }
+      console.error('Bookkeeping order update failed', err);
     },
   });
 
