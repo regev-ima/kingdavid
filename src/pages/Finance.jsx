@@ -18,7 +18,7 @@ import { format, isWithinInterval } from '@/lib/safe-date-fns';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canAccessAdminOnly } from '@/lib/rbac';
+import { canAccessAdminOnly, canViewFinanceWorkspace } from '@/lib/rbac';
 import { getDateRange, getPreviousDateRange } from '@/utils/dateRange';
 import { formatCurrency } from '@/utils/currency';
 import { toCsv, downloadCsv } from '@/utils/csv';
@@ -62,29 +62,33 @@ export default function Finance() {
   const [reportRep, setReportRep] = useState('all');
   const queryClient = useQueryClient();
   const isAdmin = canAccessAdminOnly(effectiveUser);
+  // Bookkeeper gets read-only access — she needs the same financial
+  // context to chase invoices, but mutations (approve commission /
+  // mark paid) stay admin-only via the isAdmin gate on the buttons.
+  const canViewFinance = canViewFinanceWorkspace(effectiveUser);
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: () => base44.entities.Order.list('-created_date'),
-    enabled: isAdmin,
+    enabled: canViewFinance,
   });
 
   const { data: commissions = [] } = useQuery({
     queryKey: ['commissions'],
     queryFn: () => base44.entities.Commission.list('-created_date'),
-    enabled: isAdmin,
+    enabled: canViewFinance,
   });
 
   const { data: returns = [] } = useQuery({
     queryKey: ['returns'],
     queryFn: () => base44.entities.ReturnRequest.list('-created_date'),
-    enabled: isAdmin,
+    enabled: canViewFinance,
   });
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn: () => base44.entities.User.list(),
-    enabled: isAdmin,
+    enabled: canViewFinance,
   });
 
   const approveCommissionMutation = useMutation({
@@ -343,7 +347,10 @@ export default function Finance() {
       header: 'פעולות',
       render: (row) => (
         <div className="flex items-center gap-2">
-          {row.status === 'pending' && (
+          {/* Approve / mark-paid actions are admin-only — the bookkeeper
+              sees the same commissions table for context but doesn't
+              gate financial decisions. */}
+          {isAdmin && row.status === 'pending' && (
             <Button
               size="sm"
               variant="outline"
@@ -360,14 +367,14 @@ export default function Finance() {
               אשר
             </Button>
           )}
-          {row.status === 'approved' && (
+          {isAdmin && row.status === 'approved' && (
             <Button
               size="sm"
               variant="outline"
               className="text-primary border-primary/20 hover:bg-primary/5"
               onClick={(e) => {
                 e.stopPropagation();
-                markCommissionPaidMutation.mutate({ 
+                markCommissionPaidMutation.mutate({
                   commissionId: row.id,
                   paidDate: new Date().toISOString().split('T')[0]
                 });
@@ -385,7 +392,7 @@ export default function Finance() {
     return <div className="text-center py-12">טוען...</div>;
   }
 
-  if (!isAdmin) {
+  if (!canViewFinance) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">אין לך הרשאה לגשת למסך פיננסים</p>

@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canAccessSalesWorkspace, filterOrdersForUser } from '@/lib/rbac';
+import { canViewOrdersWorkspace, filterOrdersForUser } from '@/lib/rbac';
 
 const filterOptions = [
   {
@@ -50,7 +50,7 @@ export default function Orders() {
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'in_production', 'ready_delivery'].includes(initialTab) ? initialTab : 'all');
   const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' });
-  const canAccessSales = canAccessSalesWorkspace(effectiveUser);
+  const canAccessSales = canViewOrdersWorkspace(effectiveUser);
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ['orders'],

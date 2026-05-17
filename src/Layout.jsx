@@ -92,9 +92,14 @@ const navigationByRole = {
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],
   bookkeeper: [
-    // מנהלת חשבונות sees only the invoicing area — no leads, no
-    // production, no settings. Single page, three tabs inside it.
+    // מנהלת חשבונות sees the invoicing flow + the surrounding
+    // financial context she needs to chase invoices: the finance
+    // dashboard, all orders, and all quotes. Everything else
+    // (leads, production, settings, marketing) is hidden.
     { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
+    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
+    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
+    { name: 'כספים', href: 'Finance', icon: DollarSign },
   ],
 };
 
