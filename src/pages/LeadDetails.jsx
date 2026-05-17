@@ -216,10 +216,17 @@ export default function LeadDetails() {
 
   const updateLeadMutation = useMutation({
     mutationFn: (data) => base44.entities.Lead.update(leadId, data),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       queryClient.invalidateQueries(['lead', leadId]);
       queryClient.invalidateQueries(['leadActivityLogs', leadId]);
       setIsEditing(false);
+      // When the rep flips the lead to "נסגרה עסקה" via the status
+      // dropdown, jump straight into the New Order form with the
+      // customer pre-filled — same flow as the CompleteTaskDialog
+      // 'deal_closed' outcome, just reached from a different surface.
+      if (variables?.status === 'deal_closed' && lead?.status !== 'deal_closed') {
+        navigate(`${createPageUrl('NewOrder')}?leadId=${leadId}`);
+      }
     }
   });
 

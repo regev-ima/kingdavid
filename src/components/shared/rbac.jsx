@@ -48,7 +48,13 @@ function taskBelongsToUser(user, task, leadsById) {
 export function filterSalesTasksForUser(user, allTasks, leadsById) {
   if (!user || !allTasks) return [];
   if (user.role === 'admin') return allTasks;
-  return allTasks.filter((task) => taskBelongsToUser(user, task, leadsById));
+  // Non-admin reps never see assignment tasks — those belong to the
+  // manager queue. Stripping them at the canonical filter means every
+  // surface that calls this helper (Dashboard widgets, SalesTasks list,
+  // KPI counts) automatically excludes them.
+  return allTasks.filter(
+    (task) => task?.task_type !== 'assignment' && taskBelongsToUser(user, task, leadsById),
+  );
 }
 
 export function filterLeadsForUser(user, leads) {

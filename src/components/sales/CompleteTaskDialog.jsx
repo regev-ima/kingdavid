@@ -193,7 +193,9 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
       onCompleted?.();
       onClose();
       if (redirectTo === 'NewOrder' && task?.lead_id) {
-        navigate(`${createPageUrl('NewOrder')}?lead_id=${task.lead_id}`);
+        // NewOrder reads `?leadId=` (camelCase); the earlier `?lead_id=`
+        // form was silently ignored and the form didn't pre-fill.
+        navigate(`${createPageUrl('NewOrder')}?leadId=${task.lead_id}`);
       }
     },
     onError: (err) => {

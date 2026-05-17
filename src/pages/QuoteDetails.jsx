@@ -199,9 +199,10 @@ export default function QuoteDetails() {
 
   const confirmStatusChange = async () => {
     if (statusConfirm) {
+      const isApproval = statusConfirm.targetStatus === 'approved' && quote.lead_id;
       updateQuoteMutation.mutate({ status: statusConfirm.targetStatus });
       // When approving a quote, auto-update the linked lead to deal_closed
-      if (statusConfirm.targetStatus === 'approved' && quote.lead_id) {
+      if (isApproval) {
         try {
           await base44.entities.Lead.update(quote.lead_id, { status: 'deal_closed' });
         } catch (e) {
@@ -209,6 +210,12 @@ export default function QuoteDetails() {
         }
       }
       setStatusConfirm(null);
+      // The whole point of approving a quote is converting it into an
+      // order, so jump straight there with the quote (and via it the
+      // customer) pre-filled.
+      if (isApproval) {
+        navigate(createPageUrl('NewOrder') + `?quote_id=${quoteId}`);
+      }
     }
   };
 
