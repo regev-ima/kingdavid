@@ -795,6 +795,7 @@ export default function Representatives() {
                       <SelectItem value="admin">מנהל מערכת (ADMIN)</SelectItem>
                       <SelectItem value="sales_user">נציג מכירות (SALES_USER)</SelectItem>
                       <SelectItem value="factory_user">נציג מפעל (FACTORY_USER)</SelectItem>
+                      <SelectItem value="bookkeeper">מנהלת חשבונות (BOOKKEEPER)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1001,6 +1002,7 @@ export default function Representatives() {
                           <SelectItem value="admin">מנהל</SelectItem>
                           <SelectItem value="user">נציג מכירות</SelectItem>
                           <SelectItem value="factory_user">נציג מפעל</SelectItem>
+                          <SelectItem value="bookkeeper">מנהלת חשבונות</SelectItem>
                         </SelectContent>
                       </Select>
                     </td>
