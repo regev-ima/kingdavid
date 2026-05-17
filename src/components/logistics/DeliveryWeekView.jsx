@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MapPin, Phone, ChevronDown, ChevronUp, Sun, Cloud, Moon, Calendar as CalendarIcon, User, GripVertical } from 'lucide-react';
+import { MapPin, Phone, Sun, Cloud, Moon, Calendar as CalendarIcon, User, GripVertical } from 'lucide-react';
 import { format, addDays, startOfWeek } from '@/lib/safe-date-fns';
 import { getCityRegion, REGIONS } from '@/components/utils/cityRegionMapper';
 
@@ -21,6 +21,7 @@ const REGION_COLORS = {
   shomron:   'bg-orange-100 text-orange-800 border-orange-300',
   jerusalem: 'bg-pink-100 text-pink-800 border-pink-300',
   south:     'bg-amber-100 text-amber-800 border-amber-300',
+  unknown:   'bg-gray-100 text-gray-700 border-gray-300',
 };
 
 const TIME_WINDOW_META = {
@@ -34,19 +35,26 @@ const HEB_DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמ
 
 /**
  * Week view for scheduled shipments.
- * Groups each day's scheduled shipments by region, and within region by time
- * window. This is the view a dispatcher uses when planning trucks for the week.
  *
  * Drag a shipment to a different day to reschedule it — the row's
  * scheduled_date is updated and the Deliveries list is invalidated so KPIs
- * stay in sync. Same-day drops are no-ops; we don't support intra-day
- * reordering yet (the in-day order is auto-derived from region + time
- * window + city).
+ * stay in sync. Same-day drops are no-ops (intra-day order isn't user-
+ * controlled here).
+ *
+ * Structure note (the previous version of this file had a bug where the
+ * grip handle didn't appear and rows wouldn't drag): @hello-pangea/dnd
+ * needs every <Draggable> to be a *direct* child of the element that
+ * carries dropProvided.innerRef, otherwise the placeholder positioning
+ * breaks and the lib silently refuses to attach drag listeners. The old
+ * version nested Draggables inside a RegionSection wrapper which broke
+ * exactly that contract. Now the Droppable's ref is on a flat <div>, and
+ * region headers are rendered as plain non-draggable rows interleaved
+ * with the Draggables in the same flat list.
  */
 export default function DeliveryWeekView({ shipments }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [weekOffset, setWeekOffset] = useState(0); // 0 = this week, -1 = prev, +1 = next
+  const [weekOffset, setWeekOffset] = useState(0);
 
   const rescheduleMutation = useMutation({
     mutationFn: ({ id, newDate }) => base44.entities.DeliveryShipment.update(id, { scheduled_date: newDate }),
@@ -68,17 +76,44 @@ export default function DeliveryWeekView({ shipments }) {
     return Array.from({ length: 5 }, (_, i) => addDays(shifted, i));
   }, [weekOffset]);
 
-  // Bucket shipments by yyyy-MM-dd for fast lookup.
-  const shipmentsByDate = useMemo(() => {
-    const map = new Map();
-    for (const s of shipments) {
-      if (!s.scheduled_date || s.status === 'need_scheduling') continue;
-      const key = s.scheduled_date.slice(0, 10);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(s);
+  // Bucket shipments by yyyy-MM-dd → flat sorted list per day. The order is:
+  // by region, then by time window, then by city. Region transitions get a
+  // synthetic "header" row (kind: 'header') so the day card visually groups
+  // shipments without needing a wrapper component (which would break dnd
+  // nesting — see comment at the top of the file).
+  const dayItemsByDate = useMemo(() => {
+    const result = new Map();
+    for (const day of weekDays) {
+      const key = format(day, 'yyyy-MM-dd');
+      const dayShipments = shipments.filter(
+        (s) => s.scheduled_date && s.scheduled_date.slice(0, 10) === key && s.status !== 'need_scheduling',
+      );
+
+      // Group by region, sort regions by size (largest first).
+      const byRegion = new Map();
+      for (const s of dayShipments) {
+        const region = getCityRegion(s.city) || 'unknown';
+        if (!byRegion.has(region)) byRegion.set(region, []);
+        byRegion.get(region).push(s);
+      }
+      const sortedRegions = [...byRegion.entries()].sort(([, a], [, b]) => b.length - a.length);
+
+      // Sort each region's shipments and produce a flat [header, row, row, header, row…] list.
+      const items = [];
+      for (const [region, regionShipments] of sortedRegions) {
+        regionShipments.sort((a, b) => {
+          const ao = TIME_WINDOW_META[a.time_window]?.order || 99;
+          const bo = TIME_WINDOW_META[b.time_window]?.order || 99;
+          if (ao !== bo) return ao - bo;
+          return (a.city || '').localeCompare(b.city || '');
+        });
+        items.push({ kind: 'header', region, count: regionShipments.length });
+        regionShipments.forEach((s, idx) => items.push({ kind: 'row', shipment: s, stopNumber: idx + 1 }));
+      }
+      result.set(key, items);
     }
-    return map;
-  }, [shipments]);
+    return result;
+  }, [shipments, weekDays]);
 
   const unscheduledCount = useMemo(
     () => shipments.filter((s) => s.status === 'need_scheduling').length,
@@ -87,7 +122,7 @@ export default function DeliveryWeekView({ shipments }) {
 
   // dnd-callback: figure out which day the row was dropped onto and bump its
   // scheduled_date if the target day differs from the source day. Same-day
-  // drops are no-ops on purpose (intra-day order isn't user-controlled here).
+  // drops are no-ops on purpose (intra-day order isn't user-controlled).
   const handleDragEnd = (result) => {
     const { destination, source, draggableId } = result;
     if (!destination) return;
@@ -96,70 +131,72 @@ export default function DeliveryWeekView({ shipments }) {
     rescheduleMutation.mutate({ id: draggableId, newDate: destination.droppableId });
   };
 
-  // A single day column: groups that day's shipments by region, then by time window.
   const renderDayCard = (date) => {
     const key = format(date, 'yyyy-MM-dd');
-    const dayShipments = shipmentsByDate.get(key) || [];
+    const items = dayItemsByDate.get(key) || [];
     const dayName = HEB_DAY_NAMES[date.getDay()];
     const isToday = key === format(new Date(), 'yyyy-MM-dd');
+    const shipmentCount = items.filter((it) => it.kind === 'row').length;
 
-    // Group by region
-    const byRegion = {};
-    for (const s of dayShipments) {
-      const region = getCityRegion(s.city) || 'unknown';
-      (byRegion[region] ??= []).push(s);
-    }
-
-    // Each Draggable inside this Droppable needs a unique sequential index.
-    // We grant indices in the same iteration order the regions/rows render
-    // below, so the first row of the first (largest) region gets index 0,
-    // the last row of the last region gets index N-1.
-    const sortedRegions = Object.entries(byRegion).sort(([, a], [, b]) => b.length - a.length);
-    let rowIndexCounter = 0;
-    const indexFor = () => rowIndexCounter++;
+    // Track the running Draggable index. Header rows don't count.
+    let dragIdx = 0;
 
     return (
-      <Droppable droppableId={key} key={key}>
-        {(dropProvided, dropSnapshot) => (
-          <Card
-            ref={dropProvided.innerRef}
-            {...dropProvided.droppableProps}
-            className={`${isToday ? 'border-2 border-indigo-500' : ''} ${
-              dropSnapshot.isDraggingOver ? 'ring-2 ring-indigo-300 bg-indigo-50/50' : ''
-            } transition-colors`}
-          >
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-baseline justify-between">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-base">{dayName}</span>
-                  <span className="text-sm text-muted-foreground">{format(date, 'dd/MM')}</span>
-                  {isToday && <Badge className="bg-indigo-600">היום</Badge>}
-                </div>
-                <Badge variant="outline">{dayShipments.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-0 min-h-[80px]">
-              {dayShipments.length === 0 && (
-                <p className="text-xs text-muted-foreground italic">
-                  {dropSnapshot.isDraggingOver ? 'שחרר כדי לתזמן ליום הזה' : 'אין משלוחים מתוכננים'}
-                </p>
-              )}
-              {sortedRegions.map(([region, regionShipments]) => (
-                <RegionSection
-                  key={region}
-                  region={region}
-                  shipments={regionShipments}
-                  indexFor={indexFor}
-                  onShipmentClick={(id) =>
-                    navigate(createPageUrl('ShipmentDetails') + `?id=${id}`)
+      <Card key={key} className={isToday ? 'border-2 border-indigo-500' : ''}>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-baseline justify-between">
+            <div className="flex items-baseline gap-2">
+              <span className="text-base">{dayName}</span>
+              <span className="text-sm text-muted-foreground">{format(date, 'dd/MM')}</span>
+              {isToday && <Badge className="bg-indigo-600">היום</Badge>}
+            </div>
+            <Badge variant="outline">{shipmentCount}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <Droppable droppableId={key}>
+            {(dropProvided, dropSnapshot) => (
+              <div
+                ref={dropProvided.innerRef}
+                {...dropProvided.droppableProps}
+                className={`min-h-[80px] rounded-md transition-colors ${
+                  dropSnapshot.isDraggingOver ? 'ring-2 ring-indigo-300 bg-indigo-50/60 p-1' : ''
+                }`}
+              >
+                {items.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic px-2 py-3">
+                    {dropSnapshot.isDraggingOver ? 'שחרר כדי לתזמן ליום הזה' : 'אין משלוחים מתוכננים'}
+                  </p>
+                )}
+
+                {items.map((item, idx) => {
+                  if (item.kind === 'header') {
+                    return <RegionHeader key={`hdr-${item.region}-${idx}`} region={item.region} count={item.count} />;
                   }
-                />
-              ))}
-              {dropProvided.placeholder}
-            </CardContent>
-          </Card>
-        )}
-      </Droppable>
+                  // item.kind === 'row'
+                  const myDragIndex = dragIdx;
+                  dragIdx += 1;
+                  return (
+                    <Draggable key={item.shipment.id} draggableId={item.shipment.id} index={myDragIndex}>
+                      {(dragProvided, dragSnapshot) => (
+                        <ShipmentRow
+                          shipment={item.shipment}
+                          stopNumber={item.stopNumber}
+                          onClick={() => navigate(createPageUrl('ShipmentDetails') + `?id=${item.shipment.id}`)}
+                          dragProvided={dragProvided}
+                          isDragging={dragSnapshot.isDragging}
+                        />
+                      )}
+                    </Draggable>
+                  );
+                })}
+
+                {dropProvided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </CardContent>
+      </Card>
     );
   };
 
@@ -203,10 +240,10 @@ export default function DeliveryWeekView({ shipments }) {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        💡 גרור משלוח ליום אחר כדי לתזמן מחדש.
+        💡 גרור משלוח (אחיזה בידית בצד ימין) ליום אחר כדי לתזמן מחדש.
       </p>
 
-      {/* 5-day grid */}
+      {/* 5-day grid wrapped in one DragDropContext so cross-day drops work. */}
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
           {weekDays.map(renderDayCard)}
@@ -217,92 +254,56 @@ export default function DeliveryWeekView({ shipments }) {
 }
 
 // ---------------------------------------------------------------------------
-// Region section inside a day card
+// Visual region label inserted between groups of shipments inside a day.
+// Plain non-draggable element — must be a sibling of the Draggables, not a
+// wrapper, otherwise dnd's placeholder positioning breaks.
 // ---------------------------------------------------------------------------
-function RegionSection({ region, shipments, indexFor, onShipmentClick }) {
-  const [expanded, setExpanded] = useState(shipments.length <= 3);
-  const regionLabel = REGIONS[region] || region;
-  const colorClass = REGION_COLORS[region] || 'bg-gray-100 text-gray-800 border-gray-300';
-
-  // Sort by time_window, then by order set on shipment (geo-sorted by optimizer).
-  const sorted = [...shipments].sort((a, b) => {
-    const aOrder = TIME_WINDOW_META[a.time_window]?.order || 99;
-    const bOrder = TIME_WINDOW_META[b.time_window]?.order || 99;
-    if (aOrder !== bOrder) return aOrder - bOrder;
-    return (a.city || '').localeCompare(b.city || '');
-  });
-
+function RegionHeader({ region, count }) {
+  const label = REGIONS[region] || region;
+  const colorClass = REGION_COLORS[region] || REGION_COLORS.unknown;
   return (
-    <div className="rounded-lg border bg-white overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className={`w-full flex items-center justify-between px-3 py-2 ${colorClass} border-b transition-colors hover:opacity-80`}
-      >
-        <div className="flex items-center gap-2">
-          <MapPin className="h-3.5 w-3.5" />
-          <span className="text-sm font-semibold">{regionLabel}</span>
-          <Badge variant="outline" className="bg-white text-xs">
-            {shipments.length}
-          </Badge>
-        </div>
-        {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </button>
-
-      {expanded && (
-        <ol className="divide-y">
-          {sorted.map((s, stopIdx) => (
-            <Draggable key={s.id} draggableId={s.id} index={indexFor()}>
-              {(dragProvided, dragSnapshot) => (
-                <ShipmentRow
-                  index={stopIdx + 1}
-                  shipment={s}
-                  onClick={() => onShipmentClick(s.id)}
-                  dragProvided={dragProvided}
-                  isDragging={dragSnapshot.isDragging}
-                />
-              )}
-            </Draggable>
-          ))}
-        </ol>
-      )}
+    <div className={`flex items-center justify-between px-2 py-1 my-1 rounded text-xs font-semibold ${colorClass}`}>
+      <span className="flex items-center gap-1">
+        <MapPin className="h-3 w-3" />
+        {label}
+      </span>
+      <Badge variant="outline" className="bg-white text-[10px] py-0">{count}</Badge>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Single shipment row inside a region section
+// One draggable shipment row inside a day card.
+// The Draggable's ref/draggableProps go on the outer <div>; only the small
+// grip span carries dragHandleProps so the rest of the row keeps its normal
+// click-to-open and tap-to-call behaviour.
 // ---------------------------------------------------------------------------
-function ShipmentRow({ index, shipment, onClick, dragProvided, isDragging }) {
+function ShipmentRow({ shipment, stopNumber, onClick, dragProvided, isDragging }) {
   const meta = TIME_WINDOW_META[shipment.time_window] || TIME_WINDOW_META.all_day;
   const Icon = meta.icon;
   const phone = (shipment.contact_phone || shipment.customer_phone || '').replace(/[^0-9]/g, '');
 
   return (
-    <li
-      ref={dragProvided?.innerRef}
-      {...(dragProvided?.draggableProps || {})}
-      className={`px-3 py-2 flex items-start gap-2 text-xs hover:bg-slate-50 transition-colors ${
-        isDragging ? 'bg-white shadow-lg ring-2 ring-indigo-300 rounded' : ''
+    <div
+      ref={dragProvided.innerRef}
+      {...dragProvided.draggableProps}
+      className={`flex items-start gap-2 text-xs px-2 py-2 my-1 border rounded-md bg-white transition-colors ${
+        isDragging ? 'shadow-lg ring-2 ring-indigo-400 rotate-1' : 'hover:bg-slate-50'
       }`}
     >
-      {/* Drag handle — only this small zone responds to drag-start so the
-          rest of the row can still receive plain clicks (open shipment) and
-          taps on the phone link. */}
-      {dragProvided && (
-        <span
-          {...dragProvided.dragHandleProps}
-          className="shrink-0 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing pt-0.5"
-          title="גרור ליום אחר"
-          aria-label="גרור ליום אחר"
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </span>
-      )}
+      {/* Drag handle — visible enough to find. */}
+      <span
+        {...dragProvided.dragHandleProps}
+        className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 cursor-grab active:cursor-grabbing"
+        title="גרור ליום אחר"
+        aria-label="גרור ליום אחר"
+      >
+        <GripVertical className="h-4 w-4" />
+      </span>
 
-      {/* Stop number (route order) */}
+      {/* Stop number (route order). */}
       <span className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-semibold text-[11px]">
-        {index}
+        {stopNumber}
       </span>
 
       <button type="button" onClick={onClick} className="flex-1 min-w-0 text-start">
@@ -311,7 +312,7 @@ function ShipmentRow({ index, shipment, onClick, dragProvided, isDragging }) {
           <span className="truncate">{shipment.customer_name}</span>
         </div>
         <div className="text-muted-foreground truncate">
-          {shipment.city} • {shipment.address}
+          {shipment.city}{shipment.address ? ` • ${shipment.address}` : ''}
         </div>
         <div className="flex items-center gap-1 mt-0.5 text-[11px] text-muted-foreground">
           <Icon className="h-3 w-3" />
@@ -329,6 +330,6 @@ function ShipmentRow({ index, shipment, onClick, dragProvided, isDragging }) {
           <Phone className="h-3.5 w-3.5" />
         </a>
       )}
-    </li>
+    </div>
   );
 }
