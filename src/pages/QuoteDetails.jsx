@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -205,6 +206,7 @@ export default function QuoteDetails() {
       if (isApproval) {
         try {
           await base44.entities.Lead.update(quote.lead_id, { status: 'deal_closed' });
+          await cancelOpenTasksForClosedDeal(quote.lead_id);
         } catch (e) {
           console.error('Failed to update lead status:', e);
         }

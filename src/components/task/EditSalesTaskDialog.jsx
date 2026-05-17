@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, UserPlus, Download, ExternalLink } from "lucide-react";
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { LEAD_STATUS_OPTIONS, TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
@@ -72,6 +73,7 @@ const NO_ANSWER_STATUSES = {
 
 export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUser: effectiveUserProp }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { hiddenStatuses } = useHiddenStatuses();
   const { effectiveUser: effectiveUserFromHook } = useEffectiveCurrentUser(isOpen);
   const effectiveUser = effectiveUserProp || effectiveUserFromHook;
@@ -159,6 +161,16 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
 
     setValidationError('');
 
+    // When the rep flips this task's lead-status snapshot to "נסגרה
+    // עסקה", we (a) cancel every other open task for the lead — the
+    // deal is done, follow-ups are moot — and (b) jump to NewOrder
+    // pre-filled, matching the LeadDetails / QuoteDetails / Complete-
+    // TaskDialog flows.
+    const dealJustClosed =
+      editingTask.status === 'deal_closed' &&
+      originalLeadStatus !== 'deal_closed' &&
+      !!editingTask.lead_id;
+
     try {
       // Always update the Lead entity status to match
       const leadId = editingTask.lead_id;
@@ -166,6 +178,10 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
         await base44.entities.Lead.update(leadId, { status: editingTask.status });
         queryClient.invalidateQueries({ queryKey: ['lead'] });
         queryClient.invalidateQueries({ queryKey: ['leads'] });
+      }
+
+      if (dealJustClosed) {
+        await cancelOpenTasksForClosedDeal(leadId, editingTask.id);
       }
 
       // Create next task if requested
@@ -211,7 +227,16 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
       updateData.rep2 = editingTask.rep2 ?? null;
     }
 
-    updateTaskMutation.mutate({ id: editingTask.id, data: updateData });
+    updateTaskMutation.mutate(
+      { id: editingTask.id, data: updateData },
+      {
+        onSuccess: () => {
+          if (dealJustClosed) {
+            navigate(`${createPageUrl('NewOrder')}?leadId=${editingTask.lead_id}`);
+          }
+        },
+      },
+    );
   };
 
   const handleCall = async (phone) => {
