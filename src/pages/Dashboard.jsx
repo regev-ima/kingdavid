@@ -41,7 +41,7 @@ import {
 } from 'recharts';
 import { endOfDay, startOfDay, subDays, startOfWeek, startOfMonth, startOfYear } from '@/lib/safe-date-fns';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
-import { canAccessAdminOnly, isFactoryUser } from '@/lib/rbac';
+import { canAccessAdminOnly, isBookkeeperUser, isFactoryUser } from '@/lib/rbac';
 import { format } from '@/lib/safe-date-fns';
 import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 
@@ -171,6 +171,13 @@ export default function Dashboard() {
         if (!canAccessAdminOnly(effectiveUser)) {
           if (isFactoryUser(effectiveUser)) {
             navigate(createPageUrl('FactoryDashboard'));
+            return;
+          }
+          // Bookkeeper goes straight to her workspace — without this
+          // she'd bounce: Dashboard → SalesDashboard → Bookkeeping,
+          // flashing the sales dashboard for a frame.
+          if (isBookkeeperUser(effectiveUser)) {
+            navigate(createPageUrl('Bookkeeping'));
             return;
           }
           navigate(createPageUrl('SalesDashboard'));

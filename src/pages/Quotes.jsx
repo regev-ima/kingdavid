@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, X } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canAccessSalesWorkspace, filterQuotesForUser, isAdmin } from '@/lib/rbac';
+import { buildLeadsById, canViewOrdersWorkspace, filterQuotesForUser, isAdmin } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 const filterOptions = [
@@ -40,7 +40,7 @@ export default function Quotes() {
   // (drafts + sent). Driven by clicking a per-rep card on the open-quotes
   // summary above.
   const [repFilter, setRepFilter] = useState('');
-  const canAccessSales = canAccessSalesWorkspace(effectiveUser);
+  const canAccessSales = canViewOrdersWorkspace(effectiveUser);
 
   const { data: quotes = [], isLoading } = useQuery({
     queryKey: ['quotes'],

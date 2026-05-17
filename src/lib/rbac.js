@@ -46,6 +46,17 @@ export function canAccessBookkeepingWorkspace(user) {
   return isAdmin(user) || isBookkeeperUser(user);
 }
 
+// Pages the bookkeeper needs read-access to so she can chase invoices —
+// orders, quotes, and the finance dashboard. Sales reps + admin keep
+// their existing access; bookkeeper is added on top.
+export function canViewOrdersWorkspace(user) {
+  return canAccessSalesWorkspace(user) || isBookkeeperUser(user);
+}
+
+export function canViewFinanceWorkspace(user) {
+  return isAdmin(user) || isBookkeeperUser(user);
+}
+
 export function canAccessSupportWorkspace(user) {
   return isAdmin(user) || isFactoryUser(user) || isSalesUser(user);
 }
@@ -156,7 +167,7 @@ export function filterSalesTasksForUser(user, tasks = [], leadsById = {}) {
 
 export function canViewOrder(user, order) {
   if (!order) return false;
-  if (isAdmin(user) || isFactoryUser(user)) return true;
+  if (isAdmin(user) || isFactoryUser(user) || isBookkeeperUser(user)) return true;
   if (!isSalesUser(user)) return false;
   return matchesUserIdentifier(user, order.rep1, order.rep2);
 }
@@ -166,8 +177,9 @@ export function filterOrdersForUser(user, orders = []) {
 }
 
 export function canViewQuote(user, quote, leadsById = {}) {
-  if (!quote || !canAccessSalesWorkspace(user)) return false;
-  if (isAdmin(user)) return true;
+  if (!quote) return false;
+  if (isAdmin(user) || isBookkeeperUser(user)) return true;
+  if (!canAccessSalesWorkspace(user)) return false;
   if (matchesUserIdentifier(user, quote.created_by_rep)) return true;
 
   const lead = quote.lead_id ? leadsById[quote.lead_id] : null;
