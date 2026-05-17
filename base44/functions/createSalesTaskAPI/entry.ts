@@ -104,17 +104,42 @@ function parseDate(val) {
   return trimmed;
 }
 
+// Allow the caller to act on a lead only when they're admin or one of
+// the named reps. Without this, any authenticated user could change
+// another rep's lead status to e.g. 'deal_closed' or 'not_relevant_*'
+// to sabotage their pipeline.
+function callerCanActOnLead(user, lead) {
+  if (!user || !lead) return false;
+  if (user.role === 'admin') return true;
+  const email = user.email;
+  if (!email) return false;
+  return (
+    lead.rep1 === email ||
+    lead.rep2 === email ||
+    lead.pending_rep_email === email
+  );
+}
+
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
+    // Require authentication — the function previously accepted any
+    // request and used asServiceRole internally to write, which let
+    // anyone with the function URL spray tasks and statuses across
+    // the table.
+    const user = await base44.auth.me();
+    if (!user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
-    
+
     // Support single task or array of tasks
     const tasks = Array.isArray(body) ? body : [body];
-    
+
     const results = [];
-    
+
     for (const task of tasks) {
       let leadId = task.lead_id || null;
       
@@ -156,7 +181,27 @@ Deno.serve(async (req) => {
         });
         continue;
       }
-      
+
+      // Pull the lead once so we can both authorise the caller and
+      // avoid an open SSRF-style "create task for any lead" attack.
+      const leadRecord = (await base44.asServiceRole.entities.Lead.filter({ id: leadId }))?.[0];
+      if (!leadRecord) {
+        results.push({
+          success: false,
+          error: 'ליד לא נמצא',
+          input: task,
+        });
+        continue;
+      }
+      if (!callerCanActOnLead(user, leadRecord)) {
+        results.push({
+          success: false,
+          error: 'אין הרשאה לעדכן ליד זה',
+          input: task,
+        });
+        continue;
+      }
+
       const salesTaskData = {
         lead_id: leadId,
       };

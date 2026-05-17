@@ -73,8 +73,13 @@ Deno.serve(async (req) => {
         // Extract user data from row using column mapping
         const email = rowData[column_mapping.email];
         const fullName = rowData[column_mapping.full_name];
-        const role = column_mapping.role ? (rowData[column_mapping.role] || 'user') : 'user';
-        
+        const rawRole = column_mapping.role ? (rowData[column_mapping.role] || 'user') : 'user';
+        // Role whitelist — a poisoned sheet otherwise turns into a
+        // privilege-escalation vector (e.g. role = 'is_superadmin'
+        // silently set on a freshly invited user).
+        const ALLOWED_ROLES = ['admin', 'user', 'sales_user', 'factory_user', 'bookkeeper'];
+        const role = ALLOWED_ROLES.includes(rawRole) ? rawRole : 'user';
+
         if (!email || !fullName) {
           results.failed++;
           results.errors.push(`Row ${i + 2}: Missing email or full_name`);

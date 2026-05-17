@@ -13,6 +13,26 @@
 import { supabase } from './supabaseClient';
 import { entities } from './entities';
 
+// Allow only same-origin redirects. Without this, a crafted login or
+// logout URL like `?redirect=https://attacker.com/phish` would bounce
+// the user to an external site mid-session with an open-redirect-shaped
+// surface. We accept a relative path ("/orders") or a full URL that
+// matches the current origin; anything else collapses to "/".
+function sanitizeRedirect(target) {
+  if (typeof target !== 'string' || !target) return '/';
+  // Relative path — always safe.
+  if (target.startsWith('/') && !target.startsWith('//')) return target;
+  try {
+    const url = new URL(target, window.location.origin);
+    if (url.origin === window.location.origin) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    // Fall through to the default below.
+  }
+  return '/';
+}
+
 // ── Auth helpers ────────────────────────────────────────────────
 const auth = {
   async me() {
@@ -47,13 +67,14 @@ const auth = {
   async logout(redirectUrl) {
     await supabase.auth.signOut();
     if (redirectUrl) {
-      window.location.href = redirectUrl;
+      window.location.href = sanitizeRedirect(redirectUrl);
     }
   },
 
   redirectToLogin(redirectUrl) {
     const loginPath = '/login';
-    const redirect = redirectUrl ? `?redirect=${encodeURIComponent(redirectUrl)}` : '';
+    const safe = sanitizeRedirect(redirectUrl);
+    const redirect = safe && safe !== '/' ? `?redirect=${encodeURIComponent(safe)}` : '';
     window.location.href = `${loginPath}${redirect}`;
   },
 };
