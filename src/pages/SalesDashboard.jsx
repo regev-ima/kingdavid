@@ -5,7 +5,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle,
   ArrowRight,
@@ -129,6 +128,7 @@ function TaskListCard({ title, helper, icon: Icon, items, totalCount, emptyLabel
     amber: { headerBg: 'bg-gradient-to-l from-amber-50 to-amber-100/50', iconBg: 'bg-amber-100', iconText: 'text-amber-600', border: 'border-amber-200', hoverBg: 'hover:bg-amber-50/60', countBg: 'bg-amber-500' },
     blue: { headerBg: 'bg-gradient-to-l from-blue-50 to-blue-100/50', iconBg: 'bg-blue-100', iconText: 'text-blue-600', border: 'border-blue-200', hoverBg: 'hover:bg-blue-50/60', countBg: 'bg-blue-500' },
     slate: { headerBg: 'bg-gradient-to-l from-slate-50 to-slate-100/50', iconBg: 'bg-slate-100', iconText: 'text-slate-600', border: 'border-slate-200', hoverBg: 'hover:bg-slate-50/60', countBg: 'bg-slate-500' },
+    emerald: { headerBg: 'bg-gradient-to-l from-emerald-50 to-emerald-100/50', iconBg: 'bg-emerald-100', iconText: 'text-emerald-600', border: 'border-emerald-200', hoverBg: 'hover:bg-emerald-50/60', countBg: 'bg-emerald-500' },
     primary: { headerBg: 'bg-gradient-to-l from-primary/5 to-primary/10', iconBg: 'bg-primary/10', iconText: 'text-primary', border: 'border-primary/20', hoverBg: 'hover:bg-primary/5', countBg: 'bg-primary' },
   };
   const c = colorMap[accentColor] || colorMap.primary;
@@ -342,11 +342,29 @@ export default function SalesDashboard() {
       id: task.id,
       taskId: task.id,
       summary: task.summary,
+      taskType: task.task_type,
       leadName: lead?.full_name || null,
       leadPhone: lead?.phone || null,
       leadStatus: lead?.status || null,
       dueAt,
       reasonLabel: getSalesTaskQueueBucket(task, metrics.now) === 'undated' ? 'ללא תאריך יעד' : null,
+    };
+  };
+
+  // Same shape as `buildTaskPreview`, but the time column displays the
+  // *completion* time (updated_date) instead of the due date — that's
+  // what matters once the task is done.
+  const buildCompletedPreview = (task) => {
+    const lead = task.lead_id ? leadsById[task.lead_id] : null;
+    const completedAt = parseGenericDate(task.updated_date || task.created_date);
+    return {
+      id: task.id,
+      taskId: task.id,
+      summary: task.summary,
+      taskType: task.task_type,
+      leadName: lead?.full_name || null,
+      leadStatus: lead?.status || null,
+      dueAt: completedAt,
     };
   };
 
@@ -422,7 +440,11 @@ export default function SalesDashboard() {
         <MiniKpiCard label="ללא יעד" value={metrics.undatedCount} helper="דורש תכנון" icon={ListTodo} tone="slate" onClick={() => navigate(createPageUrl('SalesTasks') + '?tab=undated')} />
       </div>
 
-      {/* לידים חדשים + הצעות מחיר ממתינות + העמלות שלי */}
+      {/* Primary row — what the rep is here for: new leads to call,
+          what's due today, and what they already closed today. The old
+          mix (new-leads + quotes-pending + commissions) buried the
+          actionable cards underneath two read-only widgets; those now
+          live at the bottom. */}
       <div className="grid gap-5 lg:grid-cols-3">
         <TaskListCard
           title="לידים חדשים"
@@ -436,11 +458,34 @@ export default function SalesDashboard() {
           onOpenItem={(item) => openTaskPopup(item.taskId)}
           taskTypeEmoji={TASK_TYPE_EMOJI}
         />
-        <PendingQuotesCard leadsById={leadsById} effectiveUser={effectiveUser} />
-        <MyCommissionsCard effectiveUser={effectiveUser} />
+        <TaskListCard
+          title="משימות מכירה להיום"
+          helper="המשימות שיש לבצע היום (ללא לידים חדשים)"
+          icon={Calendar}
+          accentColor="amber"
+          totalCount={metrics.taskActionItems.filter((item) => item.reasonKey === 'today' && item.leadStatus !== 'new_lead').length}
+          items={metrics.taskActionItems.filter((item) => item.reasonKey === 'today' && item.leadStatus !== 'new_lead')}
+          emptyLabel="✅ סיימת את כל המשימות להיום!"
+          onOpenAll={() => navigate(createPageUrl('SalesTasks') + '?tab=today')}
+          onOpenItem={(item) => openTaskPopup(item.taskId)}
+          taskTypeEmoji={TASK_TYPE_EMOJI}
+        />
+        <TaskListCard
+          title="הושלמו היום"
+          helper="המשימות שכבר נסגרו במהלך היום"
+          icon={CheckCircle2}
+          accentColor="emerald"
+          totalCount={metrics.completedTodayCount}
+          items={metrics.completedTodayTasks.map(buildCompletedPreview)}
+          emptyLabel="אין כרגע משימות שהושלמו היום."
+          onOpenAll={() => navigate(createPageUrl('SalesTasks') + '?tab=completed')}
+          onOpenItem={(item) => openTaskPopup(item.taskId)}
+          taskTypeEmoji={TASK_TYPE_EMOJI}
+        />
       </div>
 
-      {/* Main 50/50: באיחור + להיום (ללא לידים חדשים) */}
+      {/* Secondary urgency row — overdue still demands attention even
+          though it's not the top card anymore. */}
       <div className="grid gap-5 lg:grid-cols-2">
         <TaskListCard
           title="באיחור"
@@ -455,22 +500,6 @@ export default function SalesDashboard() {
           taskTypeEmoji={TASK_TYPE_EMOJI}
         />
         <TaskListCard
-          title="להיום"
-          helper="המשימות שיש לבצע היום (ללא לידים חדשים)"
-          icon={Calendar}
-          accentColor="amber"
-          totalCount={metrics.taskActionItems.filter((item) => item.reasonKey === 'today' && item.leadStatus !== 'new_lead').length}
-          items={metrics.taskActionItems.filter((item) => item.reasonKey === 'today' && item.leadStatus !== 'new_lead')}
-          emptyLabel="✅ סיימת את כל המשימות להיום!"
-          onOpenAll={() => navigate(createPageUrl('SalesTasks') + '?tab=today')}
-          onOpenItem={(item) => openTaskPopup(item.taskId)}
-          taskTypeEmoji={TASK_TYPE_EMOJI}
-        />
-      </div>
-
-      {/* Secondary 50/50: עתידי + ללא יעד */}
-      <div className="grid gap-5 lg:grid-cols-2">
-        <TaskListCard
           title="עתידי קרוב"
           helper="משימות ב-48 השעות הקרובות"
           icon={Clock}
@@ -482,6 +511,10 @@ export default function SalesDashboard() {
           onOpenItem={(item) => openTaskPopup(item.taskId)}
           taskTypeEmoji={TASK_TYPE_EMOJI}
         />
+      </div>
+
+      {/* Planning row */}
+      <div className="grid gap-5 lg:grid-cols-2">
         <TaskListCard
           title="ללא יעד"
           helper="משימות פתוחות שלא תוזמנו עדיין"
@@ -496,70 +529,12 @@ export default function SalesDashboard() {
         />
       </div>
 
-      {/* Completed today */}
-      <Card className="shadow-sm border-emerald-200">
-        <CardHeader className="flex flex-row items-center justify-between pb-3 bg-gradient-to-l from-emerald-50 to-emerald-100/30">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <div className="rounded-xl bg-emerald-100 p-2.5">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div>
-              הושלמו היום
-              <span className="ms-2 inline-flex items-center justify-center rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-bold text-white">
-                {metrics.completedTodayCount}
-              </span>
-            </div>
-          </CardTitle>
-          <Link to={createPageUrl('SalesTasks') + '?tab=completed'}>
-            <Button variant="ghost" size="sm" className="text-xs">
-              הכל
-              <ChevronRight className="me-1 h-3.5 w-3.5" />
-            </Button>
-          </Link>
-        </CardHeader>
-        <CardContent className="p-3 max-h-[520px] overflow-y-auto">
-          {metrics.completedTodayTasks.length === 0 ? (
-            <EmptyActionState title="אין כרגע משימות שהושלמו היום." />
-          ) : (
-            <div className="grid gap-2 md:grid-cols-2">
-              {metrics.completedTodayTasks.map((task) => {
-                const lead = task.lead_id ? leadsById[task.lead_id] : null;
-                const completedAt = parseGenericDate(task.updated_date || task.created_date);
-                return (
-                  <button
-                    type="button"
-                    key={task.id}
-                    onClick={() => openTaskPopup(task.id)}
-                    className="flex items-center gap-3 rounded-xl border border-emerald-200 p-3 text-start transition-all hover:bg-emerald-50/60 hover:shadow-sm"
-                  >
-                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-base">
-                      {TASK_TYPE_EMOJI[task.task_type] || '📋'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-foreground">{task.summary || lead?.full_name || 'משימה'}</p>
-                      <p className="text-xs text-muted-foreground">{lead?.full_name && task.summary ? lead.full_name : ''}</p>
-                    </div>
-                    {lead?.status && (
-                      <div className="flex-shrink-0">
-                        <StatusBadge status={lead.status} />
-                      </div>
-                    )}
-                    <div className="text-left flex-shrink-0">
-                      <Badge className="bg-emerald-100 text-emerald-700 text-[11px]">בוצע</Badge>
-                      {completedAt && (
-                        <>
-                          <p className="mt-0.5 text-sm font-bold text-foreground">{format(completedAt, 'HH:mm')}</p>
-                          <p className="text-xs text-muted-foreground">{format(completedAt, 'EEEE dd/MM', { locale: he })}</p>
-                        </>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Bottom row — read-only widgets that used to crowd the top of
+          the page. Moved down per request: actionable cards first. */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <PendingQuotesCard leadsById={leadsById} effectiveUser={effectiveUser} />
+        <MyCommissionsCard effectiveUser={effectiveUser} />
+      </div>
 
       <AddSalesTaskDialog
         isOpen={showTaskDialog}
