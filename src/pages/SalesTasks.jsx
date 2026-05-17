@@ -17,9 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, CheckCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown } from "lucide-react";
-import { format, isValid, formatDistanceToNow, startOfDay, endOfDay } from '@/lib/safe-date-fns';
-import { he } from 'date-fns/locale';
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe } from "lucide-react";
+import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
+import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
 const safeFormat = (dateStr, fmt) => {
   if (!dateStr) return '';
@@ -52,11 +52,17 @@ import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import TaskDayView from '@/components/task/TaskDayView';
 import TaskWeekView from '@/components/task/TaskWeekView';
 import StatusBadge from '@/components/shared/StatusBadge';
+import DataTable from '@/components/shared/DataTable';
+import UserAvatar from '@/components/shared/UserAvatar';
+import QuickActions from '@/components/shared/QuickActions';
+import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
 import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
+import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
@@ -73,6 +79,7 @@ export default function SalesTasks() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [completingTask, setCompletingTask] = useState(null);
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
 
   const initialTaskId = urlParams.get('id');
@@ -449,6 +456,7 @@ export default function SalesTasks() {
   const overdueCount = counts.overdue;
   const upcomingCount = counts.upcoming;
   const undatedCount = counts.undated;
+  const completedTodayCount = counts.completedToday;
   // Compare the auth-side cached counters against the server-side counts.
   // The 5th-arg shape matches what scopedTaskMetrics.counts used to expose.
   const counterMismatches = useMemo(
@@ -484,6 +492,306 @@ export default function SalesTasks() {
     setEditingTask(task);
     setShowEditTaskDialog(true);
   };
+
+  const formatPhone = (phone) => {
+    if (!phone) return '';
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length === 10) {
+      return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+    }
+    return phone;
+  };
+
+  const TASK_TYPE_META = {
+    call: { Icon: Phone, label: 'שיחה', color: 'text-blue-600' },
+    whatsapp: { Icon: MessageCircle, label: 'וואטסאפ', color: 'text-green-600' },
+    email: { Icon: Mail, label: 'מייל', color: 'text-purple-600' },
+    meeting: { Icon: Users, label: 'פגישה', color: 'text-amber-600' },
+    quote_preparation: { Icon: FileText, label: 'הצעת מחיר', color: 'text-indigo-600' },
+    followup: { Icon: RefreshCw, label: 'מעקב', color: 'text-orange-600' },
+    assignment: { Icon: ClipboardList, label: 'שיוך', color: 'text-violet-600' },
+    other: { Icon: Paperclip, label: 'אחר', color: 'text-muted-foreground' },
+  };
+
+  const taskTableColumns = useMemo(() => [
+    {
+      header: 'לקוח',
+      accessor: 'full_name',
+      width: '240px',
+      render: (row) => {
+        const lead = row.lead;
+        const name = lead?.full_name
+          || row.summary?.match(/הליד (.+?)(?:\s+לנציג|\s+יש)/)?.[1]
+          || row.summary?.match(/הליד (.+?)$/)?.[1]
+          || 'ליד';
+        const returning = lead && isReturningLead(lead);
+        return (
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{name}</p>
+              {returning && (
+                <span className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0">
+                  🔁 פניה חוזרת
+                </span>
+              )}
+            </div>
+            {lead?.phone && (
+              <div className="flex items-center gap-1.5 min-w-0">
+                <p className="text-sm text-muted-foreground whitespace-nowrap" dir="ltr">{formatPhone(lead.phone)}</p>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleCall(lead.phone); }}
+                  className="h-6 w-6 rounded-full bg-green-100 hover:bg-green-200 flex items-center justify-center transition-colors flex-shrink-0"
+                  title="התקשר"
+                >
+                  <Phone className="h-3.5 w-3.5 text-green-700" />
+                </button>
+              </div>
+            )}
+            {lead?.unique_id && <p className="text-xs text-muted-foreground/70 mt-0.5">ID: {lead.unique_id}</p>}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'סטטוס',
+      accessor: 'status',
+      width: '130px',
+      render: (row) => {
+        const status = row.status || row.lead?.status;
+        const lead = row.lead;
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {status && <StatusBadge status={status} />}
+            {(lead?.source === 'website' || (Array.isArray(lead?.tags) && lead.tags.includes('אתר'))) && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-semibold px-1.5 py-0.5">
+                <Globe className="h-2.5 w-2.5" />
+                אתר
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'שם מודעה',
+      accessor: 'facebook_ad_name',
+      width: '160px',
+      render: (row) => {
+        const adName = row.lead?.facebook_ad_name;
+        if (!adName) return <span className="text-muted-foreground/40 text-sm">-</span>;
+        return <span className="text-sm text-foreground/80 line-clamp-2">{adName}</span>;
+      },
+    },
+    {
+      header: 'SLA',
+      accessor: 'sla',
+      width: '128px',
+      render: (row) => {
+        if (!row.lead) return <span className="text-xs text-muted-foreground/70">-</span>;
+        if (isLeadHandled(row.lead)) return <span className="text-xs text-muted-foreground/70">טופל</span>;
+        const anchor = getLeadSlaAnchor(row.lead);
+        if (!anchor) return <span className="text-xs text-muted-foreground/70">-</span>;
+        const diffMinutes = Math.floor((Date.now() - anchor) / 60000);
+        let color = 'text-green-600';
+        if (diffMinutes > SLA_THRESHOLDS.AMBER_MAX_MINUTES) color = 'text-red-600';
+        else if (diffMinutes > SLA_THRESHOLDS.GREEN_MAX_MINUTES) color = 'text-amber-600';
+        if (diffMinutes < 60) {
+          return <span className={`text-sm font-medium ${color}`}>{diffMinutes === 1 ? 'דקה אחת' : `${diffMinutes} דקות`}</span>;
+        }
+        if (diffMinutes < 1440) {
+          const hours = Math.floor(diffMinutes / 60);
+          const mins = diffMinutes % 60;
+          const hoursText = hours === 1 ? 'שעה אחת' : `${hours} שעות`;
+          if (mins === 0) return <span className={`text-sm font-medium ${color}`}>{hoursText}</span>;
+          const minsText = mins === 1 ? 'דקה' : `${mins} דקות`;
+          return <span className={`text-sm font-medium ${color}`}>{hoursText} ו-{minsText}</span>;
+        }
+        const days = Math.floor(diffMinutes / 1440);
+        const hours = Math.floor((diffMinutes % 1440) / 60);
+        const daysText = days === 1 ? 'יום אחד' : `${days} ימים`;
+        if (hours === 0) return <span className={`text-sm font-medium ${color}`}>{daysText}</span>;
+        const hoursText = hours === 1 ? 'שעה' : `${hours} שעות`;
+        return <span className={`text-sm font-medium ${color}`}>{daysText} ו-{hoursText}</span>;
+      },
+    },
+    {
+      header: 'מקור',
+      accessor: 'source',
+      width: '110px',
+      render: (row) => {
+        const source = row.lead?.source;
+        const utmSource = row.lead?.utm_source;
+        if (!source && !utmSource) return <span className="text-muted-foreground/70 text-xs">-</span>;
+        return (
+          <div className="text-xs leading-relaxed">
+            <span className="font-medium">{SOURCE_LABELS[source] || source || '-'}</span>
+            {utmSource && <p className="text-muted-foreground">{utmSource}</p>}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'נציג',
+      accessor: 'rep1',
+      width: '180px',
+      render: (row) => {
+        if (!row.rep1 && row.pending_rep_email) {
+          const pendingRep = allUsers.find((u) => u.email === row.pending_rep_email);
+          const pendingName = pendingRep?.full_name || row.pending_rep_email;
+          return (
+            <span className="text-amber-600 flex items-center gap-1 text-sm">
+              <AlertCircle className="h-4 w-4" />
+              ממתין: {pendingName}
+            </span>
+          );
+        }
+        if (!row.rep1 || row.rep1 === '') {
+          return (
+            <span className="text-amber-600 flex items-center gap-1 text-sm">
+              <AlertCircle className="h-4 w-4" />
+              לא משויך
+            </span>
+          );
+        }
+        const rep = allUsers.find((u) => u.email === row.rep1);
+        const displayUser = rep || { email: row.rep1, full_name: getRepName(row.rep1) };
+        return (
+          <div className="flex items-center gap-2 min-w-0">
+            <UserAvatar user={displayUser} size="sm" />
+            <span className="text-sm truncate">{displayUser.full_name}</span>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'משימה',
+      accessor: 'task',
+      width: '240px',
+      render: (row) => {
+        const meta = TASK_TYPE_META[row.task_type] || TASK_TYPE_META.other;
+        const due = parseSalesTaskDate(row.due_date);
+        const normalizedStatus = normalizeTaskStatus(row.task_status);
+        const todayStartLocal = new Date(); todayStartLocal.setHours(0, 0, 0, 0);
+        const todayEndLocal = new Date(todayStartLocal.getTime() + 86400000);
+        const overdueDays = due && due < todayStartLocal
+          ? Math.floor((todayStartLocal - due) / 86400000)
+          : 0;
+        const isTodayDue = due && due >= todayStartLocal && due < todayEndLocal;
+        let timeLabel = 'ללא יעד';
+        if (due) {
+          if (overdueDays > 0) timeLabel = `בפיגור ${overdueDays} ${overdueDays === 1 ? 'יום' : 'ימים'}`;
+          else if (isTodayDue) timeLabel = `היום ${safeFormat(row.due_date, 'HH:mm')}`;
+          else timeLabel = safeFormat(row.due_date, 'dd/MM HH:mm');
+        }
+        const statusLabel = {
+          not_completed: 'ממתין', completed: 'בוצע', not_done: 'לא בוצע', cancelled: 'בוטל',
+        }[normalizedStatus] || normalizedStatus;
+        const statusStyle = {
+          not_completed: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+          completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+          not_done: 'bg-red-50 text-red-700 ring-1 ring-red-200',
+          cancelled: 'bg-muted text-muted-foreground ring-1 ring-border',
+        }[normalizedStatus] || 'bg-muted/50 text-muted-foreground ring-1 ring-border';
+        const canQuickComplete = normalizedStatus === 'not_completed';
+        return (
+          <div onClick={(e) => e.stopPropagation()} className="space-y-1">
+            <div className="flex items-center gap-1.5 text-sm flex-wrap">
+              <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+              <span className="font-medium">{meta.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusStyle}`}>{statusLabel}</span>
+            </div>
+            <div className={`text-xs font-medium whitespace-nowrap ${
+              overdueDays > 0 ? 'text-red-600' : isTodayDue ? 'text-amber-600' : 'text-muted-foreground'
+            }`}>
+              {timeLabel}
+            </div>
+            {row.summary && (
+              <p className="text-xs text-muted-foreground/80 line-clamp-2">{row.summary}</p>
+            )}
+            {canQuickComplete && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-[11px]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCompletingTask({ ...row, rep1: row.rep1 || row.lead?.rep1, rep2: row.rep2 || row.lead?.rep2 });
+                }}
+              >
+                סיים משימה
+              </Button>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'תאריך',
+      accessor: 'dates',
+      width: '140px',
+      render: (row) => {
+        const dueRaw = row.due_date;
+        const createdRaw = row.created_date || row.manual_created_date;
+        const renderDateLine = (raw) => {
+          if (!raw) return null;
+          const d = parseDbTimestamp(raw) || new Date(raw);
+          if (!d || isNaN(d.getTime())) return null;
+          try {
+            return (
+              <>
+                <span>{formatInTimeZone(d, 'Asia/Jerusalem', 'dd/MM/yyyy')}</span>
+                <span className="text-muted-foreground/80"> · </span>
+                <span>{formatInTimeZone(d, 'Asia/Jerusalem', 'HH:mm')}</span>
+              </>
+            );
+          } catch {
+            return safeFormat(raw, 'dd/MM/yyyy HH:mm');
+          }
+        };
+        const dueLine = renderDateLine(dueRaw);
+        const createdLine = renderDateLine(createdRaw);
+        return (
+          <div className="text-xs whitespace-nowrap space-y-0.5">
+            <div>
+              <span className="text-muted-foreground">יעד: </span>
+              {dueLine ? <span className="font-medium text-foreground/80">{dueLine}</span> : <span className="text-muted-foreground/60">—</span>}
+            </div>
+            <div>
+              <span className="text-muted-foreground">נוצר: </span>
+              {createdLine ? <span className="text-muted-foreground/80">{createdLine}</span> : <span className="text-muted-foreground/60">—</span>}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'פעולות',
+      accessor: 'actions',
+      align: 'center',
+      width: '72px',
+      render: (row) => (
+        <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
+          {row.lead ? (
+            <QuickActions
+              type="lead"
+              data={row.lead}
+              hideContactButtons={true}
+              onView={() => handleOpenTaskDetails(row)}
+            />
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs"
+              onClick={(e) => { e.stopPropagation(); handleOpenTaskDetails(row); }}
+            >
+              פתח
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ], [allUsers]);
 
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
@@ -573,6 +881,26 @@ export default function SalesTasks() {
         />
       ) : (
       <>
+      {/* ===== KPI STRIP =====
+          Three at-a-glance numbers: every task in the rep's queue, what's
+          due today, and what was completed today. Counts come from the
+          same server-side aggregation that drives the tab badges, so they
+          stay in sync regardless of how many rows are currently loaded. */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">סך משימות</p>
+          <p className="text-2xl font-bold text-foreground tabular-nums mt-1">{totalCount.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">משימות להיום</p>
+          <p className="text-2xl font-bold text-amber-600 tabular-nums mt-1">{todayCount.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+          <p className="text-xs text-muted-foreground">סיימתי היום</p>
+          <p className="text-2xl font-bold text-emerald-600 tabular-nums mt-1">{completedTodayCount.toLocaleString()}</p>
+        </div>
+      </div>
+
       {/* ===== TABS - Primary strip + "more" overflow =====
           The KPI cards above this strip used to repeat the same numbers and
           fire the same setActiveTab() calls — pure redundancy. Tabs alone
@@ -775,16 +1103,15 @@ export default function SalesTasks() {
         );
       })()}
 
-      {/* ===== TASK LIST ===== */}
+      {/* ===== TASK LIST =====
+          Leads-style table layout — every column from the לידים screen
+          (לקוח / סטטוס / שם מודעה / SLA / מקור / נציג / תאריך) plus a
+          dedicated "משימה" column with the task type, status, due time,
+          summary, and a quick "סיים משימה" shortcut. Reuses DataTable so
+          row numbering, hover, click-to-edit, and loading skeletons all
+          match the rest of the app. */}
       <div className="space-y-3">
-        {isLoading ? (
-          <div className="bg-card rounded-xl border border-border shadow-card flex items-center justify-center py-16">
-            <div className="flex flex-col items-center gap-3">
-              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-              <p className="text-sm text-muted-foreground/70">טוען משימות...</p>
-            </div>
-          </div>
-        ) : finalVisibleTasks.length === 0 ? (
+        {!isLoading && finalVisibleTasks.length === 0 ? (
           <div className="bg-card rounded-xl border border-border shadow-card flex flex-col items-center justify-center py-16 gap-3">
             <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
               <ClipboardList className="h-7 w-7 text-muted-foreground/40" />
@@ -837,148 +1164,14 @@ export default function SalesTasks() {
             )}
           </div>
         ) : (
-          finalVisibleTasks.map((task, index) => {
-            const dueDate = parseSalesTaskDate(task.due_date);
-            const normalizedTaskStatus = normalizeTaskStatus(task.task_status);
-            const isOverdue = dueDate && dueDate < todayStart && normalizedTaskStatus !== 'completed' && normalizedTaskStatus !== 'cancelled';
-            const isToday = dueDate && dueDate >= todayStart && dueDate <= todayEnd && normalizedTaskStatus !== 'completed' && normalizedTaskStatus !== 'cancelled';
-            const isDone = normalizedTaskStatus === 'completed';
-            const isNextUp =
-              index === 0 &&
-              sortBy === 'priority' &&
-              ['today', 'overdue', 'not_completed'].includes(activeTab) &&
-              normalizedTaskStatus === 'not_completed';
-
-            const urgencyBorder = isDone ? 'border-s-green-300'
-              : isOverdue ? 'border-s-red-500'
-              : isToday ? 'border-s-orange-400'
-              : dueDate ? 'border-s-blue-400'
-              : 'border-s-border';
-
-            const TaskTypeIcon = {
-              call: Phone, whatsapp: MessageCircle, email: Mail, meeting: Users,
-              quote_preparation: FileText, followup: RefreshCw, assignment: ClipboardList, other: Paperclip,
-            }[task.task_type] || Paperclip;
-
-            const taskTypeLabel = {
-              call: 'שיחה', whatsapp: 'וואטסאפ', email: 'מייל', meeting: 'פגישה',
-              quote_preparation: 'הצעת מחיר', followup: 'מעקב', assignment: 'שיוך', other: 'אחר',
-            }[task.task_type] || 'אחר';
-
-            const taskTypeBadgeColor = {
-              call: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-              whatsapp: 'bg-green-50 text-green-700 ring-1 ring-green-200',
-              email: 'bg-purple-50 text-purple-700 ring-1 ring-purple-200',
-              meeting: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-              quote_preparation: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-              followup: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
-              assignment: 'bg-slate-50 text-slate-700 ring-1 ring-slate-200',
-              other: 'bg-muted/50 text-muted-foreground ring-1 ring-border',
-            }[task.task_type] || 'bg-muted/50 text-muted-foreground ring-1 ring-border';
-
-            const taskStatusStyle = {
-              not_completed: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-              completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-              not_done: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-              cancelled: 'bg-muted text-muted-foreground ring-1 ring-border',
-            }[normalizedTaskStatus] || 'bg-muted/50 text-muted-foreground ring-1 ring-border';
-
-            const taskStatusLabel = {
-              not_completed: 'ממתין', completed: 'בוצע', not_done: 'לא בוצע', cancelled: 'בוטל',
-            }[normalizedTaskStatus] || normalizedTaskStatus;
-
-            const dueDateDisplay = dueDate
-              ? isToday ? `היום ${safeFormat(task.due_date, 'HH:mm')}`
-              : safeFormat(task.due_date, 'dd/MM HH:mm')
-              : '';
-
-            const cardBgClass = {
-              not_completed: 'bg-orange-50/60 hover:bg-orange-100/60 border-orange-100',
-              completed: 'bg-green-50/60 hover:bg-green-100/60 border-green-100',
-              not_done: 'bg-red-50/60 hover:bg-red-100/60 border-red-100',
-              cancelled: 'bg-muted/50 hover:bg-muted border-border',
-            }[normalizedTaskStatus] || 'bg-card hover:bg-muted/50 border-border';
-
-            return (
-              <div
-                key={task.id}
-                onClick={() => handleOpenTaskDetails(task)}
-                className={`cursor-pointer p-4 rounded-xl border shadow-sm ${cardBgClass} transition-colors duration-150 hover:ring-2 hover:ring-primary/10 ${isDone ? 'opacity-70' : ''} ${isNextUp ? 'ring-2 ring-primary shadow-md' : ''}`}
-              >
-                {isNextUp && (
-                  <div className="mb-3 -mx-1 flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-bold text-primary-foreground">
-                      ★ הבאה בתור
-                    </span>
-                    <span className="text-xs text-muted-foreground">המשימה הראשונה לטיפול עכשיו</span>
-                  </div>
-                )}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center">
-
-                  {/* רבע 1: לקוח ונציג */}
-                  <div className="flex flex-col gap-1.5 text-start overflow-hidden w-full">
-                    <span className={`font-bold text-foreground truncate block ${isNextUp ? 'text-lg' : 'text-base'}`}>
-                      {task.lead?.full_name || task.summary?.match(/הליד (.+?)(?:\s+לנציג|\s+יש)/)?.[1] || task.summary?.match(/הליד (.+?)$/)?.[1] || 'ליד'}
-                    </span>
-                    <div className="text-sm text-muted-foreground truncate">
-                      נציג מטפל: {getRepName(task.rep1) || 'לא משויך'}
-                    </div>
-                  </div>
-
-                  {/* רבע 2: סוג וסטטוס */}
-                  <div className="flex flex-col items-start gap-2">
-                    <span className="font-bold text-sm text-foreground">
-                      {taskTypeLabel}
-                    </span>
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
-                      {taskStatusLabel}
-                    </span>
-                  </div>
-
-                  {/* רבע 3: תאריכים */}
-                  <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">תאריך יצירה:</span>
-                      <span dir="ltr" className="tabular-nums font-medium">
-                        {safeFormat(task.created_date || task.manual_created_date || new Date(), 'dd/MM/yyyy HH:mm')}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">תאריך יעד:</span>
-                      <span dir="ltr" className="tabular-nums font-medium">
-                        {dueDate ? safeFormat(dueDate, 'dd/MM/yyyy HH:mm') : 'ללא יעד'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* רבע 4: סטטוס ליד + זמן נותר/עבר */}
-                  <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 h-full">
-                    {(task.status || task.lead?.status) && (
-                      <StatusBadge status={task.status || task.lead?.status} />
-                    )}
-                    <div className="flex items-center sm:justify-end">
-                      {dueDate && normalizedTaskStatus !== 'completed' && normalizedTaskStatus !== 'cancelled' ? (
-                        <span className={`font-bold text-sm ${isOverdue ? 'text-red-600' : 'text-blue-800'}`}>
-                          {isOverdue ? 'באיחור של ' : 'בעוד '}
-                          {formatDistanceToNow(dueDate, { locale: he })}
-                        </span>
-                      ) : (
-                        <span></span>
-                      )}
-                    </div>
-                  </div>
-
-                </div>
-                
-                {/* Summary Row */}
-                {task.summary && (
-                  <div className="mt-3 pt-3 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
-                    {task.summary}
-                  </div>
-                )}
-              </div>
-            );
-          })
+          <DataTable
+            columns={taskTableColumns}
+            data={finalVisibleTasks}
+            isLoading={isLoading}
+            emptyMessage="לא נמצאו משימות"
+            onRowClick={handleOpenTaskDetails}
+            tableClassName="table-fixed min-w-[1280px]"
+          />
         )}
 
         {hasMoreTasks && (
@@ -1011,11 +1204,18 @@ export default function SalesTasks() {
       <ImportSalesTasks isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} />
 
       {/* Edit Task Dialog */}
-      <EditSalesTaskDialog 
-        isOpen={showEditTaskDialog} 
-        onClose={() => setShowEditTaskDialog(false)} 
-        task={editingTask} 
+      <EditSalesTaskDialog
+        isOpen={showEditTaskDialog}
+        onClose={() => setShowEditTaskDialog(false)}
+        task={editingTask}
         effectiveUser={effectiveUser}
+      />
+
+      {/* Complete-task dialog opened by the row's "סיים משימה" button */}
+      <CompleteTaskDialog
+        isOpen={!!completingTask}
+        task={completingTask}
+        onClose={() => setCompletingTask(null)}
       />
     </div>
   );
