@@ -15,14 +15,25 @@ export function isAdmin(user) {
 }
 
 export function isFactoryUser(user) {
-  return user?.department === 'factory';
+  return user?.department === 'factory' || user?.role === 'factory_user';
+}
+
+export function isBookkeeperUser(user) {
+  return user?.department === 'bookkeeping' || user?.role === 'bookkeeper';
 }
 
 export function canAccessSalesWorkspace(user) {
   if (!user) return false;
   if (user.role === 'admin') return true;
-  if (user.department === 'factory') return false;
+  if (isFactoryUser(user)) return false;
+  if (isBookkeeperUser(user)) return false;
   return true;
+}
+
+export function canAccessBookkeepingWorkspace(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return isBookkeeperUser(user);
 }
 
 function taskBelongsToUser(user, task, leadsById) {

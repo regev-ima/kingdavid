@@ -32,6 +32,7 @@ import {
   buildLeadsById,
   canAccessSalesWorkspace,
   filterSalesTasksForUser,
+  isBookkeeperUser,
   isFactoryUser,
 } from '@/components/shared/rbac';
 import {
@@ -213,6 +214,10 @@ export default function SalesDashboard() {
     if (!effectiveUser) return;
     if (isFactoryUser(effectiveUser)) {
       navigate(createPageUrl('FactoryDashboard'));
+      return;
+    }
+    if (isBookkeeperUser(effectiveUser)) {
+      navigate(createPageUrl('Bookkeeping'));
       return;
     }
     if (!canAccessSalesWorkspace(effectiveUser)) {
