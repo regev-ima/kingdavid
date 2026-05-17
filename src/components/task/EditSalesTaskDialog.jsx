@@ -18,6 +18,7 @@ import { he } from 'date-fns/locale';
 import { LEAD_STATUS_OPTIONS, TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import SLABadge from '@/components/sla/SLABadge';
+import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { formatPhoneForWhatsApp } from '@/utils/phoneUtils';
 import NewQuote from '@/pages/NewQuote';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
@@ -364,7 +365,9 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
                 <SelectTrigger className="bg-white border-primary/20"><SelectValue placeholder="בחר סטטוס ליד..." /></SelectTrigger>
                 <SelectContent className="max-h-[300px]">
                   {getVisibleStatusOptions(hiddenStatuses, editingTask.lead?.status).map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <StatusOptionRow status={opt.value} label={opt.label} />
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -890,7 +893,9 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
                 <SelectTrigger className="bg-muted"><SelectValue /></SelectTrigger>
                 <SelectContent className="max-h-[300px]">
                   {getVisibleStatusOptions(hiddenStatuses, editingTask.lead?.status).map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <StatusOptionRow status={opt.value} label={opt.label} />
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
