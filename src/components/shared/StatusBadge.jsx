@@ -76,6 +76,9 @@ const statusConfig = {
   in_production: { label: 'ייצור', color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },
   ready: { label: 'מוכן', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
   // Legacy values: render under the consolidated "ייצור" stage so old rows still display.
+  // `new` is the DB default on freshly-created orders — without this entry the
+  // production-status column on the Orders list literally read "new" in English.
+  new: { label: 'חדש', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
   materials_check: { label: 'ייצור', color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },
   qc: { label: 'ייצור', color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },
   
