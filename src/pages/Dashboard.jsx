@@ -210,6 +210,23 @@ export default function Dashboard() {
     placeholderData: (prev) => prev,
   });
 
+  // Count of "new" leads created within the selected date range. Kept as
+  // its own query (rather than pulled from getDashboardStats) so the tile
+  // is always present even if the Edge Function payload changes shape.
+  const { data: newLeadsCount = null } = useQuery({
+    queryKey: ['dashboardNewLeadsCount', dateRange?.from?.toISOString(), dateRange?.to?.toISOString()],
+    queryFn: () => {
+      const from = dateRange?.from || startOfDay(new Date());
+      const to = dateRange?.to ? endOfDay(dateRange.to) : endOfDay(from);
+      return base44.entities.Lead.count({
+        created_date: { '$gte': from.toISOString(), '$lte': to.toISOString() },
+      });
+    },
+    enabled: !!user && !isCheckingAuth,
+    staleTime: 45 * 1000,
+    placeholderData: (prev) => prev,
+  });
+
   const exportCsvMutation = useMutation({
     mutationFn: async (exportType) => {
       const from = dateRange?.from || startOfDay(new Date());
@@ -438,7 +455,21 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <KpiTile
+          title="לידים חדשים"
+          value={newLeadsCount === null ? '...' : Number(newLeadsCount).toLocaleString()}
+          subtitle="נכנסו בטווח שנבחר"
+          tone="info"
+          onClick={() => goTo({
+            page: 'Leads',
+            query: {
+              tab: 'all',
+              ...(startIso ? { startDate: startIso } : {}),
+              ...(endIso ? { endDate: endIso } : {}),
+            },
+          })}
+        />
         <KpiTile
           title="הכנסות בטווח"
           value={formatCurrency(summary?.revenue?.value || 0)}
