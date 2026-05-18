@@ -17,7 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle } from "lucide-react";
+import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { startOfDay, endOfDay, startOfWeek, startOfMonth } from '@/lib/safe-date-fns';
+import { format } from '@/lib/safe-date-fns';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { useToast } from "@/components/ui/use-toast";
@@ -50,6 +54,17 @@ export default function Leads() {
     source: initialParams.get('source') || 'all',
     rep1: initialParams.get('rep1') || 'all'
   });
+  // Date-range filter for the leads page. Initialized from ?startDate/?endDate
+  // (used by Dashboard drilldowns) so existing deep-links keep working; once
+  // the user picks a preset/range below, this becomes the source of truth.
+  const initialFrom = startDateParam ? new Date(startDateParam) : null;
+  const initialTo = endDateParam ? new Date(endDateParam) : null;
+  const initialDateRange =
+    initialFrom && !Number.isNaN(initialFrom.getTime()) &&
+    initialTo && !Number.isNaN(initialTo.getTime())
+      ? { from: initialFrom, to: initialTo }
+      : undefined;
+  const [dateRange, setDateRange] = useState(initialDateRange);
   const [selectedLeads, setSelectedLeads] = useState([]);
   const [assigningRep, setAssigningRep] = useState('');
   const [showImportFromSheets, setShowImportFromSheets] = useState(false);
@@ -131,11 +146,11 @@ export default function Leads() {
 
   const buildQuery = () => {
     const conditions = [];
-    const startDate = startDateParam ? new Date(startDateParam) : null;
-    const endDate = endDateParam ? new Date(endDateParam) : null;
+    const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
+    const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
     const hasValidDateRange =
-      startDate instanceof Date &&
-      endDate instanceof Date &&
+      startDate &&
+      endDate &&
       !Number.isNaN(startDate.getTime()) &&
       !Number.isNaN(endDate.getTime());
 
@@ -211,8 +226,11 @@ export default function Leads() {
     return { '$and': conditions };
   };
 
+  const fromIso = dateRange?.from ? new Date(dateRange.from).toISOString() : '';
+  const toIso = dateRange?.to ? new Date(dateRange.to).toISOString() : '';
+
   const { data: leads = [], isLoading, isFetching } = useQuery({
-    queryKey: ['leads', limit, activeTab, userEmail, isAdmin, filters.rep1, filters.search, filters.status, filters.source, repScope, startDateParam, endDateParam],
+    queryKey: ['leads', limit, activeTab, userEmail, isAdmin, filters.rep1, filters.search, filters.status, filters.source, repScope, fromIso, toIso],
     queryFn: () => {
       const query = buildQuery();
       return base44.entities.Lead.filter(query, '-effective_sort_date', limit);
@@ -227,8 +245,35 @@ export default function Leads() {
   // would lie ("מציג 100" when 16k actually match). Same query shape; just
   // returns the total rather than the rows.
   const { data: filteredCount = null } = useQuery({
-    queryKey: ['leadsCount', activeTab, userEmail, isAdmin, filters.rep1, filters.search, filters.status, filters.source, repScope, startDateParam, endDateParam],
+    queryKey: ['leadsCount', activeTab, userEmail, isAdmin, filters.rep1, filters.search, filters.status, filters.source, repScope, fromIso, toIso],
     queryFn: () => base44.entities.Lead.count(buildQuery()),
+    enabled: !!effectiveUser,
+    staleTime: 60000,
+    placeholderData: (prev) => prev,
+  });
+
+  // Count of "new" leads — created within the selected date range. Uses
+  // created_date (not effective_sort_date) so a returning lead that bumped
+  // its sort date doesn't get double-counted as new. When no range is
+  // selected, this is just the total lead count (matching the existing
+  // "כל הלידים" tile).
+  const { data: newLeadsCount = null } = useQuery({
+    queryKey: ['newLeadsCount', fromIso, toIso, isAdmin, userEmail],
+    queryFn: () => {
+      const conditions = [];
+      if (!isAdmin) {
+        conditions.push({
+          '$or': [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }],
+        });
+      }
+      if (fromIso && toIso) {
+        conditions.push({ created_date: { '$gte': fromIso, '$lte': toIso } });
+      }
+      const query = conditions.length === 0
+        ? {}
+        : conditions.length === 1 ? conditions[0] : { '$and': conditions };
+      return base44.entities.Lead.count(query);
+    },
     enabled: !!effectiveUser,
     staleTime: 60000,
     placeholderData: (prev) => prev,
@@ -714,6 +759,37 @@ export default function Leads() {
     setFilters({ search: '', status: 'all', source: 'all', rep1: 'all' });
   };
 
+  const handleDatePreset = (preset) => {
+    setLimit(100);
+    const today = new Date();
+    switch (preset) {
+      case 'today':
+        setDateRange({ from: startOfDay(today), to: endOfDay(today) });
+        break;
+      case 'week':
+        setDateRange({ from: startOfWeek(today, { weekStartsOn: 0 }), to: endOfDay(today) });
+        break;
+      case 'month':
+        setDateRange({ from: startOfMonth(today), to: endOfDay(today) });
+        break;
+      case 'clear':
+      default:
+        setDateRange(undefined);
+    }
+  };
+
+  const handleDateRangeSelect = (range) => {
+    setLimit(100);
+    if (!range?.from) {
+      setDateRange(undefined);
+      return;
+    }
+    setDateRange({
+      from: startOfDay(range.from),
+      to: endOfDay(range.to || range.from),
+    });
+  };
+
   const totalLeadCount = kpiCounts.total;
   const myLeadsCount = kpiCounts.my;
   const openLeadsCount = kpiCounts.open;
@@ -804,8 +880,91 @@ export default function Leads() {
         </div>
       )}
 
+      {/* Date-range filter — drives the new-leads tile and filters the table */}
+      <div className="flex flex-wrap items-center gap-2" dir="rtl">
+        <span className="text-sm font-medium text-muted-foreground me-1">סינון לפי תאריך:</span>
+        <Button
+          variant={(() => {
+            if (!dateRange?.from || !dateRange?.to) return 'outline';
+            const today = new Date();
+            return dateRange.from.toDateString() === startOfDay(today).toDateString()
+              && dateRange.to.toDateString() === endOfDay(today).toDateString()
+              ? 'default' : 'outline';
+          })()}
+          size="sm"
+          onClick={() => handleDatePreset('today')}
+          className="h-8 text-xs"
+        >
+          היום
+        </Button>
+        <Button
+          variant={(() => {
+            if (!dateRange?.from || !dateRange?.to) return 'outline';
+            const today = new Date();
+            return dateRange.from.toDateString() === startOfWeek(today, { weekStartsOn: 0 }).toDateString()
+              && dateRange.to.toDateString() === endOfDay(today).toDateString()
+              ? 'default' : 'outline';
+          })()}
+          size="sm"
+          onClick={() => handleDatePreset('week')}
+          className="h-8 text-xs"
+        >
+          השבוע
+        </Button>
+        <Button
+          variant={(() => {
+            if (!dateRange?.from || !dateRange?.to) return 'outline';
+            const today = new Date();
+            return dateRange.from.toDateString() === startOfMonth(today).toDateString()
+              && dateRange.to.toDateString() === endOfDay(today).toDateString()
+              ? 'default' : 'outline';
+          })()}
+          size="sm"
+          onClick={() => handleDatePreset('month')}
+          className="h-8 text-xs"
+        >
+          החודש
+        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 text-xs font-normal" dir="rtl">
+              <CalendarIcon className="me-2 h-4 w-4" />
+              {dateRange?.from && dateRange?.to ? (
+                <>
+                  {format(dateRange.from, 'dd.MM.yy')}
+                  {' - '}
+                  {format(dateRange.to, 'dd.MM.yy')}
+                </>
+              ) : (
+                <span>טווח תאריכים</span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end" dir="rtl">
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={dateRange?.from}
+              selected={dateRange}
+              onSelect={handleDateRangeSelect}
+              numberOfMonths={1}
+            />
+          </PopoverContent>
+        </Popover>
+        {dateRange?.from && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleDatePreset('clear')}
+            className="h-8 text-xs"
+          >
+            נקה תאריך
+          </Button>
+        )}
+      </div>
+
       {/* Dashboard-style Tabs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {isAdmin && (
           <div
             onClick={() => setActiveTab('unassigned')}
@@ -870,8 +1029,8 @@ export default function Leads() {
             onClick={() => setActiveTab('all')}
             className={`
               p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2
-              ${activeTab === 'all' 
-                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
+              ${activeTab === 'all'
+                ? 'border-primary bg-primary/5 text-primary shadow-sm'
                 : 'border-border/50 bg-card hover:border-primary/20 hover:bg-muted/50 text-muted-foreground shadow-card'
               }
             `}
@@ -882,6 +1041,21 @@ export default function Leads() {
             </span>
           </div>
         )}
+
+        {/* 5. New leads in the selected date range */}
+        <div
+          className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/40 flex flex-col items-center justify-center gap-2"
+        >
+          <span className="text-sm font-medium text-muted-foreground">לידים חדשים</span>
+          <span className="text-2xl font-bold text-emerald-700">
+            {newLeadsCount === null ? '...' : Number(newLeadsCount).toLocaleString()}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            {dateRange?.from && dateRange?.to
+              ? `${format(dateRange.from, 'dd.MM.yy')} - ${format(dateRange.to, 'dd.MM.yy')}`
+              : 'מאז ומעולם'}
+          </span>
+        </div>
       </div>
 
       <div className="space-y-3">
