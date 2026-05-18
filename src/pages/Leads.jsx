@@ -252,11 +252,11 @@ export default function Leads() {
     placeholderData: (prev) => prev,
   });
 
-  // Count of "new" leads — created within the selected date range. Uses
-  // created_date (not effective_sort_date) so a returning lead that bumped
-  // its sort date doesn't get double-counted as new. When no range is
-  // selected, this is just the total lead count (matching the existing
-  // "כל הלידים" tile).
+  // Count of "new" leads within the selected date range. Uses
+  // effective_sort_date so a returning lead (פניה חוזרת) whose latest
+  // activity falls in the range is counted as a new lead for volume
+  // purposes — a re-contact is treated as a new lead. When no range is
+  // selected, this is just the total lead count.
   const { data: newLeadsCount = null } = useQuery({
     queryKey: ['newLeadsCount', fromIso, toIso, isAdmin, userEmail],
     queryFn: () => {
@@ -267,7 +267,7 @@ export default function Leads() {
         });
       }
       if (fromIso && toIso) {
-        conditions.push({ created_date: { '$gte': fromIso, '$lte': toIso } });
+        conditions.push({ effective_sort_date: { '$gte': fromIso, '$lte': toIso } });
       }
       const query = conditions.length === 0
         ? {}

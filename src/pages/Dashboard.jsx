@@ -210,16 +210,17 @@ export default function Dashboard() {
     placeholderData: (prev) => prev,
   });
 
-  // Count of "new" leads created within the selected date range. Kept as
-  // its own query (rather than pulled from getDashboardStats) so the tile
-  // is always present even if the Edge Function payload changes shape.
+  // Count of "new" leads within the selected date range. Uses
+  // effective_sort_date so a returning lead (פניה חוזרת) that re-engaged
+  // in the range is counted alongside freshly-created leads — matches the
+  // product definition that a re-contact is a new lead for volume purposes.
   const { data: newLeadsCount = null } = useQuery({
     queryKey: ['dashboardNewLeadsCount', dateRange?.from?.toISOString(), dateRange?.to?.toISOString()],
     queryFn: () => {
       const from = dateRange?.from || startOfDay(new Date());
       const to = dateRange?.to ? endOfDay(dateRange.to) : endOfDay(from);
       return base44.entities.Lead.count({
-        created_date: { '$gte': from.toISOString(), '$lte': to.toISOString() },
+        effective_sort_date: { '$gte': from.toISOString(), '$lte': to.toISOString() },
       });
     },
     enabled: !!user && !isCheckingAuth,
