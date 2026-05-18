@@ -174,7 +174,10 @@ Deno.serve(async (req) => {
 });
 
 async function handleDirectInvite(body: Record<string, any>) {
-  const email: string | undefined = body.email?.trim();
+  // Normalize to lowercase: Supabase Auth stores emails lowercase, so any
+  // mixed-case input would break the auth_id link step (eq/find comparisons
+  // are case-sensitive) and leave the profile orphaned from its auth user.
+  const email: string | undefined = body.email?.trim().toLowerCase();
   const role: string = body.role || 'user';
   const fullName: string | undefined = body.full_name || body.fullName;
   const redirectTo: string | undefined = body.redirectTo;
