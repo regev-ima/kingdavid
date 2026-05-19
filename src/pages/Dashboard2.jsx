@@ -16,6 +16,9 @@ import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
 import TeamTab from '@/components/dashboard2/tabs/TeamTab';
 import PlaceholderTab from '@/components/dashboard2/tabs/PlaceholderTab';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
+import { getDemoData, getDemoPrevious } from '@/components/dashboard2/demoData';
+
+const DEMO_MODE_STORAGE_KEY = 'dashboard2.demoMode';
 
 function LoadingState() {
   return (
@@ -46,6 +49,27 @@ export default function Dashboard2() {
   const [customRange, setCustomRange] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [activeTab, setActiveTab] = useState('overview');
+  const [demoMode, setDemoMode] = useState(() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage?.getItem(DEMO_MODE_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleDemoMode = () => {
+    setDemoMode((prev) => {
+      const next = !prev;
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage?.setItem(DEMO_MODE_STORAGE_KEY, next ? '1' : '0');
+        }
+      } catch {
+        // localStorage not available — ignore.
+      }
+      return next;
+    });
+  };
 
   // Same gating as Dashboard 1: admins only. Other roles bounce to their
   // home dashboard so they don't see an "Access denied" flash.
@@ -92,15 +116,18 @@ export default function Dashboard2() {
   const currentQuery = useDashboard2Data({
     start,
     end,
-    enabled: !!user && !isCheckingAuth,
+    enabled: !!user && !isCheckingAuth && !demoMode,
     label: 'current',
   });
   const previousQuery = useDashboard2Data({
     start: prevStart,
     end: prevEnd,
-    enabled: !!user && !isCheckingAuth,
+    enabled: !!user && !isCheckingAuth && !demoMode,
     label: 'previous',
   });
+
+  const demoCurrent = useMemo(() => (demoMode ? getDemoData() : null), [demoMode, rangeKey, customRange]);
+  const demoPrevious = useMemo(() => (demoMode ? getDemoPrevious() : null), [demoMode]);
 
   const handlePresetChange = (key) => {
     setRangeKey(key);
@@ -125,10 +152,10 @@ export default function Dashboard2() {
     return <div className="text-center py-12 text-muted-foreground">טוען...</div>;
   }
 
-  const current = currentQuery.data || {};
-  const previous = previousQuery.data || {};
-  const isLoading = currentQuery.isLoading && !currentQuery.data;
-  const isFetching = currentQuery.isFetching || previousQuery.isFetching;
+  const current = demoMode ? demoCurrent || {} : currentQuery.data || {};
+  const previous = demoMode ? demoPrevious || {} : previousQuery.data || {};
+  const isLoading = !demoMode && currentQuery.isLoading && !currentQuery.data;
+  const isFetching = !demoMode && (currentQuery.isFetching || previousQuery.isFetching);
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -146,6 +173,8 @@ export default function Dashboard2() {
         onRefresh={handleRefresh}
         isFetching={isFetching}
         lastUpdated={lastUpdated}
+        demoMode={demoMode}
+        onToggleDemoMode={toggleDemoMode}
       />
 
       {isLoading ? (

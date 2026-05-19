@@ -1,7 +1,8 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Clock, RefreshCw, LayoutDashboard } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Clock, RefreshCw, LayoutDashboard, Sparkles } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import Dashboard2DateRange from './Dashboard2DateRange';
 
@@ -13,6 +14,8 @@ export default function Dashboard2Header({
   onRefresh,
   isFetching,
   lastUpdated,
+  demoMode,
+  onToggleDemoMode,
 }) {
   return (
     <Card className="border-border shadow-card">
@@ -23,7 +26,15 @@ export default function Dashboard2Header({
               <LayoutDashboard className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground">מרכז שליטה</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-foreground">מרכז שליטה</h1>
+                {demoMode ? (
+                  <Badge variant="warning" className="gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    נתוני הדגמה
+                  </Badge>
+                ) : null}
+              </div>
               <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
                 <Clock className="h-3 w-3" />
                 עדכון אחרון: {lastUpdated ? format(lastUpdated, 'HH:mm:ss') : '--:--:--'}
@@ -31,7 +42,17 @@ export default function Dashboard2Header({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant={demoMode ? 'default' : 'outline'}
+              size="sm"
+              onClick={onToggleDemoMode}
+              className="h-9 text-xs gap-1.5"
+              title="החלף בין נתונים חיים לבין נתוני הדגמה לתצוגה מקדימה"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {demoMode ? 'מצב הדגמה פעיל' : 'הדגמה'}
+            </Button>
             <Dashboard2DateRange
               rangeKey={rangeKey}
               dateRange={dateRange}
@@ -42,7 +63,7 @@ export default function Dashboard2Header({
               variant="outline"
               size="sm"
               onClick={onRefresh}
-              disabled={isFetching}
+              disabled={isFetching || demoMode}
               className="h-9 text-xs gap-1.5"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
