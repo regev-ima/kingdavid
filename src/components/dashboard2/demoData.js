@@ -82,27 +82,65 @@ function mulberry32(seed) {
   };
 }
 
-function trendSeries(days, dailyBase, rng) {
+function toLocalIsoDate(d) {
+  // Avoid the UTC shift you get from toISOString() — for an Israeli user
+  // viewing midnight-local data, toISOString rolls back to the previous
+  // day, which made the tooltip read "01.01" for points that were
+  // actually "13.01" / "27.01" etc.
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function toLocalIsoHour(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${hh}:00`;
+}
+
+function trendSeries(days, dailyBase, rng, endDate = new Date()) {
+  // Single-day windows (today / yesterday) get hourly granularity so the
+  // chart actually shows movement instead of a lone dot.
+  if (days <= 1) {
+    const perHour = dailyBase / 12; // business hours
+    const out = [];
+    for (let h = 8; h <= 21; h++) {
+      const date = new Date(endDate);
+      date.setHours(h, 0, 0, 0);
+      const noise = (rng() - 0.5) * 0.5 * perHour;
+      out.push({
+        date: toLocalIsoHour(date),
+        value: Math.max(0, Math.round(perHour + noise)),
+      });
+    }
+    return out;
+  }
+
   // Cap series length so a year doesn't render 365 dots — aggregate to
-  // weekly buckets when the window is long.
+  // longer buckets when the window is long.
   const buckets = days <= 31 ? days : days <= 90 ? Math.ceil(days / 3) : Math.ceil(days / 14);
+  const step = Math.max(1, Math.round(days / buckets));
   const perBucket = (dailyBase * days) / buckets;
   const out = [];
-  const today = new Date();
   for (let i = buckets - 1; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - i * Math.round(days / buckets));
+    const date = new Date(endDate);
+    date.setHours(12, 0, 0, 0); // noon to dodge timezone day-shift
+    date.setDate(date.getDate() - i * step);
     const noise = (rng() - 0.5) * 0.4 * perBucket;
     out.push({
-      date: date.toISOString().slice(0, 10),
+      date: toLocalIsoDate(date),
       value: Math.max(0, Math.round(perBucket + noise)),
     });
   }
   return out;
 }
 
-function buildSnapshot({ rangeKey, customRange, label, factor }) {
+function buildSnapshot({ rangeKey, customRange, dateRange, label, factor }) {
   const days = periodDaysFor(rangeKey, customRange);
+  const endDate = dateRange?.end ? new Date(dateRange.end) : new Date();
   const rng = mulberry32(hashSeed(rangeKey, label));
 
   const scaled = (base) => Math.max(0, Math.round(base * days * factor * (0.85 + rng() * 0.3)));
@@ -214,21 +252,22 @@ function buildSnapshot({ rangeKey, customRange, label, factor }) {
     pendingQuotes: snap(SNAPSHOT_BASE.pendingQuotes),
     lowStockItems: snap(SNAPSHOT_BASE.lowStockItems),
     deliveriesNeedScheduling: snap(SNAPSHOT_BASE.deliveriesNeedScheduling),
-    // Trends
-    leadsTrend: trendSeries(days, DAILY_BASE.newLeads, mulberry32(hashSeed(rangeKey, `${label}-leads`))),
-    revenueTrend: trendSeries(days, DAILY_BASE.revenue, mulberry32(hashSeed(rangeKey, `${label}-rev`))),
+    // Trends — anchored at the period's end date so the tooltip dates
+    // shift when you flip between today / week / month / year.
+    leadsTrend: trendSeries(days, DAILY_BASE.newLeads, mulberry32(hashSeed(rangeKey, `${label}-leads`)), endDate),
+    revenueTrend: trendSeries(days, DAILY_BASE.revenue, mulberry32(hashSeed(rangeKey, `${label}-rev`)), endDate),
     sourceBreakdown: marketingBreakdown.map((s) => ({ name: s.name, value: s.leads_count })),
     reps,
     rawStats: { _demo: true, _days: days },
   };
 }
 
-export function getDemoData(rangeKey = 'today', customRange = null) {
-  return buildSnapshot({ rangeKey, customRange, label: 'current', factor: 1 });
+export function getDemoData(rangeKey = 'today', customRange = null, dateRange = null) {
+  return buildSnapshot({ rangeKey, customRange, dateRange, label: 'current', factor: 1 });
 }
 
-export function getDemoPrevious(rangeKey = 'today', customRange = null) {
+export function getDemoPrevious(rangeKey = 'today', customRange = null, dateRange = null) {
   // Previous period reads a little lower so deltas are visible. Different
   // metrics shift by different amounts to keep it from looking flat.
-  return buildSnapshot({ rangeKey, customRange, label: 'previous', factor: 0.82 });
+  return buildSnapshot({ rangeKey, customRange, dateRange, label: 'previous', factor: 0.82 });
 }

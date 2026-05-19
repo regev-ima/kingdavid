@@ -64,7 +64,7 @@ export default function LeadsTab({ current = {}, dateRange }) {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(v) => String(v).slice(5).replace('-', '.')} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                     <Tooltip
                       contentStyle={{
@@ -73,6 +73,7 @@ export default function LeadsTab({ current = {}, dateRange }) {
                         borderRadius: 8,
                         fontSize: 12,
                       }}
+                      labelFormatter={(v) => String(v)}
                       formatter={(value) => [formatNumber(value), 'לידים']}
                     />
                     <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2} dot={false} />

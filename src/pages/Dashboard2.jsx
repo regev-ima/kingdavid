@@ -127,12 +127,12 @@ export default function Dashboard2() {
   });
 
   const demoCurrent = useMemo(
-    () => (demoMode ? getDemoData(rangeKey, customRange) : null),
-    [demoMode, rangeKey, customRange],
+    () => (demoMode ? getDemoData(rangeKey, customRange, { start, end }) : null),
+    [demoMode, rangeKey, customRange, start, end],
   );
   const demoPrevious = useMemo(
-    () => (demoMode ? getDemoPrevious(rangeKey, customRange) : null),
-    [demoMode, rangeKey, customRange],
+    () => (demoMode ? getDemoPrevious(rangeKey, customRange, { start: prevStart, end: prevEnd }) : null),
+    [demoMode, rangeKey, customRange, prevStart, prevEnd],
   );
 
   const handlePresetChange = (key) => {
@@ -191,8 +191,11 @@ export default function Dashboard2() {
         <>
           <HeroStrip current={current} previous={previous} dateRange={dateRange} />
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="bg-card border border-border h-auto flex-wrap p-1 justify-start">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4" dir="rtl">
+            <TabsList
+              dir="rtl"
+              className="bg-card border border-border h-auto flex flex-wrap p-1 justify-start w-full"
+            >
               <TabsTrigger value="overview" className="text-xs">סקירה כללית</TabsTrigger>
               <TabsTrigger value="leads" className="text-xs">לידים</TabsTrigger>
               <TabsTrigger value="orders" className="text-xs">הזמנות</TabsTrigger>

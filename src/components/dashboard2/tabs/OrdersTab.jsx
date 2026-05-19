@@ -62,7 +62,7 @@ export default function OrdersTab({ current = {} }) {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(v) => String(v).slice(5).replace('-', '.')} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₪${(v / 1000).toFixed(0)}K`} />
                   <Tooltip
                     contentStyle={{
@@ -71,6 +71,7 @@ export default function OrdersTab({ current = {} }) {
                       borderRadius: 8,
                       fontSize: 12,
                     }}
+                    labelFormatter={(v) => String(v)}
                     formatter={(value) => [formatCurrency(value), 'הכנסה']}
                   />
                   <Line type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} dot={false} />
