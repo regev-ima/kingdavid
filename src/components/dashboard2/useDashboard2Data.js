@@ -84,12 +84,34 @@ async function fetchDashboard2Snapshot({ start, end }) {
   const factoryOverdueAlert = (stats?.smart_alerts || []).find((a) => a.type === 'factory_overdue');
 
   const sources = marketing?.sources || [];
-  const topSource = sources.length > 0
-    ? [...sources].sort((a, b) => (b.leads_count || b.value || 0) - (a.leads_count || a.value || 0))[0]?.source ||
-      [...sources].sort((a, b) => (b.leads_count || b.value || 0) - (a.leads_count || a.value || 0))[0]?.name
+  // Normalize each source into the same shape the Marketing leaderboard
+  // expects (leads_count + closing/handling/lost % + cost + ROI). Falls
+  // back to derived values when the Edge Function only sent partial data.
+  const marketingBreakdown = sources.map((s) => {
+    const leads = Number(s.leads_count || s.value || 0);
+    const won = Number(s.won_count || 0);
+    const inHandling = Number(s.in_handling_count || s.open_count || 0);
+    const lost = Number(s.lost_count ?? Math.max(0, leads - won - inHandling));
+    const pct = (n) => (leads > 0 ? +((n / leads) * 100).toFixed(1) : 0);
+    const cost = Number(s.cost || 0);
+    const sourceRevenue = Number(s.revenue || 0);
+    return {
+      name: s.source || s.name || 'אחר',
+      leads_count: leads,
+      won_count: won,
+      conversion: s.conversion != null ? Number(s.conversion) : pct(won),
+      in_handling_rate: s.in_handling_rate != null ? Number(s.in_handling_rate) : pct(inHandling),
+      lost_rate: s.lost_rate != null ? Number(s.lost_rate) : pct(lost),
+      cost,
+      revenue: sourceRevenue,
+      roi: cost > 0 ? +((sourceRevenue / cost).toFixed(1)) : null,
+    };
+  });
+  const topSource = marketingBreakdown.length > 0
+    ? [...marketingBreakdown].sort((a, b) => (b.leads_count || 0) - (a.leads_count || 0))[0]?.name
     : null;
-  const marketingLeads = sources.reduce((sum, s) => sum + (s.leads_count || s.value || 0), 0);
-  const marketingCost = sources.reduce((sum, s) => sum + (s.cost || 0), 0);
+  const marketingLeads = marketingBreakdown.reduce((sum, s) => sum + (s.leads_count || 0), 0);
+  const marketingCost = marketingBreakdown.reduce((sum, s) => sum + (s.cost || 0), 0);
   const marketingRoi = marketingCost > 0 ? +((revenue / marketingCost).toFixed(1)) : null;
 
   return {
@@ -129,10 +151,8 @@ async function fetchDashboard2Snapshot({ start, end }) {
     // Charts + tables
     leadsTrend: (trends?.leads_daily || []).map((r) => ({ date: r.date, value: r.value })),
     revenueTrend: (trends?.revenue_daily || []).map((r) => ({ date: r.date, value: r.value })),
-    sourceBreakdown: sources.map((s) => ({
-      name: s.source || s.name || 'אחר',
-      value: s.leads_count || s.value || 0,
-    })),
+    sourceBreakdown: marketingBreakdown.map((s) => ({ name: s.name, value: s.leads_count })),
+    marketingBreakdown,
     reps,
     rawStats: stats,
   };

@@ -142,9 +142,43 @@ function buildSnapshot({ rangeKey, customRange, label, factor }) {
     };
   });
 
-  const topSource = ['דיגיטל', 'חנות', 'מוקד', 'WhatsApp'][Math.floor(rng() * 4)];
-  const marketingCost = scaled(DAILY_BASE.marketingCost);
-  const marketingLeads = scaled(DAILY_BASE.marketingLeads);
+  // Per-source breakdown so the Marketing section can render a
+  // leaderboard with the same shape as the rep leaderboard: leads count,
+  // closing / handling / lost percentages, cost, ROI.
+  const sourceBase = [
+    { name: 'דיגיטל',  base_leads: 18, base_cost: 5200, conv_target: 38.9 },
+    { name: 'חנות',    base_leads: 12, base_cost: 800,  conv_target: 33.3 },
+    { name: 'מוקד',    base_leads: 9,  base_cost: 2100, conv_target: 26.0 },
+    { name: 'WhatsApp', base_leads: 6, base_cost: 1400, conv_target: 21.5 },
+    { name: 'הפניה',   base_leads: 4,  base_cost: 0,    conv_target: 45.0 },
+  ];
+  const marketingScale = Math.max(0.4, (days * factor) / 1);
+  const marketingBreakdown = sourceBase.map((s) => {
+    const conv = Math.max(0, Math.min(75, s.conv_target + (rng() - 0.5) * 8));
+    const inHandling = Math.max(0, Math.min(75, 28 + (rng() - 0.5) * 10));
+    const lost = Math.max(0, 100 - conv - inHandling);
+    const leads = Math.max(1, Math.round(s.base_leads * marketingScale * (0.85 + rng() * 0.3)));
+    const won = Math.round((conv / 100) * leads);
+    const cost = Math.round(s.base_cost * marketingScale * (0.9 + rng() * 0.2));
+    // Revenue scales with closing volume and average deal size from this source.
+    const avgDeal = 7000 + Math.round(rng() * 4000);
+    const sourceRevenue = won * avgDeal;
+    const roi = cost > 0 ? +(sourceRevenue / cost).toFixed(1) : null;
+    return {
+      name: s.name,
+      leads_count: leads,
+      won_count: won,
+      conversion: +conv.toFixed(1),
+      in_handling_rate: +inHandling.toFixed(1),
+      lost_rate: +lost.toFixed(1),
+      cost,
+      revenue: sourceRevenue,
+      roi,
+    };
+  });
+  const topSource = [...marketingBreakdown].sort((a, b) => (b.leads_count || 0) - (a.leads_count || 0))[0]?.name || 'דיגיטל';
+  const marketingCost = marketingBreakdown.reduce((s, r) => s + (r.cost || 0), 0);
+  const marketingLeads = marketingBreakdown.reduce((s, r) => s + (r.leads_count || 0), 0);
 
   return {
     // Window-scaled counts
@@ -161,7 +195,8 @@ function buildSnapshot({ rangeKey, customRange, label, factor }) {
     marketingCost,
     marketingLeads,
     topSource,
-    marketingRoi: marketingCost > 0 ? +(revenue / marketingCost).toFixed(1) : null,
+    marketingRoi: marketingCost > 0 ? +(marketingBreakdown.reduce((s, r) => s + (r.revenue || 0), 0) / marketingCost).toFixed(1) : null,
+    marketingBreakdown,
     // Real-time snapshots (don't scale with window)
     openLeadsTotal: snap(SNAPSHOT_BASE.openLeadsTotal),
     noAnswerLeads: snap(SNAPSHOT_BASE.noAnswerLeads),
@@ -182,13 +217,7 @@ function buildSnapshot({ rangeKey, customRange, label, factor }) {
     // Trends
     leadsTrend: trendSeries(days, DAILY_BASE.newLeads, mulberry32(hashSeed(rangeKey, `${label}-leads`))),
     revenueTrend: trendSeries(days, DAILY_BASE.revenue, mulberry32(hashSeed(rangeKey, `${label}-rev`))),
-    sourceBreakdown: [
-      { name: 'דיגיטל', value: Math.round(newLeadsCount * 0.38) },
-      { name: 'חנות', value: Math.round(newLeadsCount * 0.26) },
-      { name: 'מוקד', value: Math.round(newLeadsCount * 0.19) },
-      { name: 'WhatsApp', value: Math.round(newLeadsCount * 0.13) },
-      { name: 'הפניה', value: Math.round(newLeadsCount * 0.04) },
-    ],
+    sourceBreakdown: marketingBreakdown.map((s) => ({ name: s.name, value: s.leads_count })),
     reps,
     rawStats: { _demo: true, _days: days },
   };

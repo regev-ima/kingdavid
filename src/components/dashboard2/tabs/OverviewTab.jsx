@@ -5,6 +5,7 @@ import SectionCard from '../SectionCard';
 import MiniKPI from '../MiniKPI';
 import MiniSparkline from '../MiniSparkline';
 import RepLeaderboard from '../RepLeaderboard';
+import MarketingBreakdown from '../MarketingBreakdown';
 import {
   Users,
   ShoppingCart,
@@ -134,18 +135,18 @@ export default function OverviewTab({ current = {}, previous = {}, dateRange }) 
 
       {/* 7. שיווק */}
       <SectionCard
-        title="שיווק"
+        title="שיווק לפי מקור"
         icon={Megaphone}
         iconColor="text-orange-600"
         iconBg="bg-orange-100"
         drillToPage="Marketing"
       >
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <MiniKPI label="עלויות שיווק" value={formatCurrency(current.marketingCost)} color="orange" />
           <MiniKPI label="לידים מקמפיינים" value={current.marketingLeads} color="orange" />
-          <MiniKPI label="מקור מוביל" value={current.topSource || '—'} color="orange" />
-          <MiniKPI label="ROI" value={current.marketingRoi ? `${current.marketingRoi}x` : '—'} color="emerald" />
+          <MiniKPI label="ROI כולל" value={current.marketingRoi ? `${current.marketingRoi}x` : '—'} color="emerald" />
         </div>
+        <MarketingBreakdown sources={current.marketingBreakdown || []} limit={5} />
       </SectionCard>
 
       {/* 8. מלאי ומשלוחים */}
