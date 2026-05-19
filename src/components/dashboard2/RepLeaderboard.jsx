@@ -1,37 +1,22 @@
 import React from 'react';
 import { Crown } from 'lucide-react';
 
-function formatCurrency(value) {
-  return `₪${Number(value || 0).toLocaleString()}`;
+function formatCurrencyCompact(value) {
+  const n = Number(value || 0);
+  if (n >= 1_000_000) return `₪${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `₪${Math.round(n / 1_000)}K`;
+  return `₪${n.toLocaleString()}`;
 }
 
 function tierForConversion(conv) {
-  if (conv >= 30) return { dot: 'bg-emerald-500' };
-  if (conv >= 15) return { dot: 'bg-amber-500' };
-  return { dot: 'bg-red-500' };
+  if (conv >= 30) return 'bg-emerald-500';
+  if (conv >= 15) return 'bg-amber-500';
+  return 'bg-red-500';
 }
 
-// Three-color breakdown so the customer can see at a glance, per rep:
-// סגירה (won) / בטיפול (still open) / אבד (lost or timed out).
-// The three percentages should sum to ~100 — they describe what happened
-// to every lead the rep ever touched in the selected window.
-function StatPill({ label, value, tone }) {
-  const toneClass = {
-    emerald: 'text-emerald-700 bg-emerald-50 border-emerald-100',
-    amber: 'text-amber-700 bg-amber-50 border-amber-100',
-    red: 'text-red-700 bg-red-50 border-red-100',
-  }[tone];
-  return (
-    <span
-      className={`inline-flex items-baseline gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${toneClass}`}
-      title={`${label}: ${value}%`}
-    >
-      <span className="opacity-75">{label}</span>
-      <span>{Number(value || 0).toFixed(0)}%</span>
-    </span>
-  );
-}
-
+// Compact rep leaderboard sized for a 1/4-width SectionCard at 1920×1080.
+// Header row labels the metrics once; each rep row is just colored numbers
+// in those columns. Sorted by revenue desc.
 export default function RepLeaderboard({ reps = [], limit = 5 }) {
   const sorted = [...reps]
     .sort((a, b) => (b.revenue || 0) - (a.revenue || 0))
@@ -46,40 +31,54 @@ export default function RepLeaderboard({ reps = [], limit = 5 }) {
   }
 
   return (
-    <div className="space-y-1.5" dir="rtl">
-      {sorted.map((rep, idx) => {
-        const conv = Number(rep.conversion ?? 0);
-        const inHandling = Number(rep.in_handling_rate ?? 0);
-        const lost = Number(rep.lost_rate ?? 0);
-        const tier = tierForConversion(conv);
-        const isTop = idx === 0;
-        const displayName = rep.full_name || rep.email || 'לא ידוע';
-        return (
-          <div
-            key={rep.email || displayName}
-            className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5"
-          >
-            <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-              {isTop ? (
-                <Crown className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
-              ) : (
-                <span className={`h-2 w-2 rounded-full ${tier.dot} flex-shrink-0`} />
-              )}
-              <span className="text-xs font-semibold text-foreground truncate" title={displayName}>
-                {displayName}
-              </span>
+    <div className="rounded-md border border-border/50 overflow-hidden" dir="rtl">
+      <div
+        className="grid items-center gap-1.5 px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/40"
+        style={{ gridTemplateColumns: 'minmax(0, 2fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr)' }}
+      >
+        <div className="text-right">נציג</div>
+        <div className="text-center text-emerald-700/80">סגירה</div>
+        <div className="text-center text-amber-700/80">בטיפול</div>
+        <div className="text-center text-red-700/80">אבד</div>
+        <div className="text-end">הכנסות</div>
+      </div>
+      <div className="divide-y divide-border/50">
+        {sorted.map((rep, idx) => {
+          const conv = Number(rep.conversion ?? 0);
+          const inHandling = Number(rep.in_handling_rate ?? 0);
+          const lost = Number(rep.lost_rate ?? 0);
+          const dot = tierForConversion(conv);
+          const isTop = idx === 0;
+          const displayName = rep.full_name || rep.email || 'לא ידוע';
+          return (
+            <div
+              key={rep.email || displayName}
+              className="grid items-center gap-1.5 px-2 py-1.5 text-xs hover:bg-muted/20 transition-colors"
+              style={{ gridTemplateColumns: 'minmax(0, 2fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr)' }}
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                {isTop ? (
+                  <Crown className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                ) : (
+                  <span className={`h-2 w-2 rounded-full ${dot} flex-shrink-0`} />
+                )}
+                <span className="font-semibold text-foreground truncate" title={displayName}>
+                  {displayName}
+                </span>
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                  {rep.leads_count || 0}
+                </span>
+              </div>
+              <div className="text-center font-semibold text-emerald-700">{conv.toFixed(0)}%</div>
+              <div className="text-center font-semibold text-amber-700">{inHandling.toFixed(0)}%</div>
+              <div className="text-center font-semibold text-red-700">{lost.toFixed(0)}%</div>
+              <div className="text-end font-bold text-foreground whitespace-nowrap">
+                {formatCurrencyCompact(rep.revenue)}
+              </div>
             </div>
-            <div className="flex items-center gap-1 flex-wrap justify-end">
-              <StatPill label="סגירה" value={conv} tone="emerald" />
-              <StatPill label="בטיפול" value={inHandling} tone="amber" />
-              <StatPill label="אבד" value={lost} tone="red" />
-              <span className="text-xs font-bold text-foreground whitespace-nowrap ms-1">
-                {formatCurrency(rep.revenue)}
-              </span>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
