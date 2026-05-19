@@ -11,16 +11,29 @@ function formatCurrency(value) {
 
 function tierFor(conv) {
   const n = Number(conv ?? 0);
-  if (n >= 30) return { dot: 'bg-emerald-500', label: 'text-emerald-700', bg: 'bg-emerald-50' };
-  if (n >= 15) return { dot: 'bg-amber-500', label: 'text-amber-700', bg: 'bg-amber-50' };
-  return { dot: 'bg-red-500', label: 'text-red-700', bg: 'bg-red-50' };
+  if (n >= 30) return { dot: 'bg-emerald-500' };
+  if (n >= 15) return { dot: 'bg-amber-500' };
+  return { dot: 'bg-red-500' };
+}
+
+function Pct({ value, tone }) {
+  const toneClass = {
+    emerald: 'text-emerald-700 bg-emerald-50',
+    amber: 'text-amber-700 bg-amber-50',
+    red: 'text-red-700 bg-red-50',
+  }[tone];
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold ${toneClass}`}>
+      {Number(value || 0).toFixed(0)}%
+    </span>
+  );
 }
 
 export default function TeamTab({ current = {} }) {
   const reps = [...(current.reps || [])].sort((a, b) => (b.revenue || 0) - (a.revenue || 0));
 
   return (
-    <Card className="border-border shadow-card">
+    <Card className="border-border shadow-card" dir="rtl">
       <CardHeader className="pb-2 border-b border-border/50">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -42,23 +55,29 @@ export default function TeamTab({ current = {} }) {
           </div>
         ) : (
           <div className="divide-y divide-border/50">
-            <div className="grid grid-cols-12 gap-2 px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/40">
-              <div className="col-span-4">נציג</div>
-              <div className="col-span-2 text-center">לידים</div>
-              <div className="col-span-2 text-center">נסגרו</div>
-              <div className="col-span-2 text-center">המרה</div>
-              <div className="col-span-2 text-end">הכנסות</div>
+            <div className="grid grid-cols-14 gap-2 px-4 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/40" style={{ gridTemplateColumns: 'minmax(0, 3fr) repeat(5, minmax(0, 1.5fr)) minmax(0, 2fr)' }}>
+              <div className="text-right">נציג</div>
+              <div className="text-center">לידים</div>
+              <div className="text-center">סגירה</div>
+              <div className="text-center">בטיפול</div>
+              <div className="text-center">אבד / עבר זמן</div>
+              <div className="text-center">נסגרו</div>
+              <div className="text-end">הכנסות</div>
             </div>
             {reps.map((rep, idx) => {
-              const tier = tierFor(rep.conversion);
+              const conv = Number(rep.conversion || 0);
+              const inHandling = Number(rep.in_handling_rate || 0);
+              const lost = Number(rep.lost_rate || 0);
+              const tier = tierFor(conv);
               const isTop = idx === 0;
               const displayName = rep.full_name || rep.email || 'לא ידוע';
               return (
                 <div
                   key={rep.email || displayName}
-                  className="grid grid-cols-12 gap-2 px-4 py-2.5 text-sm items-center hover:bg-muted/30 transition-colors"
+                  className="grid gap-2 px-4 py-2.5 text-sm items-center hover:bg-muted/30 transition-colors"
+                  style={{ gridTemplateColumns: 'minmax(0, 3fr) repeat(5, minmax(0, 1.5fr)) minmax(0, 2fr)' }}
                 >
-                  <div className="col-span-4 flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
                     {isTop ? (
                       <Crown className="h-4 w-4 text-amber-500 flex-shrink-0" />
                     ) : (
@@ -68,14 +87,12 @@ export default function TeamTab({ current = {} }) {
                       {displayName}
                     </span>
                   </div>
-                  <div className="col-span-2 text-center text-muted-foreground">{rep.leads_count || 0}</div>
-                  <div className="col-span-2 text-center text-muted-foreground">{rep.won_count || 0}</div>
-                  <div className="col-span-2 text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold ${tier.label} ${tier.bg}`}>
-                      {Number(rep.conversion || 0).toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="col-span-2 text-end font-bold text-foreground">
+                  <div className="text-center text-muted-foreground">{rep.leads_count || 0}</div>
+                  <div className="text-center"><Pct value={conv} tone="emerald" /></div>
+                  <div className="text-center"><Pct value={inHandling} tone="amber" /></div>
+                  <div className="text-center"><Pct value={lost} tone="red" /></div>
+                  <div className="text-center text-muted-foreground">{rep.won_count || 0}</div>
+                  <div className="text-end font-bold text-foreground whitespace-nowrap">
                     {formatCurrency(rep.revenue)}
                   </div>
                 </div>

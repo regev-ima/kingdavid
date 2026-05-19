@@ -126,8 +126,14 @@ export default function Dashboard2() {
     label: 'previous',
   });
 
-  const demoCurrent = useMemo(() => (demoMode ? getDemoData() : null), [demoMode, rangeKey, customRange]);
-  const demoPrevious = useMemo(() => (demoMode ? getDemoPrevious() : null), [demoMode]);
+  const demoCurrent = useMemo(
+    () => (demoMode ? getDemoData(rangeKey, customRange) : null),
+    [demoMode, rangeKey, customRange],
+  );
+  const demoPrevious = useMemo(
+    () => (demoMode ? getDemoPrevious(rangeKey, customRange) : null),
+    [demoMode, rangeKey, customRange],
+  );
 
   const handlePresetChange = (key) => {
     setRangeKey(key);
@@ -158,24 +164,26 @@ export default function Dashboard2() {
   const isFetching = !demoMode && (currentQuery.isFetching || previousQuery.isFetching);
 
   return (
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-4" dir="rtl">
       {isFetching && !isLoading ? (
         <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-primary/20">
           <div className="h-full bg-primary animate-pulse" style={{ width: '55%' }} />
         </div>
       ) : null}
 
-      <Dashboard2Header
-        rangeKey={rangeKey}
-        dateRange={dateRange}
-        onPresetChange={handlePresetChange}
-        onCustomChange={handleCustomChange}
-        onRefresh={handleRefresh}
-        isFetching={isFetching}
-        lastUpdated={lastUpdated}
-        demoMode={demoMode}
-        onToggleDemoMode={toggleDemoMode}
-      />
+      <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-2 pb-2 bg-background/80 backdrop-blur-sm">
+        <Dashboard2Header
+          rangeKey={rangeKey}
+          dateRange={dateRange}
+          onPresetChange={handlePresetChange}
+          onCustomChange={handleCustomChange}
+          onRefresh={handleRefresh}
+          isFetching={isFetching}
+          lastUpdated={lastUpdated}
+          demoMode={demoMode}
+          onToggleDemoMode={toggleDemoMode}
+        />
+      </div>
 
       {isLoading ? (
         <LoadingState />

@@ -31,16 +31,17 @@ export default function MiniKPI({ label, value, color = 'gray', onClick, suffix 
       type="button"
       onClick={onClick}
       disabled={!interactive}
-      className={`group flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-right transition-all ${colorClass} ${
+      dir="rtl"
+      className={`group flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-right w-full transition-all ${colorClass} ${
         interactive
           ? 'cursor-pointer hover:shadow-sm hover:-translate-y-0.5 active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
           : 'cursor-default'
       }`}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wide opacity-75 truncate w-full" title={label}>
+      <span className="block text-[10px] font-semibold uppercase tracking-wide opacity-75 truncate w-full text-right" title={label}>
         {label}
       </span>
-      <span className="text-xl font-bold leading-none">
+      <span className="block text-lg sm:text-xl font-bold leading-none whitespace-nowrap overflow-hidden text-ellipsis w-full text-right" title={String(value ?? '')}>
         {formatNumber(value)}
         {suffix ? <span className="text-xs font-medium opacity-70 me-1">{suffix}</span> : null}
       </span>

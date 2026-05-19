@@ -1,17 +1,35 @@
 import React from 'react';
-import { Crown, TrendingUp } from 'lucide-react';
+import { Crown } from 'lucide-react';
 
 function formatCurrency(value) {
   return `₪${Number(value || 0).toLocaleString()}`;
 }
 
-// Top sales reps for the selected period. Color codes conversion rate
-// (≥30% green, 15-30% amber, <15% red) so the customer can spot at a glance
-// who is performing and who is not.
 function tierForConversion(conv) {
-  if (conv >= 30) return { dot: 'bg-emerald-500', label: 'text-emerald-700' };
-  if (conv >= 15) return { dot: 'bg-amber-500', label: 'text-amber-700' };
-  return { dot: 'bg-red-500', label: 'text-red-700' };
+  if (conv >= 30) return { dot: 'bg-emerald-500' };
+  if (conv >= 15) return { dot: 'bg-amber-500' };
+  return { dot: 'bg-red-500' };
+}
+
+// Three-color breakdown so the customer can see at a glance, per rep:
+// סגירה (won) / בטיפול (still open) / אבד (lost or timed out).
+// The three percentages should sum to ~100 — they describe what happened
+// to every lead the rep ever touched in the selected window.
+function StatPill({ label, value, tone }) {
+  const toneClass = {
+    emerald: 'text-emerald-700 bg-emerald-50 border-emerald-100',
+    amber: 'text-amber-700 bg-amber-50 border-amber-100',
+    red: 'text-red-700 bg-red-50 border-red-100',
+  }[tone];
+  return (
+    <span
+      className={`inline-flex items-baseline gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${toneClass}`}
+      title={`${label}: ${value}%`}
+    >
+      <span className="opacity-75">{label}</span>
+      <span>{Number(value || 0).toFixed(0)}%</span>
+    </span>
+  );
 }
 
 export default function RepLeaderboard({ reps = [], limit = 5 }) {
@@ -28,9 +46,11 @@ export default function RepLeaderboard({ reps = [], limit = 5 }) {
   }
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" dir="rtl">
       {sorted.map((rep, idx) => {
         const conv = Number(rep.conversion ?? 0);
+        const inHandling = Number(rep.in_handling_rate ?? 0);
+        const lost = Number(rep.lost_rate ?? 0);
         const tier = tierForConversion(conv);
         const isTop = idx === 0;
         const displayName = rep.full_name || rep.email || 'לא ידוע';
@@ -39,7 +59,7 @@ export default function RepLeaderboard({ reps = [], limit = 5 }) {
             key={rep.email || displayName}
             className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5"
           >
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
               {isTop ? (
                 <Crown className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
               ) : (
@@ -49,14 +69,11 @@ export default function RepLeaderboard({ reps = [], limit = 5 }) {
                 {displayName}
               </span>
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0 text-[11px]">
-              <span className="text-muted-foreground">
-                {rep.leads_count || 0} לידים
-              </span>
-              <span className={`font-semibold ${tier.label}`}>
-                {conv.toFixed(0)}%
-              </span>
-              <span className="font-bold text-foreground">
+            <div className="flex items-center gap-1 flex-wrap justify-end">
+              <StatPill label="סגירה" value={conv} tone="emerald" />
+              <StatPill label="בטיפול" value={inHandling} tone="amber" />
+              <StatPill label="אבד" value={lost} tone="red" />
+              <span className="text-xs font-bold text-foreground whitespace-nowrap ms-1">
                 {formatCurrency(rep.revenue)}
               </span>
             </div>

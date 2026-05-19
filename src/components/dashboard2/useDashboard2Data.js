@@ -61,7 +61,22 @@ async function fetchDashboard2Snapshot({ start, end }) {
   const live = stats?.live_pipeline || {};
   const trends = stats?.trends || {};
   const marketing = stats?.marketing_performance || {};
-  const reps = stats?.sales_performance?.reps || [];
+  // The Edge Function returns per-rep leads/won/conversion/revenue but not
+  // the "in handling" vs "lost" breakdown the customer asked for. Derive it
+  // here from what we have so the leaderboard always shows the three rates
+  // even before the backend learns to expose them.
+  const reps = (stats?.sales_performance?.reps || []).map((r) => {
+    const total = Number(r.leads_count || 0);
+    const won = Number(r.won_count || 0);
+    const inHandling = Number(r.in_handling_count ?? r.open_count ?? 0);
+    const lost = Number(r.lost_count ?? Math.max(0, total - won - inHandling));
+    const pct = (n) => (total > 0 ? +((n / total) * 100).toFixed(1) : 0);
+    return {
+      ...r,
+      in_handling_rate: r.in_handling_rate != null ? r.in_handling_rate : pct(inHandling),
+      lost_rate: r.lost_rate != null ? r.lost_rate : pct(lost),
+    };
+  });
 
   const revenue = Number(summary?.revenue?.value || 0);
   const avgOrder = ordersCount > 0 ? Math.round(revenue / ordersCount) : 0;

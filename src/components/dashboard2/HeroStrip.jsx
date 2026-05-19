@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import KPICard from '@/components/shared/KPICard';
+import HeroTile from './HeroTile';
 import {
   Users,
   ShoppingCart,
@@ -11,12 +11,19 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-function formatCurrency(value) {
-  return `₪${Number(value || 0).toLocaleString()}`;
+function formatCurrencyCompact(value) {
+  const n = Number(value || 0);
+  if (n >= 1_000_000) return `₪${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `₪${Math.round(n / 1_000)}K`;
+  return `₪${n.toLocaleString()}`;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString();
 }
 
 // Period-over-period delta as a fraction (e.g. 0.25 means +25%).
-// Returns null when the previous value is missing/zero so KPICard renders "—".
+// Returns null when the previous value is missing/zero so the tile renders "—".
 function calcDelta(current, previous) {
   const c = Number(current) || 0;
   const p = Number(previous) || 0;
@@ -42,7 +49,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
   const cards = [
     {
       title: 'לידים בטווח',
-      value: current.newLeadsCount ?? 0,
+      value: formatNumber(current.newLeadsCount ?? 0),
       delta: calcDelta(current.newLeadsCount, previous.newLeadsCount),
       icon: Users,
       color: 'blue',
@@ -50,7 +57,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
     },
     {
       title: 'הזמנות בטווח',
-      value: current.ordersCount ?? 0,
+      value: formatNumber(current.ordersCount ?? 0),
       delta: calcDelta(current.ordersCount, previous.ordersCount),
       icon: ShoppingCart,
       color: 'emerald',
@@ -58,7 +65,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
     },
     {
       title: 'הכנסות בטווח',
-      value: formatCurrency(current.revenue),
+      value: formatCurrencyCompact(current.revenue),
       delta: calcDelta(current.revenue, previous.revenue),
       icon: DollarSign,
       color: 'emerald',
@@ -66,7 +73,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
     },
     {
       title: 'כרטיסי שירות פתוחים',
-      value: current.openTickets ?? 0,
+      value: formatNumber(current.openTickets ?? 0),
       delta: calcDelta(current.openTickets, previous.openTickets),
       deltaPolarity: 'negative',
       icon: Headphones,
@@ -75,7 +82,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
     },
     {
       title: 'מזרונים בייצור',
-      value: current.inProduction ?? 0,
+      value: formatNumber(current.inProduction ?? 0),
       delta: calcDelta(current.inProduction, previous.inProduction),
       icon: Factory,
       color: 'violet',
@@ -83,7 +90,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
     },
     {
       title: 'משימות באיחור',
-      value: current.tasksOverdue ?? 0,
+      value: formatNumber(current.tasksOverdue ?? 0),
       delta: calcDelta(current.tasksOverdue, previous.tasksOverdue),
       deltaPolarity: 'negative',
       icon: AlertTriangle,
@@ -95,7 +102,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
   return (
     <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       {cards.map((c) => (
-        <KPICard key={c.title} {...c} />
+        <HeroTile key={c.title} {...c} />
       ))}
     </section>
   );
