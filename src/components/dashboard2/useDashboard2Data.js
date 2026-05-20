@@ -1,5 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { CLOSED_STATUSES } from '@/constants/leadOptions';
+import { fetchAllList } from '@/lib/base44Pagination';
+
+// Lead statuses that mean "open / not yet decided". Used for the
+// פתוחים סה״כ KPI and the no-answer carve-out. NOTE: the previous
+// version used `$nin: ['won','lost','closed']`, which doesn't match
+// any value in the real status enum (`new_lead`, `deal_closed`,
+// `not_relevant_*`, …) — so the filter became a no-op and the tile
+// counted every lead ever, not just open ones.
+const NO_ANSWER_STATUSES = [
+  'no_answer_1', 'no_answer_2', 'no_answer_3', 'no_answer_4', 'no_answer_5',
+  'no_answer_whatsapp_sent', 'no_answer_calls',
+];
+
+// "מזרונים בייצור" = anything actively on the floor: materials_check,
+// in_production, qc. (`not_started` has its own tile, `ready` has its
+// own tile — both excluded here so totals don't double-count.)
+const IN_PRODUCTION_STATUSES = ['materials_check', 'in_production', 'qc'];
 
 // One query, one round-trip per period. Fans out to:
 //   - getDashboardStats Edge Function (KPIs, sales reps, trends)
@@ -36,15 +54,16 @@ async function fetchDashboard2Snapshot({ start, end }) {
     deliveriesToday,
     deliveriesNeedScheduling,
     deliveriesShipped,
+    inventory,
   ] = await Promise.all([
     base44.functions.invoke('getDashboardStats', { startDate: startIso, endDate: endIso }),
     base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.Lead.count({ status: { $nin: ['won', 'lost', 'closed'] } }),
-    base44.entities.Lead.count({ status: { $nin: ['won', 'lost', 'closed'] }, first_action_at: null }),
+    base44.entities.Lead.count({ status: { $nin: CLOSED_STATUSES } }),
+    base44.entities.Lead.count({ status: { $in: NO_ANSWER_STATUSES } }),
     base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }),
     base44.entities.Order.count({ payment_status: { $in: ['unpaid', 'deposit_paid'] } }),
     base44.entities.Order.count({ payment_status: 'paid', created_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.Order.count({ production_status: 'in_production' }),
+    base44.entities.Order.count({ production_status: { $in: IN_PRODUCTION_STATUSES } }),
     base44.entities.Order.count({ production_status: 'ready' }),
     base44.entities.Order.count({ production_status: 'not_started' }),
     base44.entities.Order.count({ delivery_status: 'delivered', created_date: { $gte: startIso, $lte: endIso } }),
@@ -55,7 +74,16 @@ async function fetchDashboard2Snapshot({ start, end }) {
     base44.entities.DeliveryShipment.count({ scheduled_date: { $gte: startIso, $lte: endIso } }).catch(() => 0),
     base44.entities.DeliveryShipment.count({ status: 'need_scheduling' }).catch(() => 0),
     base44.entities.DeliveryShipment.count({ status: 'delivered', scheduled_date: { $gte: startIso, $lte: endIso } }).catch(() => 0),
+    fetchAllList(base44.entities.InventoryItem).catch(() => []),
   ]);
+
+  // qty_on_hand ≤ min_threshold = "פריטים מתחת לסף" (matches the
+  // FactoryDashboard / Inventory page rule). Items without a configured
+  // threshold are skipped — otherwise everything would flag.
+  const lowStockItems = (inventory || []).filter((item) => {
+    if (!item || !item.min_threshold) return false;
+    return Number(item.qty_on_hand || 0) <= Number(item.min_threshold);
+  }).length;
 
   const summary = stats?.summary_kpis || {};
   const live = stats?.live_pipeline || {};
@@ -65,14 +93,24 @@ async function fetchDashboard2Snapshot({ start, end }) {
   // the "in handling" vs "lost" breakdown the customer asked for. Derive it
   // here from what we have so the leaderboard always shows the three rates
   // even before the backend learns to expose them.
+  // getDashboardStats returns reps keyed by `rep_email` / `rep_name` and
+  // exposes `leads_range` for the in-range lead count + `conversion_rate`.
+  // RepLeaderboard.jsx reads `email` / `full_name` / `leads_count` /
+  // `conversion`, so without these aliases every row collapsed to
+  // "לא ידוע" with 0% across the board.
   const reps = (stats?.sales_performance?.reps || []).map((r) => {
-    const total = Number(r.leads_count || 0);
-    const won = Number(r.won_count || 0);
-    const inHandling = Number(r.in_handling_count ?? r.open_count ?? 0);
+    const total = Number(r.leads_count ?? r.leads_range ?? 0);
+    const won = Number(r.won_count ?? r.won ?? 0);
+    const inHandling = Number(r.in_handling_count ?? r.open_count ?? r.workload_open_tasks ?? 0);
     const lost = Number(r.lost_count ?? Math.max(0, total - won - inHandling));
     const pct = (n) => (total > 0 ? +((n / total) * 100).toFixed(1) : 0);
     return {
       ...r,
+      email: r.email ?? r.rep_email,
+      full_name: r.full_name ?? r.rep_name,
+      leads_count: total,
+      won_count: won,
+      conversion: r.conversion != null ? Number(r.conversion) : Number(r.conversion_rate ?? pct(won)),
       in_handling_rate: r.in_handling_rate != null ? r.in_handling_rate : pct(inHandling),
       lost_rate: r.lost_rate != null ? r.lost_rate : pct(lost),
     };
@@ -144,7 +182,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
     marketingLeads,
     topSource,
     marketingRoi,
-    lowStockItems: 0, // requires server-side computation; placeholder for now
+    lowStockItems,
     deliveriesToday,
     deliveriesNeedScheduling,
     deliveriesShipped,
