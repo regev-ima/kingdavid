@@ -49,6 +49,7 @@ import UserAvatar from "@/components/shared/UserAvatar";
 const navigationByRole = {
   admin: [
     { name: 'דשבורד כללי', href: 'Dashboard', icon: LayoutDashboard },
+    { name: 'מרכז שליטה', href: 'ControlCenter', icon: LayoutDashboard },
     { name: 'לידים', href: 'Leads', icon: Users },
     { name: 'לקוחות', href: 'Customers', icon: Crown },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
