@@ -56,6 +56,7 @@ import ControlCenter from './pages/ControlCenter';
 import CustomerDetails from './pages/CustomerDetails';
 import Customers from './pages/Customers';
 import Dashboard from './pages/Dashboard';
+import Dashboard2 from './pages/Dashboard2';
 import Deliveries from './pages/Deliveries';
 import EditQuote from './pages/EditQuote';
 import ExtraCharges from './pages/ExtraCharges';
@@ -101,6 +102,7 @@ export const PAGES = {
     "CustomerDetails": CustomerDetails,
     "Customers": Customers,
     "Dashboard": Dashboard,
+    "Dashboard2": Dashboard2,
     "Deliveries": Deliveries,
     "EditQuote": EditQuote,
     "ExtraCharges": ExtraCharges,
