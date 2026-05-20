@@ -17,6 +17,7 @@ export default function SectionCard({
   drillToPage,
   drillQuery = {},
   drillLabel = 'כניסה לדשבורד',
+  onDrillClick,
   children,
 }) {
   const params = new URLSearchParams(drillQuery).toString();
@@ -25,6 +26,14 @@ export default function SectionCard({
       ? `${createPageUrl(drillToPage)}?${params}`
       : createPageUrl(drillToPage)
     : null;
+
+  const drillButtonClass = 'group inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors flex-shrink-0';
+  const drillContent = (
+    <>
+      <span>{drillLabel}</span>
+      <ChevronLeft className="h-3.5 w-3.5 group-hover:-translate-x-0.5 transition-transform" />
+    </>
+  );
 
   return (
     <Card className="border-border shadow-card hover:shadow-card-hover transition-shadow" dir="rtl">
@@ -40,13 +49,13 @@ export default function SectionCard({
               {title}
             </h3>
           </div>
-          {drillUrl ? (
-            <Link
-              to={drillUrl}
-              className="group inline-flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors flex-shrink-0"
-            >
-              <span>{drillLabel}</span>
-              <ChevronLeft className="h-3.5 w-3.5 group-hover:-translate-x-0.5 transition-transform" />
+          {onDrillClick ? (
+            <button type="button" onClick={onDrillClick} className={drillButtonClass}>
+              {drillContent}
+            </button>
+          ) : drillUrl ? (
+            <Link to={drillUrl} className={drillButtonClass}>
+              {drillContent}
             </Link>
           ) : null}
         </div>

@@ -207,7 +207,7 @@ export default function Dashboard2() {
             </TabsList>
 
             <TabsContent value="overview" className="m-0">
-              <OverviewTab current={current} previous={previous} dateRange={dateRange} />
+              <OverviewTab current={current} previous={previous} dateRange={dateRange} onSwitchTab={setActiveTab} />
             </TabsContent>
 
             <TabsContent value="leads" className="m-0">
