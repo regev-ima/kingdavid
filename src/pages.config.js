@@ -52,6 +52,7 @@ import Bookkeeping from './pages/Bookkeeping';
 import BulkUpdate from './pages/BulkUpdate';
 import CallAnalytics from './pages/CallAnalytics';
 import ClubSignups from './pages/ClubSignups';
+import ControlCenter from './pages/ControlCenter';
 import CustomerDetails from './pages/CustomerDetails';
 import Customers from './pages/Customers';
 import Dashboard from './pages/Dashboard';
@@ -97,6 +98,7 @@ export const PAGES = {
     "BulkUpdate": BulkUpdate,
     "CallAnalytics": CallAnalytics,
     "ClubSignups": ClubSignups,
+    "ControlCenter": ControlCenter,
     "CustomerDetails": CustomerDetails,
     "Customers": Customers,
     "Dashboard": Dashboard,
