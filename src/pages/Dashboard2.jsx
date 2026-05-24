@@ -14,8 +14,8 @@ import OverviewTab from '@/components/dashboard2/tabs/OverviewTab';
 import LeadsTab from '@/components/dashboard2/tabs/LeadsTab';
 import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
 import TeamTab from '@/components/dashboard2/tabs/TeamTab';
+import MarketingTab from '@/components/dashboard2/tabs/MarketingTab';
 import PlaceholderTab from '@/components/dashboard2/tabs/PlaceholderTab';
-import MarketingPage from '@/pages/Marketing';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData, getDemoPrevious } from '@/components/dashboard2/demoData';
 
@@ -240,14 +240,14 @@ export default function Dashboard2() {
             </TabsContent>
 
             <TabsContent value="marketing" className="m-0">
-              {/* Embed the full Marketing page so the team gets the same
-                  ROI / CPL / campaign breakdown they get from the standalone
-                  /Marketing route, without having to leave מרכז שליטה.
-                  The embedded page brings its own date range picker — that
-                  picker is independent of the Dashboard2 global picker on
-                  purpose (the existing report-style filters there don't map
-                  onto the Dashboard2 preset set). */}
-              <MarketingPage />
+              {/* Dashboard2-native marketing view. Drives off the same
+                  `current` snapshot the other tabs use, so demo mode + the
+                  global date range work out of the box. Charts are kept
+                  compact (h-44) so the four breakdown tables (source /
+                  campaign / landing page / rep) actually fit above the
+                  fold — the standalone /Marketing route is one click
+                  away for the deep-dive. */}
+              <MarketingTab current={current} previous={previous} dateRange={dateRange} />
             </TabsContent>
 
             <TabsContent value="inventory" className="m-0">
