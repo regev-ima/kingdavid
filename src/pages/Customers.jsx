@@ -174,6 +174,21 @@ export default function Customers() {
     ? `מתוך ${globalCount.toLocaleString()} סה״כ`
     : null;
 
+  // Lookup map for resolving rep emails → display names in the table.
+  // Building it once per render is cheap (the users list is small) and
+  // saves an .find() per row per rep.
+  const repNameByEmail = useMemo(() => {
+    const map = new Map();
+    for (const u of users) {
+      if (u?.email) map.set(u.email, u.full_name || u.email);
+    }
+    return map;
+  }, [users]);
+  const renderRepCell = (email, fallbackText = '—') => {
+    if (!email) return <span className="text-muted-foreground">{fallbackText}</span>;
+    return <span>{repNameByEmail.get(email) || email}</span>;
+  };
+
   const columns = [
     {
       header: 'לקוח',
@@ -187,6 +202,22 @@ export default function Customers() {
     {
       header: 'אימייל',
       render: (customer) => customer.email || '-'
+    },
+    {
+      header: 'נציג אחראי',
+      // Primary rep is `account_manager`; show the secondary rep
+      // underneath when one exists so the column captures both without
+      // adding a second column for what's usually empty.
+      render: (customer) => (
+        <div className="text-sm">
+          <div>{renderRepCell(customer.account_manager, 'לא משויך')}</div>
+          {customer.rep2 ? (
+            <div className="text-xs text-muted-foreground">
+              משני: {repNameByEmail.get(customer.rep2) || customer.rep2}
+            </div>
+          ) : null}
+        </div>
+      )
     },
     {
       header: 'הזמנות',
