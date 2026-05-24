@@ -25,27 +25,28 @@ const PAGE_SIZE = 500;
 // might exceed it, in which case the KPI uses the count + average.
 const AGG_LIMIT = 5000;
 
-// Build a Supabase filter object from the page's filter state. Shared
-// between the row query, the count query, and the aggregate query so
-// they always agree on what "matches the current cut" means.
-function buildCustomerFilters({ search, rep }) {
-  const filters = {};
+// Build the customers list query as a raw Supabase select. The
+// generic entities.filter helper composed $or → PostgREST `.or()`
+// in a way that intermittently returned 0 rows for valid rep
+// matches (suspect: clauses with empty/null sibling columns +
+// case-sensitive `.eq.`). Building the URL ourselves keeps the
+// filter shape obvious and lets us use `.ilike.` for an exact but
+// case-insensitive comparison on rep emails — defensive against
+// data that's a mix of "izhak" / "Izhak" / "izhak " (trailing space
+// from older imports).
+function applyCustomerFilters(query, { search, rep }) {
   if (rep && rep !== 'all') {
-    filters.$or = [{ account_manager: rep }, { rep2: rep }];
+    // PostgREST `.or()` lets us OR account_manager / rep2 in one
+    // expression. Wrap the rep value in quotes so a `+` or `,` inside
+    // the email doesn't break the comma-separated clause list.
+    const safe = String(rep).replace(/[",()]/g, ''); // strip URL-special chars
+    query = query.or(`account_manager.ilike.${safe},rep2.ilike.${safe}`);
   }
   if (search && search.trim()) {
-    const trimmed = search.trim();
-    const term = { $regex: trimmed, $options: 'i' };
-    // Use $and so this $or doesn't clobber the rep $or above.
-    const searchOr = { $or: [{ full_name: term }, { phone: term }, { email: term }] };
-    if (filters.$or) {
-      filters.$and = [{ $or: filters.$or }, searchOr];
-      delete filters.$or;
-    } else {
-      Object.assign(filters, searchOr);
-    }
+    const term = search.trim().replace(/[",()]/g, '');
+    query = query.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
   }
-  return filters;
+  return query;
 }
 
 export default function Customers() {
@@ -59,12 +60,17 @@ export default function Customers() {
 
   // Server-side filtered + paginated list. Replaces the previous
   // fetchAllList(Customer) which pulled all 15k+ rows in 31 sequential
-  // batches with 150ms throttling and made the page take ~5+ seconds
-  // before anything appeared.
-  const queryFilters = useMemo(() => buildCustomerFilters(filterValues), [filterValues]);
+  // PostgREST pages with 150 ms inter-page throttling and made the
+  // page take ~5 seconds before anything appeared.
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ['customers', filterValues, PAGE_SIZE],
-    queryFn: () => base44.entities.Customer.filter(queryFilters, '-created_date', PAGE_SIZE),
+    queryFn: async () => {
+      let q = base44.supabase.from('customers').select('*').order('created_date', { ascending: false }).limit(PAGE_SIZE);
+      q = applyCustomerFilters(q, filterValues);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
     staleTime: 60000,
     enabled: canAccessSales,
     placeholderData: (prev) => prev,
@@ -74,7 +80,13 @@ export default function Customers() {
   // transfer) and drives the "X מתוך Y" sub-label below.
   const { data: matchCount = null } = useQuery({
     queryKey: ['customers-count', filterValues],
-    queryFn: () => base44.entities.Customer.count(queryFilters),
+    queryFn: async () => {
+      let q = base44.supabase.from('customers').select('*', { count: 'exact', head: true });
+      q = applyCustomerFilters(q, filterValues);
+      const { count, error } = await q;
+      if (error) throw error;
+      return count ?? 0;
+    },
     staleTime: 60000,
     enabled: canAccessSales,
     placeholderData: (prev) => prev,
@@ -107,7 +119,14 @@ export default function Customers() {
     staleTime: 60000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      const rows = await base44.entities.Customer.filter(queryFilters, '-created_date', AGG_LIMIT);
+      let q = base44.supabase
+        .from('customers')
+        .select('total_revenue, total_orders')
+        .limit(AGG_LIMIT);
+      q = applyCustomerFilters(q, filterValues);
+      const { data, error } = await q;
+      if (error) throw error;
+      const rows = data || [];
       const revenue = rows.reduce((s, c) => s + (Number(c.total_revenue) || 0), 0);
       const orders = rows.reduce((s, c) => s + (Number(c.total_orders) || 0), 0);
       return { revenue, orders, sampleSize: rows.length };
