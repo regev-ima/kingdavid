@@ -235,7 +235,7 @@ export default function Dashboard2() {
             </TabsContent>
 
             <TabsContent value="team" className="m-0">
-              <TeamTab current={current} />
+              <TeamTab demoMode={demoMode} />
             </TabsContent>
 
             <TabsContent value="marketing" className="m-0">

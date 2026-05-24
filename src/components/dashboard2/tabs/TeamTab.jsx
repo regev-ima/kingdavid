@@ -17,14 +17,17 @@ import {
 } from 'lucide-react';
 import { startOfDay, endOfDay, subMonths } from '@/lib/safe-date-fns';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
+import { getDemoData } from '@/components/dashboard2/demoData';
 
 // Time windows specific to the Team tab — independent of the global
 // Dashboard2 range picker. The product brief calls these out explicitly:
-// "חודש אחרון, שלושה חודשים וחצי שנה".
+// "חודש אחרון, שלושה חודשים וחצי שנה". `demoRangeKey` maps each window
+// onto a getDemoData() key so demo mode scales the numbers convincingly
+// (the demo generator only understands the global preset names).
 const RANGE_PRESETS = [
-  { id: '1m', label: 'חודש אחרון', months: 1 },
-  { id: '3m', label: '3 חודשים',   months: 3 },
-  { id: '6m', label: 'חצי שנה',    months: 6 },
+  { id: '1m', label: 'חודש אחרון', months: 1, demoRangeKey: 'month'   },
+  { id: '3m', label: '3 חודשים',   months: 3, demoRangeKey: '90days'  },
+  { id: '6m', label: 'חצי שנה',    months: 6, demoRangeKey: 'custom'  },
 ];
 
 const AVATAR_PALETTE = [
@@ -179,25 +182,40 @@ function RepChip({ rep, idx, selected, onClick, isAggregate }) {
   );
 }
 
-export default function TeamTab() {
+export default function TeamTab({ demoMode = false }) {
   const [rangeId, setRangeId] = useState('1m');
   const [selectedKey, setSelectedKey] = useState('__team__');
 
   // Resolve the local range. Independent of the global Dashboard2
   // range picker — TeamTab fetches its own slice so a user can drill
   // into a 6-month rep view without disturbing the cockpit overview.
+  const preset = useMemo(
+    () => RANGE_PRESETS.find((r) => r.id === rangeId) || RANGE_PRESETS[0],
+    [rangeId],
+  );
   const { start, end } = useMemo(() => {
-    const preset = RANGE_PRESETS.find((r) => r.id === rangeId) || RANGE_PRESETS[0];
     const now = new Date();
     return { start: startOfDay(subMonths(now, preset.months)), end: endOfDay(now) };
-  }, [rangeId]);
+  }, [preset]);
 
-  const { data, isLoading, isFetching } = useDashboard2Data({
+  // Live query only runs outside demo mode. When demo mode is on,
+  // synthesise the same shape via getDemoData so the chips/podium/funnel
+  // render with plausible numbers instead of "אין נתוני נציגים".
+  const liveQuery = useDashboard2Data({
     start,
     end,
-    enabled: true,
+    enabled: !demoMode,
     label: `team-${rangeId}`,
   });
+  const demoSnapshot = useMemo(() => {
+    if (!demoMode) return null;
+    const customRange = preset.demoRangeKey === 'custom' ? { from: start, to: end } : null;
+    return getDemoData(preset.demoRangeKey, customRange, { start, end });
+  }, [demoMode, preset.demoRangeKey, start, end]);
+
+  const data = demoMode ? demoSnapshot : liveQuery.data;
+  const isLoading = !demoMode && liveQuery.isLoading && !liveQuery.data;
+  const isFetching = !demoMode && liveQuery.isFetching;
 
   const reps = useMemo(() => {
     const list = [...(data?.reps || [])];
