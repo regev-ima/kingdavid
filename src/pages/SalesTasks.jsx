@@ -3,7 +3,6 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1063,92 +1062,64 @@ export default function SalesTasks() {
         </div>
       </div>
 
-      {/* ===== TABS - Primary strip + "more" overflow =====
-          The KPI cards above this strip used to repeat the same numbers and
-          fire the same setActiveTab() calls — pure redundancy. Tabs alone
-          carry both the count and the filter affordance. Secondary statuses
-          (upcoming / undated / completed / not_done / cancelled / all) live
-          behind a "עוד" dropdown so daily-driver tabs stay legible. */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
-        <TabsList
-          className="w-full h-auto p-1 gap-1 bg-muted/80 rounded-xl flex flex-row flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <TabsTrigger value="today" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm">
-            <Calendar className="w-4 h-4 me-1.5 inline-block" /> היום
-            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{todayCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="overdue" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-red-600 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <AlertCircle className="w-4 h-4 me-1.5 inline-block" /> באיחור
-            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{overdueCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="not_completed" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <Clock className="w-4 h-4 me-1.5 inline-block" /> ממתין
-            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{notCompletedCount}</span>
-          </TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger value="assignment" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-violet-700 data-[state=active]:bg-violet-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-              <ClipboardList className="w-4 h-4 me-1.5 inline-block" /> להקצות
-              {assignmentTaskCount > 0 && (
-                <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{assignmentTaskCount}</span>
-              )}
-            </TabsTrigger>
-          )}
-
-          {/* "More" dropdown for the secondary states. Mirrors active styling
-              when one of its children is selected so the user always sees
-              where they are. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+      {/* ===== SECONDARY FILTERS =====
+          The four daily-driver buckets (today / overdue / completed-today
+          / deals-closed) and the five funnel categories already live in
+          the KPI tiles above — duplicating them as a tab strip was pure
+          redundancy. What's left are the secondary states a rep rarely
+          touches (עתידי / ללא יעד / לא בוצע / בוטל / הכל) plus admin-
+          only assignment workflow. They sit in a small dropdown so they
+          stay accessible without competing for visual weight with the
+          primary tile grid. */}
+      {(() => {
+        const SECONDARY = [
+          { id: 'upcoming',  label: 'עתידי',    count: upcomingCount,  Icon: ArrowUpRight },
+          { id: 'undated',   label: 'ללא יעד',  count: undatedCount,   Icon: List },
+          { id: 'not_done',  label: 'לא בוצע',  count: null,           Icon: XCircle },
+          { id: 'cancelled', label: 'בוטל',     count: null,           Icon: Ban },
+          { id: 'all',       label: 'הכל',      count: totalCount,     Icon: List },
+          ...(isAdmin ? [{ id: 'assignment', label: 'להקצות', count: assignmentTaskCount, Icon: ClipboardList }] : []),
+        ];
+        const currentSecondary = SECONDARY.find((s) => s.id === activeTab);
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {currentSecondary ? (
               <button
                 type="button"
-                className={`group flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                  ['upcoming', 'undated', 'completed', 'not_done', 'cancelled', 'all'].includes(activeTab)
-                    ? 'bg-foreground text-background shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                onClick={() => setActiveTab('today')}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 transition-colors"
+                title="חזור לתצוגת היום"
               >
-                <List className="w-4 h-4" />
-                {(() => {
-                  const map = {
-                    upcoming: 'עתידי',
-                    undated: 'ללא יעד',
-                    completed: 'בוצע',
-                    not_done: 'לא בוצע',
-                    cancelled: 'בוטל',
-                    all: 'הכל',
-                  };
-                  return map[activeTab] || 'עוד';
-                })()}
-                <ChevronDown className="w-3 h-3 opacity-70" />
+                <currentSecondary.Icon className="h-3 w-3" />
+                {currentSecondary.label}
+                <X className="h-3 w-3 opacity-60" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[180px]">
-              <DropdownMenuItem onSelect={() => setActiveTab('upcoming')}>
-                <ArrowUpRight className="w-3.5 h-3.5 me-1.5" /> עתידי
-                <span className="ms-auto text-xs font-bold opacity-70">{upcomingCount}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('undated')}>
-                <List className="w-3.5 h-3.5 me-1.5" /> ללא יעד
-                <span className="ms-auto text-xs font-bold opacity-70">{undatedCount}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('completed')}>
-                <CheckCircle2 className="w-3.5 h-3.5 me-1.5" /> בוצע
-                <span className="ms-auto text-xs font-bold opacity-70">{completedCount}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('not_done')}>
-                <XCircle className="w-3.5 h-3.5 me-1.5" /> לא בוצע
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('cancelled')}>
-                <Ban className="w-3.5 h-3.5 me-1.5" /> בוטל
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('all')}>
-                <List className="w-3.5 h-3.5 me-1.5" /> הכל
-                <span className="ms-auto text-xs font-bold opacity-70">{totalCount}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TabsList>
-      </Tabs>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium h-8 px-3 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                >
+                  <List className="h-3.5 w-3.5" />
+                  אפשרויות נוספות
+                  <ChevronDown className="h-3 w-3 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[180px]">
+                {SECONDARY.map((s) => (
+                  <DropdownMenuItem key={s.id} onSelect={() => setActiveTab(s.id)}>
+                    <s.Icon className="w-3.5 h-3.5 me-1.5" /> {s.label}
+                    {s.count != null ? (
+                      <span className="ms-auto text-xs font-bold opacity-70">{s.count}</span>
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      })()}
 
       {/* ===== FILTER BAR ===== */}
       <div className="flex flex-wrap items-center gap-2 bg-card rounded-xl border border-border px-3 py-2.5 shadow-card">
