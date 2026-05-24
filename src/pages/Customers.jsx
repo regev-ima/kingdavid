@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -12,8 +12,41 @@ import { TrendingUp, Users, DollarSign, FileSpreadsheet } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import ImportCustomers from '@/components/customer/ImportCustomers';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, filterCustomersForUser } from '@/lib/rbac';
+import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, filterCustomersForUser, isAdmin } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
+
+// Cap for the in-memory list. The table only ever shows the first
+// PAGE_SIZE rows (the user scrolls within them) — we don't need to
+// stream the whole 15k-row table just to render a list.
+const PAGE_SIZE = 500;
+
+// Max rows pulled for aggregate computation when a filter narrows the
+// set. Any single rep is comfortably under this; a busy search term
+// might exceed it, in which case the KPI uses the count + average.
+const AGG_LIMIT = 5000;
+
+// Build a Supabase filter object from the page's filter state. Shared
+// between the row query, the count query, and the aggregate query so
+// they always agree on what "matches the current cut" means.
+function buildCustomerFilters({ search, rep }) {
+  const filters = {};
+  if (rep && rep !== 'all') {
+    filters.$or = [{ account_manager: rep }, { rep2: rep }];
+  }
+  if (search && search.trim()) {
+    const trimmed = search.trim();
+    const term = { $regex: trimmed, $options: 'i' };
+    // Use $and so this $or doesn't clobber the rep $or above.
+    const searchOr = { $or: [{ full_name: term }, { phone: term }, { email: term }] };
+    if (filters.$or) {
+      filters.$and = [{ $or: filters.$or }, searchOr];
+      delete filters.$or;
+    } else {
+      Object.assign(filters, searchOr);
+    }
+  }
+  return filters;
+}
 
 export default function Customers() {
   const navigate = useNavigate();
@@ -21,24 +54,34 @@ export default function Customers() {
   const [filterValues, setFilterValues] = useState({ search: '', rep: 'all' });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
+  const adminUser = isAdmin(effectiveUser);
+  const hasFilter = filterValues.rep !== 'all' || Boolean(filterValues.search.trim());
 
-  // Pull the full customers list (paginated under the hood). The page
-  // does client-side search + rep filtering, which was silently broken
-  // when there were > 1000 rows: PostgREST's default .list() cap meant
-  // a rep with customers in rows 1001+ was invisible to the filter and
-  // the KPI tiles below couldn't reflect them. Matches how leads are
-  // already loaded on the same page.
+  // Server-side filtered + paginated list. Replaces the previous
+  // fetchAllList(Customer) which pulled all 15k+ rows in 31 sequential
+  // batches with 150ms throttling and made the page take ~5+ seconds
+  // before anything appeared.
+  const queryFilters = useMemo(() => buildCustomerFilters(filterValues), [filterValues]);
   const { data: customers = [], isLoading } = useQuery({
-    queryKey: ['customers'],
-    queryFn: () => fetchAllList(base44.entities.Customer, '-created_date'),
+    queryKey: ['customers', filterValues, PAGE_SIZE],
+    queryFn: () => base44.entities.Customer.filter(queryFilters, '-created_date', PAGE_SIZE),
     staleTime: 60000,
     enabled: canAccessSales,
+    placeholderData: (prev) => prev,
   });
 
-  // customers_stats is the global aggregate over the *entire* table —
-  // used as the initial-render fallback for the KPI strip so we don't
-  // show "0 לקוחות" for the second it takes the full list to arrive.
-  // Once `customers` is in, we recompute from the filtered slice below.
+  // Exact match count for the active filter. Cheap (head:true, no row
+  // transfer) and drives the "X מתוך Y" sub-label below.
+  const { data: matchCount = null } = useQuery({
+    queryKey: ['customers-count', filterValues],
+    queryFn: () => base44.entities.Customer.count(queryFilters),
+    staleTime: 60000,
+    enabled: canAccessSales,
+    placeholderData: (prev) => prev,
+  });
+
+  // Global stats (whole table). Used when no filter is active and as
+  // the "of total" denominator when a filter is.
   const { data: stats = { total: 0, revenue: 0, orders: 0 } } = useQuery({
     queryKey: ['customers-stats'],
     staleTime: 60000,
@@ -53,18 +96,39 @@ export default function Customers() {
     },
   });
 
-  const { data: orders = [] } = useQuery({
-    queryKey: ['orders'],
-    queryFn: () => base44.entities.Order.list(),
+  // Filtered KPI aggregates — only fetched when a filter is active.
+  // Pulls up to AGG_LIMIT matching rows in one request and sums client-
+  // side, since PostgREST aggregate selects aren't enabled project-wide.
+  // For any single rep this is one round-trip of a few thousand rows
+  // at most.
+  const { data: filteredAgg = null } = useQuery({
+    queryKey: ['customers-filtered-agg', filterValues],
+    enabled: canAccessSales && hasFilter,
     staleTime: 60000,
-    enabled: canAccessSales,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const rows = await base44.entities.Customer.filter(queryFilters, '-created_date', AGG_LIMIT);
+      const revenue = rows.reduce((s, c) => s + (Number(c.total_revenue) || 0), 0);
+      const orders = rows.reduce((s, c) => s + (Number(c.total_orders) || 0), 0);
+      return { revenue, orders, sampleSize: rows.length };
+    },
   });
 
+  // Non-admin RBAC scoping needs lead + order ownership data. Admins
+  // bypass `canViewCustomer` entirely, so we skip those fetches for
+  // them — they were the other major drag on the page (a second
+  // fetchAllList of leads).
+  const { data: orders = [] } = useQuery({
+    queryKey: ['orders-for-customers-rbac'],
+    queryFn: () => base44.entities.Order.list(),
+    staleTime: 60000,
+    enabled: canAccessSales && !adminUser,
+  });
   const { data: leads = [] } = useQuery({
-    queryKey: ['leads-for-customers-access'],
+    queryKey: ['leads-for-customers-rbac'],
     queryFn: () => fetchAllList(base44.entities.Lead, '-created_date'),
     staleTime: 60000,
-    enabled: canAccessSales,
+    enabled: canAccessSales && !adminUser,
   });
 
   const { data: users = [] } = useQuery({
@@ -74,10 +138,15 @@ export default function Customers() {
     enabled: canAccessSales,
   });
 
-  const scopedCustomers = filterCustomersForUser(effectiveUser, customers, {
-    leadsById: buildLeadsById(leads),
-    ordersByCustomerId: buildOrdersByCustomerId(orders),
-  });
+  // For admins this is a pass-through (canViewCustomer short-circuits
+  // to true), so we don't pay for buildLeadsById / buildOrdersByCustomerId.
+  const scopedCustomers = useMemo(() => {
+    if (adminUser) return customers;
+    return filterCustomersForUser(effectiveUser, customers, {
+      leadsById: buildLeadsById(leads),
+      ordersByCustomerId: buildOrdersByCustomerId(orders),
+    });
+  }, [adminUser, effectiveUser, customers, leads, orders]);
 
   const repOptions = users
     .filter((u) => u.role === 'user' || u.role === 'admin')
@@ -86,44 +155,22 @@ export default function Customers() {
     { key: 'rep', label: 'נציג מטפל', allLabel: 'כל הנציגים', options: repOptions },
   ];
 
-  const filteredCustomers = scopedCustomers.filter(customer => {
-    const searchLower = filterValues.search.toLowerCase();
-    const matchSearch = !filterValues.search ||
-      customer.full_name?.toLowerCase().includes(searchLower) ||
-      customer.phone?.includes(filterValues.search) ||
-      customer.email?.toLowerCase().includes(searchLower);
-
-    const matchRep = filterValues.rep === 'all' ||
-      customer.account_manager === filterValues.rep ||
-      customer.rep2 === filterValues.rep;
-
-    return matchSearch && matchRep;
-  });
-
-  // KPI numbers track the *filtered* slice — so picking a rep instantly
-  // updates "סה״כ לקוחות / הכנסות / ממוצע הזמנה" to that rep's customers.
-  // While the customers fetch is still in flight we fall back to the
-  // global customers_stats view so the strip never blanks out to zero.
-  const hasFilter = filterValues.rep !== 'all' || Boolean(filterValues.search);
-  const customersLoaded = customers.length > 0;
-  const filteredRevenue = filteredCustomers.reduce((s, c) => s + (Number(c.total_revenue) || 0), 0);
-  const filteredOrders = filteredCustomers.reduce((s, c) => s + (Number(c.total_orders) || 0), 0);
-
-  const totalCustomers = customersLoaded
-    ? filteredCustomers.length
-    : (Number(stats.total) || 0);
-  const totalRevenue = customersLoaded
-    ? filteredRevenue
+  // KPI numbers. When a filter is active we read the count from the
+  // count() query (exact) and revenue/orders from the aggregate query.
+  // When no filter is active we use the customers_stats view, which is
+  // a single-row aggregate over the whole table.
+  const globalCount = Number(stats.total) || 0;
+  const totalCustomers = hasFilter
+    ? (matchCount ?? scopedCustomers.length)
+    : globalCount;
+  const totalRevenue = hasFilter
+    ? Number(filteredAgg?.revenue ?? 0)
     : (Number(stats.revenue) || 0);
-  const totalOrders = customersLoaded
-    ? filteredOrders
+  const totalOrders = hasFilter
+    ? Number(filteredAgg?.orders ?? 0)
     : (Number(stats.orders) || 0);
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-
-  // "X מתוך Y" sub-label on the count tile while a filter is active —
-  // gives back the context of how big the slice is vs the full table.
-  const globalCount = Number(stats.total) || 0;
-  const countSub = hasFilter && customersLoaded && globalCount > 0
+  const countSub = hasFilter && globalCount > 0
     ? `מתוך ${globalCount.toLocaleString()} סה״כ`
     : null;
 
@@ -218,7 +265,7 @@ export default function Customers() {
 
       <DataTable
         columns={columns}
-        data={filteredCustomers}
+        data={scopedCustomers}
         isLoading={isLoading}
         emptyMessage="לא נמצאו לקוחות"
         onRowClick={(row) => navigate(createPageUrl('CustomerDetails') + `?id=${row.id}`)}
