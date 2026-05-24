@@ -83,12 +83,20 @@ const CATEGORY_BY_LEAD_STATUS = (() => {
   return map;
 })();
 
+// Each category gets a distinct tone keyed to where the lead sits in
+// the funnel — so the rep can read the colour grid like a heatmap of
+// "what stage everything is in" without reading the labels:
+//   sky    = brand-new, never been contacted
+//   rose   = urgent retry — we tried, they didn't answer
+//   amber  = warming up, ball's in our court (build the quote)
+//   violet = ball's in their court (waiting on the customer to decide)
+//   emerald = closing — committed meeting on the books
 const CATEGORY_META = {
-  cat_new_lead:     { label: 'חזרה לליד חדש',        accent: 'emerald', desc: 'לידים חדשים שלא נוצרה איתם שיחה' },
-  cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'emerald', desc: 'לידים שניסיתי להחזיר ולא ענו' },
-  cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'emerald', desc: 'דובר, ממתינים להצעת מחיר' },
-  cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'emerald', desc: 'נשלחה הצעה, בדרך לסגירה' },
-  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'amber',   desc: 'נקבעה פגישה — לאישור / סגירה' },
+  cat_new_lead:     { label: 'חזרה לליד חדש',        accent: 'sky',     desc: 'לידים חדשים שלא נוצרה איתם שיחה' },
+  cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'rose',    desc: 'לידים שניסיתי להחזיר ולא ענו' },
+  cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
+  cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
+  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
 };
 
 // "Due now" window — a task whose due_date is within ±60min of the
@@ -1018,9 +1026,10 @@ export default function SalesTasks() {
           Five queues, one per stage of the rep's funnel. Driven by the
           related LEAD's status, not the task itself, because the rep
           doesn't manage leads — they work return-callback queues
-          partitioned by where each lead sits. Meeting bucket is amber
-          to set it apart from the four return-callback queues (per the
-          customer's wireframe). */}
+          partitioned by where each lead sits. Colours follow the funnel
+          temperature: sky (new) → rose (urgent retry) → amber (our
+          turn — build the quote) → violet (their turn — waiting on
+          them) → emerald (closing zone, meeting booked). */}
       <div>
         <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">סוגי משימות לטיפול</p>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -1028,19 +1037,25 @@ export default function SalesTasks() {
             const meta = CATEGORY_META[catId];
             const value = categoryCounts[catId] || 0;
             const isActive = activeTab === catId;
-            const accentRing = meta.accent === 'amber'
-              ? 'border-amber-300 bg-amber-50/40 hover:border-amber-500'
-              : 'border-emerald-300 bg-emerald-50/40 hover:border-emerald-500';
-            const valueCls = meta.accent === 'amber' ? 'text-amber-700' : 'text-emerald-700';
+            // Tailwind needs the full class string at build time — can't
+            // template `bg-${tone}-50`. One lookup per accent keeps the
+            // JIT happy and the styles colocated with the meaning.
+            const styles = {
+              sky:     { card: 'border-sky-300     bg-sky-50/50     hover:border-sky-500',     value: 'text-sky-700' },
+              rose:    { card: 'border-rose-300    bg-rose-50/50    hover:border-rose-500',    value: 'text-rose-700' },
+              amber:   { card: 'border-amber-300   bg-amber-50/50   hover:border-amber-500',   value: 'text-amber-700' },
+              violet:  { card: 'border-violet-300  bg-violet-50/50  hover:border-violet-500',  value: 'text-violet-700' },
+              emerald: { card: 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-500', value: 'text-emerald-700' },
+            }[meta.accent];
             return (
               <button
                 key={catId}
                 type="button"
                 onClick={() => setActiveTab(catId)}
-                className={`text-right rounded-xl border-2 ${accentRing} p-3 shadow-card transition-all ${isActive ? 'ring-2 ring-primary border-primary' : ''}`}
+                className={`text-right rounded-xl border-2 ${styles.card} p-3 shadow-card transition-all ${isActive ? 'ring-2 ring-primary border-primary' : ''}`}
               >
                 <p className="text-xs font-semibold text-foreground leading-tight">{meta.label}</p>
-                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
+                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${styles.value}`}>{value.toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
               </button>
             );
