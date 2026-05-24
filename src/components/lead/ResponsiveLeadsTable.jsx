@@ -246,6 +246,7 @@ export default function ResponsiveLeadsTable({
           onRowClick={onOpenLead}
           onRowSelect={(row) => onToggleSelect(row, !selectedIds.includes(row.id))}
           tableClassName="table-fixed min-w-[1120px]"
+          dense
         />
       </div>
 
