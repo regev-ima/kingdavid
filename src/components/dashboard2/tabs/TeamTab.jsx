@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/api/supabaseClient';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,10 +16,17 @@ import {
   Activity,
   XCircle,
   Trophy,
+  ListChecks,
+  Clock,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  GitCompareArrows,
 } from 'lucide-react';
 import { startOfDay, endOfDay, subMonths } from '@/lib/safe-date-fns';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData } from '@/components/dashboard2/demoData';
+import { TASK_STATUS_OPTIONS } from '@/constants/leadOptions';
 
 // Time windows specific to the Team tab — independent of the global
 // Dashboard2 range picker. The product brief calls these out explicitly:
@@ -68,9 +77,71 @@ function tierFor(conv) {
   return         { ring: 'ring-red-300',     dot: 'bg-red-500',     text: 'text-red-700' };
 }
 
+// Period-over-period delta chip. The colour mapping is intentionally
+// metric-aware: a smaller "lost rate" is a *good* thing, so we accept a
+// `direction` hint instead of always painting "down" red. Returns null
+// when there's no previous value to compare against (avoids showing a
+// misleading "+∞%" or "—0%" on first load).
+function computeDelta(current, previous, { higherIsBetter = true, isPercent = false } = {}) {
+  const cur = Number(current ?? 0);
+  const prev = Number(previous ?? 0);
+  if (!Number.isFinite(prev) || prev === 0) {
+    if (cur === 0) return { kind: 'flat', pct: 0, abs: 0 };
+    return { kind: 'new', pct: null, abs: cur }; // no baseline to compare to
+  }
+  const abs = cur - prev;
+  const pct = isPercent ? abs : (abs / Math.abs(prev)) * 100;
+  if (Math.abs(pct) < 0.5) return { kind: 'flat', pct, abs };
+  const up = abs > 0;
+  const good = higherIsBetter ? up : !up;
+  return { kind: good ? 'up_good' : 'down_bad', pct, abs };
+}
+
+function DeltaChip({ delta, suffix = '%' }) {
+  if (!delta || delta.kind === 'new') {
+    return <span className="text-[10px] text-muted-foreground">תקופה חדשה</span>;
+  }
+  if (delta.kind === 'flat') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+        <Minus className="h-3 w-3" /> ללא שינוי
+      </span>
+    );
+  }
+  const up = delta.pct > 0;
+  const good = delta.kind === 'up_good';
+  const cls = good
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : 'bg-red-50 text-red-700 border-red-200';
+  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md border ${cls}`}>
+      <Icon className="h-3 w-3" />
+      {up ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
+    </span>
+  );
+}
+
+// Tiny inline trend indicator used on each rep chip — just an arrow,
+// no number, so it doesn't overflow the compact pill layout.
+function TrendDot({ delta }) {
+  if (!delta || delta.kind === 'new' || delta.kind === 'flat') return null;
+  const good = delta.kind === 'up_good';
+  return (
+    <span
+      className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded-full ${good ? 'bg-emerald-500' : 'bg-red-500'} text-white`}
+      title={good ? 'משתפר לעומת התקופה הקודמת' : 'יורד לעומת התקופה הקודמת'}
+    >
+      {good ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+    </span>
+  );
+}
+
 // Big stat card used in the detail panel. The accent ring + colored
 // value make each metric scannable at a glance from across the room.
-function StatTile({ label, value, sub, icon: Icon, tone = 'indigo' }) {
+// Optional `delta` renders a coloured chip directly under the value so
+// the user sees the trend without scanning a second table.
+function StatTile({ label, value, sub, icon: Icon, tone = 'indigo', delta }) {
   const toneClass = {
     indigo:  'bg-indigo-50  border-indigo-200  text-indigo-700',
     emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
@@ -86,6 +157,7 @@ function StatTile({ label, value, sub, icon: Icon, tone = 'indigo' }) {
         {Icon ? <Icon className="h-4 w-4 opacity-60" /> : null}
       </div>
       <p className="text-2xl font-bold leading-none">{value}</p>
+      {delta ? <div className="mt-2"><DeltaChip delta={delta} /></div> : null}
       {sub ? <p className="text-[11px] mt-2 opacity-70">{sub}</p> : null}
     </div>
   );
@@ -111,6 +183,44 @@ function FunnelBar({ closing = 0, handling = 0, lost = 0 }) {
       </div>
     </div>
   );
+}
+
+// Format a duration in milliseconds into a compact Hebrew string.
+// < 1h → "X דק׳", < 24h → "X שעות", else "X.Y ימים". Used for the
+// "זמן טיפול ממוצע" tile so the number is readable at a glance instead
+// of forcing the reader to mentally convert milliseconds.
+function formatDuration(ms) {
+  const safe = Number(ms) || 0;
+  if (safe <= 0) return '—';
+  const minutes = safe / (1000 * 60);
+  if (minutes < 60) return `${Math.round(minutes)} דק׳`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(1)} שעות`;
+  const days = hours / 24;
+  return `${days.toFixed(1)} ימים`;
+}
+
+// Stable demo data for tasks per rep — only used when "מצב הדגמה" is on
+// so the table reads as alive without hitting Supabase. Each rep gets a
+// plausible mix of statuses and a deterministic avg-handling spread.
+function demoTasksFor(repEmail, rangeKey) {
+  const seedRoot = (repEmail || 'team') + rangeKey;
+  let seed = 0;
+  for (let i = 0; i < seedRoot.length; i += 1) seed = (seed * 31 + seedRoot.charCodeAt(i)) | 0;
+  const rng = () => { seed = (seed * 1664525 + 1013904223) | 0; return Math.abs(seed % 1000) / 1000; };
+  const scale = { '1m': 1, '3m': 2.6, '6m': 4.8 }[rangeKey] || 1;
+  const base = repEmail ? 18 : 84; // aggregate ≈ 5× one rep
+  const completed   = Math.round((base + rng() * 15) * scale);
+  const notCompleted = Math.round((base * 0.55 + rng() * 10) * scale);
+  const notDone     = Math.round((base * 0.18 + rng() * 5) * scale);
+  const cancelled   = Math.round((base * 0.08 + rng() * 3) * scale);
+  // Avg handling between ~2h and ~3 days. Higher for low-converters.
+  const avgHours = 2 + rng() * 70;
+  return {
+    counts: { completed, not_completed: notCompleted, not_done: notDone, cancelled },
+    avgHandlingMs: Math.round(avgHours * 60 * 60 * 1000),
+    completedCount: completed,
+  };
 }
 
 // Aggregate a list of reps into one virtual "team" row. Rates are
@@ -147,7 +257,7 @@ function aggregateTeam(reps) {
 // One rep "chip" at the top of the tab. Doubles as a filter selector —
 // clicking it scopes the detail panel below to that rep (or back to the
 // aggregate when "כל הצוות" is selected).
-function RepChip({ rep, idx, selected, onClick, isAggregate }) {
+function RepChip({ rep, idx, selected, onClick, isAggregate, trend }) {
   const tier = tierFor(rep.conversion);
   const color = isAggregate ? 'bg-indigo-600' : colorForRep(rep, idx);
   const initials = isAggregate ? 'כל' : initialsFor(rep.full_name || rep.email);
@@ -171,8 +281,9 @@ function RepChip({ rep, idx, selected, onClick, isAggregate }) {
         ) : null}
       </span>
       <span className="pe-1 text-xs">
-        <span className="block font-semibold text-foreground leading-tight max-w-[110px] truncate">
-          {isAggregate ? 'כל הצוות' : (rep.full_name || rep.email || 'לא ידוע')}
+        <span className="flex items-center gap-1 font-semibold text-foreground leading-tight max-w-[140px]">
+          <span className="truncate">{isAggregate ? 'כל הצוות' : (rep.full_name || rep.email || 'לא ידוע')}</span>
+          <TrendDot delta={trend} />
         </span>
         <span className="block text-[10px] text-muted-foreground leading-tight">
           {Number(rep.conversion || 0).toFixed(0)}% סגירה · {rep.leads_count || 0} לידים
@@ -185,6 +296,7 @@ function RepChip({ rep, idx, selected, onClick, isAggregate }) {
 export default function TeamTab({ demoMode = false }) {
   const [rangeId, setRangeId] = useState('1m');
   const [selectedKey, setSelectedKey] = useState('__team__');
+  const [compareEnabled, setCompareEnabled] = useState(true);
 
   // Resolve the local range. Independent of the global Dashboard2
   // range picker — TeamTab fetches its own slice so a user can drill
@@ -197,6 +309,15 @@ export default function TeamTab({ demoMode = false }) {
     const now = new Date();
     return { start: startOfDay(subMonths(now, preset.months)), end: endOfDay(now) };
   }, [preset]);
+
+  // Previous period: same length, shifted back so the user gets a
+  // like-for-like comparison ("חודש אחרון" vs the month before, etc).
+  const { prevStart, prevEnd } = useMemo(() => {
+    const lengthMs = end.getTime() - start.getTime();
+    const prevEnd = new Date(start.getTime() - 1);
+    const prevStart = new Date(prevEnd.getTime() - lengthMs);
+    return { prevStart, prevEnd };
+  }, [start, end]);
 
   // Live query only runs outside demo mode. When demo mode is on,
   // synthesise the same shape via getDemoData so the chips/podium/funnel
@@ -213,9 +334,61 @@ export default function TeamTab({ demoMode = false }) {
     return getDemoData(preset.demoRangeKey, customRange, { start, end });
   }, [demoMode, preset.demoRangeKey, start, end]);
 
+  // Mirror queries for the previous period — only enabled when the
+  // comparison toggle is on so the tab doesn't double its load by default.
+  const prevLiveQuery = useDashboard2Data({
+    start: prevStart,
+    end: prevEnd,
+    enabled: compareEnabled && !demoMode,
+    label: `team-${rangeId}-prev`,
+  });
+  const prevDemoSnapshot = useMemo(() => {
+    if (!demoMode || !compareEnabled) return null;
+    const customRange = preset.demoRangeKey === 'custom' ? { from: prevStart, to: prevEnd } : null;
+    return getDemoData(preset.demoRangeKey, customRange, { start: prevStart, end: prevEnd });
+  }, [demoMode, compareEnabled, preset.demoRangeKey, prevStart, prevEnd]);
+
   const data = demoMode ? demoSnapshot : liveQuery.data;
+  const prevData = compareEnabled ? (demoMode ? prevDemoSnapshot : prevLiveQuery.data) : null;
   const isLoading = !demoMode && liveQuery.isLoading && !liveQuery.data;
-  const isFetching = !demoMode && liveQuery.isFetching;
+  const isFetching = !demoMode && (liveQuery.isFetching || (compareEnabled && prevLiveQuery.isFetching));
+
+  // Tasks slice. Only pulls the columns we actually need so the payload
+  // stays small even on very busy teams. Scoped to tasks CREATED within
+  // the chosen window — same window as the reps cards above so the
+  // "זמן טיפול ממוצע" metric covers the same population the user is
+  // already eyeballing.
+  const tasksQuery = useQuery({
+    queryKey: ['teamTabTasks', rangeId, start.toISOString(), end.toISOString()],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase
+        .from('sales_tasks')
+        .select('task_status, assigned_to, created_date, updated_date')
+        .gte('created_date', start.toISOString())
+        .lte('created_date', end.toISOString());
+      if (error) throw error;
+      return rows || [];
+    },
+    enabled: !demoMode,
+    staleTime: 60 * 1000,
+    placeholderData: (prev) => prev,
+  });
+
+  const prevTasksQuery = useQuery({
+    queryKey: ['teamTabTasks', rangeId, prevStart.toISOString(), prevEnd.toISOString(), 'prev'],
+    queryFn: async () => {
+      const { data: rows, error } = await supabase
+        .from('sales_tasks')
+        .select('task_status, assigned_to, created_date, updated_date')
+        .gte('created_date', prevStart.toISOString())
+        .lte('created_date', prevEnd.toISOString());
+      if (error) throw error;
+      return rows || [];
+    },
+    enabled: compareEnabled && !demoMode,
+    staleTime: 60 * 1000,
+    placeholderData: (prev) => prev,
+  });
 
   const reps = useMemo(() => {
     const list = [...(data?.reps || [])];
@@ -225,16 +398,154 @@ export default function TeamTab({ demoMode = false }) {
 
   const teamAgg = useMemo(() => aggregateTeam(reps), [reps]);
 
+  const prevReps = useMemo(() => {
+    const list = [...(prevData?.reps || [])];
+    list.sort((a, b) => (b.revenue || 0) - (a.revenue || 0));
+    return list;
+  }, [prevData]);
+  const prevTeamAgg = useMemo(() => aggregateTeam(prevReps), [prevReps]);
+
   const selectedRep = useMemo(() => {
     if (selectedKey === '__team__') return teamAgg;
     return reps.find((r) => (r.email || r.full_name) === selectedKey) || teamAgg;
   }, [reps, selectedKey, teamAgg]);
+
+  const prevSelectedRep = useMemo(() => {
+    if (!compareEnabled) return null;
+    if (selectedKey === '__team__') return prevTeamAgg;
+    return prevReps.find((r) => (r.email || r.full_name) === selectedKey) || prevTeamAgg;
+  }, [compareEnabled, prevReps, selectedKey, prevTeamAgg]);
 
   const topRep = reps[0];
   const conv = Number(selectedRep.conversion || 0);
   const inHandling = Number(selectedRep.in_handling_rate || 0);
   const lost = Number(selectedRep.lost_rate || 0);
   const isAggregate = selectedRep === teamAgg;
+
+  // Build the per-rep tasks slice once we know who's selected. For demo
+  // mode the helper synthesises the entire shape; live mode filters the
+  // raw rows pulled above to the chosen rep (or sums everything for the
+  // team aggregate) and computes avg handling time from completed rows.
+  const taskStats = useMemo(() => {
+    if (demoMode) {
+      const repEmail = isAggregate ? null : (selectedRep.email || selectedRep.full_name);
+      return demoTasksFor(repEmail, rangeId);
+    }
+    const rows = tasksQuery.data || [];
+    const scoped = isAggregate
+      ? rows
+      : rows.filter((r) => r.assigned_to === (selectedRep.email || selectedRep.full_name));
+    const counts = { not_completed: 0, completed: 0, not_done: 0, cancelled: 0 };
+    let handlingSum = 0;
+    let handlingN = 0;
+    for (const r of scoped) {
+      const k = r.task_status;
+      if (k in counts) counts[k] += 1;
+      // Average handling time: only completed tasks contribute, and we
+      // need both timestamps. Skips rows where updated_date < created_date
+      // (clock skew / bad data) so a single weird row can't wreck the mean.
+      if (k === 'completed' && r.updated_date && r.created_date) {
+        const ms = new Date(r.updated_date).getTime() - new Date(r.created_date).getTime();
+        if (Number.isFinite(ms) && ms > 0) {
+          handlingSum += ms;
+          handlingN += 1;
+        }
+      }
+    }
+    return {
+      counts,
+      avgHandlingMs: handlingN > 0 ? handlingSum / handlingN : 0,
+      completedCount: handlingN,
+    };
+  }, [demoMode, isAggregate, selectedRep, rangeId, tasksQuery.data]);
+
+  // Previous-period equivalent computed the same way so the deltas
+  // below stay consistent (same scoping, same demo synth, same dedup).
+  const prevTaskStats = useMemo(() => {
+    if (!compareEnabled) return null;
+    if (demoMode) {
+      const repEmail = isAggregate ? null : (selectedRep.email || selectedRep.full_name);
+      // Slightly perturbed demo numbers — the seed includes "prev" so they
+      // differ from the current snapshot, otherwise every delta would be 0.
+      return demoTasksFor(repEmail, `${rangeId}-prev`);
+    }
+    const rows = prevTasksQuery.data || [];
+    const scoped = isAggregate
+      ? rows
+      : rows.filter((r) => r.assigned_to === (selectedRep.email || selectedRep.full_name));
+    const counts = { not_completed: 0, completed: 0, not_done: 0, cancelled: 0 };
+    let handlingSum = 0;
+    let handlingN = 0;
+    for (const r of scoped) {
+      const k = r.task_status;
+      if (k in counts) counts[k] += 1;
+      if (k === 'completed' && r.updated_date && r.created_date) {
+        const ms = new Date(r.updated_date).getTime() - new Date(r.created_date).getTime();
+        if (Number.isFinite(ms) && ms > 0) {
+          handlingSum += ms;
+          handlingN += 1;
+        }
+      }
+    }
+    return {
+      counts,
+      avgHandlingMs: handlingN > 0 ? handlingSum / handlingN : 0,
+      completedCount: handlingN,
+    };
+  }, [compareEnabled, demoMode, isAggregate, selectedRep, rangeId, prevTasksQuery.data]);
+
+  const tasksTotal = useMemo(
+    () => Object.values(taskStats.counts).reduce((s, n) => s + n, 0),
+    [taskStats],
+  );
+
+  // Deltas for the five hero tiles. higherIsBetter is true for everything
+  // except "אבד%" — there, a smaller number is the good direction.
+  const deltas = useMemo(() => {
+    if (!compareEnabled || !prevSelectedRep) return {};
+    return {
+      leads:     computeDelta(selectedRep.leads_count, prevSelectedRep.leads_count),
+      closing:   computeDelta(conv, prevSelectedRep.conversion, { isPercent: true }),
+      handling:  computeDelta(inHandling, prevSelectedRep.in_handling_rate, { isPercent: true }),
+      lost:      computeDelta(lost, prevSelectedRep.lost_rate, { higherIsBetter: false, isPercent: true }),
+      revenue:   computeDelta(selectedRep.revenue, prevSelectedRep.revenue),
+      avgHandling: prevTaskStats
+        ? computeDelta(taskStats.avgHandlingMs, prevTaskStats.avgHandlingMs, { higherIsBetter: false })
+        : null,
+    };
+  }, [compareEnabled, prevSelectedRep, selectedRep, conv, inHandling, lost, taskStats, prevTaskStats]);
+
+  // Per-rep "trend dot" for the chip strip — derived from total leads
+  // change, the simplest single-number proxy for "moving in the right
+  // direction" at the chip-density we have.
+  const repTrends = useMemo(() => {
+    if (!compareEnabled) return new Map();
+    const map = new Map();
+    for (const r of reps) {
+      const key = r.email || r.full_name;
+      const prev = prevReps.find((p) => (p.email || p.full_name) === key);
+      if (!prev) { map.set(key, null); continue; }
+      map.set(key, computeDelta(r.leads_count, prev.leads_count));
+    }
+    return map;
+  }, [compareEnabled, reps, prevReps]);
+
+  const periodLabel = preset.label;
+  const prevPeriodLabel = `${preset.label} קודם`;
+  const taskRows = useMemo(() => {
+    const tone = {
+      completed:     { stripe: 'bg-emerald-500', text: 'text-emerald-700', badge: 'bg-emerald-50' },
+      not_completed: { stripe: 'bg-amber-500',   text: 'text-amber-700',   badge: 'bg-amber-50' },
+      not_done:      { stripe: 'bg-red-500',     text: 'text-red-700',     badge: 'bg-red-50' },
+      cancelled:     { stripe: 'bg-slate-400',   text: 'text-slate-600',   badge: 'bg-slate-50' },
+    };
+    return TASK_STATUS_OPTIONS.map((opt) => ({
+      status: opt.value,
+      label: opt.label,
+      count: taskStats.counts[opt.value] || 0,
+      tone: tone[opt.value] || tone.cancelled,
+    })).sort((a, b) => b.count - a.count);
+  }, [taskStats]);
 
   return (
     <div className="space-y-4" dir="rtl">
@@ -264,6 +575,19 @@ export default function TeamTab({ demoMode = false }) {
                   );
                 })}
               </div>
+              <button
+                type="button"
+                onClick={() => setCompareEnabled((v) => !v)}
+                className={`inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1 rounded-full border transition-all ${
+                  compareEnabled
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                }`}
+                title="השוואה לתקופה הקודמת באותו אורך"
+              >
+                <GitCompareArrows className="h-3.5 w-3.5" />
+                {compareEnabled ? 'משווה לתקופה קודמת' : 'הפעל השוואה'}
+              </button>
               <Link to={createPageUrl('Representatives')}>
                 <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
                   לדף הנציגים
@@ -303,6 +627,7 @@ export default function TeamTab({ demoMode = false }) {
                     rep={r}
                     idx={idx}
                     selected={selectedKey === key}
+                    trend={repTrends.get(key)}
                     onClick={() => setSelectedKey(key)}
                   />
                 );
@@ -345,6 +670,7 @@ export default function TeamTab({ demoMode = false }) {
               value={Number(selectedRep.leads_count || 0).toLocaleString()}
               icon={Users}
               tone="blue"
+              delta={deltas.leads}
             />
             <StatTile
               label="אחוז סגירה"
@@ -352,18 +678,21 @@ export default function TeamTab({ demoMode = false }) {
               sub={`${selectedRep.won_count || 0} עסקאות`}
               icon={Target}
               tone="emerald"
+              delta={deltas.closing}
             />
             <StatTile
               label="בטיפול"
               value={`${inHandling.toFixed(0)}%`}
               icon={Activity}
               tone="amber"
+              delta={deltas.handling}
             />
             <StatTile
               label="אבד"
               value={`${lost.toFixed(0)}%`}
               icon={XCircle}
               tone="red"
+              delta={deltas.lost}
             />
             <StatTile
               label="הכנסות"
@@ -371,8 +700,22 @@ export default function TeamTab({ demoMode = false }) {
               sub={formatCurrency(selectedRep.revenue)}
               icon={DollarSign}
               tone="violet"
+              delta={deltas.revenue}
             />
           </div>
+
+          {/* Compare banner — tells the user what the deltas mean and
+              what time window they're rolling up. Hidden when off. */}
+          {compareEnabled && prevSelectedRep ? (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-primary/5 border border-primary/20 rounded-md px-3 py-1.5">
+              <GitCompareArrows className="h-3.5 w-3.5 text-primary" />
+              <span>
+                משווה <span className="font-semibold text-foreground">{periodLabel}</span> מול <span className="font-semibold text-foreground">{prevPeriodLabel}</span>
+                {' · '}
+                ירוק = משתפר, אדום = יורד
+              </span>
+            </div>
+          ) : null}
 
           {/* Funnel breakdown */}
           <div className="bg-muted/30 rounded-lg p-4">
@@ -380,6 +723,96 @@ export default function TeamTab({ demoMode = false }) {
               חלוקת לידים: סגירה · בטיפול · אבד
             </p>
             <FunnelBar closing={conv} handling={inHandling} lost={lost} />
+          </div>
+
+          {/* Tasks-by-status + avg handling time */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="lg:col-span-2 rounded-lg border border-border/50 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-muted/40">
+                <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <ListChecks className="h-3.5 w-3.5 text-indigo-600" />
+                  משימות לפי סטטוס
+                </div>
+                <span className="text-[11px] text-muted-foreground">סה״כ {tasksTotal.toLocaleString()}</span>
+              </div>
+              {tasksTotal === 0 ? (
+                <div className="p-6 text-center text-xs text-muted-foreground">אין משימות בטווח</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/20">
+                    <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <th className="px-3 py-1.5 text-right font-semibold">סטטוס</th>
+                      <th className="px-2 py-1.5 text-center font-semibold w-16">משימות</th>
+                      <th className="px-2 py-1.5 text-center font-semibold w-14">%</th>
+                      <th className="px-3 py-1.5 text-right font-semibold">חלוקה</th>
+                      {compareEnabled && prevTaskStats ? (
+                        <th className="px-2 py-1.5 text-center font-semibold w-20">לעומת קודם</th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {taskRows.map((row) => {
+                      const pct = tasksTotal > 0 ? (row.count / tasksTotal) * 100 : 0;
+                      // For "not_completed" / "not_done" / "cancelled" a *decrease* is
+                      // a good thing; for "completed" an *increase* is good.
+                      const higherIsBetter = row.status === 'completed';
+                      const rowDelta = compareEnabled && prevTaskStats
+                        ? computeDelta(row.count, prevTaskStats.counts[row.status], { higherIsBetter })
+                        : null;
+                      return (
+                        <tr key={row.status} className="hover:bg-muted/20 transition-colors">
+                          <td className="px-3 py-1.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full ${row.tone.stripe} flex-shrink-0`} />
+                              <span>{row.label}</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <span className={`inline-block min-w-[2rem] px-1.5 py-0.5 rounded-md text-xs font-semibold ${row.tone.badge} ${row.tone.text}`}>
+                              {row.count.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-center text-[11px] text-muted-foreground tabular-nums">
+                            {pct.toFixed(0)}%
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <div className="h-1.5 w-full rounded-full bg-muted/40 overflow-hidden">
+                              <div className={`h-full ${row.tone.stripe}`} style={{ width: `${Math.min(100, pct)}%` }} />
+                            </div>
+                          </td>
+                          {compareEnabled && prevTaskStats ? (
+                            <td className="px-2 py-1.5 text-center">
+                              <DeltaChip delta={rowDelta} />
+                            </td>
+                          ) : null}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-border/50 bg-gradient-to-br from-cyan-50 to-blue-50 p-4 flex flex-col justify-between">
+              <div className="flex items-center gap-2 text-xs font-semibold text-cyan-800">
+                <Clock className="h-4 w-4" />
+                זמן טיפול ממוצע
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-foreground leading-none mt-3">
+                  {formatDuration(taskStats.avgHandlingMs)}
+                </p>
+                {compareEnabled && deltas.avgHandling ? (
+                  <div className="mt-2"><DeltaChip delta={deltas.avgHandling} suffix="%" /></div>
+                ) : null}
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  ממוצע משימות שהושלמו · נסמך על {taskStats.completedCount.toLocaleString()} משימות
+                </p>
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
+                  מחושב מהפרש בין יצירת המשימה לסיומה (updated_date − created_date)
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Team-wide comparison list — shown only when looking at one rep */}
