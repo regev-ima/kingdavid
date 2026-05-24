@@ -377,9 +377,12 @@ export default function SalesTasks() {
     // and saves us another round trip.
     if (activeTab.startsWith('cat_')) {
       return filtered.filter((t) => {
-        const lead = t.lead_id ? leadsById[t.lead_id] : null;
-        if (!lead) return false;
-        return CATEGORY_BY_LEAD_STATUS[lead.status] === activeTab;
+        // Prefer the task's denormalised status mirror so the list and
+        // the category-card counts above always agree, regardless of
+        // whether the related lead has finished paginating into
+        // leadsById yet.
+        const status = t.status || (t.lead_id ? leadsById[t.lead_id]?.status : null);
+        return CATEGORY_BY_LEAD_STATUS[status] === activeTab;
       });
     }
     return filtered;
@@ -391,15 +394,18 @@ export default function SalesTasks() {
   // Crucially, scoped by TASK ownership (rep1/rep2/pending_rep_email on
   // the task), not by lead ownership: a rep often holds a task on a
   // lead they don't own, and those tasks need to be counted in the
-  // category cards above (otherwise the cards say 0 while rows for
-  // those same leads sit visibly in the table below).
-  const { data: openTaskLeadIds = [] } = useQuery({
+  // category cards above. We also pull the task's own `status` mirror
+  // so we can categorise without a lookup hop through `leadsById` —
+  // that map is paginated from the leads table and may not have the
+  // row yet on first paint (the symptom: cards say 0 while rows for
+  // those exact leads sit in the table below).
+  const { data: openTaskRows = [] } = useQuery({
     queryKey: ['salesTasks-open-lead-ids', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
       let q = applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
         { includeAssignment: includeAssignmentInCounts },
       ).limit(10_000);
       const { data, error } = await q;
@@ -408,24 +414,24 @@ export default function SalesTasks() {
     },
   });
 
-  // Category counts: for each open task the current user owns, look up
-  // the related lead's status and bucket it. Distinct by lead_id so a
-  // lead with three open tasks counts once (matches the customer mental
-  // model: "how many customers are in this stage" not "how many tasks").
+  // Category counts: prefer the task's own denormalised `status` mirror
+  // (it matches what the row in the table is showing), and fall back to
+  // the lead's current status from leadsById when the task didn't carry
+  // a mirror. Distinct by lead_id so a lead with three open tasks
+  // counts once.
   const categoryCounts = useMemo(() => {
     const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
     const seen = new Set();
-    for (const row of openTaskLeadIds) {
+    for (const row of openTaskRows) {
       const lid = row?.lead_id;
       if (!lid || seen.has(lid)) continue;
       seen.add(lid);
-      const lead = leadsById[lid];
-      if (!lead) continue;
-      const cat = CATEGORY_BY_LEAD_STATUS[lead.status];
+      const status = row.status || leadsById[lid]?.status;
+      const cat = CATEGORY_BY_LEAD_STATUS[status];
       if (cat) counts[cat] += 1;
     }
     return counts;
-  }, [openTaskLeadIds, leadsById]);
+  }, [openTaskRows, leadsById]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -1006,7 +1012,10 @@ export default function SalesTasks() {
       {/* ===== TOP KPI STRIP =====
           Per the customer brief: a four-tile header summarising the rep's
           day. Each tile is clickable and sets the active filter on the
-          list below — tiles ARE the navigation, not decoration. */}
+          list below — tiles ARE the navigation, not decoration. Default
+          tone is muted (subtle gray surface, low-contrast value) and a
+          tile lights up to its full accent colour only when active or
+          on hover, so the rep can see at a glance which filter is on. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
@@ -1014,16 +1023,21 @@ export default function SalesTasks() {
           { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
         ].map((tile) => {
-          const toneCls = {
-            amber:   'border-amber-200 hover:border-amber-400 hover:bg-amber-50/50',
-            red:     'border-red-200 hover:border-red-400 hover:bg-red-50/50',
-            emerald: 'border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50/50',
-            indigo:  'border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50/50',
-          }[tile.tone];
-          const valueCls = {
-            amber: 'text-amber-700', red: 'text-red-700', emerald: 'text-emerald-700', indigo: 'text-indigo-700',
+          // Three-state styling: default (muted gray), hover (faint
+          // tint of the tile's accent), active (full accent + ring).
+          // Tailwind JIT requires the class strings spelled out, so the
+          // lookups stay colocated with the meaning instead of templated.
+          const tone = {
+            amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
+            red:     { value: 'text-red-700',     activeCard: 'bg-red-50 border-red-500 ring-2 ring-red-400',         hoverCard: 'hover:border-red-300 hover:bg-red-50/50' },
+            emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
+            indigo:  { value: 'text-indigo-700',  activeCard: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', hoverCard: 'hover:border-indigo-300 hover:bg-indigo-50/50' },
           }[tile.tone];
           const isActive = !tile.readOnly && activeTab === (tile.asTab || tile.id);
+          const cardCls = isActive
+            ? tone.activeCard
+            : `border-border bg-muted/30 ${tile.readOnly ? '' : tone.hoverCard}`;
+          const valueCls = isActive ? tone.value : 'text-muted-foreground';
           const Icon = tile.icon;
           return (
             <button
@@ -1031,11 +1045,11 @@ export default function SalesTasks() {
               type="button"
               onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
               disabled={tile.readOnly}
-              className={`text-right rounded-xl border-2 bg-card p-4 shadow-card transition-all ${toneCls} ${isActive ? 'ring-2 ring-primary border-primary' : ''} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
             >
               <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-medium text-muted-foreground">{tile.label}</p>
-                <Icon className={`h-4 w-4 ${valueCls} opacity-70`} />
+                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
+                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
               </div>
               <p className={`text-2xl font-bold tabular-nums ${valueCls}`}>{Number(tile.value || 0).toLocaleString()}</p>
             </button>
@@ -1044,10 +1058,10 @@ export default function SalesTasks() {
       </div>
 
       {/* ===== SALES-RETURN CATEGORIES =====
-          Five queues, one per stage of the rep's funnel. Driven by the
-          related LEAD's status, not the task itself, because the rep
-          doesn't manage leads — they work return-callback queues
-          partitioned by where each lead sits. Colours follow the funnel
+          Five queues, one per stage of the rep's funnel. Default state
+          is muted gray; clicking a card lights it up to its accent
+          colour with a matching ring so the rep can read at a glance
+          which filter is currently on. Colours follow the funnel
           temperature: sky (new) → rose (urgent retry) → amber (our
           turn — build the quote) → violet (their turn — waiting on
           them) → emerald (closing zone, meeting booked). */}
@@ -1058,25 +1072,29 @@ export default function SalesTasks() {
             const meta = CATEGORY_META[catId];
             const value = categoryCounts[catId] || 0;
             const isActive = activeTab === catId;
-            // Tailwind needs the full class string at build time — can't
-            // template `bg-${tone}-50`. One lookup per accent keeps the
-            // JIT happy and the styles colocated with the meaning.
-            const styles = {
-              sky:     { card: 'border-sky-300     bg-sky-50/50     hover:border-sky-500',     value: 'text-sky-700' },
-              rose:    { card: 'border-rose-300    bg-rose-50/50    hover:border-rose-500',    value: 'text-rose-700' },
-              amber:   { card: 'border-amber-300   bg-amber-50/50   hover:border-amber-500',   value: 'text-amber-700' },
-              violet:  { card: 'border-violet-300  bg-violet-50/50  hover:border-violet-500',  value: 'text-violet-700' },
-              emerald: { card: 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-500', value: 'text-emerald-700' },
+            // Same three-state pattern as the KPI tiles above: muted
+            // gray by default, accent tint on hover, full accent + ring
+            // when active. Class strings spelled out so Tailwind's JIT
+            // can see them.
+            const tone = {
+              sky:     { value: 'text-sky-700',     activeCard: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',         hoverCard: 'hover:border-sky-300 hover:bg-sky-50/50' },
+              rose:    { value: 'text-rose-700',    activeCard: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',      hoverCard: 'hover:border-rose-300 hover:bg-rose-50/50' },
+              amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
+              violet:  { value: 'text-violet-700',  activeCard: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', hoverCard: 'hover:border-violet-300 hover:bg-violet-50/50' },
+              emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
             }[meta.accent];
+            const cardCls = isActive ? tone.activeCard : `border-border bg-muted/30 ${tone.hoverCard}`;
+            const valueCls = isActive ? tone.value : 'text-muted-foreground';
+            const titleCls = isActive ? 'text-foreground' : 'text-muted-foreground';
             return (
               <button
                 key={catId}
                 type="button"
                 onClick={() => setActiveTab(catId)}
-                className={`text-right rounded-xl border-2 ${styles.card} p-3 shadow-card transition-all ${isActive ? 'ring-2 ring-primary border-primary' : ''}`}
+                className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}
               >
-                <p className="text-xs font-semibold text-foreground leading-tight">{meta.label}</p>
-                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${styles.value}`}>{value.toLocaleString()}</p>
+                <p className={`text-xs font-semibold leading-tight ${titleCls}`}>{meta.label}</p>
+                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
               </button>
             );
