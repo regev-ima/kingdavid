@@ -112,9 +112,12 @@ function computeDelta(current, previous, { higherIsBetter = true, isPercent = fa
 // cells where space is tight.
 const defaultFormat = (n) => Number(n || 0).toLocaleString();
 
-// Compact delta pill used in table cells. Colour = good/bad, arrow =
-// literal direction of change. Tooltip carries the absolute numbers
-// so the reader can hover for the "59 ← 20" detail.
+// Compact delta pill used in table cells. Colour AND arrow direction
+// both follow the good/bad judgement — green-up = improvement,
+// red-down = decline — regardless of whether the underlying number
+// went up or down (e.g. "אבד" dropping is rendered green-up). The
+// raw before/after numbers in the tooltip / DeltaDetail panel carry
+// the literal direction of change.
 function DeltaChip({ delta, format = defaultFormat, suffix = '%' }) {
   if (!delta || delta.kind === 'new') {
     return <span className="text-[10px] text-muted-foreground">חדש</span>;
@@ -126,19 +129,18 @@ function DeltaChip({ delta, format = defaultFormat, suffix = '%' }) {
       </span>
     );
   }
-  const up = delta.pct > 0;
   const good = delta.kind === 'good';
   const cls = good
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
     : 'bg-red-50 text-red-700 border-red-200';
-  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  const Icon = good ? ArrowUpRight : ArrowDownRight;
   return (
     <span
       className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md border ${cls}`}
       title={`${format(delta.current)} כעת · ${format(delta.previous)} קודם`}
     >
       <Icon className="h-3 w-3" />
-      {up ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
+      {delta.pct > 0 ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
     </span>
   );
 }
@@ -163,17 +165,19 @@ function DeltaDetail({ delta, format = defaultFormat, periodLabel, prevPeriodLab
       </p>
     );
   }
-  const up = delta.pct > 0;
   const good = delta.kind === 'good';
   const chipCls = good
     ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
     : 'bg-red-100 text-red-800 border-red-200';
-  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  // Arrow tracks the judgement, not the literal direction — so a metric
+  // where "less is better" (e.g. אבד%) shows green-up when it drops.
+  // The raw before/after numbers below carry the literal direction.
+  const Icon = good ? ArrowUpRight : ArrowDownRight;
   return (
     <div className="mt-2 space-y-1">
       <span className={`inline-flex items-center gap-0.5 text-xs font-bold px-1.5 py-0.5 rounded-md border ${chipCls}`}>
         <Icon className="h-3 w-3" />
-        {up ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
+        {delta.pct > 0 ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
         <span className="mx-1 opacity-60">·</span>
         {good ? 'שיפור' : 'ירידה'}
       </span>
@@ -191,13 +195,12 @@ function DeltaDetail({ delta, format = defaultFormat, periodLabel, prevPeriodLab
 function TrendDot({ delta }) {
   if (!delta || delta.kind === 'new' || delta.kind === 'flat') return null;
   const good = delta.kind === 'good';
-  const up = delta.pct > 0;
   return (
     <span
       className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded-full ${good ? 'bg-emerald-500' : 'bg-red-500'} text-white`}
       title={good ? 'משתפר לעומת התקופה הקודמת' : 'יורד לעומת התקופה הקודמת'}
     >
-      {up ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+      {good ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
     </span>
   );
 }
