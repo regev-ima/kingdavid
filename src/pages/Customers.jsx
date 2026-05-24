@@ -22,18 +22,23 @@ export default function Customers() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
+  // Pull the full customers list (paginated under the hood). The page
+  // does client-side search + rep filtering, which was silently broken
+  // when there were > 1000 rows: PostgREST's default .list() cap meant
+  // a rep with customers in rows 1001+ was invisible to the filter and
+  // the KPI tiles below couldn't reflect them. Matches how leads are
+  // already loaded on the same page.
   const { data: customers = [], isLoading } = useQuery({
     queryKey: ['customers'],
-    queryFn: () => base44.entities.Customer.list('-created_date'),
+    queryFn: () => fetchAllList(base44.entities.Customer, '-created_date'),
     staleTime: 60000,
     enabled: canAccessSales,
   });
 
-  // PostgREST silently caps .list() at 1000 rows, so the customers array
-  // stops growing past 1000 and "סה״כ לקוחות" was rendering 1,000 even
-  // when there are 15k+ rows. The customers_stats view aggregates every
-  // KPI for the whole table in a single round-trip
-  // (see supabase/migrations/.._customers_stats_view.sql).
+  // customers_stats is the global aggregate over the *entire* table —
+  // used as the initial-render fallback for the KPI strip so we don't
+  // show "0 לקוחות" for the second it takes the full list to arrive.
+  // Once `customers` is in, we recompute from the filtered slice below.
   const { data: stats = { total: 0, revenue: 0, orders: 0 } } = useQuery({
     queryKey: ['customers-stats'],
     staleTime: 60000,
@@ -47,7 +52,6 @@ export default function Customers() {
       return data || { total: 0, revenue: 0, orders: 0 };
     },
   });
-  const totalCustomers = Number(stats.total) || 0;
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
@@ -96,12 +100,32 @@ export default function Customers() {
     return matchSearch && matchRep;
   });
 
-  // KPI numbers come from the customers_stats view above so they reflect
-  // the entire table (not just the first page that the customers list
-  // query returns).
-  const totalRevenue = Number(stats.revenue) || 0;
-  const totalOrders = Number(stats.orders) || 0;
+  // KPI numbers track the *filtered* slice — so picking a rep instantly
+  // updates "סה״כ לקוחות / הכנסות / ממוצע הזמנה" to that rep's customers.
+  // While the customers fetch is still in flight we fall back to the
+  // global customers_stats view so the strip never blanks out to zero.
+  const hasFilter = filterValues.rep !== 'all' || Boolean(filterValues.search);
+  const customersLoaded = customers.length > 0;
+  const filteredRevenue = filteredCustomers.reduce((s, c) => s + (Number(c.total_revenue) || 0), 0);
+  const filteredOrders = filteredCustomers.reduce((s, c) => s + (Number(c.total_orders) || 0), 0);
+
+  const totalCustomers = customersLoaded
+    ? filteredCustomers.length
+    : (Number(stats.total) || 0);
+  const totalRevenue = customersLoaded
+    ? filteredRevenue
+    : (Number(stats.revenue) || 0);
+  const totalOrders = customersLoaded
+    ? filteredOrders
+    : (Number(stats.orders) || 0);
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+  // "X מתוך Y" sub-label on the count tile while a filter is active —
+  // gives back the context of how big the slice is vs the full table.
+  const globalCount = Number(stats.total) || 0;
+  const countSub = hasFilter && customersLoaded && globalCount > 0
+    ? `מתוך ${globalCount.toLocaleString()} סה״כ`
+    : null;
 
   const columns = [
     {
@@ -174,7 +198,13 @@ export default function Customers() {
       </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
-        <KPICard title="סה״כ לקוחות" value={totalCustomers.toLocaleString()} icon={Users} color="blue" />
+        <KPICard
+          title={hasFilter ? 'לקוחות בסינון' : 'סה״כ לקוחות'}
+          value={totalCustomers.toLocaleString()}
+          subtitle={countSub}
+          icon={Users}
+          color="blue"
+        />
         <KPICard title="סה״כ הכנסות" value={`₪${totalRevenue.toLocaleString()}`} icon={DollarSign} color="emerald" />
         <KPICard title="ממוצע הזמנה" value={`₪${avgOrderValue.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={TrendingUp} color="blue" />
       </div>
