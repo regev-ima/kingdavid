@@ -1069,28 +1069,23 @@ export default function Leads() {
           filters={[
             { key: 'status', label: 'סטטוס', options: [...LEAD_STATUS_OPTIONS, ...customStatusesForFilter] },
             sourceFilterOption,
+            // Admins also get a rep dropdown inline — same row as status /
+            // source instead of stranded on its own line below the bar,
+            // which was forcing an extra scroll on smaller screens.
+            ...(isAdmin
+              ? [{
+                  key: 'rep1',
+                  label: 'נציג',
+                  allLabel: 'כל הנציגים',
+                  options: salesReps.map((rep) => ({ value: rep.email, label: rep.full_name })),
+                }]
+              : []),
           ]}
           values={filters}
           onChange={handleFilterChange}
           onClear={clearFilters}
           searchPlaceholder="חפש לפי שם, טלפון או אימייל..."
         />
-        
-        {isAdmin && (
-          <div className="flex items-center gap-2">
-            <Select value={filters.rep1} onValueChange={(value) => handleFilterChange('rep1', value)}>
-              <SelectTrigger className="w-48 h-9 bg-card border-border">
-                <SelectValue placeholder="נציג מטפל" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">כל הנציגים</SelectItem>
-                {salesReps.map(rep => (
-                  <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
       </div>
 
       {/* Prominent "filter result" card. Shown whenever any filter is active
