@@ -23,21 +23,31 @@ import {
   Minus,
   GitCompareArrows,
 } from 'lucide-react';
-import { startOfDay, endOfDay, subMonths } from '@/lib/safe-date-fns';
+import { startOfDay, endOfDay, subDays } from '@/lib/safe-date-fns';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData } from '@/components/dashboard2/demoData';
 import { TASK_STATUS_OPTIONS } from '@/constants/leadOptions';
 
 // Time windows specific to the Team tab — independent of the global
 // Dashboard2 range picker. The product brief calls these out explicitly:
-// "חודש אחרון, שלושה חודשים וחצי שנה". `demoRangeKey` maps each window
-// onto a getDemoData() key so demo mode scales the numbers convincingly
-// (the demo generator only understands the global preset names).
+// "שבוע אחרון, חודש אחרון, שלושה חודשים, חצי שנה". `demoRangeKey` maps
+// each window onto a getDemoData() key so demo mode scales the numbers
+// convincingly (the demo generator only understands the global preset
+// names). `shortLabel` is the punchier wording used inside delta cards
+// where space is tight ("שבוע" instead of "שבוע אחרון", etc).
 const RANGE_PRESETS = [
-  { id: '1m', label: 'חודש אחרון', months: 1, demoRangeKey: 'month'   },
-  { id: '3m', label: '3 חודשים',   months: 3, demoRangeKey: '90days'  },
-  { id: '6m', label: 'חצי שנה',    months: 6, demoRangeKey: 'custom'  },
+  { id: '1w', label: 'שבוע אחרון', shortLabel: 'השבוע',   days: 7,   demoRangeKey: 'week'   },
+  { id: '1m', label: 'חודש אחרון', shortLabel: 'החודש',   days: 30,  demoRangeKey: 'month'  },
+  { id: '3m', label: '3 חודשים',   shortLabel: '3 חודשים', days: 90,  demoRangeKey: '90days' },
+  { id: '6m', label: 'חצי שנה',    shortLabel: 'חצי שנה',  days: 180, demoRangeKey: 'custom' },
 ];
+
+const PREV_LABEL_BY_ID = {
+  '1w': 'שבוע קודם',
+  '1m': 'חודש קודם',
+  '3m': '3 חודשים קודמים',
+  '6m': 'חצי שנה קודמת',
+};
 
 const AVATAR_PALETTE = [
   'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
@@ -77,29 +87,37 @@ function tierFor(conv) {
   return         { ring: 'ring-red-300',     dot: 'bg-red-500',     text: 'text-red-700' };
 }
 
-// Period-over-period delta chip. The colour mapping is intentionally
-// metric-aware: a smaller "lost rate" is a *good* thing, so we accept a
-// `direction` hint instead of always painting "down" red. Returns null
-// when there's no previous value to compare against (avoids showing a
-// misleading "+∞%" or "—0%" on first load).
+// Period-over-period delta. Carries the raw current / previous so the
+// renderer can show absolute numbers alongside the percentage (the
+// product brief: "רק אחוזים זה לא מספיק"). `kind` keeps the good/bad
+// judgement for colour, separate from the literal direction of change
+// which is conveyed by the absolute "before → after" numbers.
 function computeDelta(current, previous, { higherIsBetter = true, isPercent = false } = {}) {
   const cur = Number(current ?? 0);
   const prev = Number(previous ?? 0);
   if (!Number.isFinite(prev) || prev === 0) {
-    if (cur === 0) return { kind: 'flat', pct: 0, abs: 0 };
-    return { kind: 'new', pct: null, abs: cur }; // no baseline to compare to
+    if (cur === 0) return { kind: 'flat', pct: 0, abs: 0, current: cur, previous: prev, higherIsBetter, isPercent };
+    return { kind: 'new', pct: null, abs: cur, current: cur, previous: prev, higherIsBetter, isPercent };
   }
   const abs = cur - prev;
   const pct = isPercent ? abs : (abs / Math.abs(prev)) * 100;
-  if (Math.abs(pct) < 0.5) return { kind: 'flat', pct, abs };
+  if (Math.abs(pct) < 0.5) return { kind: 'flat', pct, abs, current: cur, previous: prev, higherIsBetter, isPercent };
   const up = abs > 0;
   const good = higherIsBetter ? up : !up;
-  return { kind: good ? 'up_good' : 'down_bad', pct, abs };
+  return { kind: good ? 'good' : 'bad', pct, abs, current: cur, previous: prev, higherIsBetter, isPercent };
 }
 
-function DeltaChip({ delta, suffix = '%' }) {
+// Default renderer for delta values: percentage only (no value
+// formatting since we don't know what unit it is). Used inside table
+// cells where space is tight.
+const defaultFormat = (n) => Number(n || 0).toLocaleString();
+
+// Compact delta pill used in table cells. Colour = good/bad, arrow =
+// literal direction of change. Tooltip carries the absolute numbers
+// so the reader can hover for the "59 ← 20" detail.
+function DeltaChip({ delta, format = defaultFormat, suffix = '%' }) {
   if (!delta || delta.kind === 'new') {
-    return <span className="text-[10px] text-muted-foreground">תקופה חדשה</span>;
+    return <span className="text-[10px] text-muted-foreground">חדש</span>;
   }
   if (delta.kind === 'flat') {
     return (
@@ -109,16 +127,62 @@ function DeltaChip({ delta, suffix = '%' }) {
     );
   }
   const up = delta.pct > 0;
-  const good = delta.kind === 'up_good';
+  const good = delta.kind === 'good';
   const cls = good
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
     : 'bg-red-50 text-red-700 border-red-200';
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md border ${cls}`}>
+    <span
+      className={`inline-flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded-md border ${cls}`}
+      title={`${format(delta.current)} כעת · ${format(delta.previous)} קודם`}
+    >
       <Icon className="h-3 w-3" />
       {up ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
     </span>
+  );
+}
+
+// Expanded delta block for the hero stat tiles: percentage chip + the
+// actual before / after numbers spelled out. Solves the original
+// confusion ("a green-down arrow") by always showing the real numbers
+// so the direction of change is unambiguous regardless of colour.
+function DeltaDetail({ delta, format = defaultFormat, periodLabel, prevPeriodLabel, suffix = '%' }) {
+  if (!delta) return null;
+  if (delta.kind === 'new') {
+    return (
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        אין נתונים ל{prevPeriodLabel} להשוואה
+      </p>
+    );
+  }
+  if (delta.kind === 'flat') {
+    return (
+      <p className="mt-2 text-[11px] text-muted-foreground inline-flex items-center gap-1">
+        <Minus className="h-3 w-3" /> ללא שינוי לעומת {prevPeriodLabel}
+      </p>
+    );
+  }
+  const up = delta.pct > 0;
+  const good = delta.kind === 'good';
+  const chipCls = good
+    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    : 'bg-red-100 text-red-800 border-red-200';
+  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  return (
+    <div className="mt-2 space-y-1">
+      <span className={`inline-flex items-center gap-0.5 text-xs font-bold px-1.5 py-0.5 rounded-md border ${chipCls}`}>
+        <Icon className="h-3 w-3" />
+        {up ? '+' : ''}{Math.abs(delta.pct).toFixed(1)}{suffix}
+        <span className="mx-1 opacity-60">·</span>
+        {good ? 'שיפור' : 'ירידה'}
+      </span>
+      <p className="text-[11px] text-muted-foreground leading-tight">
+        <span className="font-semibold text-foreground">{format(delta.current)}</span> {periodLabel}
+        <span className="mx-1 opacity-50">·</span>
+        <span className="font-semibold text-foreground/80">{format(delta.previous)}</span> {prevPeriodLabel}
+      </p>
+    </div>
   );
 }
 
@@ -126,22 +190,24 @@ function DeltaChip({ delta, suffix = '%' }) {
 // no number, so it doesn't overflow the compact pill layout.
 function TrendDot({ delta }) {
   if (!delta || delta.kind === 'new' || delta.kind === 'flat') return null;
-  const good = delta.kind === 'up_good';
+  const good = delta.kind === 'good';
+  const up = delta.pct > 0;
   return (
     <span
       className={`inline-flex items-center justify-center h-3.5 w-3.5 rounded-full ${good ? 'bg-emerald-500' : 'bg-red-500'} text-white`}
       title={good ? 'משתפר לעומת התקופה הקודמת' : 'יורד לעומת התקופה הקודמת'}
     >
-      {good ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+      {up ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
     </span>
   );
 }
 
 // Big stat card used in the detail panel. The accent ring + colored
 // value make each metric scannable at a glance from across the room.
-// Optional `delta` renders a coloured chip directly under the value so
-// the user sees the trend without scanning a second table.
-function StatTile({ label, value, sub, icon: Icon, tone = 'indigo', delta }) {
+// Optional `delta` (+ format / period labels) renders a coloured
+// chip + the actual before/after numbers directly under the value, so
+// the trend is unambiguous without scanning a second table.
+function StatTile({ label, value, sub, icon: Icon, tone = 'indigo', delta, deltaFormat, deltaSuffix, periodLabel, prevPeriodLabel }) {
   const toneClass = {
     indigo:  'bg-indigo-50  border-indigo-200  text-indigo-700',
     emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
@@ -157,7 +223,15 @@ function StatTile({ label, value, sub, icon: Icon, tone = 'indigo', delta }) {
         {Icon ? <Icon className="h-4 w-4 opacity-60" /> : null}
       </div>
       <p className="text-2xl font-bold leading-none">{value}</p>
-      {delta ? <div className="mt-2"><DeltaChip delta={delta} /></div> : null}
+      {delta ? (
+        <DeltaDetail
+          delta={delta}
+          format={deltaFormat}
+          suffix={deltaSuffix}
+          periodLabel={periodLabel}
+          prevPeriodLabel={prevPeriodLabel}
+        />
+      ) : null}
       {sub ? <p className="text-[11px] mt-2 opacity-70">{sub}</p> : null}
     </div>
   );
@@ -208,7 +282,11 @@ function demoTasksFor(repEmail, rangeKey) {
   let seed = 0;
   for (let i = 0; i < seedRoot.length; i += 1) seed = (seed * 31 + seedRoot.charCodeAt(i)) | 0;
   const rng = () => { seed = (seed * 1664525 + 1013904223) | 0; return Math.abs(seed % 1000) / 1000; };
-  const scale = { '1m': 1, '3m': 2.6, '6m': 4.8 }[rangeKey] || 1;
+  // Strip the "-prev" suffix the previous-period call adds so both
+  // periods scale off the same baseline (the only seed difference is
+  // the per-rep RNG noise added below).
+  const scaleKey = String(rangeKey || '').replace(/-prev$/, '');
+  const scale = { '1w': 0.25, '1m': 1, '3m': 2.6, '6m': 4.8 }[scaleKey] || 1;
   const base = repEmail ? 18 : 84; // aggregate ≈ 5× one rep
   const completed   = Math.round((base + rng() * 15) * scale);
   const notCompleted = Math.round((base * 0.55 + rng() * 10) * scale);
@@ -307,7 +385,7 @@ export default function TeamTab({ demoMode = false }) {
   );
   const { start, end } = useMemo(() => {
     const now = new Date();
-    return { start: startOfDay(subMonths(now, preset.months)), end: endOfDay(now) };
+    return { start: startOfDay(subDays(now, preset.days)), end: endOfDay(now) };
   }, [preset]);
 
   // Previous period: same length, shifted back so the user gets a
@@ -530,8 +608,8 @@ export default function TeamTab({ demoMode = false }) {
     return map;
   }, [compareEnabled, reps, prevReps]);
 
-  const periodLabel = preset.label;
-  const prevPeriodLabel = `${preset.label} קודם`;
+  const periodLabel = preset.shortLabel;
+  const prevPeriodLabel = PREV_LABEL_BY_ID[preset.id] || `${preset.shortLabel} קודם`;
   const taskRows = useMemo(() => {
     const tone = {
       completed:     { stripe: 'bg-emerald-500', text: 'text-emerald-700', badge: 'bg-emerald-50' },
@@ -671,6 +749,9 @@ export default function TeamTab({ demoMode = false }) {
               icon={Users}
               tone="blue"
               delta={deltas.leads}
+              deltaFormat={(n) => Number(n || 0).toLocaleString()}
+              periodLabel={periodLabel}
+              prevPeriodLabel={prevPeriodLabel}
             />
             <StatTile
               label="אחוז סגירה"
@@ -679,6 +760,10 @@ export default function TeamTab({ demoMode = false }) {
               icon={Target}
               tone="emerald"
               delta={deltas.closing}
+              deltaFormat={(n) => `${Number(n || 0).toFixed(1)}%`}
+              deltaSuffix="pp"
+              periodLabel={periodLabel}
+              prevPeriodLabel={prevPeriodLabel}
             />
             <StatTile
               label="בטיפול"
@@ -686,6 +771,10 @@ export default function TeamTab({ demoMode = false }) {
               icon={Activity}
               tone="amber"
               delta={deltas.handling}
+              deltaFormat={(n) => `${Number(n || 0).toFixed(1)}%`}
+              deltaSuffix="pp"
+              periodLabel={periodLabel}
+              prevPeriodLabel={prevPeriodLabel}
             />
             <StatTile
               label="אבד"
@@ -693,6 +782,10 @@ export default function TeamTab({ demoMode = false }) {
               icon={XCircle}
               tone="red"
               delta={deltas.lost}
+              deltaFormat={(n) => `${Number(n || 0).toFixed(1)}%`}
+              deltaSuffix="pp"
+              periodLabel={periodLabel}
+              prevPeriodLabel={prevPeriodLabel}
             />
             <StatTile
               label="הכנסות"
@@ -701,19 +794,31 @@ export default function TeamTab({ demoMode = false }) {
               icon={DollarSign}
               tone="violet"
               delta={deltas.revenue}
+              deltaFormat={(n) => formatCurrencyCompact(n)}
+              periodLabel={periodLabel}
+              prevPeriodLabel={prevPeriodLabel}
             />
           </div>
 
           {/* Compare banner — tells the user what the deltas mean and
               what time window they're rolling up. Hidden when off. */}
           {compareEnabled && prevSelectedRep ? (
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-primary/5 border border-primary/20 rounded-md px-3 py-1.5">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground bg-primary/5 border border-primary/20 rounded-md px-3 py-1.5">
               <GitCompareArrows className="h-3.5 w-3.5 text-primary" />
               <span>
                 משווה <span className="font-semibold text-foreground">{periodLabel}</span> מול <span className="font-semibold text-foreground">{prevPeriodLabel}</span>
-                {' · '}
-                ירוק = משתפר, אדום = יורד
               </span>
+              <span className="opacity-60">·</span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                ירוק = שיפור
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
+                אדום = ירידה
+              </span>
+              <span className="opacity-60">·</span>
+              <span>החץ מראה את כיוון השינוי, הצבע מראה אם זה לטובה</span>
             </div>
           ) : null}
 
@@ -742,11 +847,14 @@ export default function TeamTab({ demoMode = false }) {
                   <thead className="bg-muted/20">
                     <tr className="text-[11px] uppercase tracking-wide text-muted-foreground">
                       <th className="px-3 py-1.5 text-right font-semibold">סטטוס</th>
-                      <th className="px-2 py-1.5 text-center font-semibold w-16">משימות</th>
+                      <th className="px-2 py-1.5 text-center font-semibold w-20">{periodLabel}</th>
                       <th className="px-2 py-1.5 text-center font-semibold w-14">%</th>
                       <th className="px-3 py-1.5 text-right font-semibold">חלוקה</th>
                       {compareEnabled && prevTaskStats ? (
-                        <th className="px-2 py-1.5 text-center font-semibold w-20">לעומת קודם</th>
+                        <>
+                          <th className="px-2 py-1.5 text-center font-semibold w-20">{prevPeriodLabel}</th>
+                          <th className="px-2 py-1.5 text-center font-semibold w-24">שינוי</th>
+                        </>
                       ) : null}
                     </tr>
                   </thead>
@@ -781,9 +889,14 @@ export default function TeamTab({ demoMode = false }) {
                             </div>
                           </td>
                           {compareEnabled && prevTaskStats ? (
-                            <td className="px-2 py-1.5 text-center">
-                              <DeltaChip delta={rowDelta} />
-                            </td>
+                            <>
+                              <td className="px-2 py-1.5 text-center text-[11px] text-muted-foreground tabular-nums">
+                                {(prevTaskStats.counts[row.status] || 0).toLocaleString()}
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <DeltaChip delta={rowDelta} />
+                              </td>
+                            </>
                           ) : null}
                         </tr>
                       );
@@ -803,7 +916,13 @@ export default function TeamTab({ demoMode = false }) {
                   {formatDuration(taskStats.avgHandlingMs)}
                 </p>
                 {compareEnabled && deltas.avgHandling ? (
-                  <div className="mt-2"><DeltaChip delta={deltas.avgHandling} suffix="%" /></div>
+                  <DeltaDetail
+                    delta={deltas.avgHandling}
+                    format={(n) => formatDuration(n)}
+                    suffix="%"
+                    periodLabel={periodLabel}
+                    prevPeriodLabel={prevPeriodLabel}
+                  />
                 ) : null}
                 <p className="text-[11px] text-muted-foreground mt-2">
                   ממוצע משימות שהושלמו · נסמך על {taskStats.completedCount.toLocaleString()} משימות
