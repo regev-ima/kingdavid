@@ -64,11 +64,43 @@ import { getRepDisplayName } from '@/lib/repDisplay';
 import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
+// Sales-return categories, per the rep workflow brief. Each category is
+// driven by the related LEAD's status, not the task's own status — the
+// rep doesn't manage leads, they work a queue of return callbacks
+// derived from where each lead sits in the funnel.
+const LEAD_STATUSES_BY_CATEGORY = {
+  cat_new_lead: ['new_lead'],
+  cat_no_answer: ['no_answer_1', 'no_answer_2', 'no_answer_3', 'no_answer_4', 'no_answer_5', 'no_answer_whatsapp_sent', 'no_answer_calls'],
+  cat_before_quote: ['followup_before_quote'],
+  cat_after_quote: ['followup_after_quote'],
+  cat_meeting: ['coming_to_branch'],
+};
+const CATEGORY_BY_LEAD_STATUS = (() => {
+  const map = {};
+  for (const [cat, statuses] of Object.entries(LEAD_STATUSES_BY_CATEGORY)) {
+    for (const s of statuses) map[s] = cat;
+  }
+  return map;
+})();
+
+const CATEGORY_META = {
+  cat_new_lead:     { label: 'חזרה לליד חדש',        accent: 'emerald', desc: 'לידים חדשים שלא נוצרה איתם שיחה' },
+  cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'emerald', desc: 'לידים שניסיתי להחזיר ולא ענו' },
+  cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'emerald', desc: 'דובר, ממתינים להצעת מחיר' },
+  cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'emerald', desc: 'נשלחה הצעה, בדרך לסגירה' },
+  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'amber',   desc: 'נקבעה פגישה — לאישור / סגירה' },
+};
+
+// "Due now" window — a task whose due_date is within ±60min of the
+// current clock is highlighted as actionable-now (the brief's "מהבהב").
+const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
+
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all'].includes(initialTab) ? initialTab : 'today');
+  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all',
+    'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
   const [dateFilter, setDateFilter] = useState('');
@@ -241,6 +273,12 @@ export default function SalesTasks() {
         if (!showStale) q = q.gte('created_date', staleCutoffIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
+      } else if (activeTab.startsWith('cat_')) {
+        // Category tabs are partition-of-open-tasks driven by the related
+        // lead's status. Server-side we just narrow to open tasks; the
+        // lead-status check happens client-side using `leadsById` so we
+        // don't have to .in() over a list of thousands of lead ids.
+        q = q.eq('task_status', 'not_completed');
       }
       // 'all' falls through with no filter.
 
@@ -262,6 +300,29 @@ export default function SalesTasks() {
       const { data, error } = await q;
       if (error) throw error;
       return data || [];
+    },
+  });
+
+  // Deals closed today — counts leads that flipped to status='deal_closed'
+  // within today's window. Drives the "סגירות עסקה" KPI tile in the new
+  // rep cockpit header.
+  const { data: dealsClosedToday = 0 } = useQuery({
+    queryKey: ['leads-deals-closed-today', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+    enabled: canAccessSales,
+    staleTime: 60_000,
+    queryFn: async () => {
+      let q = base44.supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'deal_closed')
+        .gte('updated_date', todayStartIso)
+        .lte('updated_date', todayEndIso);
+      if (!isAdmin && userEmail) {
+        q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail}`);
+      }
+      const { count, error } = await q;
+      if (error) throw error;
+      return count || 0;
     },
   });
 
@@ -302,8 +363,40 @@ export default function SalesTasks() {
   // collapse to 0/hidden automatically for non-admins.
   const ownedTasks = useMemo(() => {
     const base = filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById);
-    return isAdminUser(effectiveUser) ? base : base.filter((t) => !isAssignmentTask(t));
-  }, [effectiveUser, allSalesTasks, leadsById]);
+    const filtered = isAdminUser(effectiveUser) ? base : base.filter((t) => !isAssignmentTask(t));
+    // Category tabs partition the open queue by the related lead's
+    // status. We do the lookup here (rather than in the server query)
+    // because the leadsById map is already loaded for ownership scoping
+    // and saves us another round trip.
+    if (activeTab.startsWith('cat_')) {
+      return filtered.filter((t) => {
+        const lead = t.lead_id ? leadsById[t.lead_id] : null;
+        if (!lead) return false;
+        return CATEGORY_BY_LEAD_STATUS[lead.status] === activeTab;
+      });
+    }
+    return filtered;
+  }, [effectiveUser, allSalesTasks, leadsById, activeTab]);
+
+  // Category counts derived from the open-leads slice in `allLeads`.
+  // Counts a *lead* in a bucket, not a task — matches the customer's
+  // mental model ("how many customers in this stage need attention?").
+  // Open assignment tasks aren't part of the rep's queue, so they don't
+  // factor in here.
+  const categoryCounts = useMemo(() => {
+    const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
+    for (const lead of allLeads) {
+      const cat = CATEGORY_BY_LEAD_STATUS[lead?.status];
+      if (!cat) continue;
+      if (!isAdmin && userEmail) {
+        // Scope to the rep when not admin.
+        const owns = lead.rep1 === userEmail || lead.rep2 === userEmail || lead.pending_rep_email === userEmail;
+        if (!owns) continue;
+      }
+      counts[cat] += 1;
+    }
+    return counts;
+  }, [allLeads, isAdmin, userEmail]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -881,23 +974,77 @@ export default function SalesTasks() {
         />
       ) : (
       <>
-      {/* ===== KPI STRIP =====
-          Three at-a-glance numbers: every task in the rep's queue, what's
-          due today, and what was completed today. Counts come from the
-          same server-side aggregation that drives the tab badges, so they
-          stay in sync regardless of how many rows are currently loaded. */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-          <p className="text-xs text-muted-foreground">סך משימות</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums mt-1">{totalCount.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-          <p className="text-xs text-muted-foreground">משימות להיום</p>
-          <p className="text-2xl font-bold text-amber-600 tabular-nums mt-1">{todayCount.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-          <p className="text-xs text-muted-foreground">סיימתי היום</p>
-          <p className="text-2xl font-bold text-emerald-600 tabular-nums mt-1">{completedTodayCount.toLocaleString()}</p>
+      {/* ===== TOP KPI STRIP =====
+          Per the customer brief: a four-tile header summarising the rep's
+          day. Each tile is clickable and sets the active filter on the
+          list below — tiles ARE the navigation, not decoration. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
+          { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
+          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
+          { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
+        ].map((tile) => {
+          const toneCls = {
+            amber:   'border-amber-200 hover:border-amber-400 hover:bg-amber-50/50',
+            red:     'border-red-200 hover:border-red-400 hover:bg-red-50/50',
+            emerald: 'border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50/50',
+            indigo:  'border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50/50',
+          }[tile.tone];
+          const valueCls = {
+            amber: 'text-amber-700', red: 'text-red-700', emerald: 'text-emerald-700', indigo: 'text-indigo-700',
+          }[tile.tone];
+          const isActive = !tile.readOnly && activeTab === (tile.asTab || tile.id);
+          const Icon = tile.icon;
+          return (
+            <button
+              key={tile.id}
+              type="button"
+              onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
+              disabled={tile.readOnly}
+              className={`text-right rounded-xl border-2 bg-card p-4 shadow-card transition-all ${toneCls} ${isActive ? 'ring-2 ring-primary border-primary' : ''} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-medium text-muted-foreground">{tile.label}</p>
+                <Icon className={`h-4 w-4 ${valueCls} opacity-70`} />
+              </div>
+              <p className={`text-2xl font-bold tabular-nums ${valueCls}`}>{Number(tile.value || 0).toLocaleString()}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== SALES-RETURN CATEGORIES =====
+          Five queues, one per stage of the rep's funnel. Driven by the
+          related LEAD's status, not the task itself, because the rep
+          doesn't manage leads — they work return-callback queues
+          partitioned by where each lead sits. Meeting bucket is amber
+          to set it apart from the four return-callback queues (per the
+          customer's wireframe). */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">סוגי משימות לטיפול</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {Object.entries(LEAD_STATUSES_BY_CATEGORY).map(([catId]) => {
+            const meta = CATEGORY_META[catId];
+            const value = categoryCounts[catId] || 0;
+            const isActive = activeTab === catId;
+            const accentRing = meta.accent === 'amber'
+              ? 'border-amber-300 bg-amber-50/40 hover:border-amber-500'
+              : 'border-emerald-300 bg-emerald-50/40 hover:border-emerald-500';
+            const valueCls = meta.accent === 'amber' ? 'text-amber-700' : 'text-emerald-700';
+            return (
+              <button
+                key={catId}
+                type="button"
+                onClick={() => setActiveTab(catId)}
+                className={`text-right rounded-xl border-2 ${accentRing} p-3 shadow-card transition-all ${isActive ? 'ring-2 ring-primary border-primary' : ''}`}
+              >
+                <p className="text-xs font-semibold text-foreground leading-tight">{meta.label}</p>
+                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1171,6 +1318,17 @@ export default function SalesTasks() {
             emptyMessage="לא נמצאו משימות"
             onRowClick={handleOpenTaskDetails}
             tableClassName="table-fixed min-w-[1280px]"
+            // "Due now" — task is open, has a due_date, and that time
+            // falls in a ±60 min window of the current clock. Wrap the
+            // row in a soft amber pulse so the rep eyeballs which call
+            // is up *right now* without scanning timestamps.
+            rowClassName={(row) => {
+              if (row.task_status !== 'not_completed' || !row.due_date) return '';
+              const due = parseDbTimestamp(row.due_date)?.getTime();
+              if (!due) return '';
+              const diff = Math.abs(due - Date.now());
+              return diff <= DUE_NOW_WINDOW_MS ? 'animate-pulse bg-amber-50 hover:bg-amber-100/70' : '';
+            }}
           />
         )}
 
