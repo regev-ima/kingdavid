@@ -8,22 +8,17 @@ import FilterBar from '@/components/shared/FilterBar';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import KPICard from '@/components/shared/KPICard';
-import { Crown, TrendingUp, Users, DollarSign, FileSpreadsheet } from "lucide-react";
+import { TrendingUp, Users, DollarSign, FileSpreadsheet } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import ImportCustomers from '@/components/customer/ImportCustomers';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, filterCustomersForUser } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
-const VIP_FILTER = { key: 'vip', label: 'VIP', options: [
-  { value: 'true', label: 'VIP' },
-  { value: 'false', label: 'רגיל' }
-]};
-
 export default function Customers() {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const [filterValues, setFilterValues] = useState({ search: '', vip: 'all', rep: 'all' });
+  const [filterValues, setFilterValues] = useState({ search: '', rep: 'all' });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -39,7 +34,7 @@ export default function Customers() {
   // when there are 15k+ rows. The customers_stats view aggregates every
   // KPI for the whole table in a single round-trip
   // (see supabase/migrations/.._customers_stats_view.sql).
-  const { data: stats = { total: 0, vip: 0, revenue: 0, orders: 0 } } = useQuery({
+  const { data: stats = { total: 0, revenue: 0, orders: 0 } } = useQuery({
     queryKey: ['customers-stats'],
     staleTime: 60000,
     enabled: canAccessSales,
@@ -49,11 +44,10 @@ export default function Customers() {
         .select('*')
         .maybeSingle();
       if (error) throw error;
-      return data || { total: 0, vip: 0, revenue: 0, orders: 0 };
+      return data || { total: 0, revenue: 0, orders: 0 };
     },
   });
   const totalCustomers = Number(stats.total) || 0;
-  const vipCustomers = Number(stats.vip) || 0;
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
@@ -85,8 +79,7 @@ export default function Customers() {
     .filter((u) => u.role === 'user' || u.role === 'admin')
     .map((u) => ({ value: u.email, label: u.full_name || u.email }));
   const filterOptions = [
-    VIP_FILTER,
-    { key: 'rep', label: 'נציג מטפל', options: repOptions },
+    { key: 'rep', label: 'נציג מטפל', allLabel: 'כל הנציגים', options: repOptions },
   ];
 
   const filteredCustomers = scopedCustomers.filter(customer => {
@@ -96,15 +89,11 @@ export default function Customers() {
       customer.phone?.includes(filterValues.search) ||
       customer.email?.toLowerCase().includes(searchLower);
 
-    const matchVip = filterValues.vip === 'all' ||
-      (filterValues.vip === 'true' && customer.vip_status) ||
-      (filterValues.vip === 'false' && !customer.vip_status);
-
     const matchRep = filterValues.rep === 'all' ||
       customer.account_manager === filterValues.rep ||
       customer.rep2 === filterValues.rep;
 
-    return matchSearch && matchVip && matchRep;
+    return matchSearch && matchRep;
   });
 
   // KPI numbers come from the customers_stats view above so they reflect
@@ -119,10 +108,7 @@ export default function Customers() {
       header: 'לקוח',
       render: (customer) => (
         <div>
-          <div className="flex items-center gap-2">
-            <p className="font-medium">{customer.full_name}</p>
-            {customer.vip_status && <Crown className="h-4 w-4 text-yellow-500" />}
-          </div>
+          <p className="font-medium">{customer.full_name}</p>
           <p className="text-xs text-muted-foreground">{customer.phone}</p>
         </div>
       )
@@ -187,9 +173,8 @@ export default function Customers() {
         </Button>
       </div>
 
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="סה״כ לקוחות" value={totalCustomers} icon={Users} color="blue" />
-        <KPICard title="לקוחות VIP" value={vipCustomers} icon={Crown} color="amber" />
+      <div className="grid sm:grid-cols-3 gap-4">
+        <KPICard title="סה״כ לקוחות" value={totalCustomers.toLocaleString()} icon={Users} color="blue" />
         <KPICard title="סה״כ הכנסות" value={`₪${totalRevenue.toLocaleString()}`} icon={DollarSign} color="emerald" />
         <KPICard title="ממוצע הזמנה" value={`₪${avgOrderValue.toLocaleString(undefined, {maximumFractionDigits: 0})}`} icon={TrendingUp} color="blue" />
       </div>
@@ -198,7 +183,7 @@ export default function Customers() {
         filters={filterOptions}
         values={filterValues}
         onChange={(key, value) => setFilterValues(prev => ({ ...prev, [key]: value }))}
-        onClear={() => setFilterValues({ search: '', vip: 'all', rep: 'all' })}
+        onClear={() => setFilterValues({ search: '', rep: 'all' })}
       />
 
       <DataTable

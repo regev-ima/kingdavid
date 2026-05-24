@@ -26,7 +26,6 @@ import {
   Phone,
   Mail,
   MessageCircle,
-  Crown,
   ShoppingCart,
   FileText,
   Save,
@@ -242,10 +241,7 @@ export default function CustomerDetails() {
             </Button>
           </Link>
           <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">{customer.full_name}</h1>
-              {customer.vip_status && <Crown className="h-6 w-6 text-yellow-500" />}
-            </div>
+            <h1 className="text-2xl font-bold text-foreground">{customer.full_name}</h1>
             <p className="text-muted-foreground">{customer.phone}</p>
           </div>
         </div>
@@ -476,28 +472,6 @@ export default function CustomerDetails() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* VIP Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle>סטטוס VIP</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Crown className="h-5 w-5 text-yellow-500" />
-                  <span>לקוח VIP</span>
-                </div>
-                <Switch
-                  checked={formData.vip_status || false}
-                  onCheckedChange={(checked) => {
-                    setFormData({...formData, vip_status: checked});
-                    updateCustomerMutation.mutate({ vip_status: checked });
-                  }}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Rep Assignment */}
           <Card>
             <CardHeader>

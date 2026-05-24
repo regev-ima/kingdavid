@@ -31,11 +31,6 @@ const QUOTE_STATUS_OPTIONS = [
   { value: 'expired', label: 'פג תוקף' },
 ];
 
-const VIP_STATUS_OPTIONS = [
-  { value: 'true', label: 'VIP' },
-  { value: 'false', label: 'רגיל' },
-];
-
 const TICKET_STATUS_OPTIONS = [
   { value: 'open', label: 'פתוח' },
   { value: 'in_progress', label: 'בטיפול' },
@@ -246,7 +241,6 @@ export const BULK_UPDATE_ENTITIES = {
       { key: 'address', label: 'כתובת', type: 'text' },
       { key: 'source', label: 'מקור', type: 'select', options: LEAD_SOURCE_OPTIONS },
       { key: 'original_source', label: 'מקור מקורי', type: 'text' },
-      { key: 'vip_status', label: 'סוג לקוח', type: 'select', options: VIP_STATUS_OPTIONS },
       { key: 'account_manager', label: 'נציג ראשי (מייל)', type: 'text' },
       { key: 'rep2', label: 'נציג משני (מייל)', type: 'text' },
       { key: 'status', label: 'סטטוס', type: 'text' },
@@ -258,7 +252,6 @@ export const BULK_UPDATE_ENTITIES = {
       { key: 'city', label: 'עיר', type: 'text' },
       { key: 'address', label: 'כתובת', type: 'text' },
       { key: 'source', label: 'מקור', type: 'select', options: LEAD_SOURCE_OPTIONS },
-      { key: 'vip_status', label: 'סוג לקוח', type: 'select', options: VIP_STATUS_OPTIONS },
       { key: 'account_manager', label: 'נציג ראשי', type: 'rep' },
       { key: 'rep2', label: 'נציג משני', type: 'rep' },
       { key: 'email', label: 'אימייל', type: 'text' },
