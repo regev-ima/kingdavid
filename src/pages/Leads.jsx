@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon } from "lucide-react";
+import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon, Filter, X as XIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth } from '@/lib/safe-date-fns';
@@ -795,6 +795,12 @@ export default function Leads() {
   const openLeadsCount = kpiCounts.open;
   const unassignedCount = kpiCounts.unassigned;
 
+  // Six-figure totals need the thousands separator or they read as
+  // "1542" instead of "1,542" — the per-tile <span>s used to interpolate
+  // the raw number, so 106645 rendered as "106645". toLocaleString gives
+  // RTL-safe grouping ("106,645") which scans much faster in a glance.
+  const fmt = (n) => Number(n || 0).toLocaleString();
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
@@ -976,9 +982,9 @@ export default function Leads() {
               }
             `}
           >
-            <span className="text-sm font-medium">לא משויכים</span>
-            <span className={`text-2xl font-bold ${activeTab === 'unassigned' ? 'text-primary' : 'text-foreground'}`}>
-              {unassignedCount}
+            <span className="text-sm font-medium whitespace-nowrap">לא משויכים</span>
+            <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'unassigned' ? 'text-primary' : 'text-foreground'}`}>
+              {fmt(unassignedCount)}
             </span>
             {unassignedCount > 0 && (
               <span className="absolute top-3 left-3 flex h-2.5 w-2.5">
@@ -1000,9 +1006,9 @@ export default function Leads() {
             }
           `}
         >
-          <span className="text-sm font-medium">פתוחים</span>
-          <span className={`text-2xl font-bold ${activeTab === 'open' ? 'text-primary' : 'text-foreground'}`}>
-            {openLeadsCount}
+          <span className="text-sm font-medium whitespace-nowrap">פתוחים</span>
+          <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'open' ? 'text-primary' : 'text-foreground'}`}>
+            {fmt(openLeadsCount)}
           </span>
         </div>
 
@@ -1017,9 +1023,9 @@ export default function Leads() {
             }
           `}
         >
-          <span className="text-sm font-medium">הלידים שלי</span>
-          <span className={`text-2xl font-bold ${activeTab === 'my' ? 'text-primary' : 'text-foreground'}`}>
-            {myLeadsCount}
+          <span className="text-sm font-medium whitespace-nowrap">הלידים שלי</span>
+          <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'my' ? 'text-primary' : 'text-foreground'}`}>
+            {fmt(myLeadsCount)}
           </span>
         </div>
 
@@ -1035,9 +1041,9 @@ export default function Leads() {
               }
             `}
           >
-            <span className="text-sm font-medium">כל הלידים</span>
-            <span className={`text-2xl font-bold ${activeTab === 'all' ? 'text-primary' : 'text-foreground'}`}>
-              {totalLeadCount}
+            <span className="text-sm font-medium whitespace-nowrap">כל הלידים</span>
+            <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'all' ? 'text-primary' : 'text-foreground'}`}>
+              {fmt(totalLeadCount)}
             </span>
           </div>
         )}
@@ -1087,16 +1093,86 @@ export default function Leads() {
         )}
       </div>
 
-      {/* Tiny match-count badge. Shown whenever any filter is active or the
-          user picked a non-default tab, so they always know the true size of
-          the result set even though the table is paginated to `limit`. */}
-      {(filters.search || filters.status !== 'all' || filters.source !== 'all' || filters.rep1 !== 'all' || activeTab !== 'all') && (
-        <div className="text-xs text-muted-foreground pr-1">
-          {filteredCount === null
-            ? 'סופר...'
-            : `מציג ${leads.length.toLocaleString()} מתוך ${Number(filteredCount).toLocaleString()} לידים תואמים${Number(filteredCount) > leads.length ? ' (טען עוד למטה כדי לראות יותר)' : ''}`}
-        </div>
-      )}
+      {/* Prominent "filter result" card. Shown whenever any filter is active
+          or the user picked a non-default tab. Highlights the count of leads
+          matching the current cut + the share-of-total — so a manager who
+          filtered "status=new_lead, rep=שלמה" sees at a glance how big that
+          slice is, both in absolute numbers and as a percentage of all
+          leads. Active filter chips spell out the cut in plain Hebrew. */}
+      {(filters.search || filters.status !== 'all' || filters.source !== 'all' || filters.rep1 !== 'all' || activeTab !== 'all') && (() => {
+        const TAB_LABELS = { unassigned: 'לא משויכים', open: 'פתוחים', my: 'הלידים שלי', all: 'כל הלידים' };
+        const statusLabel = filters.status !== 'all'
+          ? (LEAD_STATUS_OPTIONS.find((s) => s.value === filters.status)?.label
+             || customStatusesForFilter.find((s) => s.value === filters.status)?.label
+             || filters.status)
+          : null;
+        const sourceLabel = filters.source !== 'all'
+          ? (SOURCE_LABELS[filters.source] || filters.source)
+          : null;
+        const repLabel = filters.rep1 !== 'all'
+          ? (salesReps.find((r) => r.email === filters.rep1)?.full_name || filters.rep1)
+          : null;
+        const chips = [
+          activeTab !== 'all' && { key: 'tab', label: TAB_LABELS[activeTab] || activeTab, onClear: () => setActiveTab('all') },
+          statusLabel && { key: 'status', label: `סטטוס: ${statusLabel}`, onClear: () => handleFilterChange('status', 'all') },
+          sourceLabel && { key: 'source', label: `מקור: ${sourceLabel}`,  onClear: () => handleFilterChange('source', 'all') },
+          repLabel    && { key: 'rep',    label: `נציג: ${repLabel}`,     onClear: () => handleFilterChange('rep1', 'all') },
+          filters.search && { key: 'search', label: `חיפוש: "${filters.search}"`, onClear: () => handleFilterChange('search', '') },
+        ].filter(Boolean);
+        const pct = totalLeadCount > 0 && filteredCount != null
+          ? Math.round((Number(filteredCount) / Number(totalLeadCount)) * 1000) / 10
+          : null;
+        return (
+          <div className="flex flex-col gap-3 rounded-xl border-2 border-primary/30 bg-gradient-to-l from-primary/10 to-primary/5 p-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="flex items-baseline gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
+                    <Filter className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="text-sm font-semibold text-foreground">תוצאות הסינון</span>
+                </div>
+                <span className="text-3xl font-bold text-primary tabular-nums whitespace-nowrap">
+                  {filteredCount === null ? '...' : fmt(filteredCount)}
+                </span>
+                {pct != null ? (
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    ({pct}% מתוך {fmt(totalLeadCount)} לידים)
+                  </span>
+                ) : null}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {filteredCount === null
+                  ? 'סופר...'
+                  : `מציג ${fmt(leads.length)}${Number(filteredCount) > leads.length ? ' · גלול למטה לטעון עוד' : ''}`}
+              </div>
+            </div>
+            {chips.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chips.map((chip) => (
+                  <button
+                    key={chip.key}
+                    type="button"
+                    onClick={chip.onClear}
+                    className="inline-flex items-center gap-1 rounded-full bg-background border border-primary/30 px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted/50 transition-colors"
+                    title="הסר סינון"
+                  >
+                    {chip.label}
+                    <XIcon className="h-3 w-3 opacity-60" />
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => { clearFilters(); if (activeTab !== 'all') setActiveTab('all'); }}
+                  className="text-[11px] font-medium text-primary hover:text-primary/80 px-2 py-1"
+                >
+                  נקה הכל
+                </button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
 
       {!isLoading && Number(filteredCount) === 0 && isPhoneShapedQuery(filters.search) && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
