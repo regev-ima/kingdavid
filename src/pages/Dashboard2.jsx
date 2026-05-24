@@ -211,7 +211,7 @@ export default function Dashboard2() {
             </TabsContent>
 
             <TabsContent value="leads" className="m-0">
-              <LeadsTab current={current} dateRange={dateRange} />
+              <LeadsTab current={current} dateRange={dateRange} demoMode={demoMode} />
             </TabsContent>
 
             <TabsContent value="orders" className="m-0">

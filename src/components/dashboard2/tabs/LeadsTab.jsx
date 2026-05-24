@@ -18,6 +18,7 @@ import {
   Legend,
 } from 'recharts';
 import MiniKPI from '../MiniKPI';
+import LeadsByStatusTable from '../LeadsByStatusTable';
 
 const SOURCE_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
 
@@ -25,7 +26,7 @@ function formatNumber(n) {
   return Number(n || 0).toLocaleString('en-US');
 }
 
-export default function LeadsTab({ current = {}, dateRange }) {
+export default function LeadsTab({ current = {}, dateRange, demoMode = false }) {
   const trend = current.leadsTrend || [];
   const sources = current.sourceBreakdown || [];
 
@@ -125,6 +126,8 @@ export default function LeadsTab({ current = {}, dateRange }) {
           </CardContent>
         </Card>
       </div>
+
+      <LeadsByStatusTable demoMode={demoMode} />
     </div>
   );
 }
