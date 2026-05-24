@@ -385,25 +385,47 @@ export default function SalesTasks() {
     return filtered;
   }, [effectiveUser, allSalesTasks, leadsById, activeTab]);
 
-  // Category counts derived from the open-leads slice in `allLeads`.
-  // Counts a *lead* in a bucket, not a task — matches the customer's
-  // mental model ("how many customers in this stage need attention?").
-  // Open assignment tasks aren't part of the rep's queue, so they don't
-  // factor in here.
+  // Lead IDs of every open task the current user owns — independent of
+  // the active tab so the category counters always reflect the full
+  // queue, not just "today's slice" or "what fit in the 1000-row page".
+  // Crucially, scoped by TASK ownership (rep1/rep2/pending_rep_email on
+  // the task), not by lead ownership: a rep often holds a task on a
+  // lead they don't own, and those tasks need to be counted in the
+  // category cards above (otherwise the cards say 0 while rows for
+  // those same leads sit visibly in the table below).
+  const { data: openTaskLeadIds = [] } = useQuery({
+    queryKey: ['salesTasks-open-lead-ids', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
+    enabled: canAccessSales,
+    staleTime: 60_000,
+    queryFn: async () => {
+      let q = applyUserScope(
+        base44.supabase.from('sales_tasks').select('lead_id').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        { includeAssignment: includeAssignmentInCounts },
+      ).limit(10_000);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Category counts: for each open task the current user owns, look up
+  // the related lead's status and bucket it. Distinct by lead_id so a
+  // lead with three open tasks counts once (matches the customer mental
+  // model: "how many customers are in this stage" not "how many tasks").
   const categoryCounts = useMemo(() => {
     const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
-    for (const lead of allLeads) {
-      const cat = CATEGORY_BY_LEAD_STATUS[lead?.status];
-      if (!cat) continue;
-      if (!isAdmin && userEmail) {
-        // Scope to the rep when not admin.
-        const owns = lead.rep1 === userEmail || lead.rep2 === userEmail || lead.pending_rep_email === userEmail;
-        if (!owns) continue;
-      }
-      counts[cat] += 1;
+    const seen = new Set();
+    for (const row of openTaskLeadIds) {
+      const lid = row?.lead_id;
+      if (!lid || seen.has(lid)) continue;
+      seen.add(lid);
+      const lead = leadsById[lid];
+      if (!lead) continue;
+      const cat = CATEGORY_BY_LEAD_STATUS[lead.status];
+      if (cat) counts[cat] += 1;
     }
     return counts;
-  }, [allLeads, isAdmin, userEmail]);
+  }, [openTaskLeadIds, leadsById]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
