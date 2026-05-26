@@ -218,6 +218,61 @@ function buildSnapshot({ rangeKey, customRange, dateRange, label, factor }) {
   const marketingCost = marketingBreakdown.reduce((s, r) => s + (r.cost || 0), 0);
   const marketingLeads = marketingBreakdown.reduce((s, r) => s + (r.leads_count || 0), 0);
 
+  // Campaigns + landing pages: synthesised from the same volume scale
+  // as sources so all marketing numbers tell a consistent story (sum of
+  // campaign-attributed leads ≈ marketingLeads, etc).
+  const campaignBase = [
+    { name: 'BlackFriday-2025',   source: 'דיגיטל',  base_leads: 9,  base_cost: 1900, conv: 35 },
+    { name: 'Spring-Sale-30',     source: 'דיגיטל',  base_leads: 7,  base_cost: 1500, conv: 28 },
+    { name: 'Brand-Awareness-Q1', source: 'דיגיטל',  base_leads: 5,  base_cost: 1100, conv: 12 },
+    { name: 'WhatsApp-Promo',     source: 'WhatsApp', base_leads: 4, base_cost: 700,  conv: 24 },
+    { name: 'Retargeting-Cart',   source: 'דיגיטל',  base_leads: 3,  base_cost: 600,  conv: 41 },
+    { name: 'Referral-Bonus',     source: 'הפניה',   base_leads: 3,  base_cost: 0,    conv: 48 },
+  ];
+  const campaigns = campaignBase.map((c) => {
+    const leads = Math.max(1, Math.round(c.base_leads * marketingScale * (0.85 + rng() * 0.3)));
+    const conv = Math.max(0, Math.min(80, c.conv + (rng() - 0.5) * 8));
+    const won = Math.round((conv / 100) * leads);
+    const cost = Math.round(c.base_cost * marketingScale * (0.9 + rng() * 0.2));
+    const avgDeal = 6500 + Math.round(rng() * 4500);
+    const revenue = won * avgDeal;
+    return {
+      name: c.name,
+      source: c.source,
+      leads_count: leads,
+      won_count: won,
+      conversion: +conv.toFixed(1),
+      cost,
+      revenue,
+      cpl: leads > 0 ? Math.round(cost / leads) : 0,
+      cac: won > 0 ? Math.round(cost / won) : null,
+      roi: cost > 0 ? +(revenue / cost).toFixed(1) : null,
+    };
+  });
+
+  const landingPageBase = [
+    { name: '/mattress-deals',  base_leads: 14, conv: 32 },
+    { name: '/comfort-test',    base_leads: 11, conv: 38 },
+    { name: '/promo-30-off',    base_leads: 9,  conv: 22 },
+    { name: '/store-locator',   base_leads: 7,  conv: 41 },
+    { name: '/sleep-quiz',      base_leads: 5,  conv: 28 },
+    { name: '/lp-back-pain',    base_leads: 4,  conv: 19 },
+  ];
+  const landingPages = landingPageBase.map((p) => {
+    const leads = Math.max(1, Math.round(p.base_leads * marketingScale * (0.85 + rng() * 0.3)));
+    const conv = Math.max(0, Math.min(80, p.conv + (rng() - 0.5) * 6));
+    const won = Math.round((conv / 100) * leads);
+    const avgDeal = 6800 + Math.round(rng() * 3500);
+    const revenue = won * avgDeal;
+    return {
+      name: p.name,
+      leads_count: leads,
+      won_count: won,
+      conversion: +conv.toFixed(1),
+      revenue,
+    };
+  });
+
   return {
     // Window-scaled counts
     newLeadsCount,
@@ -235,6 +290,8 @@ function buildSnapshot({ rangeKey, customRange, dateRange, label, factor }) {
     topSource,
     marketingRoi: marketingCost > 0 ? +(marketingBreakdown.reduce((s, r) => s + (r.revenue || 0), 0) / marketingCost).toFixed(1) : null,
     marketingBreakdown,
+    campaigns,
+    landingPages,
     // Real-time snapshots (don't scale with window)
     openLeadsTotal: snap(SNAPSHOT_BASE.openLeadsTotal),
     noAnswerLeads: snap(SNAPSHOT_BASE.noAnswerLeads),

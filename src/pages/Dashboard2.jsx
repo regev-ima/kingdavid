@@ -14,6 +14,7 @@ import OverviewTab from '@/components/dashboard2/tabs/OverviewTab';
 import LeadsTab from '@/components/dashboard2/tabs/LeadsTab';
 import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
 import TeamTab from '@/components/dashboard2/tabs/TeamTab';
+import MarketingTab from '@/components/dashboard2/tabs/MarketingTab';
 import PlaceholderTab from '@/components/dashboard2/tabs/PlaceholderTab';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData, getDemoPrevious } from '@/components/dashboard2/demoData';
@@ -207,11 +208,11 @@ export default function Dashboard2() {
             </TabsList>
 
             <TabsContent value="overview" className="m-0">
-              <OverviewTab current={current} previous={previous} dateRange={dateRange} />
+              <OverviewTab current={current} previous={previous} dateRange={dateRange} onSwitchTab={setActiveTab} />
             </TabsContent>
 
             <TabsContent value="leads" className="m-0">
-              <LeadsTab current={current} dateRange={dateRange} />
+              <LeadsTab current={current} dateRange={dateRange} demoMode={demoMode} />
             </TabsContent>
 
             <TabsContent value="orders" className="m-0">
@@ -235,15 +236,18 @@ export default function Dashboard2() {
             </TabsContent>
 
             <TabsContent value="team" className="m-0">
-              <TeamTab current={current} />
+              <TeamTab demoMode={demoMode} />
             </TabsContent>
 
             <TabsContent value="marketing" className="m-0">
-              <PlaceholderTab
-                title="שיווק"
-                description="בקרוב: עלויות לפי קמפיין, ROI לכל מקור, ביצועי דפי נחיתה."
-                drillToPage="Marketing"
-              />
+              {/* Dashboard2-native marketing view. Drives off the same
+                  `current` snapshot the other tabs use, so demo mode + the
+                  global date range work out of the box. Charts are kept
+                  compact (h-44) so the four breakdown tables (source /
+                  campaign / landing page / rep) actually fit above the
+                  fold — the standalone /Marketing route is one click
+                  away for the deep-dive. */}
+              <MarketingTab current={current} previous={previous} dateRange={dateRange} />
             </TabsContent>
 
             <TabsContent value="inventory" className="m-0">

@@ -17,6 +17,11 @@ export default function DataTable({
   isLoading,
   emptyMessage = 'אין נתונים להצגה',
   onRowClick,
+  // Optional per-row className builder. Receives the row and returns
+  // extra classes appended to the default row class — used to highlight
+  // rows that meet a domain-specific condition (e.g. tasks due in the
+  // next hour pulse-animate as "actionable now").
+  rowClassName,
   selectionMode = false,
   onRowSelect,
   showRowNumbers = true,
@@ -121,7 +126,7 @@ export default function DataTable({
             {data.map((row, rowIdx) => (
               <TableRow
                 key={row.id || rowIdx}
-                className={`border-b border-border/50 last:border-b-0 group ${onRowClick || selectionMode ? 'cursor-pointer hover:bg-primary/[0.03] focus-within:bg-primary/[0.03]' : ''} transition-colors duration-150`}
+                className={`border-b border-border/50 last:border-b-0 group ${onRowClick || selectionMode ? 'cursor-pointer hover:bg-primary/[0.03] focus-within:bg-primary/[0.03]' : ''} transition-colors duration-150 ${rowClassName ? rowClassName(row, rowIdx) || '' : ''}`}
                 onClick={() => {
                   if (selectionMode && onRowSelect) {
                     onRowSelect(row);

@@ -31,7 +31,6 @@ const customerFields = [
   { value: 'first_order_date', label: 'תאריך הזמנה ראשונה (YYYY-MM-DD)' },
   { value: 'total_orders', label: 'סה"כ הזמנות' },
   { value: 'total_revenue', label: 'סה"כ הכנסות' },
-  { value: 'vip_status', label: 'VIP (true/false)' },
   { value: 'account_manager', label: 'נציג אחראי (מייל)' },
   { value: 'pending_rep_email', label: 'מייל נציג ממתין' },
   { value: 'notes', label: 'הערות' },

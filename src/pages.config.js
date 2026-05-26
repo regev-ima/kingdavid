@@ -66,6 +66,7 @@ import HypReturn from './pages/HypReturn';
 import Inventory from './pages/Inventory';
 import LandingPages from './pages/LandingPages';
 import LeadDetails from './pages/LeadDetails';
+import LeadLookup from './pages/LeadLookup';
 import Leads from './pages/Leads';
 import Marketing from './pages/Marketing';
 import NewLead from './pages/NewLead';
@@ -111,6 +112,7 @@ export const PAGES = {
     "Inventory": Inventory,
     "LandingPages": LandingPages,
     "LeadDetails": LeadDetails,
+    "LeadLookup": LeadLookup,
     "Leads": Leads,
     "Marketing": Marketing,
     "NewLead": NewLead,

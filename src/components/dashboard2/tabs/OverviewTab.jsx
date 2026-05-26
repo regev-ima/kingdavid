@@ -21,7 +21,7 @@ function formatCurrency(value) {
   return `₪${Number(value || 0).toLocaleString()}`;
 }
 
-export default function OverviewTab({ current = {}, previous = {}, dateRange }) {
+export default function OverviewTab({ current = {}, previous = {}, dateRange, onSwitchTab }) {
   const navigate = useNavigate();
   const startIso = dateRange?.from ? new Date(dateRange.from).toISOString() : undefined;
   const endIso = dateRange?.to ? new Date(dateRange.to).toISOString() : undefined;
@@ -106,13 +106,13 @@ export default function OverviewTab({ current = {}, previous = {}, dateRange }) 
         </div>
       </SectionCard>
 
-      {/* 5. ביצועי צוות מכירות */}
+      {/* 5. ביצועי צוות מכירות — drills into the in-page Team tab */}
       <SectionCard
         title="ביצועי צוות מכירות"
         icon={TrendingUp}
         iconColor="text-indigo-600"
         iconBg="bg-indigo-100"
-        drillToPage="Representatives"
+        onDrillClick={onSwitchTab ? () => onSwitchTab('team') : undefined}
       >
         <RepLeaderboard reps={current.reps || []} limit={5} />
       </SectionCard>

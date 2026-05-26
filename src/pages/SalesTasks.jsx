@@ -3,7 +3,6 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,11 +63,51 @@ import { getRepDisplayName } from '@/lib/repDisplay';
 import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
+// Sales-return categories, per the rep workflow brief. Each category is
+// driven by the related LEAD's status, not the task's own status — the
+// rep doesn't manage leads, they work a queue of return callbacks
+// derived from where each lead sits in the funnel.
+const LEAD_STATUSES_BY_CATEGORY = {
+  cat_new_lead: ['new_lead'],
+  cat_no_answer: ['no_answer_1', 'no_answer_2', 'no_answer_3', 'no_answer_4', 'no_answer_5', 'no_answer_whatsapp_sent', 'no_answer_calls'],
+  cat_before_quote: ['followup_before_quote'],
+  cat_after_quote: ['followup_after_quote'],
+  cat_meeting: ['coming_to_branch'],
+};
+const CATEGORY_BY_LEAD_STATUS = (() => {
+  const map = {};
+  for (const [cat, statuses] of Object.entries(LEAD_STATUSES_BY_CATEGORY)) {
+    for (const s of statuses) map[s] = cat;
+  }
+  return map;
+})();
+
+// Each category gets a distinct tone keyed to where the lead sits in
+// the funnel — so the rep can read the colour grid like a heatmap of
+// "what stage everything is in" without reading the labels:
+//   sky    = brand-new, never been contacted
+//   rose   = urgent retry — we tried, they didn't answer
+//   amber  = warming up, ball's in our court (build the quote)
+//   violet = ball's in their court (waiting on the customer to decide)
+//   emerald = closing — committed meeting on the books
+const CATEGORY_META = {
+  cat_new_lead:     { label: 'חזרה לליד חדש',        accent: 'sky',     desc: 'לידים חדשים שלא נוצרה איתם שיחה' },
+  cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'rose',    desc: 'לידים שניסיתי להחזיר ולא ענו' },
+  cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
+  cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
+  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
+};
+
+// "Due now" window — a task whose due_date is within ±60min of the
+// current clock is highlighted as actionable-now (the brief's "מהבהב").
+const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
+
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all'].includes(initialTab) ? initialTab : 'today');
+  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all',
+    'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
   const [dateFilter, setDateFilter] = useState('');
@@ -241,6 +280,12 @@ export default function SalesTasks() {
         if (!showStale) q = q.gte('created_date', staleCutoffIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
+      } else if (activeTab.startsWith('cat_')) {
+        // Category tabs are partition-of-open-tasks driven by the related
+        // lead's status. Server-side we just narrow to open tasks; the
+        // lead-status check happens client-side using `leadsById` so we
+        // don't have to .in() over a list of thousands of lead ids.
+        q = q.eq('task_status', 'not_completed');
       }
       // 'all' falls through with no filter.
 
@@ -262,6 +307,29 @@ export default function SalesTasks() {
       const { data, error } = await q;
       if (error) throw error;
       return data || [];
+    },
+  });
+
+  // Deals closed today — counts leads that flipped to status='deal_closed'
+  // within today's window. Drives the "סגירות עסקה" KPI tile in the new
+  // rep cockpit header.
+  const { data: dealsClosedToday = 0 } = useQuery({
+    queryKey: ['leads-deals-closed-today', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+    enabled: canAccessSales,
+    staleTime: 60_000,
+    queryFn: async () => {
+      let q = base44.supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'deal_closed')
+        .gte('updated_date', todayStartIso)
+        .lte('updated_date', todayEndIso);
+      if (!isAdmin && userEmail) {
+        q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail}`);
+      }
+      const { count, error } = await q;
+      if (error) throw error;
+      return count || 0;
     },
   });
 
@@ -302,8 +370,68 @@ export default function SalesTasks() {
   // collapse to 0/hidden automatically for non-admins.
   const ownedTasks = useMemo(() => {
     const base = filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById);
-    return isAdminUser(effectiveUser) ? base : base.filter((t) => !isAssignmentTask(t));
-  }, [effectiveUser, allSalesTasks, leadsById]);
+    const filtered = isAdminUser(effectiveUser) ? base : base.filter((t) => !isAssignmentTask(t));
+    // Category tabs partition the open queue by the related lead's
+    // status. We do the lookup here (rather than in the server query)
+    // because the leadsById map is already loaded for ownership scoping
+    // and saves us another round trip.
+    if (activeTab.startsWith('cat_')) {
+      return filtered.filter((t) => {
+        // Prefer the task's denormalised status mirror so the list and
+        // the category-card counts above always agree, regardless of
+        // whether the related lead has finished paginating into
+        // leadsById yet.
+        const status = t.status || (t.lead_id ? leadsById[t.lead_id]?.status : null);
+        return CATEGORY_BY_LEAD_STATUS[status] === activeTab;
+      });
+    }
+    return filtered;
+  }, [effectiveUser, allSalesTasks, leadsById, activeTab]);
+
+  // Lead IDs of every open task the current user owns — independent of
+  // the active tab so the category counters always reflect the full
+  // queue, not just "today's slice" or "what fit in the 1000-row page".
+  // Crucially, scoped by TASK ownership (rep1/rep2/pending_rep_email on
+  // the task), not by lead ownership: a rep often holds a task on a
+  // lead they don't own, and those tasks need to be counted in the
+  // category cards above. We also pull the task's own `status` mirror
+  // so we can categorise without a lookup hop through `leadsById` —
+  // that map is paginated from the leads table and may not have the
+  // row yet on first paint (the symptom: cards say 0 while rows for
+  // those exact leads sit in the table below).
+  const { data: openTaskRows = [] } = useQuery({
+    queryKey: ['salesTasks-open-lead-ids', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
+    enabled: canAccessSales,
+    staleTime: 60_000,
+    queryFn: async () => {
+      let q = applyUserScope(
+        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        { includeAssignment: includeAssignmentInCounts },
+      ).limit(10_000);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Category counts: prefer the task's own denormalised `status` mirror
+  // (it matches what the row in the table is showing), and fall back to
+  // the lead's current status from leadsById when the task didn't carry
+  // a mirror. Distinct by lead_id so a lead with three open tasks
+  // counts once.
+  const categoryCounts = useMemo(() => {
+    const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
+    const seen = new Set();
+    for (const row of openTaskRows) {
+      const lid = row?.lead_id;
+      if (!lid || seen.has(lid)) continue;
+      seen.add(lid);
+      const status = row.status || leadsById[lid]?.status;
+      const cat = CATEGORY_BY_LEAD_STATUS[status];
+      if (cat) counts[cat] += 1;
+    }
+    return counts;
+  }, [openTaskRows, leadsById]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -881,112 +1009,157 @@ export default function SalesTasks() {
         />
       ) : (
       <>
-      {/* ===== KPI STRIP =====
-          Three at-a-glance numbers: every task in the rep's queue, what's
-          due today, and what was completed today. Counts come from the
-          same server-side aggregation that drives the tab badges, so they
-          stay in sync regardless of how many rows are currently loaded. */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-          <p className="text-xs text-muted-foreground">סך משימות</p>
-          <p className="text-2xl font-bold text-foreground tabular-nums mt-1">{totalCount.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-          <p className="text-xs text-muted-foreground">משימות להיום</p>
-          <p className="text-2xl font-bold text-amber-600 tabular-nums mt-1">{todayCount.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-          <p className="text-xs text-muted-foreground">סיימתי היום</p>
-          <p className="text-2xl font-bold text-emerald-600 tabular-nums mt-1">{completedTodayCount.toLocaleString()}</p>
+      {/* ===== TOP KPI STRIP =====
+          Per the customer brief: a four-tile header summarising the rep's
+          day. Each tile is clickable and sets the active filter on the
+          list below — tiles ARE the navigation, not decoration. Default
+          tone is muted (subtle gray surface, low-contrast value) and a
+          tile lights up to its full accent colour only when active or
+          on hover, so the rep can see at a glance which filter is on. */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
+          { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
+          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
+          { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
+        ].map((tile) => {
+          // Three-state styling: default (muted gray), hover (faint
+          // tint of the tile's accent), active (full accent + ring).
+          // Tailwind JIT requires the class strings spelled out, so the
+          // lookups stay colocated with the meaning instead of templated.
+          const tone = {
+            amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
+            red:     { value: 'text-red-700',     activeCard: 'bg-red-50 border-red-500 ring-2 ring-red-400',         hoverCard: 'hover:border-red-300 hover:bg-red-50/50' },
+            emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
+            indigo:  { value: 'text-indigo-700',  activeCard: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', hoverCard: 'hover:border-indigo-300 hover:bg-indigo-50/50' },
+          }[tile.tone];
+          const isActive = !tile.readOnly && activeTab === (tile.asTab || tile.id);
+          const cardCls = isActive
+            ? tone.activeCard
+            : `border-border bg-muted/30 ${tile.readOnly ? '' : tone.hoverCard}`;
+          const valueCls = isActive ? tone.value : 'text-muted-foreground';
+          const Icon = tile.icon;
+          return (
+            <button
+              key={tile.id}
+              type="button"
+              onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
+              disabled={tile.readOnly}
+              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
+                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
+              </div>
+              <p className={`text-2xl font-bold tabular-nums ${valueCls}`}>{Number(tile.value || 0).toLocaleString()}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== SALES-RETURN CATEGORIES =====
+          Five queues, one per stage of the rep's funnel. Default state
+          is muted gray; clicking a card lights it up to its accent
+          colour with a matching ring so the rep can read at a glance
+          which filter is currently on. Colours follow the funnel
+          temperature: sky (new) → rose (urgent retry) → amber (our
+          turn — build the quote) → violet (their turn — waiting on
+          them) → emerald (closing zone, meeting booked). */}
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">סוגי משימות לטיפול</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {Object.entries(LEAD_STATUSES_BY_CATEGORY).map(([catId]) => {
+            const meta = CATEGORY_META[catId];
+            const value = categoryCounts[catId] || 0;
+            const isActive = activeTab === catId;
+            // Same three-state pattern as the KPI tiles above: muted
+            // gray by default, accent tint on hover, full accent + ring
+            // when active. Class strings spelled out so Tailwind's JIT
+            // can see them.
+            const tone = {
+              sky:     { value: 'text-sky-700',     activeCard: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',         hoverCard: 'hover:border-sky-300 hover:bg-sky-50/50' },
+              rose:    { value: 'text-rose-700',    activeCard: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',      hoverCard: 'hover:border-rose-300 hover:bg-rose-50/50' },
+              amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
+              violet:  { value: 'text-violet-700',  activeCard: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', hoverCard: 'hover:border-violet-300 hover:bg-violet-50/50' },
+              emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
+            }[meta.accent];
+            const cardCls = isActive ? tone.activeCard : `border-border bg-muted/30 ${tone.hoverCard}`;
+            const valueCls = isActive ? tone.value : 'text-muted-foreground';
+            const titleCls = isActive ? 'text-foreground' : 'text-muted-foreground';
+            return (
+              <button
+                key={catId}
+                type="button"
+                onClick={() => setActiveTab(catId)}
+                className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}
+              >
+                <p className={`text-xs font-semibold leading-tight ${titleCls}`}>{meta.label}</p>
+                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
+                <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* ===== TABS - Primary strip + "more" overflow =====
-          The KPI cards above this strip used to repeat the same numbers and
-          fire the same setActiveTab() calls — pure redundancy. Tabs alone
-          carry both the count and the filter affordance. Secondary statuses
-          (upcoming / undated / completed / not_done / cancelled / all) live
-          behind a "עוד" dropdown so daily-driver tabs stay legible. */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl">
-        <TabsList
-          className="w-full h-auto p-1 gap-1 bg-muted/80 rounded-xl flex flex-row flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <TabsTrigger value="today" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm">
-            <Calendar className="w-4 h-4 me-1.5 inline-block" /> היום
-            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{todayCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="overdue" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-red-600 data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <AlertCircle className="w-4 h-4 me-1.5 inline-block" /> באיחור
-            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{overdueCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="not_completed" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-amber-700 data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-            <Clock className="w-4 h-4 me-1.5 inline-block" /> ממתין
-            <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{notCompletedCount}</span>
-          </TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger value="assignment" className="group flex-shrink-0 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold text-muted-foreground hover:text-violet-700 data-[state=active]:bg-violet-500 data-[state=active]:text-white data-[state=active]:shadow-sm">
-              <ClipboardList className="w-4 h-4 me-1.5 inline-block" /> להקצות
-              {assignmentTaskCount > 0 && (
-                <span className="ms-1.5 rounded-full px-2 py-0.5 text-xs font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{assignmentTaskCount}</span>
-              )}
-            </TabsTrigger>
-          )}
-
-          {/* "More" dropdown for the secondary states. Mirrors active styling
-              when one of its children is selected so the user always sees
-              where they are. */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+      {/* ===== SECONDARY FILTERS =====
+          The four daily-driver buckets (today / overdue / completed-today
+          / deals-closed) and the five funnel categories already live in
+          the KPI tiles above — duplicating them as a tab strip was pure
+          redundancy. What's left are the secondary states a rep rarely
+          touches (עתידי / ללא יעד / לא בוצע / בוטל / הכל) plus admin-
+          only assignment workflow. They sit in a small dropdown so they
+          stay accessible without competing for visual weight with the
+          primary tile grid. */}
+      {(() => {
+        const SECONDARY = [
+          { id: 'upcoming',  label: 'עתידי',    count: upcomingCount,  Icon: ArrowUpRight },
+          { id: 'undated',   label: 'ללא יעד',  count: undatedCount,   Icon: List },
+          { id: 'not_done',  label: 'לא בוצע',  count: null,           Icon: XCircle },
+          { id: 'cancelled', label: 'בוטל',     count: null,           Icon: Ban },
+          { id: 'all',       label: 'הכל',      count: totalCount,     Icon: List },
+          ...(isAdmin ? [{ id: 'assignment', label: 'להקצות', count: assignmentTaskCount, Icon: ClipboardList }] : []),
+        ];
+        const currentSecondary = SECONDARY.find((s) => s.id === activeTab);
+        return (
+          <div className="flex items-center justify-end gap-2">
+            {currentSecondary ? (
               <button
                 type="button"
-                className={`group flex-shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap h-11 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                  ['upcoming', 'undated', 'completed', 'not_done', 'cancelled', 'all'].includes(activeTab)
-                    ? 'bg-foreground text-background shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                onClick={() => setActiveTab('today')}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 transition-colors"
+                title="חזור לתצוגת היום"
               >
-                <List className="w-4 h-4" />
-                {(() => {
-                  const map = {
-                    upcoming: 'עתידי',
-                    undated: 'ללא יעד',
-                    completed: 'בוצע',
-                    not_done: 'לא בוצע',
-                    cancelled: 'בוטל',
-                    all: 'הכל',
-                  };
-                  return map[activeTab] || 'עוד';
-                })()}
-                <ChevronDown className="w-3 h-3 opacity-70" />
+                <currentSecondary.Icon className="h-3 w-3" />
+                {currentSecondary.label}
+                <X className="h-3 w-3 opacity-60" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[180px]">
-              <DropdownMenuItem onSelect={() => setActiveTab('upcoming')}>
-                <ArrowUpRight className="w-3.5 h-3.5 me-1.5" /> עתידי
-                <span className="ms-auto text-xs font-bold opacity-70">{upcomingCount}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('undated')}>
-                <List className="w-3.5 h-3.5 me-1.5" /> ללא יעד
-                <span className="ms-auto text-xs font-bold opacity-70">{undatedCount}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('completed')}>
-                <CheckCircle2 className="w-3.5 h-3.5 me-1.5" /> בוצע
-                <span className="ms-auto text-xs font-bold opacity-70">{completedCount}</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('not_done')}>
-                <XCircle className="w-3.5 h-3.5 me-1.5" /> לא בוצע
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('cancelled')}>
-                <Ban className="w-3.5 h-3.5 me-1.5" /> בוטל
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setActiveTab('all')}>
-                <List className="w-3.5 h-3.5 me-1.5" /> הכל
-                <span className="ms-auto text-xs font-bold opacity-70">{totalCount}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TabsList>
-      </Tabs>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 text-xs font-medium h-8 px-3 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                >
+                  <List className="h-3.5 w-3.5" />
+                  אפשרויות נוספות
+                  <ChevronDown className="h-3 w-3 opacity-70" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[180px]">
+                {SECONDARY.map((s) => (
+                  <DropdownMenuItem key={s.id} onSelect={() => setActiveTab(s.id)}>
+                    <s.Icon className="w-3.5 h-3.5 me-1.5" /> {s.label}
+                    {s.count != null ? (
+                      <span className="ms-auto text-xs font-bold opacity-70">{s.count}</span>
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      })()}
 
       {/* ===== FILTER BAR ===== */}
       <div className="flex flex-wrap items-center gap-2 bg-card rounded-xl border border-border px-3 py-2.5 shadow-card">
@@ -1171,6 +1344,17 @@ export default function SalesTasks() {
             emptyMessage="לא נמצאו משימות"
             onRowClick={handleOpenTaskDetails}
             tableClassName="table-fixed min-w-[1280px]"
+            // "Due now" — task is open, has a due_date, and that time
+            // falls in a ±60 min window of the current clock. Wrap the
+            // row in a soft amber pulse so the rep eyeballs which call
+            // is up *right now* without scanning timestamps.
+            rowClassName={(row) => {
+              if (row.task_status !== 'not_completed' || !row.due_date) return '';
+              const due = parseDbTimestamp(row.due_date)?.getTime();
+              if (!due) return '';
+              const diff = Math.abs(due - Date.now());
+              return diff <= DUE_NOW_WINDOW_MS ? 'animate-pulse bg-amber-50 hover:bg-amber-100/70' : '';
+            }}
           />
         )}
 

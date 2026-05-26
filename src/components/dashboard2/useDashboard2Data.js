@@ -191,6 +191,36 @@ async function fetchDashboard2Snapshot({ start, end }) {
     revenueTrend: (trends?.revenue_daily || []).map((r) => ({ date: r.date, value: r.value })),
     sourceBreakdown: marketingBreakdown.map((s) => ({ name: s.name, value: s.leads_count })),
     marketingBreakdown,
+    // Pass through campaigns + landing pages straight from the Edge
+    // Function (already aggregated server-side). Each row already has
+    // leads / won / conversion / cost / revenue / roi where available;
+    // MarketingTab fills in CPL / CAC client-side from the totals so
+    // the table never shows stale or missing per-row math.
+    campaigns: (stats?.marketing_performance?.campaigns || []).map((c) => ({
+      name: c.campaign || c.name || 'אחר',
+      source: c.source || null,
+      leads_count: Number(c.leads_count ?? c.leads ?? 0),
+      won_count: Number(c.won_count ?? c.won ?? 0),
+      conversion: c.conversion_rate != null ? Number(c.conversion_rate) : Number(c.conversion || 0),
+      cost: Number(c.cost ?? c.spend ?? 0),
+      revenue: Number(c.revenue ?? c.attributed_revenue ?? 0),
+      cpl: Number(c.leads_count ?? c.leads ?? 0) > 0
+        ? Math.round(Number(c.cost ?? c.spend ?? 0) / Number(c.leads_count ?? c.leads ?? 1))
+        : 0,
+      cac: Number(c.won_count ?? c.won ?? 0) > 0
+        ? Math.round(Number(c.cost ?? c.spend ?? 0) / Number(c.won_count ?? c.won ?? 1))
+        : null,
+      roi: c.roas != null ? Number(c.roas) : (Number(c.cost ?? c.spend ?? 0) > 0
+        ? +(Number(c.revenue ?? c.attributed_revenue ?? 0) / Number(c.cost ?? c.spend ?? 1)).toFixed(1)
+        : null),
+    })),
+    landingPages: (stats?.marketing_performance?.landing_pages || []).map((p) => ({
+      name: p.landing_page || p.name || 'אחר',
+      leads_count: Number(p.leads ?? p.leads_count ?? 0),
+      won_count: Number(p.won_count ?? p.won ?? 0),
+      conversion: p.conversion_rate != null ? Number(p.conversion_rate) : Number(p.conversion || 0),
+      revenue: Number(p.attributed_revenue ?? p.revenue ?? 0),
+    })),
     reps,
     rawStats: stats,
   };

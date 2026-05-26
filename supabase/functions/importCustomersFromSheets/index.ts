@@ -67,9 +67,7 @@ Deno.serve(async (req) => {
           if (colIndex !== null && colIndex !== undefined && row[colIndex as number] !== undefined && row[colIndex as number] !== '') {
             let value = row[colIndex as number];
 
-            if (field === 'vip_status') {
-              value = value.toLowerCase() === 'true' || value === '1';
-            } else if (field === 'total_orders' || field === 'total_revenue' || field === 'lifetime_value') {
+            if (field === 'total_orders' || field === 'total_revenue' || field === 'lifetime_value') {
               value = parseFloat(value) || 0;
             }
 
