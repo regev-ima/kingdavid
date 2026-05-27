@@ -124,11 +124,12 @@ function LayoutContent({ children, currentPageName }) {
     retry: 1,
   });
 
-  useEffect(() => {
-    if (user && user.role !== 'admin') {
-      base44.functions.invoke('claimPendingLeads').catch(() => {});
-    }
-  }, [user?.id]);
+  // Auto-claim on login intentionally removed (product decision): we
+  // don't want leads silently shifting from pending_rep_email to rep1
+  // just because a rep signed in. All assignment now goes through a
+  // manager's explicit action on /LeadManagement. The claimPendingLeads
+  // edge function is still deployed for any future explicit "claim
+  // now" button, but no UI invokes it automatically.
 
   // Request push notification permission
   useEffect(() => {
