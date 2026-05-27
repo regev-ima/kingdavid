@@ -250,6 +250,12 @@ export default function TaskDayView({ effectiveUser, isAdmin, onTaskClick }) {
         <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">טוען...</div>
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
+          {/* dir="ltr" wrapper sidesteps the @hello-pangea/dnd RTL bug
+              where drag-ghost positions drift away from the cursor.
+              Hebrew text inside cards still reads right-to-left thanks
+              to Unicode bidi auto-detection. See TaskWeekView for the
+              same fix + the long-form explanation. */}
+        <div dir="ltr">
           {/* Undated strip — tasks with date but no time */}
           <Droppable droppableId="undated" direction="horizontal">
             {(dropProvided, dropSnapshot) => (
@@ -341,6 +347,7 @@ export default function TaskDayView({ effectiveUser, isAdmin, onTaskClick }) {
               })}
             </div>
           </Card>
+        </div>
         </DragDropContext>
       )}
     </div>

@@ -354,18 +354,28 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
         <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">טוען...</div>
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 items-start">
+        {/* @hello-pangea/dnd computes drag-ghost positions in LTR
+            coordinates and breaks visibly under dir="rtl" — the ghost
+            drifts away from the cursor as the user moves further from
+            the source cell, making it impossible to drop accurately.
+            Fix: wrap the entire DnD subtree in dir="ltr" so the
+            library's math works. To keep the visual RTL layout (time
+            column on the right, ימי השבוע reading right-to-left), we
+            put the time column LAST in the grid and reverse dayKeys
+            when rendering — net result is identical to the original
+            display, but drag positions track the cursor 1:1. Hebrew
+            text inside cards renders correctly via Unicode bidi. */}
+        <div dir="ltr" className="flex flex-row-reverse gap-3 items-start">
           <Card className="overflow-hidden flex-1 min-w-0">
-            {/* Header row: empty corner + 5 day labels */}
-            <div className="grid grid-cols-[56px_repeat(5,_1fr)] border-b border-border bg-muted/40 text-xs font-bold text-foreground">
-              <div />
-              {days.map((d) => {
+            {/* Header row: 5 day labels + empty corner (rightmost) */}
+            <div className="grid grid-cols-[repeat(5,_1fr)_56px] border-b border-border bg-muted/40 text-xs font-bold text-foreground">
+              {[...days].reverse().map((d) => {
                 const key = format(d, 'yyyy-MM-dd');
                 const isToday = key === todayKey;
                 return (
                   <div
                     key={key}
-                    className={`border-s border-border px-2 py-2 text-center ${
+                    className={`border-e border-border px-2 py-2 text-center ${
                       isToday ? 'bg-primary/10 text-primary' : ''
                     }`}
                   >
@@ -374,14 +384,12 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                   </div>
                 );
               })}
+              <div />
             </div>
 
             {/* Undated strip — one bucket per day */}
-            <div className="grid grid-cols-[56px_repeat(5,_1fr)] border-b border-border bg-muted/20">
-              <div className="flex items-center justify-center py-1.5 text-[10px] font-semibold text-muted-foreground">
-                <Clock className="h-3 w-3" />
-              </div>
-              {dayKeys.map((dayKey) => {
+            <div className="grid grid-cols-[repeat(5,_1fr)_56px] border-b border-border bg-muted/20">
+              {[...dayKeys].reverse().map((dayKey) => {
                 const droppableId = `${dayKey}|undated`;
                 const cellTasks = buckets.get(droppableId) || [];
                 return (
@@ -390,7 +398,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                       <div
                         ref={dropProvided.innerRef}
                         {...dropProvided.droppableProps}
-                        className={`min-h-[36px] space-y-1 border-s border-border p-1 transition-colors ${
+                        className={`min-h-[36px] space-y-1 border-e border-border p-1 transition-colors ${
                           dropSnapshot.isDraggingOver ? 'bg-primary/10' : ''
                         }`}
                       >
@@ -414,6 +422,9 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                   </Droppable>
                 );
               })}
+              <div className="flex items-center justify-center py-1.5 text-[10px] font-semibold text-muted-foreground">
+                <Clock className="h-3 w-3" />
+              </div>
             </div>
 
             {/* Hour rows × day columns */}
@@ -422,12 +433,9 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
               return (
                 <div
                   key={hour}
-                  className="grid grid-cols-[56px_repeat(5,_1fr)] border-b border-border last:border-0"
+                  className="grid grid-cols-[repeat(5,_1fr)_56px] border-b border-border last:border-0"
                 >
-                  <div className="flex items-start justify-center py-2 text-[11px] font-bold text-muted-foreground tabular-nums">
-                    {String(hour).padStart(2, '0')}:00
-                  </div>
-                  {dayKeys.map((dayKey) => {
+                  {[...dayKeys].reverse().map((dayKey) => {
                     const droppableId = `${dayKey}|hour-${hour}`;
                     const cellTasks = buckets.get(droppableId) || [];
                     const isTodayHour = dayKey === todayKey && isCurrentHour;
@@ -437,7 +445,7 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                           <div
                             ref={dropProvided.innerRef}
                             {...dropProvided.droppableProps}
-                            className={`min-h-[52px] space-y-1 border-s border-border p-1 transition-colors ${
+                            className={`min-h-[52px] space-y-1 border-e border-border p-1 transition-colors ${
                               dropSnapshot.isDraggingOver
                                 ? 'bg-primary/10'
                                 : isTodayHour
@@ -465,6 +473,9 @@ export default function TaskWeekView({ effectiveUser, isAdmin, onTaskClick }) {
                       </Droppable>
                     );
                   })}
+                  <div className="flex items-start justify-center py-2 text-[11px] font-bold text-muted-foreground tabular-nums">
+                    {String(hour).padStart(2, '0')}:00
+                  </div>
                 </div>
               );
             })}
