@@ -34,7 +34,7 @@ import {
   Phone,
   CheckSquare,
   Receipt,
-
+  UserCog,
   RefreshCw
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
@@ -51,6 +51,7 @@ const navigationByRole = {
     { name: 'דשבורד כללי', href: 'Dashboard', icon: LayoutDashboard },
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
     { name: 'לידים', href: 'Leads', icon: Users },
+    { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לקוחות', href: 'Customers', icon: Crown },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },

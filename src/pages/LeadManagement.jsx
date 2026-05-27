@@ -1,0 +1,827 @@
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
+import { createPageUrl } from '@/utils';
+import StatusBadge from '@/components/shared/StatusBadge';
+import DataTable from '@/components/shared/DataTable';
+import { Checkbox } from '@/components/ui/checkbox';
+import FilterBar from '@/components/shared/FilterBar';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
+import UserAvatar from '@/components/shared/UserAvatar';
+import {
+  Users, UserPlus, UserCheck, Crown, Calendar as CalendarIcon,
+  Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
+} from 'lucide-react';
+import { startOfDay, endOfDay, startOfWeek, startOfMonth, format } from '@/lib/safe-date-fns';
+import { useImpersonation } from '@/components/shared/ImpersonationContext';
+import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
+import { useCustomStatuses } from '@/hooks/useCustomStatuses';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES } from '@/constants/leadOptions';
+import ImportFromSheets from '@/components/lead/ImportFromSheets';
+
+// State for this page lives mostly in the URL so navigation back from a
+// lead-details page restores exactly where the manager left off (filters,
+// rep selection, search). Scroll position is restored via sessionStorage,
+// keyed by the URL — different filter combinations remember different
+// positions independently.
+const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
+
+function fmt(n) { return Number(n || 0).toLocaleString(); }
+
+// Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
+// Shared so the row query, the count query, and the KPI queries all stay
+// consistent — change one rule here and all three move together.
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin }) {
+  const conditions = [];
+  const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
+  const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
+  const hasRange = startDate && endDate && !Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime());
+
+  if (!isAdmin) {
+    conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
+  }
+  if (scope === 'unassigned') {
+    conditions.push({ $or: [{ rep1: null }, { rep1: '' }] });
+  } else if (scope === 'new') {
+    // "חדש" = status is still new_lead — covers the rep's brief of
+    // "leads that arrived and haven't been engaged".
+    conditions.push({ status: 'new_lead' });
+  } else if (scope === 'open') {
+    conditions.push({ status: { $nin: CLOSED_STATUSES } });
+  }
+  if (hasRange) {
+    conditions.push({ effective_sort_date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } });
+  }
+  if (filters.rep && filters.rep !== 'all') {
+    conditions.push({ $or: [{ rep1: filters.rep }, { rep2: filters.rep }] });
+  }
+  if (filters.status && filters.status !== 'all') {
+    conditions.push({ status: filters.status });
+  }
+  if (filters.source && filters.source !== 'all') {
+    conditions.push({ source: filters.source });
+  }
+  if (filters.search) {
+    const s = filters.search;
+    conditions.push({ $or: [
+      { full_name: { $regex: s, $options: 'i' } },
+      { phone: { $regex: s, $options: 'i' } },
+      { email: { $regex: s, $options: 'i' } },
+    ] });
+  }
+  if (conditions.length === 0) return {};
+  if (conditions.length === 1) return conditions[0];
+  return { $and: conditions };
+}
+
+const DATE_PRESETS = [
+  { id: 'today',   label: 'היום' },
+  { id: 'week',    label: 'השבוע' },
+  { id: 'month',   label: 'החודש' },
+  { id: 'range',   label: 'טווח...' },
+  { id: 'all',     label: 'כל הזמנים' },
+];
+
+function resolveDatePreset(id, customRange) {
+  const now = new Date();
+  switch (id) {
+    case 'today': return { from: startOfDay(now), to: endOfDay(now) };
+    case 'week':  return { from: startOfWeek(now, { weekStartsOn: 0 }), to: endOfDay(now) };
+    case 'month': return { from: startOfMonth(now), to: endOfDay(now) };
+    case 'range': return customRange?.from && customRange?.to
+      ? { from: startOfDay(customRange.from), to: endOfDay(customRange.to) }
+      : null;
+    case 'all':
+    default:      return null;
+  }
+}
+
+export default function LeadManagement() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { getEffectiveUser } = useImpersonation();
+  const { customStatuses: customStatusesForFilter } = useCustomStatuses();
+
+  // URL params drive every filter so back-nav from /LeadDetails restores
+  // exactly where the manager was. Read once on mount, then writes happen
+  // through `updateUrl` below.
+  const urlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const [datePresetId, setDatePresetId] = useState(urlParams.get('preset') || 'all');
+  const [customRange, setCustomRange] = useState(() => {
+    const from = urlParams.get('startDate');
+    const to = urlParams.get('endDate');
+    return from && to ? { from: new Date(from), to: new Date(to) } : null;
+  });
+  const [scope, setScope] = useState(urlParams.get('scope') || 'all'); // 'all' | 'new' | 'unassigned' | 'open'
+  const [filters, setFilters] = useState({
+    search: urlParams.get('search') || '',
+    status: urlParams.get('status') || 'all',
+    source: urlParams.get('source') || 'all',
+    rep: urlParams.get('rep') || 'all',
+  });
+  const [selectedLeads, setSelectedLeads] = useState([]);
+  const [assigningRep, setAssigningRep] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [limit, setLimit] = useState(Number(urlParams.get('limit')) || 100);
+
+  // Reflect the current filter state back into the URL so the browser's
+  // back/forward buttons restore it, and so a deep-link to this page
+  // can pin to a specific cut. replace: true to avoid creating a new
+  // history entry per keystroke in search.
+  const updateUrl = useCallback((next) => {
+    const params = new URLSearchParams();
+    if (next.preset && next.preset !== 'all') params.set('preset', next.preset);
+    if (next.range?.from) params.set('startDate', next.range.from.toISOString());
+    if (next.range?.to)   params.set('endDate',   next.range.to.toISOString());
+    if (next.scope && next.scope !== 'all') params.set('scope', next.scope);
+    if (next.filters?.search) params.set('search', next.filters.search);
+    if (next.filters?.status && next.filters.status !== 'all') params.set('status', next.filters.status);
+    if (next.filters?.source && next.filters.source !== 'all') params.set('source', next.filters.source);
+    if (next.filters?.rep && next.filters.rep !== 'all') params.set('rep', next.filters.rep);
+    if (next.limit && next.limit !== 100) params.set('limit', String(next.limit));
+    const search = params.toString();
+    navigate(search ? `${location.pathname}?${search}` : location.pathname, { replace: true });
+  }, [navigate, location.pathname]);
+
+  useEffect(() => {
+    updateUrl({ preset: datePresetId, range: customRange, scope, filters, limit });
+  }, [datePresetId, customRange, scope, filters, limit, updateUrl]);
+
+  // Auth + role
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    base44.auth.me().then(setUser).catch(() => {});
+  }, []);
+  const effectiveUser = getEffectiveUser(user);
+  const isAdmin = effectiveUser?.role === 'admin';
+  const userEmail = effectiveUser?.email;
+
+  useEffect(() => {
+    if (!effectiveUser) return;
+    if (!canAccessSalesWorkspace(effectiveUser)) {
+      navigate(createPageUrl(isFactoryUser(effectiveUser) ? 'FactoryDashboard' : 'Dashboard'));
+    }
+  }, [effectiveUser, navigate]);
+
+  // Resolve the active date range from preset + custom selection.
+  const dateRange = useMemo(() => resolveDatePreset(datePresetId, customRange), [datePresetId, customRange]);
+  const fromIso = dateRange?.from ? dateRange.from.toISOString() : '';
+  const toIso = dateRange?.to ? dateRange.to.toISOString() : '';
+
+  // ───────────────────────────────────────────────────────────────
+  // KPI tiles: 3 prominent counts that ALL respect the date range.
+  // ───────────────────────────────────────────────────────────────
+  const { data: kpiCounts = { newCount: 0, unassignedCount: 0, totalCount: 0 } } = useQuery({
+    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso],
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: async () => {
+      const base = (extra) => {
+        const conditions = [];
+        if (!isAdmin) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
+        if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (extra) conditions.push(extra);
+        if (conditions.length === 0) return {};
+        if (conditions.length === 1) return conditions[0];
+        return { $and: conditions };
+      };
+      const [newCount, unassignedCount, totalCount] = await Promise.all([
+        base44.entities.Lead.count(base({ status: 'new_lead' })),
+        base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
+        base44.entities.Lead.count(base()),
+      ]);
+      return { newCount, unassignedCount, totalCount };
+    },
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  // Per-rep workload panel.
+  // ───────────────────────────────────────────────────────────────
+  const { data: salesReps = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60_000,
+  });
+  const repsForPanel = useMemo(
+    () => salesReps.filter((u) => u.role === 'user' || u.role === 'admin'),
+    [salesReps],
+  );
+
+  // Pull every open lead's `rep1` once and bucket client-side. One small
+  // query (head:false but select limited to two columns) and no per-rep
+  // fanout — keeps the workload panel snappy even on 100k+ tables and
+  // means the numbers track the active date range without N requests.
+  const { data: openLeadsForWorkload = [] } = useQuery({
+    queryKey: ['leadMgmt-workload', fromIso, toIso],
+    enabled: !!effectiveUser && isAdmin,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: async () => {
+      let q = base44.supabase
+        .from('leads')
+        .select('rep1, status')
+        .not('status', 'in', `(${CLOSED_STATUSES.join(',')})`)
+        .limit(50_000);
+      if (fromIso) q = q.gte('effective_sort_date', fromIso);
+      if (toIso)   q = q.lte('effective_sort_date', toIso);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const workloadByRep = useMemo(() => {
+    const map = new Map();
+    let teamNew = 0, teamHandling = 0;
+    for (const lead of openLeadsForWorkload) {
+      const rep = lead.rep1 || null;
+      if (!map.has(rep)) map.set(rep, { newCount: 0, handlingCount: 0 });
+      const row = map.get(rep);
+      if (lead.status === 'new_lead') { row.newCount += 1; teamNew += 1; }
+      else { row.handlingCount += 1; teamHandling += 1; }
+    }
+    return { byRep: map, teamNew, teamHandling };
+  }, [openLeadsForWorkload]);
+
+  // ───────────────────────────────────────────────────────────────
+  // Lead list + filtered count.
+  // ───────────────────────────────────────────────────────────────
+  const leadsQuery = useMemo(
+    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin }),
+    [filters, dateRange, scope, userEmail, isAdmin],
+  );
+  const { data: leads = [], isLoading, isFetching } = useQuery({
+    queryKey: ['leadMgmt-leads', leadsQuery, limit],
+    enabled: !!effectiveUser,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev, // ← key: don't drop rows on loadMore so the scroll stays put
+    queryFn: () => base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', limit),
+  });
+  const { data: filteredCount = null } = useQuery({
+    queryKey: ['leadMgmt-count', leadsQuery],
+    enabled: !!effectiveUser,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: () => base44.entities.Lead.count(leadsQuery),
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  // Infinite-scroll sentinel. Append rows in place without scroll jump.
+  // ───────────────────────────────────────────────────────────────
+  const hasMore = leads.length >= limit && (filteredCount == null || leads.length < filteredCount);
+  const loadMoreRef = useRef(null);
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !isFetching) {
+          setLimit((prev) => prev + 100);
+        }
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, isFetching]);
+
+  // ───────────────────────────────────────────────────────────────
+  // Scroll restoration. Save on every URL change (filter tweak, page
+  // exit) keyed by the URL so each filter combo remembers its own
+  // position. On mount + after data loads, restore.
+  // ───────────────────────────────────────────────────────────────
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    // Save scroll position before navigating away.
+    const handleSave = () => {
+      sessionStorage.setItem(SCROLL_KEY_PREFIX + location.search, String(window.scrollY));
+    };
+    window.addEventListener('beforeunload', handleSave);
+    return () => {
+      handleSave();
+      window.removeEventListener('beforeunload', handleSave);
+    };
+  }, [location.search]);
+
+  useEffect(() => {
+    if (scrollRestored.current) return;
+    if (isLoading || leads.length === 0) return;
+    const saved = sessionStorage.getItem(SCROLL_KEY_PREFIX + location.search);
+    if (saved) {
+      // Two RAFs ensure the table has actually painted its rows.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        window.scrollTo(0, Number(saved));
+        scrollRestored.current = true;
+      }));
+    } else {
+      scrollRestored.current = true;
+    }
+  }, [isLoading, leads.length, location.search]);
+
+  // ───────────────────────────────────────────────────────────────
+  // Bulk reassignment.
+  // ───────────────────────────────────────────────────────────────
+  const assignLeadsMutation = useMutation({
+    mutationFn: async ({ leadIds, repEmail }) => {
+      // Sequential so a failure on row N leaves rows 1..N-1 reassigned
+      // (rather than half-updated with no observable order). Each row is
+      // small (single UPDATE), so the latency cost is acceptable for the
+      // 10-50 row batches this UI supports.
+      for (const id of leadIds) {
+        await base44.entities.Lead.update(id, {
+          rep1: repEmail,
+          pending_rep_email: null,
+          first_action_at: new Date().toISOString(),
+        });
+      }
+    },
+    onSuccess: (_, { leadIds, repEmail }) => {
+      const repName = salesReps.find((r) => r.email === repEmail)?.full_name || repEmail;
+      toast({ title: `${leadIds.length} לידים שויכו ל${repName}` });
+      setSelectedLeads([]);
+      setAssigningRep('');
+      queryClient.invalidateQueries({ queryKey: ['leadMgmt-leads'] });
+      queryClient.invalidateQueries({ queryKey: ['leadMgmt-count'] });
+      queryClient.invalidateQueries({ queryKey: ['leadMgmt-kpis'] });
+      queryClient.invalidateQueries({ queryKey: ['leadMgmt-workload'] });
+    },
+    onError: (err) => {
+      toast({ title: 'שגיאה בשיוך הלידים', description: err?.message || '', variant: 'destructive' });
+    },
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  // Render
+  // ───────────────────────────────────────────────────────────────
+  if (!effectiveUser) return <div className="text-center py-12 text-muted-foreground">טוען...</div>;
+
+  const repNameByEmail = new Map(salesReps.map((u) => [u.email, u.full_name || u.email]));
+  const sortedReps = [...repsForPanel].sort((a, b) => {
+    const aw = workloadByRep.byRep.get(a.email) || { newCount: 0, handlingCount: 0 };
+    const bw = workloadByRep.byRep.get(b.email) || { newCount: 0, handlingCount: 0 };
+    return (bw.newCount + bw.handlingCount) - (aw.newCount + aw.handlingCount);
+  });
+
+  const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== 'all' || scope !== 'all';
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      {/* Page header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            ניהול לידים
+          </h1>
+          <p className="text-sm text-muted-foreground">תצוגה מקיפה של עומס הצוות, שיוך לידים והעברה בין נציגים</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {isAdmin ? (
+            <Button onClick={() => setShowImport(true)} variant="outline" size="sm" className="gap-1.5">
+              <FileSpreadsheet className="h-4 w-4" /> ייבוא מ-Sheets
+            </Button>
+          ) : null}
+          <Button onClick={() => navigate(createPageUrl('NewLead'))} size="sm" className="gap-1.5">
+            <Plus className="h-4 w-4" /> ליד חדש
+          </Button>
+        </div>
+      </div>
+
+      {/* Date range picker — every number below derives from this */}
+      <div className="flex items-center gap-2 flex-wrap bg-card border border-border rounded-xl p-2 shadow-card">
+        <span className="text-xs font-medium text-muted-foreground ms-1">טווח זמן:</span>
+        {DATE_PRESETS.map((p) => {
+          const active = datePresetId === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setDatePresetId(p.id);
+                if (p.id !== 'range') setCustomRange(null);
+              }}
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${
+                active ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+        {datePresetId === 'range' ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 text-xs">
+                <CalendarIcon className="me-1.5 h-3.5 w-3.5" />
+                {customRange?.from && customRange?.to
+                  ? `${format(customRange.from, 'dd.MM.yy')} - ${format(customRange.to, 'dd.MM.yy')}`
+                  : 'בחר טווח'}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end" dir="rtl">
+              <Calendar mode="range" selected={customRange || undefined} onSelect={setCustomRange} initialFocus />
+            </PopoverContent>
+          </Popover>
+        ) : null}
+        {dateRange ? (
+          <span className="text-[11px] text-muted-foreground">
+            ({format(dateRange.from, 'dd.MM.yy')} – {format(dateRange.to, 'dd.MM.yy')})
+          </span>
+        ) : null}
+      </div>
+
+      {/* 3 KPI tiles — synced to date range, clickable to filter */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { id: 'new',        label: 'לידים חדשים',     value: kpiCounts.newCount,        tone: 'sky',   icon: Sparkles, desc: 'סטטוס "ליד חדש" בטווח' },
+          { id: 'unassigned', label: 'לא משויכים',       value: kpiCounts.unassignedCount, tone: 'amber', icon: UserPlus, desc: 'לידים בלי נציג ראשי' },
+          { id: 'all',        label: 'כל הלידים בטווח', value: kpiCounts.totalCount,      tone: 'indigo',icon: Users,    desc: 'נכנסו בתקופה שנבחרה' },
+        ].map((tile) => {
+          const isActive = scope === tile.id;
+          const tones = {
+            sky:    { active: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',       value: 'text-sky-700' },
+            amber:  { active: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400', value: 'text-amber-700' },
+            indigo: { active: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', value: 'text-indigo-700' },
+          }[tile.tone];
+          const cardCls = isActive ? tones.active : 'border-border bg-muted/30 hover:bg-muted/50';
+          const valueCls = isActive ? tones.value : 'text-muted-foreground';
+          const Icon = tile.icon;
+          return (
+            <button
+              key={tile.id}
+              type="button"
+              onClick={() => setScope((curr) => (curr === tile.id ? 'all' : tile.id))}
+              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls}`}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
+                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
+              </div>
+              <p className={`text-3xl font-bold tabular-nums ${valueCls}`}>{fmt(tile.value)}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{tile.desc}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Rep workload panel — admin only. Click a card to filter list to
+          that rep's leads. */}
+      {isAdmin ? (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-2 px-1 flex items-center gap-2">
+            <Users className="h-3.5 w-3.5" />
+            עומס לפי נציג ({sortedReps.length} בצוות)
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+            {/* "All team" card first */}
+            <RepWorkloadCard
+              label="כל הצוות"
+              avatar={<span className="h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">כל</span>}
+              newCount={workloadByRep.teamNew}
+              handlingCount={workloadByRep.teamHandling}
+              isActive={filters.rep === 'all'}
+              accent="indigo"
+              onClick={() => setFilters((f) => ({ ...f, rep: 'all' }))}
+            />
+            {sortedReps.map((rep) => {
+              const wl = workloadByRep.byRep.get(rep.email) || { newCount: 0, handlingCount: 0 };
+              return (
+                <RepWorkloadCard
+                  key={rep.email}
+                  label={rep.full_name || rep.email}
+                  avatar={<UserAvatar user={rep} size="sm" />}
+                  newCount={wl.newCount}
+                  handlingCount={wl.handlingCount}
+                  isActive={filters.rep === rep.email}
+                  accent="emerald"
+                  onClick={() => setFilters((f) => ({ ...f, rep: f.rep === rep.email ? 'all' : rep.email }))}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Filter bar */}
+      <FilterBar
+        filters={[
+          { key: 'status', label: 'סטטוס', allLabel: 'כל הסטטוסים', options: [...LEAD_STATUS_OPTIONS, ...customStatusesForFilter] },
+          { key: 'source', label: 'מקור',  allLabel: 'כל המקורות',  options: LEAD_SOURCE_OPTIONS },
+          ...(isAdmin ? [{
+            key: 'rep',
+            label: 'נציג',
+            allLabel: 'כל הנציגים',
+            options: repsForPanel.map((r) => ({ value: r.email, label: r.full_name || r.email })),
+          }] : []),
+        ]}
+        values={filters}
+        onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+        onClear={() => setFilters({ search: '', status: 'all', source: 'all', rep: 'all' })}
+        searchPlaceholder="חפש לפי שם, טלפון או אימייל..."
+      />
+
+      {/* Active filter summary card */}
+      {hasActiveFilter || dateRange ? (
+        <ActiveFilterSummary
+          scope={scope}
+          filters={filters}
+          dateRange={dateRange}
+          repNameByEmail={repNameByEmail}
+          customStatusesForFilter={customStatusesForFilter}
+          filteredCount={filteredCount}
+          totalCount={kpiCounts.totalCount}
+          onClearScope={() => setScope('all')}
+          onClearFilter={(key) => setFilters((f) => ({ ...f, [key]: key === 'search' ? '' : 'all' }))}
+          onClearAll={() => {
+            setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
+            setScope('all');
+          }}
+        />
+      ) : null}
+
+      {/* Bulk action bar — surfaces when leads are selected */}
+      {isAdmin && selectedLeads.length > 0 ? (
+        <div className="sticky top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-primary bg-primary/5 px-4 py-2.5 shadow-card backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
+              {selectedLeads.length}
+            </span>
+            <span className="text-sm font-medium text-foreground">לידים נבחרו</span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+            <Select value={assigningRep} onValueChange={setAssigningRep}>
+              <SelectTrigger className="w-56 h-9 bg-card">
+                <SelectValue placeholder="בחר נציג להעברה..." />
+              </SelectTrigger>
+              <SelectContent>
+                {repsForPanel.map((r) => (
+                  <SelectItem key={r.email} value={r.email}>{r.full_name || r.email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              disabled={!assigningRep || assignLeadsMutation.isPending}
+              onClick={() => assignLeadsMutation.mutate({ leadIds: selectedLeads, repEmail: assigningRep })}
+            >
+              <UserCheck className="h-4 w-4 me-1.5" />
+              {assignLeadsMutation.isPending ? 'משייך...' : `העבר ${selectedLeads.length} לידים`}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setSelectedLeads([]); setAssigningRep(''); }}>
+              <XIcon className="h-4 w-4 me-1" /> בטל בחירה
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Lead table — focused management view: checkbox + name/phone +
+          status + source + rep + date. Click a row to open the lead;
+          the click handler stashes scroll position so back-nav restores
+          it for the exact filter combo. */}
+      <LeadTable
+        leads={leads}
+        isLoading={isLoading && !leads.length}
+        isAdmin={isAdmin}
+        selectedLeads={selectedLeads}
+        onSelectionChange={setSelectedLeads}
+        repNameByEmail={repNameByEmail}
+        onRowClick={(lead) => {
+          sessionStorage.setItem(SCROLL_KEY_PREFIX + location.search, String(window.scrollY));
+          navigate(createPageUrl('LeadDetails') + `?id=${lead.id}`);
+        }}
+      />
+
+      {/* Load-more sentinel + paging hint */}
+      <div ref={loadMoreRef} className="h-1" />
+      {filteredCount != null && leads.length < filteredCount ? (
+        <p className="text-[11px] text-center text-muted-foreground py-2">
+          {isFetching ? 'טוען עוד...' : `מציג ${fmt(leads.length)} מתוך ${fmt(filteredCount)} — גלול להמשך`}
+        </p>
+      ) : leads.length > 0 && filteredCount != null ? (
+        <p className="text-[11px] text-center text-muted-foreground py-2">
+          הוצגו כל {fmt(filteredCount)} הלידים שתואמים את הסינון
+        </p>
+      ) : null}
+
+      {showImport ? <ImportFromSheets isOpen={showImport} onClose={() => setShowImport(false)} /> : null}
+    </div>
+  );
+}
+
+// ─── Rep workload card ──────────────────────────────────────────
+function RepWorkloadCard({ label, avatar, newCount, handlingCount, isActive, accent, onClick }) {
+  const total = newCount + handlingCount;
+  const tones = {
+    indigo:  { active: 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-400',   total: 'text-indigo-700' },
+    emerald: { active: 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400', total: 'text-emerald-700' },
+  }[accent];
+  const cardCls = isActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-right rounded-xl border-2 p-2.5 shadow-card transition-all ${cardCls}`}
+    >
+      <div className="flex items-center gap-2 mb-2 min-w-0">
+        {avatar}
+        <span className="text-xs font-semibold truncate flex-1" title={label}>{label}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 text-xs">
+        <div className="bg-sky-50 rounded p-1.5 text-center">
+          <p className="text-[10px] text-sky-700/80">חדשים</p>
+          <p className="text-base font-bold text-sky-700 tabular-nums leading-tight">{fmt(newCount)}</p>
+        </div>
+        <div className="bg-amber-50 rounded p-1.5 text-center">
+          <p className="text-[10px] text-amber-700/80">בטיפול</p>
+          <p className="text-base font-bold text-amber-700 tabular-nums leading-tight">{fmt(handlingCount)}</p>
+        </div>
+      </div>
+      {total > 0 ? (
+        <p className={`text-[10px] mt-1.5 font-semibold ${isActive ? tones.total : 'text-muted-foreground'}`}>
+          סה״כ {fmt(total)}
+        </p>
+      ) : (
+        <p className="text-[10px] mt-1.5 text-muted-foreground">פנוי</p>
+      )}
+    </button>
+  );
+}
+
+// ─── Lead table ─────────────────────────────────────────────────
+function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange, repNameByEmail, onRowClick }) {
+  const allSelected = selectedLeads.length > 0 && selectedLeads.length === leads.length;
+  const someSelected = selectedLeads.length > 0 && !allSelected;
+  const toggleAll = (checked) => {
+    onSelectionChange(checked ? leads.map((l) => l.id) : []);
+  };
+  const toggleOne = (id, checked) => {
+    onSelectionChange(checked
+      ? [...selectedLeads, id]
+      : selectedLeads.filter((x) => x !== id));
+  };
+  const formatPhone = (p) => {
+    if (!p) return '';
+    const cleaned = p.replace(/\D/g, '');
+    return cleaned.length === 10 ? `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}` : p;
+  };
+  const columns = [
+    ...(isAdmin ? [{
+      header: () => (
+        <div className="flex items-center justify-center">
+          <Checkbox
+            checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+            onCheckedChange={(c) => toggleAll(!!c)}
+          />
+        </div>
+      ),
+      accessor: 'select',
+      width: '44px',
+      render: (row) => (
+        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={selectedLeads.includes(row.id)}
+            onCheckedChange={(c) => toggleOne(row.id, !!c)}
+          />
+        </div>
+      ),
+    }] : []),
+    {
+      header: 'לקוח',
+      accessor: 'full_name',
+      width: '260px',
+      render: (row) => (
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{row.full_name || '—'}</p>
+          <p className="text-xs text-muted-foreground" dir="ltr">{formatPhone(row.phone)}</p>
+        </div>
+      ),
+    },
+    {
+      header: 'סטטוס',
+      width: '140px',
+      render: (row) => row.status ? <StatusBadge status={row.status} /> : '—',
+    },
+    {
+      header: 'מקור',
+      width: '120px',
+      render: (row) => (
+        <span className="text-xs text-muted-foreground">
+          {row.source ? (SOURCE_LABELS[row.source] || row.source) : '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'נציג מטפל',
+      width: '160px',
+      render: (row) => {
+        if (!row.rep1) return <span className="text-xs text-amber-700">לא משויך</span>;
+        return <span className="text-sm">{repNameByEmail.get(row.rep1) || row.rep1}</span>;
+      },
+    },
+    {
+      header: 'תאריך פעילות',
+      width: '120px',
+      render: (row) => {
+        try {
+          const d = row.effective_sort_date || row.created_date;
+          return d ? <span className="text-xs text-muted-foreground">{format(new Date(d), 'dd/MM/yyyy')}</span> : '—';
+        } catch { return '—'; }
+      },
+    },
+  ];
+  return (
+    <DataTable
+      columns={columns}
+      data={leads}
+      isLoading={isLoading}
+      emptyMessage="לא נמצאו לידים תואמים"
+      onRowClick={onRowClick}
+      tableClassName="min-w-[900px]"
+    />
+  );
+}
+
+// ─── Active filter summary ──────────────────────────────────────
+function ActiveFilterSummary({
+  scope, filters, dateRange, repNameByEmail, customStatusesForFilter,
+  filteredCount, totalCount, onClearScope, onClearFilter, onClearAll,
+}) {
+  const SCOPE_LABELS = { new: 'לידים חדשים', unassigned: 'לא משויכים', open: 'פתוחים' };
+  const statusLabel = filters.status !== 'all'
+    ? (LEAD_STATUS_OPTIONS.find((s) => s.value === filters.status)?.label
+       || customStatusesForFilter.find((s) => s.value === filters.status)?.label
+       || filters.status)
+    : null;
+  const sourceLabel = filters.source !== 'all' ? (SOURCE_LABELS[filters.source] || filters.source) : null;
+  const repLabel = filters.rep !== 'all' ? (repNameByEmail.get(filters.rep) || filters.rep) : null;
+  const chips = [
+    scope !== 'all' && { key: 'scope', label: SCOPE_LABELS[scope] || scope, onClear: onClearScope },
+    statusLabel && { key: 'status', label: `סטטוס: ${statusLabel}`, onClear: () => onClearFilter('status') },
+    sourceLabel && { key: 'source', label: `מקור: ${sourceLabel}`,   onClear: () => onClearFilter('source') },
+    repLabel    && { key: 'rep',    label: `נציג: ${repLabel}`,      onClear: () => onClearFilter('rep') },
+    filters.search && { key: 'search', label: `חיפוש: "${filters.search}"`, onClear: () => onClearFilter('search') },
+    dateRange && {
+      key: 'date',
+      label: `תאריך: ${format(dateRange.from, 'dd.MM.yy')}–${format(dateRange.to, 'dd.MM.yy')}`,
+      onClear: null, // date is cleared via the preset bar above
+    },
+  ].filter(Boolean);
+  const pct = totalCount > 0 && filteredCount != null
+    ? Math.round((Number(filteredCount) / Number(totalCount)) * 1000) / 10
+    : null;
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border-2 border-primary/30 bg-gradient-to-l from-primary/10 to-primary/5 p-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
+              <Filter className="h-3.5 w-3.5" />
+            </span>
+            <span className="text-sm font-semibold text-foreground">תוצאות הסינון</span>
+          </div>
+          <span className="text-3xl font-bold text-primary tabular-nums whitespace-nowrap">
+            {filteredCount === null ? '...' : fmt(filteredCount)}
+          </span>
+          {pct != null ? (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              ({pct}% מתוך {fmt(totalCount)} בטווח)
+            </span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="text-[11px] font-medium text-primary hover:text-primary/80 px-2 py-1"
+        >
+          נקה הכל
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {chips.map((chip) => (
+          <span
+            key={chip.key}
+            className="inline-flex items-center gap-1 rounded-full bg-background border border-primary/30 px-2.5 py-1 text-[11px] font-medium text-foreground"
+          >
+            {chip.label}
+            {chip.onClear ? (
+              <button type="button" onClick={chip.onClear} className="opacity-60 hover:opacity-100" aria-label="הסר סינון">
+                <XIcon className="h-3 w-3" />
+              </button>
+            ) : null}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
