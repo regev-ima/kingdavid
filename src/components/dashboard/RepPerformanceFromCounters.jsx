@@ -32,7 +32,7 @@ export default function RepPerformanceFromCounters({ data }) {
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">סה"כ לידים</TableHead>
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">פתוחים</TableHead>
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">סגורים</TableHead>
-                <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">חדשים</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">לידים חדשים</TableHead>
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">SLA</TableHead>
               </TableRow>
             </TableHeader>

@@ -71,7 +71,7 @@ export default function RepPerformanceWidget({ leads, callLogs, users = [] }) {
               <TableRow className="border-b border-border/50">
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">נציג</TableHead>
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">פתוחים</TableHead>
-                <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">חדשים</TableHead>
+                <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">לידים חדשים</TableHead>
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">זמן תגובה</TableHead>
                 <TableHead className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-2.5 px-4">SLA</TableHead>
               </TableRow>
