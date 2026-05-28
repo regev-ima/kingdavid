@@ -68,31 +68,25 @@ const AuthenticatedApp = () => {
     return <Navigate to="/login" replace />;
   }
 
-  // Modal-as-route: when the URL is /LeadDetails, feed <Routes> the
-  // PREVIOUS location instead of the real one so the list page the
-  // manager came from stays mounted (preserving scroll, filters,
-  // pagination). The lead itself renders in a modal overlay on top.
+  // Modal-as-route, scoped to /LeadManagement only: when a manager
+  // clicks a lead from the LeadManagement table we keep that page
+  // mounted underneath (preserving scroll, filters, pagination) and
+  // overlay LeadDetails as a modal. Lead clicks from anywhere else
+  // (Leads page, dashboard widgets, global search, deep links)
+  // still navigate to the full-page LeadDetails as before — so this
+  // is opt-in per entry surface, not a global hijack.
   //
   // The ref holds the last non-/LeadDetails location across renders
-  // so that even mid-modal re-renders (e.g. query cache invalidation
-  // ticks) keep the same background instead of resetting.
-  const isLeadModalRoute = location.pathname === LEAD_DETAILS_PATH;
+  // so mid-modal re-renders don't reset the background. We only
+  // activate modal mode if that prior location was LeadManagement.
   const backgroundLocationRef = React.useRef(null);
-  if (!isLeadModalRoute) {
+  if (location.pathname !== LEAD_DETAILS_PATH) {
     backgroundLocationRef.current = location;
   }
-  // Deep-link arrivals on /LeadDetails (refresh, bookmark, link from
-  // outside the app) have no prior page — render LeadManagement
-  // underneath so the modal doesn't float over a blank canvas.
-  const routedLocation = isLeadModalRoute
-    ? (backgroundLocationRef.current ?? {
-        pathname: '/LeadManagement',
-        search: '',
-        hash: '',
-        state: null,
-        key: 'lead-modal-fallback',
-      })
-    : location;
+  const isLeadModalRoute =
+    location.pathname === LEAD_DETAILS_PATH &&
+    backgroundLocationRef.current?.pathname === '/LeadManagement';
+  const routedLocation = isLeadModalRoute ? backgroundLocationRef.current : location;
 
   // Authenticated - render app
   return (
