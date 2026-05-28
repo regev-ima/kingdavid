@@ -79,12 +79,16 @@ import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
-export default function LeadDetails() {
+export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
   const urlParams = new URLSearchParams(window.location.search);
-  const leadId = urlParams.get('id');
-  const initialMode = urlParams.get('mode') === 'service' ? 'service' : 'sales';
+  // When rendered as a popup the id/mode arrive as props and the URL is
+  // left completely untouched, so the list page underneath keeps its
+  // address, scroll and filters. Opened as a full page (deep link,
+  // dashboard widget, global search) it falls back to the query string.
+  const leadId = leadIdProp ?? urlParams.get('id');
+  const initialMode = initialModeProp ?? (urlParams.get('mode') === 'service' ? 'service' : 'sales');
 
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
@@ -195,6 +199,10 @@ export default function LeadDetails() {
   }, [leadUpdatedDate, isEditing]);
 
   useEffect(() => {
+    // In popup mode the URL belongs to the list page underneath — don't
+    // rewrite it to sync the sales/service toggle (that would navigate
+    // and close the overlay). The toggle lives purely in local state.
+    if (isModal) return;
     const params = new URLSearchParams(window.location.search);
     const urlMode = params.get('mode') === 'service' ? 'service' : 'sales';
     if (urlMode !== workMode) {
@@ -202,7 +210,7 @@ export default function LeadDetails() {
       if (leadId) params.set('id', leadId);
       navigate(`${createPageUrl('LeadDetails')}?${params.toString()}`, { replace: true });
     }
-  }, [workMode, leadId, navigate]);
+  }, [workMode, leadId, navigate, isModal]);
 
   // Real-time subscription: auto-refresh lead when it changes (e.g. status updated from task dialog)
   useEffect(() => {
@@ -359,9 +367,13 @@ export default function LeadDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">הליד לא נמצא</p>
-        <Link to={createPageUrl('Leads')}>
-          <Button className="mt-4">חזור לרשימת הלידים</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Leads')}>
+            <Button className="mt-4">חזור לרשימת הלידים</Button>
+          </Link>
+        )}
       </div>);
 
   }
@@ -370,9 +382,13 @@ export default function LeadDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground text-lg font-medium">אין לך הרשאות לצפות בליד זה כיוון שאינו משויך אליך.</p>
-        <Link to={createPageUrl('Leads')}>
-          <Button className="mt-4 bg-primary hover:bg-primary/90">חזור לרשימת הלידים</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4 bg-primary hover:bg-primary/90" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Leads')}>
+            <Button className="mt-4 bg-primary hover:bg-primary/90">חזור לרשימת הלידים</Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -484,11 +500,17 @@ export default function LeadDetails() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link to={createPageUrl('Leads')}>
-            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
+          {isModal ? (
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
               <ArrowRight className="h-4 w-4" />
             </Button>
-          </Link>
+          ) : (
+            <Link to={createPageUrl('Leads')}>
+              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          )}
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">{lead.full_name}</h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">

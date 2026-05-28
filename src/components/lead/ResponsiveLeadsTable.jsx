@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import DataTable from '@/components/shared/DataTable';
+import { LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import UserAvatar from '@/components/shared/UserAvatar';
@@ -82,7 +83,7 @@ function getRepDisplay(row, users) {
   return rep || { email: row.rep1, full_name: row.rep1 };
 }
 
-function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall }) {
+function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall, isLastOpened }) {
   const isSelected = selectedIds.includes(row.id);
   const isSelectionMode = selectedIds.length > 0;
   const sla = getSlaData(row);
@@ -100,7 +101,7 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
   return (
     <div
       onClick={handleCardClick}
-      className={`rounded-2xl border bg-card p-4 shadow-card active:scale-[0.99] transition-all ${isSelected ? 'border-primary bg-primary/5' : 'border-border'}`}
+      className={`rounded-2xl border bg-card p-4 shadow-card active:scale-[0.99] transition-all ${isSelected ? 'border-primary bg-primary/5' : isLastOpened ? 'border-primary/40 bg-primary/[0.06] ring-1 ring-primary/30' : 'border-border'}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -233,6 +234,7 @@ export default function ResponsiveLeadsTable({
   onToggleSelect,
   onOpenLead,
   onClickToCall,
+  highlightId,
 }) {
   return (
     <>
@@ -245,6 +247,7 @@ export default function ResponsiveLeadsTable({
           selectionMode={selectedIds.length > 0}
           onRowClick={onOpenLead}
           onRowSelect={(row) => onToggleSelect(row, !selectedIds.includes(row.id))}
+          rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
           tableClassName="table-fixed min-w-[1120px]"
         />
       </div>
@@ -266,6 +269,7 @@ export default function ResponsiveLeadsTable({
               onToggleSelect={onToggleSelect}
               onOpenLead={onOpenLead}
               onClickToCall={onClickToCall}
+              isLastOpened={row.id === highlightId}
             />
           ))
         )}

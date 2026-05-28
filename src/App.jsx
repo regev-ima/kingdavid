@@ -8,20 +8,11 @@ import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'r
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
-import LeadDetailsModal from '@/components/lead/LeadDetailsModal';
 import { ImpersonationProvider } from '@/components/shared/ImpersonationContext';
+import { LeadModalProvider } from '@/components/lead/LeadModalContext';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
 const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
-
-// Opening a lead from any list (LeadManagement, Leads, dashboard
-// widgets, global search) used to navigate to /LeadDetails as a full
-// page — which unmounted the list and lost the manager's scroll
-// position / filter state. We now intercept that route and render
-// LeadDetails as a modal overlay on top of whatever list page they
-// were already on. The 22 existing navigate('/LeadDetails?id=…')
-// callsites are untouched; the trick lives in AuthenticatedApp below.
-const LEAD_DETAILS_PATH = '/LeadDetails';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -69,61 +60,46 @@ const AuthenticatedApp = () => {
     return <Navigate to="/login" replace />;
   }
 
-  // Modal-as-route, scoped to /LeadManagement only: when a manager
-  // clicks a lead from the LeadManagement table we keep that page
-  // mounted underneath (preserving scroll, filters, pagination) and
-  // overlay LeadDetails as a modal. Lead clicks from anywhere else
-  // (Leads page, dashboard widgets, global search, deep links)
-  // still navigate to the full-page LeadDetails as before — so this
-  // is opt-in per entry surface, not a global hijack.
+  // Authenticated - render app.
   //
-  // The ref holds the last non-/LeadDetails location across renders
-  // so mid-modal re-renders don't reset the background. We only
-  // activate modal mode if that prior location was LeadManagement.
-  const backgroundLocationRef = React.useRef(null);
-  if (location.pathname !== LEAD_DETAILS_PATH) {
-    backgroundLocationRef.current = location;
-  }
-  const isLeadModalRoute =
-    location.pathname === LEAD_DETAILS_PATH &&
-    backgroundLocationRef.current?.pathname === '/LeadManagement';
-  const routedLocation = isLeadModalRoute ? backgroundLocationRef.current : location;
-
-  // Authenticated - render app. ImpersonationProvider wraps BOTH
-  // <Routes> and the lead-modal sibling so the modal (which is
-  // rendered outside any per-route LayoutWrapper) can still call
-  // useImpersonation without throwing. Previously the provider
-  // lived inside Layout, which broke the modal's contexts.
+  // ImpersonationProvider wraps everything so the lead overlay (rendered
+  // by LeadModalProvider, outside any per-route LayoutWrapper) can still
+  // call useImpersonation, and so impersonation state is shared between
+  // the list underneath and the lead in the overlay.
+  //
+  // LeadModalProvider owns the "open a lead as a popup" behaviour: list
+  // pages call openLead(id) instead of navigating, so the URL never
+  // changes, the page never reloads, and the list stays mounted right
+  // where it was. See LeadModalContext for details.
   return (
     <ImpersonationProvider>
-    <Suspense fallback={<PageLoadingFallback />}>
-      <Routes location={routedLocation}>
-        <Route path="/" element={
-          <LayoutWrapper currentPageName={mainPageKey}>
-            <ErrorBoundary>
-              <MainPage />
-            </ErrorBoundary>
-          </LayoutWrapper>
-        } />
-        {Object.entries(LazyPages).map(([path, Page]) => (
-          <Route
-            key={path}
-            path={`/${path}`}
-            element={
-              <LayoutWrapper currentPageName={path}>
+      <LeadModalProvider>
+        <Suspense fallback={<PageLoadingFallback />}>
+          <Routes>
+            <Route path="/" element={
+              <LayoutWrapper currentPageName={mainPageKey}>
                 <ErrorBoundary>
-                  <Page />
+                  <MainPage />
                 </ErrorBoundary>
               </LayoutWrapper>
-            }
-          />
-        ))}
-        <Route path="*" element={<PageNotFound />} />
-      </Routes>
-      {isLeadModalRoute && (
-        <LeadDetailsModal backgroundLocation={backgroundLocationRef.current} />
-      )}
-    </Suspense>
+            } />
+            {Object.entries(LazyPages).map(([path, Page]) => (
+              <Route
+                key={path}
+                path={`/${path}`}
+                element={
+                  <LayoutWrapper currentPageName={path}>
+                    <ErrorBoundary>
+                      <Page />
+                    </ErrorBoundary>
+                  </LayoutWrapper>
+                }
+              />
+            ))}
+            <Route path="*" element={<PageNotFound />} />
+          </Routes>
+        </Suspense>
+      </LeadModalProvider>
     </ImpersonationProvider>
   );
 };

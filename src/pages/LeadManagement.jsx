@@ -5,6 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
 import DataTable from '@/components/shared/DataTable';
+import { useLeadModal, LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import FilterBar from '@/components/shared/FilterBar';
 import { Button } from '@/components/ui/button';
@@ -110,6 +111,9 @@ export default function LeadManagement() {
   const queryClient = useQueryClient();
   const { getEffectiveUser } = useImpersonation();
   const { customStatuses: customStatusesForFilter } = useCustomStatuses();
+  // Clicking a lead opens it as a popup over this table (no navigation),
+  // and lastOpenedLeadId keeps that row marked after the popup closes.
+  const { openLead, lastOpenedLeadId } = useLeadModal();
 
   // URL params drive every filter so back-nav from /LeadDetails restores
   // exactly where the manager was. Read once on mount, then writes happen
@@ -586,9 +590,10 @@ export default function LeadManagement() {
       ) : null}
 
       {/* Lead table — focused management view: checkbox + name/phone +
-          status + source + rep + date. Click a row to open the lead;
-          the click handler stashes scroll position so back-nav restores
-          it for the exact filter combo. */}
+          status + source + rep + date. Clicking a row opens the lead in
+          a popup over this page: no navigation, so the scroll position,
+          filters and pagination are all preserved untouched. The row of
+          the most recently opened lead stays highlighted. */}
       <LeadTable
         leads={leads}
         isLoading={isLoading && !leads.length}
@@ -596,10 +601,8 @@ export default function LeadManagement() {
         selectedLeads={selectedLeads}
         onSelectionChange={setSelectedLeads}
         repNameByEmail={repNameByEmail}
-        onRowClick={(lead) => {
-          sessionStorage.setItem(SCROLL_KEY_PREFIX + location.search, String(window.scrollY));
-          navigate(createPageUrl('LeadDetails') + `?id=${lead.id}`);
-        }}
+        highlightId={lastOpenedLeadId}
+        onRowClick={(lead) => openLead(lead.id)}
       />
 
       {/* Load-more sentinel + paging hint */}
@@ -659,7 +662,7 @@ function RepWorkloadCard({ label, avatar, newCount, handlingCount, isActive, acc
 }
 
 // ─── Lead table ─────────────────────────────────────────────────
-function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange, repNameByEmail, onRowClick }) {
+function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange, repNameByEmail, onRowClick, highlightId }) {
   const allSelected = selectedLeads.length > 0 && selectedLeads.length === leads.length;
   const someSelected = selectedLeads.length > 0 && !allSelected;
   const toggleAll = (checked) => {
@@ -747,6 +750,7 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
       isLoading={isLoading}
       emptyMessage="לא נמצאו לידים תואמים"
       onRowClick={onRowClick}
+      rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
       tableClassName="min-w-[900px]"
     />
   );

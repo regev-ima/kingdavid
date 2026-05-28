@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
@@ -73,6 +74,9 @@ export default function Leads() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
+  // Open a lead as a popup over this list (no navigation); keep the last
+  // opened row highlighted after it closes.
+  const { openLead, lastOpenedLeadId } = useLeadModal();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -741,7 +745,7 @@ export default function Leads() {
             type="lead" 
             data={row}
             hideContactButtons={true}
-            onView={() => navigate(createPageUrl('LeadDetails') + `?id=${row.id}`)}
+            onView={() => openLead(row.id)}
           />
         </div>
       ),
@@ -1190,7 +1194,8 @@ export default function Leads() {
         selectedIds={selectedLeads}
         users={users}
         onToggleSelect={(row, checked) => handleSelectLead(row.id, checked)}
-        onOpenLead={(row) => navigate(createPageUrl('LeadDetails') + `?id=${row.id}`)}
+        onOpenLead={(row) => openLead(row.id)}
+        highlightId={lastOpenedLeadId}
         onClickToCall={handleClickToCall}
       />
 
