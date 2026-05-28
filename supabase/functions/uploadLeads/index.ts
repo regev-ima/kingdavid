@@ -51,7 +51,12 @@ Deno.serve(async (req) => {
             source: leadData.source || 'digital',
             status: 'new_lead',
             notes: leadData.notes || '',
-            rep1: leadData.rep1 || user.email,
+            // Auto-assignment disabled (product decision). The
+            // previous default was to fall back to the uploading user's
+            // own email when leadData.rep1 was missing — leads now land
+            // unassigned unless the payload explicitly specifies a rep,
+            // and a manager triages via /LeadManagement.
+            rep1: leadData.rep1 || null,
             effective_sort_date: new Date().toISOString(),
           });
           results.created++;

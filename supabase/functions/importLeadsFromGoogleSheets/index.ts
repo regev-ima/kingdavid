@@ -137,9 +137,13 @@ Deno.serve(async (req) => {
           effective_sort_date: createdDate || new Date().toISOString(),
         };
 
-        if (repEmail && userEmails.has(repEmail)) {
-          leadData.rep1 = repEmail;
-        } else if (repEmail) {
+        // Auto-assignment disabled across the board (product decision):
+        // every imported lead lands UNASSIGNED so a manager triages via
+        // /LeadManagement. The sheet's rep column is still preserved on
+        // `pending_rep_email` as a hint about who the import intended,
+        // but it's never promoted to rep1 even when the email matches a
+        // real user.
+        if (repEmail) {
           leadData.pending_rep_email = repEmail;
         }
 

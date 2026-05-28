@@ -66,14 +66,13 @@ Deno.serve(async (req) => {
       if (data?.length) existingLead = data[0];
     }
 
-    // Resolve pending_rep_email to rep1 if user exists
-    if (leadData.pending_rep_email) {
-      const { data: users } = await supabase.from('users').select('email').eq('email', leadData.pending_rep_email).limit(1);
-      if (users?.length) {
-        leadData.rep1 = leadData.pending_rep_email;
-        leadData.pending_rep_email = '';
-      }
-    }
+    // NOTE: we intentionally do NOT promote `pending_rep_email` to
+    // `rep1` here. The product decision is that every incoming lead
+    // lands UNASSIGNED so a manager triages it via /LeadManagement —
+    // no silent routing by campaign / UTM / sheet column. The
+    // pending_rep_email value is still persisted on the row as an
+    // audit trail of "who the integration was meaning to send this
+    // to", so a manager can use it as a hint when distributing.
 
     const nowISO = new Date().toISOString();
 

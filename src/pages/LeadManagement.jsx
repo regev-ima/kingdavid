@@ -639,11 +639,11 @@ function RepWorkloadCard({ label, avatar, newCount, handlingCount, isActive, acc
       </div>
       <div className="grid grid-cols-2 gap-1.5 text-xs">
         <div className="bg-sky-50 rounded p-1.5 text-center">
-          <p className="text-[10px] text-sky-700/80">חדשים</p>
+          <p className="text-[10px] text-sky-700/80">לידים חדשים</p>
           <p className="text-base font-bold text-sky-700 tabular-nums leading-tight">{fmt(newCount)}</p>
         </div>
         <div className="bg-amber-50 rounded p-1.5 text-center">
-          <p className="text-[10px] text-amber-700/80">בטיפול</p>
+          <p className="text-[10px] text-amber-700/80">משימות חזרה ללידים</p>
           <p className="text-base font-bold text-amber-700 tabular-nums leading-tight">{fmt(handlingCount)}</p>
         </div>
       </div>

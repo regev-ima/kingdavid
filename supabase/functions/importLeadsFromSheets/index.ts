@@ -111,27 +111,17 @@ Deno.serve(async (req) => {
         leadData.status = 'new_lead';
       }
 
-      // Assign to current user if no rep specified
-      if (!leadData.rep1 && !leadData.pending_rep_email) {
-        leadData.rep1 = user.email;
-      }
-
       leads.push(leadData);
     }
 
-    // Fetch all users to resolve pending_rep_email -> rep1
-    const { data: allUsers } = await supabase.from('users').select('*');
-    const userEmails = new Set((allUsers || []).map((u: any) => u.email));
-
-    // Resolve pending_rep_email to rep1 if user exists
-    for (const leadData of leads) {
-      if (leadData.pending_rep_email && !leadData.rep1) {
-        if (userEmails.has(leadData.pending_rep_email)) {
-          leadData.rep1 = leadData.pending_rep_email;
-          leadData.pending_rep_email = '';
-        }
-      }
-    }
+    // Auto-assignment disabled across the board (product decision):
+    // imported leads land UNASSIGNED so a manager triages via
+    // /LeadManagement. The previous logic here defaulted rep1 to the
+    // importing admin's own email when no rep column was provided,
+    // and silently promoted pending_rep_email → rep1 when the email
+    // matched a real user — both removed. pending_rep_email values
+    // from the sheet are preserved on the row as a hint, never
+    // promoted automatically.
 
     // Fetch ALL existing leads with pagination
     const allExistingLeads: any[] = [];
