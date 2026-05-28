@@ -9,6 +9,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import LeadDetailsModal from '@/components/lead/LeadDetailsModal';
+import { ImpersonationProvider } from '@/components/shared/ImpersonationContext';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
 const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
@@ -88,8 +89,13 @@ const AuthenticatedApp = () => {
     backgroundLocationRef.current?.pathname === '/LeadManagement';
   const routedLocation = isLeadModalRoute ? backgroundLocationRef.current : location;
 
-  // Authenticated - render app
+  // Authenticated - render app. ImpersonationProvider wraps BOTH
+  // <Routes> and the lead-modal sibling so the modal (which is
+  // rendered outside any per-route LayoutWrapper) can still call
+  // useImpersonation without throwing. Previously the provider
+  // lived inside Layout, which broke the modal's contexts.
   return (
+    <ImpersonationProvider>
     <Suspense fallback={<PageLoadingFallback />}>
       <Routes location={routedLocation}>
         <Route path="/" element={
@@ -118,6 +124,7 @@ const AuthenticatedApp = () => {
         <LeadDetailsModal backgroundLocation={backgroundLocationRef.current} />
       )}
     </Suspense>
+    </ImpersonationProvider>
   );
 };
 

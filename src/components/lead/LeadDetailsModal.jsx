@@ -25,7 +25,13 @@ export default function LeadDetailsModal({ backgroundLocation }) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) close(); }}>
       <DialogContent
-        className="max-w-[1400px] w-[96vw] h-[92vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl"
+        // 95vw × 95vh per product spec — leave a visible frame of
+        // the underlying list page on all sides so the manager
+        // immediately reads this as "a popup over my list", not
+        // "I navigated to a new page". max-w-none defeats the
+        // shadcn default max-w-lg cap so wide monitors keep the
+        // 95% proportion.
+        className="w-[95vw] h-[95vh] max-w-none p-0 gap-0 overflow-hidden flex flex-col rounded-2xl"
       >
         <DialogTitle className="sr-only">פרטי ליד</DialogTitle>
         <div className="flex-1 overflow-auto p-6 pt-10">

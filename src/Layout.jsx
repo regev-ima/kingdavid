@@ -39,7 +39,10 @@ import {
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
 
-import { ImpersonationProvider } from "@/components/shared/ImpersonationContext";
+// ImpersonationProvider was moved up to App.jsx so that lead detail
+// modals rendered as siblings to the page (outside Layout) still
+// have access to impersonation state. The hook lives in
+// @/components/shared/ImpersonationContext.
 import NotificationBell from "@/components/shared/NotificationBell";
 
 import VoiceCenterCallPopup from "@/components/call/VoiceCenterCallPopup";
@@ -390,9 +393,5 @@ function LayoutContent({ children, currentPageName }) {
       }
 
 export default function Layout({ children, currentPageName }) {
-  return (
-    <ImpersonationProvider>
-      <LayoutContent children={children} currentPageName={currentPageName} />
-    </ImpersonationProvider>
-  );
+  return <LayoutContent children={children} currentPageName={currentPageName} />;
 }
