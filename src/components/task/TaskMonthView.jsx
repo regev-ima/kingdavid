@@ -159,7 +159,7 @@ export default function TaskMonthView({ effectiveUser, isAdmin, onTaskClick }) {
           const extra = dayTasks.length - shown.length;
           return (
             <div key={key} className={`min-h-[108px] p-1.5 ${inMonth ? 'bg-card' : 'bg-muted/20'}`}>
-              <div className="mb-1 flex justify-end">
+              <div className="mb-1 flex justify-start">
                 <span
                   className={`inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-1 text-xs font-semibold ${
                     today
