@@ -45,7 +45,7 @@ import {
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrder, isAdmin as isAdminUser } from '@/lib/rbac';
-import NewServiceTicketDialog from '@/components/support/NewServiceTicketDialog';
+import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
 
@@ -209,7 +209,12 @@ export default function OrderDetails() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">הזמנה #{order.order_number}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-bold text-foreground">הזמנה #{order.order_number}</h1>
+              {order.is_imported && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 ring-1 ring-stone-200">הזמנה מיובאת</span>
+              )}
+            </div>
             <div className="flex items-center gap-3 mt-1">
               <StatusBadge status={order.payment_status} />
               <StatusBadge status={order.production_status} />
@@ -808,8 +813,10 @@ export default function OrderDetails() {
         </div>
       </div>
 
-      {/* Service Ticket Dialog */}
-      <NewServiceTicketDialog
+      {/* Service Ticket Dialog — opens a rich ticket in the new Service Center
+          (problem photos + warranty classification). Opening a ticket never
+          edits the order. */}
+      <OpenServiceTicketDialog
         open={showServiceTicket}
         onOpenChange={setShowServiceTicket}
         order={order}

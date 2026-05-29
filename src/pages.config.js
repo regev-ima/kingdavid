@@ -87,6 +87,8 @@ import ReturnDetails from './pages/ReturnDetails';
 import Returns from './pages/Returns';
 import SalesDashboard from './pages/SalesDashboard';
 import SalesTasks from './pages/SalesTasks';
+import ServiceCenter from './pages/ServiceCenter';
+import ServiceRequestDetails from './pages/ServiceRequestDetails';
 import Settings from './pages/Settings';
 import ShipmentDetails from './pages/ShipmentDetails';
 import Support from './pages/Support';
@@ -134,6 +136,8 @@ export const PAGES = {
     "Returns": Returns,
     "SalesDashboard": SalesDashboard,
     "SalesTasks": SalesTasks,
+    "ServiceCenter": ServiceCenter,
+    "ServiceRequestDetails": ServiceRequestDetails,
     "Settings": Settings,
     "ShipmentDetails": ShipmentDetails,
     "Support": Support,

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe } from "lucide-react";
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -638,6 +638,7 @@ export default function SalesTasks() {
     quote_preparation: { Icon: FileText, label: 'הצעת מחיר', color: 'text-indigo-600' },
     followup: { Icon: RefreshCw, label: 'מעקב', color: 'text-orange-600' },
     assignment: { Icon: ClipboardList, label: 'שיוך', color: 'text-violet-600' },
+    service: { Icon: LifeBuoy, label: 'פניית שירות', color: 'text-rose-600' },
     other: { Icon: Paperclip, label: 'אחר', color: 'text-muted-foreground' },
   };
 

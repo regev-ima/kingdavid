@@ -35,7 +35,8 @@ import {
   CheckSquare,
   Receipt,
   UserCog,
-  RefreshCw
+  RefreshCw,
+  LifeBuoy
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
 
@@ -63,6 +64,7 @@ const navigationByRole = {
     { name: 'מפעל', href: 'Factory', icon: Factory },
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
     { name: 'מלאי', href: 'Inventory', icon: Package },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
     { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
@@ -86,6 +88,7 @@ const navigationByRole = {
     { name: 'לקוחות', href: 'Customers', icon: Crown },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
   ],
   factory_user: [
     { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
@@ -95,6 +98,7 @@ const navigationByRole = {
     { name: 'מלאי', href: 'Inventory', icon: Package },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
     { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],

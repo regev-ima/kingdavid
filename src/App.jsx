@@ -13,6 +13,9 @@ import { LeadModalProvider } from '@/components/lead/LeadModalContext';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
 const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
+// Public, unauthenticated customer self-service intake form (opened from an SMS
+// link). Rendered outside the auth gate, like /HypReturn.
+const LazyServiceRequestPublic = lazy(() => import('./pages/ServiceRequestPublic.jsx'));
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -120,6 +123,12 @@ function App() {
             <Route path="/HypReturn" element={
               <Suspense fallback={null}>
                 <LazyHypReturn />
+              </Suspense>
+            } />
+            {/* Public customer self-service form — no auth, no app chrome. */}
+            <Route path="/service-request" element={
+              <Suspense fallback={<PageLoadingFallback />}>
+                <LazyServiceRequestPublic />
               </Suspense>
             } />
             <Route path="*" element={<AuthenticatedApp />} />
