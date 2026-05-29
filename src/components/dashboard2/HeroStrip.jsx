@@ -31,8 +31,25 @@ function calcDelta(current, previous) {
   return (c - p) / p;
 }
 
-export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
+// Echo the date range chosen in the header into the flow-metric titles, so
+// "לידים בטווח" reads as "לידים החודש" / "לידים השבוע" etc. and there's no
+// guessing which window the numbers cover. Keys mirror Dashboard2DateRange's
+// PRESETS; unknown keys fall back to the generic "בטווח". The snapshot tiles
+// below (open tickets / in production / overdue) are point-in-time, so they
+// keep their own fixed titles.
+const RANGE_SUFFIX = {
+  today: 'היום',
+  yesterday: 'אתמול',
+  week: 'השבוע',
+  month: 'החודש',
+  '90days': 'ב-90 יום',
+  year: 'השנה',
+  custom: 'בטווח הנבחר',
+};
+
+export default function HeroStrip({ current = {}, previous = {}, dateRange, rangeKey }) {
   const navigate = useNavigate();
+  const rangeSuffix = RANGE_SUFFIX[rangeKey] || 'בטווח';
   const startIso = dateRange?.from ? new Date(dateRange.from).toISOString() : undefined;
   const endIso = dateRange?.to ? new Date(dateRange.to).toISOString() : undefined;
 
@@ -48,7 +65,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
 
   const cards = [
     {
-      title: 'לידים בטווח',
+      title: `לידים ${rangeSuffix}`,
       value: formatNumber(current.newLeadsCount ?? 0),
       delta: calcDelta(current.newLeadsCount, previous.newLeadsCount),
       icon: Users,
@@ -56,7 +73,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
       onClick: () => goTo('Leads', { tab: 'all' }),
     },
     {
-      title: 'הזמנות בטווח',
+      title: `הזמנות ${rangeSuffix}`,
       value: formatNumber(current.ordersCount ?? 0),
       delta: calcDelta(current.ordersCount, previous.ordersCount),
       icon: ShoppingCart,
@@ -64,7 +81,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange }) {
       onClick: () => goTo('Orders', { tab: 'all' }),
     },
     {
-      title: 'הכנסות בטווח',
+      title: `הכנסות ${rangeSuffix}`,
       value: formatCurrencyCompact(current.revenue),
       delta: calcDelta(current.revenue, previous.revenue),
       icon: DollarSign,
