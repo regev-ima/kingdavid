@@ -47,6 +47,7 @@ import {
   MoreVertical,
   Headphones,
   ShoppingBag,
+  AlertTriangle,
   Crown,
   Plus,
   Activity,
@@ -98,7 +99,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
-  const [workMode, setWorkMode] = useState(initialMode);
+  // The old `workMode` state (sales vs service) was removed when we
+  // collapsed the two modes into a single unified lead screen. Sales
+  // and service info now live side-by-side, the service section is a
+  // permanent card in the main column, and the only cross-functional
+  // signal is the open-tickets badge in the header. `initialMode` is
+  // still accepted as a prop for backwards-compat with any caller
+  // that passes it; it's just ignored.
+  void initialMode;
   const { hiddenStatuses } = useHiddenStatuses();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -198,19 +206,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     if (lead && !isEditing) setFormData(lead);
   }, [leadUpdatedDate, isEditing]);
 
-  useEffect(() => {
-    // In popup mode the URL belongs to the list page underneath — don't
-    // rewrite it to sync the sales/service toggle (that would navigate
-    // and close the overlay). The toggle lives purely in local state.
-    if (isModal) return;
-    const params = new URLSearchParams(window.location.search);
-    const urlMode = params.get('mode') === 'service' ? 'service' : 'sales';
-    if (urlMode !== workMode) {
-      params.set('mode', workMode);
-      if (leadId) params.set('id', leadId);
-      navigate(`${createPageUrl('LeadDetails')}?${params.toString()}`, { replace: true });
-    }
-  }, [workMode, leadId, navigate, isModal]);
+  // The URL ?mode=service sync useEffect was removed alongside the
+  // sales/service toggle — the lead screen no longer has modes, so
+  // there's nothing to sync. ?mode query params on existing bookmarks
+  // are simply ignored (initialMode prop is no-op now).
 
   // Real-time subscription: auto-refresh lead when it changes (e.g. status updated from task dialog)
   useEffect(() => {
@@ -291,8 +290,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   );
   const workbenchState = useMemo(() => buildLeadWorkbenchState({
     tasks,
-    mode: workMode,
-  }), [tasks, workMode]);
+  }), [tasks]);
 
   const handleSave = async () => {
     const { id, created_date, updated_date, created_by, ...updateData } = formData;
@@ -533,35 +531,26 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </div>
         </div>
 
-        <div className="inline-flex items-center rounded-xl border border-border bg-muted/40 p-1">
-          <Button
+        {/* Open-tickets alert: replaces the old "sales / service mode"
+            toggle. Now that the lead screen shows sales and service
+            together in one scroll (no mode switching), this badge is
+            the one cross-functional signal a sales rep needs — "this
+            customer has open service issues" — and clicking it jumps
+            them straight to the service section. Hidden when there
+            are no open tickets so the header stays clean. */}
+        {openServiceTicketsCount > 0 ? (
+          <button
             type="button"
-            size="sm"
-            className="h-8 text-xs"
-            variant={workMode === 'sales' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('sales')}
+            onClick={() => {
+              document.getElementById('lead-service-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
+            title="עבור לאזור פניות השירות"
           >
-            מצב מכירה
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-            variant={workMode === 'service' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('service')}
-          >
-            מצב שירות
-            {openServiceTicketsCount > 0 && (
-              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
-                workMode === 'service'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-amber-500 text-white'
-              }`}>
-                {openServiceTicketsCount}
-              </span>
-            )}
-          </Button>
-        </div>
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {openServiceTicketsCount === 1 ? 'קריאת שירות פתוחה' : `${openServiceTicketsCount} קריאות שירות פתוחות`}
+          </button>
+        ) : null}
       </div>
 
       <div className="lg:hidden flex flex-wrap gap-2">
@@ -594,44 +583,18 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </Link>
       </div>
 
-      {/* Action bar — mode toggle + חייג / משימה / הצעה. Always one
-          click away while reading the lead. In page mode it sticks
-          below the global chrome (top-16). In popup mode it sits as
-          a flex-shrink-0 sibling of the header — genuinely fixed at
-          the top of the dialog, no sticky involved. */}
+      {/* Action bar — חייג / משימה / הצעה. Always one click away
+          while reading the lead. In page mode it sticks below the
+          global chrome (top-16). In popup mode it sits as a
+          flex-shrink-0 sibling of the header — genuinely fixed at
+          the top of the dialog, no sticky involved. The old
+          sales/service mode toggle that used to live here was
+          removed in favor of a single unified lead screen. */}
       <div className={
         isModal
-          ? 'hidden lg:flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2'
-          : 'hidden lg:flex sticky top-16 z-10 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
+          ? 'hidden lg:flex flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2'
+          : 'hidden lg:flex sticky top-16 z-10 items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
       }>
-        <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-1">
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            variant={workMode === 'sales' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('sales')}
-          >
-            מכירה
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-            variant={workMode === 'service' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('service')}
-          >
-            שירות
-            {openServiceTicketsCount > 0 && (
-              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
-                workMode === 'service'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-amber-500 text-white'
-              }`}>
-                {openServiceTicketsCount}
-              </span>
-            )}
-          </Button>
-        </div>
-
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -1045,6 +1008,74 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
+          {/* Service section — always visible, no mode toggle.
+              Replaces the old "switch to service mode" pattern with a
+              permanent card so a sales rep doing day-to-day work
+              never misses that their customer has an open ticket, and
+              a service rep doing follow-ups never has to switch
+              context to see the sales history. The header alert badge
+              scrolls smoothly here via this id. */}
+          <Card id="lead-service-section" className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Headphones className="h-4 w-4 text-muted-foreground" />
+                שירות
+                {openServiceTicketsCount > 0 ? (
+                  <Badge variant="warning">{openServiceTicketsCount} פתוחות</Badge>
+                ) : null}
+              </CardTitle>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <ShoppingBag className="h-3.5 w-3.5" />
+                  {linkedOrderIds.length} {linkedOrderIds.length === 1 ? 'הזמנה מקושרת' : 'הזמנות מקושרות'}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4">
+              {linkedOrderIds.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  ללקוח אין הזמנות פעילות, ולכן אין נתיב לפתיחת קריאת שירות מכאן.
+                  קריאת שירות נפתחת תמיד מתוך הזמנה קיימת.
+                </div>
+              ) : serviceTickets.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  אין קריאות שירות פתוחות או היסטוריות עבור ההזמנות של הלקוח.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Open tickets first, then resolved/closed by recency.
+                      Open ones get an amber tint so they pop visually
+                      when a rep glances at this section. */}
+                  {[...serviceTickets]
+                    .sort((a, b) => {
+                      const aOpen = !['resolved', 'closed'].includes(String(a.status || '').toLowerCase());
+                      const bOpen = !['resolved', 'closed'].includes(String(b.status || '').toLowerCase());
+                      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+                      return new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0);
+                    })
+                    .map((ticket) => {
+                      const isOpen = !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase());
+                      return (
+                        <Link
+                          key={ticket.id}
+                          to={createPageUrl('TicketDetails') + `?id=${ticket.id}`}
+                          className={`block border rounded-lg p-3 transition-colors ${isOpen ? 'border-amber-200 bg-amber-50/40 hover:bg-amber-50' : 'border-border hover:bg-muted/40'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-foreground">
+                              #{ticket.ticket_number || ticket.id?.slice(0, 6)}
+                            </span>
+                            <StatusBadge status={ticket.status} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1 truncate">{ticket.subject || 'פניית שירות'}</p>
+                        </Link>
+                      );
+                    })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Activity Log */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="border-b border-border/50 bg-muted/50">
@@ -1187,55 +1218,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
-          {workMode === 'service' ? (
-            <Card className="rounded-xl border-border shadow-card overflow-hidden">
-              <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Headphones className="h-4 w-4 text-muted-foreground" />
-                  הקשר שירות (לפי הזמנה)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <ShoppingBag className="h-3.5 w-3.5" />
-                    הזמנות מקושרות
-                  </span>
-                  <Badge variant="outline">{linkedOrderIds.length}</Badge>
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>קריאות שירות פתוחות</span>
-                  <Badge variant={serviceTickets.some((ticket) => !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase())) ? 'warning' : 'outline'}>
-                    {serviceTickets.filter((ticket) => !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase())).length}
-                  </Badge>
-                </div>
+          {/* The old conditional sidebar service-summary card was
+              removed — its content is now a permanent, full-detail
+              section in the main column (#lead-service-section). */}
 
-                {serviceTickets.length === 0 ? (
-                  <div className="text-sm text-muted-foreground border rounded-lg p-3">
-                    לא נמצאו קריאות שירות מקושרות להזמנות של הליד.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {serviceTickets.slice(0, 4).map((ticket) => (
-                      <Link
-                        key={ticket.id}
-                        to={createPageUrl('TicketDetails') + `?id=${ticket.id}`}
-                        className="block border rounded-lg p-2.5 hover:bg-muted/40 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-foreground truncate">
-                            #{ticket.ticket_number || ticket.id?.slice(0, 6)}
-                          </span>
-                          <StatusBadge status={ticket.status} />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1 truncate">{ticket.subject || 'פניית שירות'}</p>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
 
           {/* Assignment */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
