@@ -52,7 +52,14 @@ import {
   Plus,
   Activity,
   History,
-  Phone
+  Phone,
+  Mail,
+  MapPin,
+  Home,
+  Globe,
+  StickyNote,
+  MessageSquare,
+  CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import SLABadge from '@/components/sla/SLABadge';
@@ -786,39 +793,52 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                    value below, border-t between every section) — that
                    layout was airy by design but wasted vertical space
                    even when most fields were empty. The new structure:
-                   one row per field, slim label on the right, value
-                   on the left, rows with no value HIDDEN entirely so
-                   a sparse lead doesn't show six empty "-"s. */
+                   one row per field with a small leading icon, slim
+                   label, value on the left, rows with no value HIDDEN
+                   entirely so a sparse lead doesn't show six empty
+                   "-"s. dir is left at default (RTL) so even phone /
+                   email values render aligned to the right edge next
+                   to their label — the digits inside stay LTR-readable
+                   thanks to browser bidi without forcing the whole
+                   cell to switch sides. */
                 <dl className="divide-y divide-border/30">
                   {[
-                    { label: 'שם מלא', value: lead.full_name },
-                    { label: 'טלפון', value: lead.phone, dir: 'ltr' },
-                    { label: 'אימייל', value: lead.email, dir: 'ltr' },
-                    { label: 'עיר', value: lead.city },
-                    { label: 'כתובת', value: lead.address },
-                    { label: 'מקור', value: SOURCE_LABELS[lead.source] || lead.source },
-                    { label: 'טופס מקור', value: lead.source_form },
-                    { label: 'נושא הפנייה', value: lead.subject },
-                    { label: 'הערות', value: lead.notes, whitespace: 'pre-wrap' },
+                    { label: 'שם מלא',     value: lead.full_name,                                       icon: User },
+                    { label: 'טלפון',      value: lead.phone,                                           icon: Phone },
+                    { label: 'אימייל',     value: lead.email,                                           icon: Mail },
+                    { label: 'עיר',        value: lead.city,                                            icon: MapPin },
+                    { label: 'כתובת',      value: lead.address,                                         icon: Home },
+                    { label: 'מקור',       value: SOURCE_LABELS[lead.source] || lead.source,            icon: Globe },
+                    { label: 'טופס מקור',  value: lead.source_form,                                     icon: FileText },
+                    { label: 'נושא הפנייה', value: lead.subject,                                        icon: MessageSquare },
+                    { label: 'הערות',      value: lead.notes, whitespace: 'pre-wrap',                   icon: StickyNote },
                   ]
                     .filter((row) => row.value)
-                    .map((row) => (
-                      <div key={row.label} className="flex items-baseline gap-4 py-2">
-                        <dt className="text-xs text-muted-foreground/80 w-24 flex-shrink-0">{row.label}</dt>
-                        <dd
-                          className={`text-sm text-foreground min-w-0 flex-1 ${row.whitespace === 'pre-wrap' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
-                          dir={row.dir}
-                        >
-                          {row.value}
-                        </dd>
-                      </div>
-                    ))}
+                    .map((row) => {
+                      const Icon = row.icon;
+                      return (
+                        <div key={row.label} className="flex items-baseline gap-3 py-3">
+                          <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                            <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                            <span>{row.label}</span>
+                          </dt>
+                          <dd
+                            className={`text-sm text-foreground min-w-0 flex-1 ${row.whitespace === 'pre-wrap' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
+                          >
+                            {row.value}
+                          </dd>
+                        </div>
+                      );
+                    })}
 
                   {/* Tags inline as their own row — only when present.
                       Keeps the visual rhythm of the rest of the list. */}
                   {Array.isArray(lead.tags) && lead.tags.length > 0 ? (
-                    <div className="flex items-baseline gap-4 py-2">
-                      <dt className="text-xs text-muted-foreground/80 w-24 flex-shrink-0">תגיות</dt>
+                    <div className="flex items-baseline gap-3 py-3">
+                      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                        <Tag className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                        <span>תגיות</span>
+                      </dt>
                       <dd className="flex flex-wrap gap-1.5 min-w-0 flex-1">
                         {lead.tags.map((tag) => (
                           <span
@@ -836,8 +856,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                       muted footer row so they don't compete with the
                       contact details above. */}
                   {lead.created_date || lead.updated_date ? (
-                    <div className="flex items-baseline gap-4 py-2 text-xs text-muted-foreground/70">
-                      <dt className="w-24 flex-shrink-0">תאריכים</dt>
+                    <div className="flex items-baseline gap-3 py-3 text-xs text-muted-foreground/70">
+                      <dt className="flex items-center gap-1.5 w-28 flex-shrink-0">
+                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                        <span>תאריכים</span>
+                      </dt>
                       <dd className="min-w-0 flex-1 flex flex-wrap gap-x-4 gap-y-1">
                         {lead.created_date ? (
                           <span>נוצר: {formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}</span>
