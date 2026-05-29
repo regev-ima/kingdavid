@@ -72,8 +72,73 @@ export default function ServiceCenter() {
       const recent = await base44.entities.SupportTicket.list('-created_date', 1);
       let next = recent[0]?.ticket_number;
       const num = () => (next = nextTicketNumber(next));
+      const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
+      const uuid = () => (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+
+      // 1. A demo imported order to link the showcase ticket to.
+      let demoOrderId = null;
+      try {
+        const ord = await base44.entities.Order.create({
+          order_number: `DEMO-${Math.floor(Math.random() * 9000) + 1000}`,
+          customer_name: 'דמו — משפחת ישראלי',
+          customer_phone: '0507778899',
+          total: 4990, subtotal: 4990, items: [],
+          is_imported: true, import_source: 'demo', tags: ['הזמנה מיובאת'],
+        });
+        demoOrderId = ord?.id || null;
+      } catch { /* order is optional for the demo */ }
+
+      // 2. The rich showcase ticket — photos, full diagnostics, warranty, and a
+      //    populated handling timeline so every tab feels real.
+      const rich = await base44.entities.SupportTicket.create({
+        ticket_number: num(),
+        order_id: demoOrderId,
+        customer_name: 'דמו — משפחת ישראלי',
+        customer_phone: '0507778899',
+        customer_email: 'demo.israeli@example.com',
+        subject: 'דמו: שקיעה בצד ימין של המזרן',
+        description: 'המזרן שקע בצד אחד אחרי כשנתיים שימוש. ישנים עליו כל לילה. מצורפות תמונות של הבעיה.',
+        category: 'warranty',
+        request_type: 'warranty',
+        priority: 'high',
+        status: 'waiting_parts',
+        source: 'customer_self',
+        opened_by_customer: true,
+        product_name: 'מזרן קפיצים מבודדים 160/200',
+        warranty_years: 10,
+        complaint_age_months: 26,
+        order_date: ago(24 * 760).slice(0, 10),
+        issue_answers: {
+          product: 'מזרן קפיצים מבודדים 160/200',
+          problem_summary: 'שקיעה מורגשת בצד ימין',
+          problem_area: 'צד ימין',
+          when_started: 'לפני מספר חודשים',
+          usage: 'שימוש יומיומי',
+          notes: 'השקיעה מורגשת בעיקר באזור האגן.',
+        },
+        photo_urls: [
+          'https://picsum.photos/seed/kd-mattress-1/600/450',
+          'https://picsum.photos/seed/kd-mattress-2/600/450',
+          'https://picsum.photos/seed/kd-mattress-3/600/450',
+        ],
+        public_token: uuid(),
+        public_status: 'submitted',
+        public_sent_at: ago(118),
+        public_submitted_at: ago(112),
+        created_date: ago(120),
+        assigned_to: effectiveUser?.email || null,
+        sla_due_date: addHours(new Date(), 24).toISOString(),
+        service_notes: [
+          { at: ago(110), by: 'דנה (שירות)', text: 'הסטטוס שונה ל“בטיפול”', type: 'status' },
+          { at: ago(96), by: 'דנה (שירות)', text: 'נוצר קשר טלפוני עם הלקוח — נתבקשו תמונות נוספות.', type: 'note' },
+          { at: ago(72), by: 'נתנאל (מנהל שירות)', text: 'שויכה משימת שירות לנציג מתן', type: 'assignment' },
+          { at: ago(36), by: 'מתן', text: 'הלקוח שלח תמונות — נראה פגם ייצור בתפר הצדדי.', type: 'note' },
+          { at: ago(10), by: 'דנה (שירות)', text: 'הסטטוס שונה ל“ממתין לחלקים/מפעל”', type: 'status' },
+        ],
+      });
+
+      // 3. A few simpler tickets for list / KPI variety.
       const samples = [
-        { customer_name: 'דמו — דנה כהן', customer_phone: '0501112233', subject: 'דמו: שקיעה במזרן', request_type: 'warranty', warranty_years: 10, complaint_age_months: 36, priority: 'high', status: 'open', source: 'agent_manual', product_name: 'מזרן קפיצים מבודדים' },
         { customer_name: 'דמו — יוסי לוי', customer_phone: '0502223344', subject: 'דמו: בעיה בתוך 30 יום', request_type: 'trial_30d', priority: 'high', status: 'in_progress', source: 'customer_self', opened_by_customer: true, product_name: 'מזרן ויסקו' },
         { customer_name: 'דמו — שיר אבני', customer_phone: '0503334455', subject: 'דמו: פנייה כללית', request_type: 'general', priority: 'medium', status: 'waiting_customer', source: 'agent_manual' },
         { customer_name: 'דמו — אבי מזרחי', customer_phone: '0504445566', subject: 'דמו: ממתין למילוי הלקוח', priority: 'medium', status: 'open', source: 'customer_self', public_status: 'pending' },
@@ -94,20 +159,21 @@ export default function ServiceCenter() {
           source: s.source,
           opened_by_customer: !!s.opened_by_customer,
           public_status: s.public_status || null,
-          public_token: s.public_status === 'pending' && crypto?.randomUUID ? crypto.randomUUID() : null,
+          public_token: s.public_status === 'pending' ? uuid() : null,
           product_name: s.product_name || '',
-          warranty_years: s.warranty_years || null,
-          complaint_age_months: s.complaint_age_months || null,
           assigned_to: effectiveUser?.email || null,
           created_by_rep: effectiveUser?.email || null,
           created_by_name: effectiveUser?.full_name || null,
           sla_due_date: addHours(new Date(), SLA_HOURS[priority] || 48).toISOString(),
         });
       }
+
+      return { richId: rich?.id || null };
     },
-    onSuccess: () => {
+    onSuccess: ({ richId }) => {
       queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
-      toast.success('נוצרו 5 פניות דמה');
+      toast.success('נוצרו נתוני דמה — פותח פנייה לדוגמה');
+      if (richId) setSelectedTicketId(richId);
     },
     onError: (err) => {
       console.error('[ServiceCenter] seed demo failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code });

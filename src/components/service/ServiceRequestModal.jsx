@@ -8,7 +8,7 @@ import ServiceRequestDetailContent from './ServiceRequestDetailContent';
 export default function ServiceRequestModal({ ticketId, open, onOpenChange }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[90vw] max-w-[1100px] max-h-[90vh] overflow-y-auto p-5" dir="rtl">
+      <DialogContent className="w-[92vw] max-w-[920px] max-h-[90vh] overflow-y-auto p-5" dir="rtl">
         <DialogTitle className="sr-only">פרטי פניית שירות</DialogTitle>
         {ticketId && <ServiceRequestDetailContent ticketId={ticketId} onClose={() => onOpenChange(false)} />}
       </DialogContent>
