@@ -14,8 +14,14 @@ export default function LeadDetailsModal({ leadId, mode = 'sales', onClose }) {
           lead detail layout) and uses 80vw on narrower screens so it
           stays generous on laptops without overflowing on tablets.
           Height stays at 95vh so vertical scrolling inside the lead
-          stays comfortable. */}
-      <DialogContent className="w-[80vw] max-w-[1100px] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
+          stays comfortable.
+
+          dir="rtl" is REQUIRED here: Radix Dialog portals to
+          document.body, which sits outside the dir="rtl" wrapper in
+          Layout.jsx, so without this override the Hebrew content
+          renders left-aligned. Matches the convention used by every
+          other DialogContent in this codebase. */}
+      <DialogContent dir="rtl" className="w-[80vw] max-w-[1100px] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
         <DialogTitle className="sr-only">פרטי ליד</DialogTitle>
         <div className="flex-1 overflow-auto p-6 pt-10">
           <Suspense
