@@ -117,7 +117,7 @@ export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all',
+  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'completed_today', 'not_done', 'cancelled', 'all',
     'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
@@ -249,6 +249,14 @@ export default function SalesTasks() {
         if (error) throw error;
         return count || 0;
       };
+      // How many open tasks the stale filter (>30d overdue) is hiding from
+      // the list right now. All stale tasks are overdue (due < cutoff <
+      // today), so subtracting this from total/open/overdue makes those
+      // cube numbers equal exactly what the de-noised list renders. When
+      // showStale is on, nothing is hidden so it's 0.
+      const staleOpenHidden = showStale
+        ? 0
+        : await head((q) => q.eq('task_status', 'not_completed').lt('due_date', staleCutoffIso));
       const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden] = await Promise.all([
         head((q) => q),
         head((q) => q.eq('task_status', 'not_completed')),
@@ -261,7 +269,18 @@ export default function SalesTasks() {
         assignmentHead(),
         staleAssignmentHiddenHead(),
       ]);
-      return { total, open, completed, today: todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden };
+      return {
+        total: total - staleOpenHidden,
+        open: open - staleOpenHidden,
+        completed,
+        today: todayCnt,
+        overdue: overdue - staleOpenHidden,
+        upcoming,
+        undated,
+        completedToday,
+        assignmentOpen,
+        staleAssignmentHidden,
+      };
     },
   });
 
@@ -289,6 +308,11 @@ export default function SalesTasks() {
       } else if (activeTab === 'assignment') {
         q = q.eq('task_status', 'not_completed').eq('task_type', 'assignment');
         if (!showStale) q = q.gte('created_date', staleCutoffIso);
+      } else if (activeTab === 'completed_today') {
+        // "הושלמו היום" cube: completed AND touched within today's window —
+        // must mirror the count query's completedToday, not the generic
+        // "all completed ever" the plain `completed` tab shows.
+        q = q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
       } else if (activeTab.startsWith('cat_')) {
@@ -305,10 +329,14 @@ export default function SalesTasks() {
       // but descending for overdue so the *most recent* misses come back
       // first. With 6k+ migration leftovers, ascending pulled only ancient
       // garbage and crowded out anything actionable.
-      const recentlyTouched = ['completed', 'not_done', 'cancelled'].includes(activeTab);
+      const recentlyTouched = ['completed', 'completed_today', 'not_done', 'cancelled'].includes(activeTab);
       if (recentlyTouched) {
         q = q.order('updated_date', { ascending: false, nullsFirst: false });
-      } else if (activeTab === 'overdue') {
+      } else if (activeTab === 'overdue' || activeTab.startsWith('cat_')) {
+        // Overdue + funnel categories: newest-due first, so within the
+        // 1000-row fetch cap we keep the freshest, most-actionable tasks
+        // rather than ancient migration leftovers. For categories this also
+        // keeps the list in sync with the (uncapped) category counts.
         q = q.order('due_date', { ascending: false, nullsFirst: false });
       } else {
         q = q.order('due_date', { ascending: true, nullsFirst: false });
@@ -470,7 +498,14 @@ export default function SalesTasks() {
   // tab always shows assignment tasks regardless of the toggle.
   const scopedTasks = useMemo(() => {
     let tasks = ownedTasks;
-    if (!showStale) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
+    // Stale (>30d overdue) tasks are migration noise on the time buckets, so
+    // they're hidden there by default. But the funnel-category queues
+    // (cat_*) are an explicit "work these leads now" request — a new-lead
+    // callback must show up there regardless of age, or the card says 3
+    // while the list shows 0. So skip stale-hiding for category tabs; their
+    // counts (categoryCounts) don't apply it either, keeping the two equal.
+    const isCategoryTab = activeTab.startsWith('cat_');
+    if (!showStale && !isCategoryTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
     if (activeTab === 'assignment') {
       tasks = tasks.filter(isAssignmentTask);
     } else if (!showAssignmentTasks) {
@@ -1031,7 +1066,7 @@ export default function SalesTasks() {
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
           { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
-          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
+          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2 },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
         ].map((tile) => {
           const target = tile.asTab || tile.id;
