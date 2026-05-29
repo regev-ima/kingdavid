@@ -1034,7 +1034,10 @@ export default function SalesTasks() {
           </div>
         </div>
         <div className="flex items-center gap-2.5">
-          {/* View toggle: list ↔ day grid */}
+          {/* View switcher (list / day / week / month) — a VIEW, not a time
+              filter. Labelled "תצוגה" so it isn't confused with the "טווח
+              זמן" chips below, which share the שבוע/חודש wording. */}
+          <span className="text-xs font-semibold text-muted-foreground hidden sm:inline">תצוגה</span>
           <div className="inline-flex h-9 rounded-lg border border-border bg-card p-0.5 text-xs font-medium">
             <button
               type="button"
