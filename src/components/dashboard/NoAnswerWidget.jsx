@@ -12,9 +12,11 @@ import {
 import { PhoneOff } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { format } from '@/lib/safe-date-fns';
 
 export default function NoAnswerWidget({ callLogs, whatsappLogs, leads }) {
+  const { openLead } = useLeadModal();
   const noAnswerCalls = callLogs.filter(log => 
     log.call_result === 'no_answer' || log.call_result === 'busy'
   );
@@ -89,9 +91,7 @@ export default function NoAnswerWidget({ callLogs, whatsappLogs, leads }) {
                       )}
                     </TableCell>
                     <TableCell className="py-2">
-                      <Link to={createPageUrl('LeadDetails') + `?id=${item.lead.id}`}>
-                        <Button size="sm" variant="outline" className="h-7 text-xs">עקוב</Button>
-                      </Link>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openLead(item.lead.id)}>עקוב</Button>
                     </TableCell>
                   </TableRow>
                 ))}

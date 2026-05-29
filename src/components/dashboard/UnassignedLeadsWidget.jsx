@@ -13,6 +13,7 @@ import {
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { format, differenceInMinutes } from '@/lib/safe-date-fns';
 
 function getSLABadge(lead) {
@@ -28,6 +29,7 @@ function getSLABadge(lead) {
 }
 
 export default function UnassignedLeadsWidget({ leads }) {
+  const { openLead } = useLeadModal();
   return (
     <Card className="border-amber-200 bg-amber-50/30">
       <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -77,9 +79,7 @@ export default function UnassignedLeadsWidget({ leads }) {
                       {getSLABadge(lead)}
                     </TableCell>
                     <TableCell>
-                      <Link to={createPageUrl('LeadDetails') + `?id=${lead.id}`}>
-                        <Button size="sm" variant="outline">שייך</Button>
-                      </Link>
+                      <Button size="sm" variant="outline" onClick={() => openLead(lead.id)}>שייך</Button>
                     </TableCell>
                   </TableRow>
                 ))}

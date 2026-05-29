@@ -7,9 +7,11 @@ import {
 import { PhoneOff } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { format } from '@/lib/safe-date-fns';
 
 export default function NoAnswerFromCounters({ noAnswerCount, autoWhatsappCount, returnRate, recentNoAnswer }) {
+  const { openLead } = useLeadModal();
   const items = recentNoAnswer || [];
 
   return (
@@ -67,9 +69,7 @@ export default function NoAnswerFromCounters({ noAnswerCount, autoWhatsappCount,
                       )}
                     </TableCell>
                     <TableCell className="py-2">
-                      <Link to={createPageUrl('LeadDetails') + `?id=${item.lead_id}`}>
-                        <Button size="sm" variant="outline" className="h-7 text-xs">עקוב</Button>
-                      </Link>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openLead(item.lead_id)}>עקוב</Button>
                     </TableCell>
                   </TableRow>
                 ))}

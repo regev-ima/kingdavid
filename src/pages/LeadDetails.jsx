@@ -497,8 +497,19 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      {/* Header — name, status, SLA, mode toggle. In popup mode it
+          sticks to the top of the scrollable modal body so the
+          manager always sees which lead they're inside and can flip
+          the sales/service toggle no matter how far they've scrolled.
+          The negative margins extend the bar edge-to-edge of the
+          modal frame; pe-12 reserves space for the Radix close-X that
+          sits in the dialog's right corner. */}
+      <div className={
+        `flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4` +
+        (isModal
+          ? ' sticky top-0 z-20 -mt-10 -mx-6 px-6 pt-10 pb-3 pe-12 bg-card border-b border-border'
+          : '')
+      }>
         <div className="flex items-center gap-3">
           {isModal ? (
             <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
@@ -581,7 +592,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </Link>
       </div>
 
-      <div className="hidden lg:flex sticky top-16 z-20 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card">
+      {/* Action bar — mode toggle + חייג / משימה / הצעה. Sticky so
+          the rep keeps the main actions one click away while reading
+          the lead. In page mode it lives below the global page chrome
+          (top-16). In popup mode it stacks directly below the sticky
+          header inside the modal body (top-[68px]). */}
+      <div className={
+        `hidden lg:flex sticky z-10 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card ` +
+        (isModal ? 'top-[68px]' : 'top-16')
+      }>
         <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-1">
           <Button
             size="sm"

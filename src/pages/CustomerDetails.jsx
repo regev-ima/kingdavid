@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import { buildLeadsById, canViewCustomer, canEditPrimaryRep, canEditSecondaryRep
 import { createCustomerAuditLog } from '@/utils/auditLog';
 
 export default function CustomerDetails() {
+  const { openLead } = useLeadModal();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [isEditing, setIsEditing] = useState(false);
   const queryClient = useQueryClient();
@@ -271,9 +273,7 @@ export default function CustomerDetails() {
             </Button>
           )}
           {customer.lead_id && (
-            <Link to={createPageUrl('LeadDetails') + `?id=${customer.lead_id}`}>
-              <Button variant="outline">צפה בליד המקורי</Button>
-            </Link>
+            <Button variant="outline" onClick={() => openLead(customer.lead_id)}>צפה בליד המקורי</Button>
           )}
         </div>
       </div>

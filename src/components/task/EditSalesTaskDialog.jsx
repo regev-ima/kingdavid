@@ -12,6 +12,7 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, UserPlus, Download, ExternalLink } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
@@ -75,6 +76,7 @@ const NO_ANSWER_STATUSES = {
 export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUser: effectiveUserProp }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { openLead } = useLeadModal();
   const { hiddenStatuses } = useHiddenStatuses();
   const { effectiveUser: effectiveUserFromHook } = useEffectiveCurrentUser(isOpen);
   const effectiveUser = effectiveUserProp || effectiveUserFromHook;
@@ -820,13 +822,13 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
                     )}
                   </div>
                 </div>
-                <Link
-                  to={createPageUrl('LeadDetails') + `?id=${editingTask.lead_id}`}
-                  onClick={onClose}
-                  className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap"
+                <button
+                  type="button"
+                  onClick={() => { onClose(); openLead(editingTask.lead_id); }}
+                  className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap focus:outline-none focus:underline"
                 >
                   עבור לליד ←
-                </Link>
+                </button>
               </div>
 
               {/* SLA + שעת הליד - שורה בולטת */}

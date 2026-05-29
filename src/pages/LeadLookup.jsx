@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/api/supabaseClient';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,6 +40,7 @@ function useDebouncedValue(value, delay = 300) {
 
 export default function LeadLookup() {
   const navigate = useNavigate();
+  const { openLead } = useLeadModal();
   const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query.trim(), 300);
   const inputRef = useRef(null);
@@ -150,7 +152,7 @@ export default function LeadLookup() {
           </div>
         ) : (
           results.map((lead) => (
-            <LeadResultCard key={lead.id} lead={lead} onOpen={() => navigate(createPageUrl('LeadDetails') + `?id=${lead.id}`)} />
+            <LeadResultCard key={lead.id} lead={lead} onOpen={() => openLead(lead.id)} />
           ))
         )}
       </div>

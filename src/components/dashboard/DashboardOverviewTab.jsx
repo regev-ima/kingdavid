@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import KPICard from '@/components/shared/KPICard';
 import ExpiringQuotesFromCounters from '@/components/dashboard/ExpiringQuotesFromCounters.jsx';
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import { he } from "date-fns/locale";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function DashboardOverviewTab({ stats, newUnassignedLeads }) {
+  const { openLead } = useLeadModal();
   const leadsCount = stats?.leads_count || 0;
   const wonLeads = stats?.marketing?.won_leads_count || 0;
   const conversionRate = leadsCount > 0 ? Math.round((wonLeads / leadsCount) * 100) : 0;
@@ -189,9 +191,13 @@ export default function DashboardOverviewTab({ stats, newUnassignedLeads }) {
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <Link to={createPageUrl('LeadDetails') + `?id=${lead.id}`}>
+                        <button
+                          type="button"
+                          onClick={() => openLead(lead.id)}
+                          className="block text-right focus:outline-none"
+                        >
                           <p className="font-medium text-sm text-foreground hover:text-primary truncate">{lead.full_name}</p>
-                        </Link>
+                        </button>
                         <p className="text-xs text-muted-foreground/70 truncate">{lead.phone} {lead.source ? `· ${lead.source}` : ''}</p>
                       </div>
                       <span className="shrink-0 text-xs text-muted-foreground/70 hidden sm:block">

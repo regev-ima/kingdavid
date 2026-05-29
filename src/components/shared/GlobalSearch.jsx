@@ -12,6 +12,7 @@ import { Search, User, FileText, ShoppingCart, Headphones, UserPlus } from "luci
 import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
+import { useLeadModal } from "@/components/lead/LeadModalContext";
 import { getUserScope, USER_SCOPES } from "@/lib/rbac";
 import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 
@@ -28,6 +29,7 @@ function normalizePhoneForSearch(raw) {
 }
 
 export default function GlobalSearch({ isOpen, onClose, user }) {
+  const { openLead } = useLeadModal();
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
 
@@ -158,15 +160,15 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
               </h3>
               <div className="space-y-2">
                 {leads.map(lead => (
-                  <Link
+                  <button
+                    type="button"
                     key={lead.id}
-                    to={createPageUrl('LeadDetails') + `?id=${lead.id}`}
-                    onClick={onClose}
-                    className="block p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                    onClick={() => { onClose(); openLead(lead.id); }}
+                    className="w-full text-right block p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     <p className="font-medium">{lead.full_name}</p>
                     <p className="text-sm text-muted-foreground">{lead.phone} • {lead.email}</p>
-                  </Link>
+                  </button>
                 ))}
               </div>
             </div>

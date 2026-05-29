@@ -14,6 +14,7 @@ import {
 import { Phone, MessageCircle, UserPlus, ArrowLeft } from "lucide-react";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { format, differenceInMinutes } from '@/lib/safe-date-fns';
 
 function getSLABadge(lead) {
@@ -33,6 +34,7 @@ function getSLABadge(lead) {
 }
 
 export default function TodayLeadsWidget({ leads, users = [] }) {
+  const { openLead } = useLeadModal();
   const handleCall = (phone) => {
     window.open(`tel:${phone}`, '_self');
   };
@@ -78,13 +80,14 @@ export default function TodayLeadsWidget({ leads, users = [] }) {
                         {format(new Date(lead.created_date), 'HH:mm')}
                       </TableCell>
                       <TableCell>
-                        <Link 
-                          to={createPageUrl('LeadDetails') + `?id=${lead.id}`}
-                          className="hover:underline"
+                        <button
+                          type="button"
+                          onClick={() => openLead(lead.id)}
+                          className="text-right hover:underline focus:outline-none focus:underline"
                         >
                           <p className="font-medium">{lead.full_name}</p>
                           <p className="text-xs text-muted-foreground">{lead.phone}</p>
-                        </Link>
+                        </button>
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">{lead.source || '-'}</span>
