@@ -97,6 +97,13 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  // Gating dialog for "משימה חדשה" on unassigned leads — instead of
+  // letting the rep open a task on a lead that has no owner (and then
+  // wondering who's supposed to do it), we intercept and require an
+  // assignment first. Holds the candidate rep email until confirmed.
+  const [assignBeforeTaskRep, setAssignBeforeTaskRep] = useState('');
+  const [showAssignBeforeTask, setShowAssignBeforeTask] = useState(false);
+  const [isAssigningBeforeTask, setIsAssigningBeforeTask] = useState(false);
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
   // The old `workMode` state (sales vs service) was removed when we
@@ -346,7 +353,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       }
       case 'new_task':
       case 'empty':
-        setShowAddTaskDialog(true);
+        requestAddTask();
         return;
       default:
         return;
@@ -453,6 +460,37 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       queryClient.invalidateQueries(['leadActivityLogs', leadId]);
     } catch (error) {
       // Assignment error - non-critical
+    }
+  };
+
+  // Single entry point for "open the add-task dialog". If the lead
+  // already has a primary rep, opens the dialog directly. If not,
+  // intercepts with the assign-first gate so a task can never be
+  // attached to an owner-less lead. Every "משימה חדשה" trigger in
+  // this screen goes through here.
+  const requestAddTask = () => {
+    if (lead?.rep1) {
+      setShowAddTaskDialog(true);
+    } else {
+      setAssignBeforeTaskRep('');
+      setShowAssignBeforeTask(true);
+    }
+  };
+
+  // Confirm handler for the assign-first gate: assigns the chosen rep
+  // via the existing full quick-assign flow (which also creates the
+  // standard call-back task and audit log), then immediately opens
+  // the add-task dialog so the user lands exactly where they tried
+  // to go in the first place — no second click required.
+  const confirmAssignThenAddTask = async () => {
+    if (!assignBeforeTaskRep || isAssigningBeforeTask) return;
+    setIsAssigningBeforeTask(true);
+    try {
+      await handleQuickAssignRep1(assignBeforeTaskRep);
+      setShowAssignBeforeTask(false);
+      setShowAddTaskDialog(true);
+    } finally {
+      setIsAssigningBeforeTask(false);
     }
   };
 
@@ -566,7 +604,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setShowAddTaskDialog(true)}
+          onClick={requestAddTask}
           className="flex-1 min-w-[120px] justify-center h-9 text-xs"
         >
           <Clock className="h-3.5 w-3.5 me-1.5" />
@@ -605,7 +643,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <Phone className="h-3.5 w-3.5 me-1" />
             חייג
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowAddTaskDialog(true)} className="h-8 text-xs">
+          <Button variant="outline" size="sm" onClick={requestAddTask} className="h-8 text-xs">
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
           </Button>
@@ -815,7 +853,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 היסטוריית משימות ({historicalTasks.length})
               </CardTitle>
-              <Button variant="outline" size="sm" onClick={() => setShowAddTaskDialog(true)}>
+              <Button variant="outline" size="sm" onClick={requestAddTask}>
                 <Plus className="h-4 w-4 me-2" />
                 הוסף משימה
               </Button>
@@ -824,7 +862,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               {historicalTasks.length === 0 ? (
                 <div className="px-4 py-5 flex items-center justify-between gap-3 text-sm">
                   <span className="text-muted-foreground">אין משימות סגורות/היסטוריות כרגע.</span>
-                  <Button size="sm" variant="outline" onClick={() => setShowAddTaskDialog(true)}>
+                  <Button size="sm" variant="outline" onClick={requestAddTask}>
                     <Plus className="h-3.5 w-3.5 me-1" />
                     משימה חדשה
                   </Button>
@@ -1429,6 +1467,42 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         task={editingTask ? { ...editingTask, lead } : null}
         effectiveUser={effectiveUser}
       />
+
+      {/* Assign-before-task gate: blocks "משימה חדשה" on a lead that
+          has no primary rep. Forces the user to pick an owner first
+          (via the existing handleQuickAssignRep1 flow), then jumps
+          straight into the task dialog so the original intent
+          isn't lost. */}
+      <Dialog open={showAssignBeforeTask} onOpenChange={(open) => { if (!open) setShowAssignBeforeTask(false); }}>
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">נדרש שיוך לפני פתיחת משימה</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-3 py-2 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span>לא ניתן לפתוח משימה לליד שלא משויך. בחר נציג ראשי לשיוך, והמשימה תיפתח מיד אחרי השיוך.</span>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
+              <Select value={assignBeforeTaskRep} onValueChange={setAssignBeforeTaskRep}>
+                <SelectTrigger className="h-10"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                <SelectContent>
+                  {salesReps.map((rep) => (
+                    <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setShowAssignBeforeTask(false)} disabled={isAssigningBeforeTask}>ביטול</Button>
+              <Button onClick={confirmAssignThenAddTask} disabled={!assignBeforeTaskRep || isAssigningBeforeTask}>
+                {isAssigningBeforeTask ? 'משייך…' : 'שייך ופתח משימה'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* No-answer callback scheduling dialog */}
       <Dialog open={!!noAnswerFlow} onOpenChange={(open) => {
