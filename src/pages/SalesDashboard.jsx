@@ -221,7 +221,7 @@ export default function SalesDashboard() {
       return;
     }
     if (!canAccessSalesWorkspace(effectiveUser)) {
-      navigate(createPageUrl('Dashboard'));
+      navigate(createPageUrl('Dashboard2'));
     }
   }, [effectiveUser, navigate]);
 

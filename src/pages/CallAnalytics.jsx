@@ -61,7 +61,7 @@ export default function CallAnalytics() {
         const effectiveUser = getEffectiveUser(userData);
         // RBAC: Only ADMIN can access CallAnalytics
         if (!canAccessAdminOnly(effectiveUser)) {
-          navigate(createPageUrl('Dashboard'));
+          navigate(createPageUrl('Dashboard2'));
         }
       } catch (err) {}
     };
