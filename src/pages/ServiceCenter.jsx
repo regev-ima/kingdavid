@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
@@ -8,8 +8,9 @@ import FilterBar from '@/components/shared/FilterBar';
 import KPICard from '@/components/shared/KPICard';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Headphones, AlertTriangle, CheckCircle, MessageSquare, FileSpreadsheet, Image as ImageIcon, UserPlus } from 'lucide-react';
-import { format } from '@/lib/safe-date-fns';
+import { Plus, Headphones, AlertTriangle, CheckCircle, MessageSquare, FileSpreadsheet, Image as ImageIcon, UserPlus, Sparkles, Loader2 } from 'lucide-react';
+import { format, addHours } from '@/lib/safe-date-fns';
+import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessServiceWorkspace, canManageService, isAdmin, isFactoryUser, matchesUserIdentifier } from '@/lib/rbac';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -21,6 +22,8 @@ import {
   SOURCE_CHIP,
   PRIORITY_LABELS,
   OPEN_SERVICE_STATUSES,
+  SLA_HOURS,
+  nextTicketNumber,
 } from '@/constants/serviceOptions';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import SendServiceSmsDialog from '@/components/service/SendServiceSmsDialog';
@@ -38,6 +41,7 @@ const isOverdue = (t) => t.sla_due_date && new Date(t.sla_due_date) < new Date()
 
 export default function ServiceCenter() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const canAccess = canAccessServiceWorkspace(effectiveUser);
   const canManage = canManageService(effectiveUser);
@@ -62,6 +66,56 @@ export default function ServiceCenter() {
     enabled: canAccess,
   });
 
+  // Seed a handful of demo tickets so the area can be exercised end-to-end.
+  // Demo rows are prefixed "דמו —" so they're easy to spot and delete later.
+  const seedMutation = useMutation({
+    mutationFn: async () => {
+      const recent = await base44.entities.SupportTicket.list('-created_date', 1);
+      let next = recent[0]?.ticket_number;
+      const num = () => (next = nextTicketNumber(next));
+      const samples = [
+        { customer_name: 'דמו — דנה כהן', customer_phone: '0501112233', subject: 'דמו: שקיעה במזרן', request_type: 'warranty', warranty_years: 10, complaint_age_months: 36, priority: 'high', status: 'open', source: 'agent_manual', product_name: 'מזרן קפיצים מבודדים' },
+        { customer_name: 'דמו — יוסי לוי', customer_phone: '0502223344', subject: 'דמו: בעיה בתוך 30 יום', request_type: 'trial_30d', priority: 'high', status: 'in_progress', source: 'customer_self', opened_by_customer: true, product_name: 'מזרן ויסקו' },
+        { customer_name: 'דמו — שיר אבני', customer_phone: '0503334455', subject: 'דמו: פנייה כללית', request_type: 'general', priority: 'medium', status: 'waiting_customer', source: 'agent_manual' },
+        { customer_name: 'דמו — אבי מזרחי', customer_phone: '0504445566', subject: 'דמו: ממתין למילוי הלקוח', priority: 'medium', status: 'open', source: 'customer_self', public_status: 'pending' },
+        { customer_name: 'דמו — רונית בר', customer_phone: '0505556677', subject: 'דמו: טופל ונסגר', request_type: 'warranty', priority: 'low', status: 'resolved', source: 'imported' },
+      ];
+      for (const s of samples) {
+        const priority = s.priority || 'medium';
+        await base44.entities.SupportTicket.create({
+          ticket_number: num(),
+          customer_name: s.customer_name,
+          customer_phone: s.customer_phone,
+          subject: s.subject,
+          description: 'רשומת דמו לבדיקת מרכז השירות.',
+          category: s.request_type === 'trial_30d' ? 'trial' : s.request_type === 'warranty' ? 'warranty' : 'other',
+          request_type: s.request_type || null,
+          priority,
+          status: s.status,
+          source: s.source,
+          opened_by_customer: !!s.opened_by_customer,
+          public_status: s.public_status || null,
+          public_token: s.public_status === 'pending' && crypto?.randomUUID ? crypto.randomUUID() : null,
+          product_name: s.product_name || '',
+          warranty_years: s.warranty_years || null,
+          complaint_age_months: s.complaint_age_months || null,
+          assigned_to: effectiveUser?.email || null,
+          created_by_rep: effectiveUser?.email || null,
+          created_by_name: effectiveUser?.full_name || null,
+          sla_due_date: addHours(new Date(), SLA_HOURS[priority] || 48).toISOString(),
+        });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
+      toast.success('נוצרו 5 פניות דמה');
+    },
+    onError: (err) => {
+      console.error('[ServiceCenter] seed demo failed', err);
+      toast.error('יצירת נתוני הדמה נכשלה');
+    },
+  });
+
   // Scope: managers/admin/factory see everything; a plain rep sees tickets
   // assigned to them or that they opened.
   const scoped = useMemo(() => {
@@ -83,6 +137,8 @@ export default function ServiceCenter() {
     else if (activeTab === 'customer') list = list.filter((t) => t.opened_by_customer || t.source === 'customer_self');
     else if (activeTab === 'overdue') list = list.filter(isOverdue);
     else if (activeTab === 'imported') list = list.filter((t) => t.source === 'imported');
+    else if (activeTab === 'pending') list = list.filter((t) => t.public_status === 'pending');
+    else if (activeTab === 'resolved_today') list = list.filter((t) => ['resolved', 'closed'].includes(t.status) && t.updated_date && new Date(t.updated_date).toDateString() === new Date().toDateString());
 
     const s = filters.search.trim().toLowerCase();
     if (s) {
@@ -197,6 +253,11 @@ export default function ServiceCenter() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canManage && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending}>
+              {seedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} נתוני דמה
+            </Button>
+          )}
+          {canManage && (
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
               <FileSpreadsheet className="h-4 w-4" /> ייבוא
             </Button>
@@ -210,12 +271,19 @@ export default function ServiceCenter() {
         </div>
       </div>
 
+      {/* KPI tiles double as quick filters — click to filter the list below. */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KPICard title="פניות פתוחות" value={counts.open} icon={Headphones} color="blue" />
-        <KPICard title="חריגת SLA" value={counts.overdue} icon={AlertTriangle} color="red" />
-        <KPICard title="נפתחו ע״י לקוח" value={counts.customer} icon={UserPlus} color="violet" />
-        <KPICard title="ממתין למילוי לקוח" value={counts.pending} icon={MessageSquare} color="amber" />
-        <KPICard title="נפתרו היום" value={counts.resolvedToday} icon={CheckCircle} color="emerald" />
+        {[
+          { tab: 'open', title: 'פניות פתוחות', value: counts.open, icon: Headphones, color: 'blue' },
+          { tab: 'overdue', title: 'חריגת SLA', value: counts.overdue, icon: AlertTriangle, color: 'red' },
+          { tab: 'customer', title: 'נפתחו ע״י לקוח', value: counts.customer, icon: UserPlus, color: 'violet' },
+          { tab: 'pending', title: 'ממתין למילוי לקוח', value: counts.pending, icon: MessageSquare, color: 'amber' },
+          { tab: 'resolved_today', title: 'נפתרו היום', value: counts.resolvedToday, icon: CheckCircle, color: 'emerald' },
+        ].map((tile) => (
+          <div key={tile.tab} className={`rounded-xl transition ${activeTab === tile.tab ? 'ring-2 ring-primary ring-offset-2' : ''}`}>
+            <KPICard title={tile.title} value={tile.value} icon={tile.icon} color={tile.color} onClick={() => setActiveTab(tile.tab)} />
+          </div>
+        ))}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
