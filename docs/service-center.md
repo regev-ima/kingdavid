@@ -20,10 +20,12 @@
    `canOpenServiceTicket` מתיר לכל נציג מכירות/מפעל/אדמין.
 2. **צירוף תמונות של בעיה במוצר** — `ServicePhotoUploader` (דחיסה + העלאה),
    נשמר ב-`support_tickets.photo_urls`. זמין בדיאלוג הנציג וגם בטופס הציבורי.
-3. **ייבוא פניות והזמנות מהעבר + תג "הזמנה מיובאת"** — `ImportServiceData`
-   (CSV/Excel). הזמנות מיובאות מקבלות `is_imported=true` + `tags=['הזמנה מיובאת']`,
-   והתג מוצג ב-`/Orders` וב-`/OrderDetails`. פניות מיובאות יכולות להתקשר
-   להזמנה לפי מספר הזמנה.
+3. **ייבוא מהעבר (CSV/Excel)** — מפוצל לשניים:
+   - **הזמנות** מיובאות מאזור **הגדרות → ייבוא נתונים** (`ImportOrders`).
+     מקבלות `is_imported=true` + `tags=['הזמנה מיובאת']`, והתג מוצג ב-`/Orders`
+     וב-`/OrderDetails`.
+   - **פניות שירות** מיובאות מתוך **מרכז השירות** (`ImportServiceData`), וניתן
+     לקשר כל פנייה להזמנה לפי מספר הזמנה.
 4. **שיוך משימת שירות לנציג** — בעל הרשאת ניהול שירות (נתנאל) מ-`ServiceRequestDetails`
    פותח `AssignServiceTaskDialog` ויוצר `SalesTask` עם `task_type='service'`.
    המשימה מופיעה אצל הנציג (מתן) ב-`/SalesTasks` **בצבע רוז ייחודי** (אייקון
@@ -60,7 +62,9 @@ src/components/service/ServicePhotoUploader.jsx          העלאת תמונות
 src/components/service/OpenServiceTicketDialog.jsx       פתיחת פנייה ע״י נציג
 src/components/service/AssignServiceTaskDialog.jsx       שיוך משימת שירות לנציג
 src/components/service/SendServiceSmsDialog.jsx          שליחת קישור SMS ללקוח
-src/components/service/ImportServiceData.jsx             ייבוא CSV/Excel
+src/components/service/ImportServiceData.jsx             ייבוא פניות שירות (CSV/Excel)
+src/components/service/ImportOrders.jsx                  ייבוא הזמנות (CSV/Excel) — מ-Settings
+src/utils/importFile.js                                  פענוח CSV/Excel משותף
 src/pages/ServiceCenter.jsx                              רשימת/דשבורד מרכז השירות
 src/pages/ServiceRequestDetails.jsx                      מסך פרטי פנייה
 src/pages/ServiceRequestPublic.jsx                       טופס ציבורי (ללא התחברות)

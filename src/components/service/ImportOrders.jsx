@@ -9,26 +9,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, FileSpreadsheet, AlertCircle, CheckCircle2, Upload } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { nextTicketNumber } from '@/constants/serviceOptions';
+import { IMPORTED_ORDER_TAG } from '@/constants/serviceOptions';
 import { readFileToRows, parseImportDate } from '@/utils/importFile';
 
-// Import historical SERVICE TICKETS from a CSV/Excel file. (Order import lives
-// in Settings.) A ticket can be linked to an existing order by order number.
+// Import historical ORDERS from a CSV/Excel file. Lives in Settings (admin
+// data tools). Imported orders are flagged is_imported + tagged
+// "הזמנה מיובאת" so service tickets can later be linked to them by order number.
 const FIELDS = [
-  { key: 'ticket_number', label: 'מספר פנייה' },
-  { key: 'order_number', label: 'מספר הזמנה לקישור' },
+  { key: 'order_number', label: 'מספר הזמנה *' },
   { key: 'customer_name', label: 'שם לקוח *' },
   { key: 'customer_phone', label: 'טלפון' },
   { key: 'customer_email', label: 'אימייל' },
-  { key: 'subject', label: 'נושא *' },
-  { key: 'description', label: 'תיאור' },
-  { key: 'request_type', label: 'סוג פנייה (general/trial_30d/warranty)' },
-  { key: 'status', label: 'סטטוס (open/in_progress/resolved/closed)' },
-  { key: 'product_name', label: 'מוצר' },
-  { key: 'created_date', label: 'תאריך פתיחה (YYYY-MM-DD)' },
+  { key: 'total', label: 'סכום' },
+  { key: 'order_date', label: 'תאריך הזמנה (YYYY-MM-DD)' },
+  { key: 'product', label: 'מוצר / פריטים' },
+  { key: 'notes_sales', label: 'הערות' },
 ];
 
-export default function ImportServiceData({ open, onOpenChange }) {
+export default function ImportOrders({ open, onOpenChange }) {
   const queryClient = useQueryClient();
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
@@ -53,7 +51,7 @@ export default function ImportServiceData({ open, onOpenChange }) {
       setHeaders(allRows[0].map((h) => String(h)));
       setRows(allRows.slice(1));
     } catch (err) {
-      console.error('[ImportServiceData] parse failed', err);
+      console.error('[ImportOrders] parse failed', err);
       setHeaders([]); setRows([]);
     }
   };
@@ -66,38 +64,30 @@ export default function ImportServiceData({ open, onOpenChange }) {
 
   const importMutation = useMutation({
     mutationFn: async () => {
-      const results = { created: 0, linked: 0, failed: 0, errors: [] };
+      const batchId = `import_${Date.now()}`;
+      const results = { created: 0, failed: 0, errors: [] };
       setProgress({ current: 0, total: rows.length });
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         try {
-          const name = valueOf(row, 'customer_name');
-          const subject = valueOf(row, 'subject');
-          if (!name && !subject) { results.failed++; continue; }
-          // Link to an existing order by order number, if provided.
-          let orderId = null;
           const orderNumber = valueOf(row, 'order_number');
-          if (orderNumber) {
-            const matches = await base44.entities.Order.filter({ order_number: orderNumber }, null, 1);
-            if (matches?.[0]) { orderId = matches[0].id; results.linked++; }
-          }
-          const recent = await base44.entities.SupportTicket.list('-created_date', 1);
-          await base44.entities.SupportTicket.create({
-            ticket_number: valueOf(row, 'ticket_number') || nextTicketNumber(recent[0]?.ticket_number),
-            order_id: orderId,
+          const name = valueOf(row, 'customer_name');
+          if (!orderNumber && !name) { results.failed++; continue; }
+          const total = Number(String(valueOf(row, 'total')).replace(/[^\d.]/g, '')) || 0;
+          await base44.entities.Order.create({
+            order_number: orderNumber || `IMP-${batchId}-${i}`,
             customer_name: name,
             customer_phone: valueOf(row, 'customer_phone'),
             customer_email: valueOf(row, 'customer_email'),
-            subject: subject || 'פנייה מיובאת',
-            description: valueOf(row, 'description'),
-            request_type: valueOf(row, 'request_type') || null,
-            category: 'other',
-            priority: 'medium',
-            status: valueOf(row, 'status') || 'open',
-            product_name: valueOf(row, 'product_name'),
-            created_date: parseImportDate(valueOf(row, 'created_date')) || undefined,
-            source: 'imported',
-            opened_by_customer: false,
+            total,
+            subtotal: total,
+            items: [],
+            created_date: parseImportDate(valueOf(row, 'order_date')) || undefined,
+            notes_sales: [valueOf(row, 'product'), valueOf(row, 'notes_sales')].filter(Boolean).join(' — '),
+            is_imported: true,
+            import_source: 'csv',
+            import_batch_id: batchId,
+            tags: [IMPORTED_ORDER_TAG],
           });
           results.created++;
         } catch (err) {
@@ -110,11 +100,11 @@ export default function ImportServiceData({ open, onOpenChange }) {
     },
     onSuccess: (results) => {
       setImportResult(results);
-      queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
 
-  const requiredMapped = ['customer_name', 'subject'].every((k) => {
+  const requiredMapped = ['order_number', 'customer_name'].every((k) => {
     const v = mapping[k];
     return v !== undefined && v !== null && v !== '';
   });
@@ -127,7 +117,7 @@ export default function ImportServiceData({ open, onOpenChange }) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
-            ייבוא פניות שירות מ-CSV / Excel
+            ייבוא הזמנות מ-CSV / Excel
           </DialogTitle>
         </DialogHeader>
 
@@ -136,7 +126,7 @@ export default function ImportServiceData({ open, onOpenChange }) {
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-sm">
-                ייבוא פניות שירות מהעבר. ניתן לקשר כל פנייה להזמנה קיימת לפי מספר הזמנה (הזמנות מיובאות מאזור ההגדרות).
+                ההזמנות יסומנו אוטומטית בתג <strong>״{IMPORTED_ORDER_TAG}״</strong>, וניתן יהיה לקשר אליהן פניות שירות לפי מספר ההזמנה.
               </AlertDescription>
             </Alert>
 
@@ -187,7 +177,7 @@ export default function ImportServiceData({ open, onOpenChange }) {
                 disabled={headers.length === 0 || rows.length === 0 || !requiredMapped || importMutation.isPending}
               >
                 {importMutation.isPending ? <Loader2 className="h-4 w-4 me-2 animate-spin" /> : <Upload className="h-4 w-4 me-2" />}
-                ייבא פניות
+                ייבא הזמנות
               </Button>
             </div>
           </div>
@@ -196,7 +186,7 @@ export default function ImportServiceData({ open, onOpenChange }) {
             <Alert className={importResult.created > 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
               {importResult.created > 0 ? <CheckCircle2 className="h-4 w-4 text-green-600" /> : <AlertCircle className="h-4 w-4 text-red-600" />}
               <AlertDescription>
-                <p className="font-medium">נוצרו {importResult.created} פניות{importResult.linked ? `, קושרו ${importResult.linked} להזמנות` : ''}{importResult.failed ? `, נכשלו ${importResult.failed}` : ''}.</p>
+                <p className="font-medium">נוצרו {importResult.created} הזמנות{importResult.failed ? `, נכשלו ${importResult.failed}` : ''}.</p>
               </AlertDescription>
             </Alert>
             {importResult.errors?.length > 0 && (

@@ -133,3 +133,6 @@ export function nextTicketNumber(lastTicketNumber) {
   const lastNum = parseInt(String(lastTicketNumber || '').replace(/\D/g, '') || '1000', 10);
   return `TKT${lastNum + 1}`;
 }
+
+// Tag stamped on orders brought in through the import (shown in /Orders + /OrderDetails).
+export const IMPORTED_ORDER_TAG = 'הזמנה מיובאת';

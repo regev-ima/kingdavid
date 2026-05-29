@@ -329,7 +329,7 @@ export default function ServiceCenter() {
           )}
           {canManage && (
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
-              <FileSpreadsheet className="h-4 w-4" /> ייבוא
+              <FileSpreadsheet className="h-4 w-4" /> ייבוא פניות
             </Button>
           )}
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowSmsDialog(true)}>

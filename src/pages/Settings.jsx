@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2 } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -20,11 +20,13 @@ import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import UserAvatar from "@/components/shared/UserAvatar";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
+import ImportOrders from '@/components/service/ImportOrders';
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
   const [user, setUser] = useState(null);
   const [profileData, setProfileData] = useState({ full_name: '' });
+  const [showImportOrders, setShowImportOrders] = useState(false);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -94,6 +96,12 @@ export default function Settings() {
             <TabsTrigger value="statuses" className="flex items-center gap-2">
               <ListChecks className="h-4 w-4" />
               סטטוסים
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="import" className="flex items-center gap-2">
+              <FileSpreadsheet className="h-4 w-4" />
+              ייבוא נתונים
             </TabsTrigger>
           )}
         </TabsList>
@@ -318,7 +326,32 @@ export default function Settings() {
             <StatusManagement />
           </TabsContent>
         )}
+
+        {isAdmin && (
+          <TabsContent value="import" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5" />
+                  ייבוא הזמנות מהעבר
+                </CardTitle>
+                <CardDescription>
+                  ייבוא הזמנות ישנות מקובץ CSV / Excel. ההזמנות יסומנו בתג ״הזמנה מיובאת״,
+                  וניתן יהיה לקשר אליהן פניות שירות לפי מספר ההזמנה.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button onClick={() => setShowImportOrders(true)} className="gap-2">
+                  <Upload className="h-4 w-4" />
+                  ייבוא הזמנות
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
+
+      {isAdmin && <ImportOrders open={showImportOrders} onOpenChange={setShowImportOrders} />}
     </div>
   );
 }
