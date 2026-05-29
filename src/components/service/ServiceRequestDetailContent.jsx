@@ -152,7 +152,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
   const isOverdueSla = ticket.sla_due_date && new Date(ticket.sla_due_date) < new Date() && !['resolved', 'closed'].includes(ticket.status);
 
   return (
-    <div className="space-y-4" dir="rtl">
+    <div className="space-y-5 text-right" dir="rtl">
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="flex items-start gap-2 pe-8">
         {!onClose && (
@@ -171,13 +171,13 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
       </div>
 
-      {/* ── Toolbar: status + meta (right) · actions (left) ────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground">סטטוס</span>
+      {/* ── Toolbar: status + meta, then actions — all right-aligned ─ */}
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 space-y-3.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">סטטוס</span>
             <Select value={ticket.status} onValueChange={changeStatus}>
-              <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {SERVICE_STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
@@ -185,7 +185,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
             {updateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </div>
           <span className="h-5 w-px bg-border hidden sm:block" />
-          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">עדיפות: {PRIORITY_LABELS[ticket.priority] || ticket.priority}</span>
+          <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">עדיפות: {PRIORITY_LABELS[ticket.priority] || ticket.priority}</span>
           {ticket.sla_due_date && (
             <span className={`text-xs inline-flex items-center gap-1 ${isOverdueSla ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
               <Clock className="h-3 w-3" />SLA {format(new Date(ticket.sla_due_date), 'dd/MM HH:mm')}
@@ -195,7 +195,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
           <span className="text-xs text-muted-foreground">נציג: {ticket.assigned_to ? getRepDisplayName(ticket.assigned_to, users) : '—'}</span>
           {ticket.service_task_id && <span className="text-xs text-emerald-600">✓ שויכה משימה</span>}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowSms(true)}>
             <MessageSquare className="h-4 w-4" /> שלח SMS ללקוח
           </Button>
@@ -220,8 +220,8 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </TabsList>
 
         {/* Details */}
-        <TabsContent value="details" className="mt-4 space-y-4">
-          <div className="rounded-xl border border-border p-4">
+        <TabsContent value="details" className="mt-5 space-y-5">
+          <div className="rounded-xl border border-border p-5">
             <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
             <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
               <Field icon={User} label="שם">{ticket.customer_name}</Field>
@@ -244,14 +244,14 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
           </div>
 
           {ticket.description && (
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border p-5">
               <p className="text-xs font-semibold text-muted-foreground mb-1.5">תיאור הבעיה</p>
               <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
             </div>
           )}
 
           {Object.keys(answers).length > 0 && (
-            <div className="rounded-xl border border-border p-4">
+            <div className="rounded-xl border border-border p-5">
               <p className="text-xs font-semibold text-muted-foreground mb-2">שאלות אבחון</p>
               <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
                 {Object.entries(answers).map(([k, v]) => v ? (
@@ -280,7 +280,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </TabsContent>
 
         {/* Photos */}
-        <TabsContent value="photos" className="mt-4 space-y-3">
+        <TabsContent value="photos" className="mt-5 space-y-4">
           <p className="text-sm text-muted-foreground">תמונות של התלונה / הבעיה במוצר. ניתן לצרף תמונות נוספות.</p>
           {photos.length > 0 && (
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
@@ -297,7 +297,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </TabsContent>
 
         {/* Timeline */}
-        <TabsContent value="timeline" className="mt-4 space-y-4">
+        <TabsContent value="timeline" className="mt-5 space-y-5">
           <div className="flex gap-2">
             <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="הוסף הערה / עדכון טיפול..." className="resize-none" />
             <Button onClick={addNote} disabled={!note.trim() || updateMutation.isPending}>הוסף</Button>
@@ -317,7 +317,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
                       </span>
                       {i < timeline.length - 1 && <span className="w-px flex-1 bg-border my-1" />}
                     </div>
-                    <div className="flex-1 pb-4 pt-1">
+                    <div className="flex-1 pb-5 pt-1">
                       <p className="text-sm text-foreground whitespace-pre-wrap">{e.text}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {e.by ? `${e.by} · ` : ''}{e.at ? format(new Date(e.at), 'dd/MM/yyyy HH:mm') : ''}
