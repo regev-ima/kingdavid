@@ -65,6 +65,32 @@ export function canAccessReturnsWorkspace(user) {
   return canAccessSupportWorkspace(user);
 }
 
+// ── Service Center (מרכז שירות) ──────────────────────────────────────────
+// Every sales/factory/admin user can OPEN a service ticket for any order, but
+// opening a ticket never lets them edit the order itself (that stays gated by
+// canViewOrder / the order edit screens). This mirrors the brief: "כל נציג
+// יכול לפתוח פניית שירות... אבל לא רשאי לערוך את ההזמנה".
+export function canAccessServiceWorkspace(user) {
+  return canAccessSupportWorkspace(user);
+}
+
+export function canOpenServiceTicket(user) {
+  return canAccessSupportWorkspace(user);
+}
+
+// A grantable permission (users.can_manage_service) for the person who runs
+// the service desk — they can assign a service task to ANY rep and run the
+// imports. Admins always have it.
+export function canManageService(user) {
+  if (!user) return false;
+  return isAdmin(user) || user.can_manage_service === true;
+}
+
+// Assigning a service follow-up task to a rep is a manager action.
+export function canAssignServiceTask(user) {
+  return canManageService(user);
+}
+
 export function canAccessAdminOnly(user) {
   return isAdmin(user);
 }
