@@ -54,7 +54,6 @@ import CallAnalytics from './pages/CallAnalytics';
 import ClubSignups from './pages/ClubSignups';
 import CustomerDetails from './pages/CustomerDetails';
 import Customers from './pages/Customers';
-import Dashboard from './pages/Dashboard';
 import Dashboard2 from './pages/Dashboard2';
 import Deliveries from './pages/Deliveries';
 import EditQuote from './pages/EditQuote';
@@ -101,7 +100,6 @@ export const PAGES = {
     "ClubSignups": ClubSignups,
     "CustomerDetails": CustomerDetails,
     "Customers": Customers,
-    "Dashboard": Dashboard,
     "Dashboard2": Dashboard2,
     "Deliveries": Deliveries,
     "EditQuote": EditQuote,
@@ -141,7 +139,7 @@ export const PAGES = {
 }
 
 export const pagesConfig = {
-    mainPage: "Dashboard",
+    mainPage: "Dashboard2",
     Pages: PAGES,
     Layout: __Layout,
 };

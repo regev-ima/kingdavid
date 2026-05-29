@@ -51,7 +51,6 @@ import UserAvatar from "@/components/shared/UserAvatar";
 // Navigation organized by role priority
 const navigationByRole = {
   admin: [
-    { name: 'דשבורד כללי', href: 'Dashboard', icon: LayoutDashboard },
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
     { name: 'לידים', href: 'Leads', icon: Users },
     { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
@@ -275,7 +274,7 @@ function LayoutContent({ children, currentPageName }) {
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
           
-          <Link to={createPageUrl('Dashboard')} className="flex items-center gap-2">
+          <Link to={createPageUrl('Dashboard2')} className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-lg gradient-brand shadow-primary-glow flex items-center justify-center">
               <Crown className="h-5 w-5 text-white" />
             </div>
