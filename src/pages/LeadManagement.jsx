@@ -589,6 +589,58 @@ export default function LeadManagement() {
         </div>
       ) : null}
 
+      {/* Quick-pick selector — admin-only. Manual checkbox-by-checkbox
+          selection is painful when the manager wants to triage 50
+          fresh Facebook leads at once. These chips select the FIRST N
+          leads currently visible in the table (post-filter, post-sort)
+          so a manager can pick "30", drop them on a rep, and move on.
+          "הכל" picks every lead loaded in the table — note this is
+          the LOADED set (capped by `limit`), not the entire matching
+          count in the DB, so we show the working number next to it. */}
+      {isAdmin && leads.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-card">
+          <span className="text-xs font-medium text-muted-foreground">בחירה מהירה:</span>
+          {[5, 10, 20, 30, 50].map((n) => {
+            const available = Math.min(n, leads.length);
+            const disabled = available === 0;
+            return (
+              <Button
+                key={n}
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={disabled}
+                onClick={() => setSelectedLeads(leads.slice(0, available).map((l) => l.id))}
+                className="h-7 px-2.5 text-xs tabular-nums"
+              >
+                {n}
+              </Button>
+            );
+          })}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => setSelectedLeads(leads.map((l) => l.id))}
+            className="h-7 px-2.5 text-xs"
+          >
+            הכל ({fmt(leads.length)})
+          </Button>
+          {selectedLeads.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedLeads([])}
+              className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <XIcon className="h-3.5 w-3.5 me-1" />
+              נקה
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Lead table — focused management view: checkbox + name/phone +
           status + source + rep + date. Clicking a row opens the lead in
           a popup over this page: no navigation, so the scroll position,
