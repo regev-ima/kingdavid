@@ -161,6 +161,12 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
       queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
+      // Also refresh the lead-detail-scoped queries so the popup's
+      // "מה עושים עכשיו" / tasks history / activity log update the
+      // instant the new task is created, instead of showing stale
+      // data until the next page navigation.
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['leadActivityLogs'] });
       handleClose();
     },
   });
@@ -184,7 +190,11 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
 
   const handleSubmit = () => {
     if (!formData.lead_id) { setValidationError('יש לבחור ליד'); return; }
-    if (!formData.summary) { setValidationError('יש למלא תוכן משימה'); return; }
+    // Task content is intentionally optional — a rep should be able
+    // to drop a quick "call back" task without being forced to type
+    // anything. Previously this was required and reps were typing
+    // placeholder text ("חובה") just to get past validation, which
+    // poisoned the task list with junk.
     if (!formData.rep1) { setValidationError('יש לבחור נציג ראשי'); return; }
     setValidationError('');
     createTaskMutation.mutate({
@@ -326,7 +336,7 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
 
           {/* תוכן המשימה */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תוכן המשימה *</Label>
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תוכן המשימה</Label>
             <Textarea
               placeholder="הקלד את תוכן המשימה והפרטים כאן..."
               value={formData.summary}
