@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -96,7 +96,7 @@ const CATEGORY_META = {
   cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'rose',    desc: 'לידים שניסיתי להחזיר ולא ענו' },
   cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
   cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
-  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
+  cat_meeting:      { label: 'פגישות',                accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
 };
 
 // One glyph per funnel stage so the category grid reads like an icon
@@ -207,6 +207,9 @@ export default function SalesTasks() {
   }, [initialTask]);
 
   const [tasksPage, setTasksPage] = useState(0);
+  // Sentinel at the foot of the list; when it scrolls into view we reveal the
+  // next page automatically (infinite scroll) instead of a "load more" click.
+  const loadMoreRef = useRef(null);
   const TASKS_PER_PAGE = 50;
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
   const isAdmin = isAdminUser(effectiveUser);
@@ -467,7 +470,7 @@ export default function SalesTasks() {
     staleTime: 60_000,
     queryFn: async () => {
       let q = applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        base44.supabase.from('sales_tasks').select('lead_id, status, due_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
         { includeAssignment: includeAssignmentInCounts },
       ).limit(10_000);
       const { data, error } = await q;
@@ -476,24 +479,35 @@ export default function SalesTasks() {
     },
   });
 
-  // Category counts: prefer the task's own denormalised `status` mirror
-  // (it matches what the row in the table is showing), and fall back to
-  // the lead's current status from leadsById when the task didn't carry
-  // a mirror. Distinct by lead_id so a lead with three open tasks
-  // counts once.
+  // Category counts: one queue per funnel stage. We count TASKS (not distinct
+  // leads) so the number matches the rows the list shows when the card is
+  // clicked — a lead with two open tasks contributes two. Counts honour the
+  // active time-range window (and a specific date) so picking "השבוע" /
+  // "אתמול" recomputes them, exactly like the list. We read the task's own
+  // `status` mirror first (matches the row) and only fall back to leadsById
+  // when the mirror is missing.
   const categoryCounts = useMemo(() => {
     const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
-    const seen = new Set();
+    const win = timeRange && timeRange !== 'all' ? timeRangeWindow(timeRange, now) : null;
+    let dStart = null;
+    let dEnd = null;
+    if (dateFilter) {
+      const fd = new Date(dateFilter);
+      dStart = new Date(fd.getFullYear(), fd.getMonth(), fd.getDate());
+      dEnd = new Date(fd.getFullYear(), fd.getMonth(), fd.getDate(), 23, 59, 59);
+    }
     for (const row of openTaskRows) {
-      const lid = row?.lead_id;
-      if (!lid || seen.has(lid)) continue;
-      seen.add(lid);
-      const status = row.status || leadsById[lid]?.status;
+      if (win || dStart) {
+        const d = parseSalesTaskDate(row.due_date);
+        if (win && (!d || d < win.start || d > win.end)) continue;
+        if (dStart && (!d || d < dStart || d > dEnd)) continue;
+      }
+      const status = row.status || (row.lead_id ? leadsById[row.lead_id]?.status : null);
       const cat = CATEGORY_BY_LEAD_STATUS[status];
       if (cat) counts[cat] += 1;
     }
     return counts;
-  }, [openTaskRows, leadsById]);
+  }, [openTaskRows, leadsById, timeRange, dateFilter, now]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -647,6 +661,25 @@ export default function SalesTasks() {
     });
 
   const hasMoreTasks = paginatedTasks.length < totalFilteredCount;
+
+  // Infinite scroll: reveal the next page once the sentinel nears the
+  // viewport. Re-arming on paginatedTasks.length means that if the sentinel is
+  // still visible after a page loads (tall screen) it keeps filling until the
+  // viewport is covered, then waits for the next scroll. Pages are sliced from
+  // already-loaded rows, so revealing more is instant — no extra fetch.
+  useEffect(() => {
+    if (!hasMoreTasks) return undefined;
+    const el = loadMoreRef.current;
+    if (!el) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setTasksPage((p) => p + 1);
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreTasks, paginatedTasks.length]);
 
   // KPI numbers come straight from the server-side count query — no longer
   // capped by which rows happen to be loaded for the current tab. The
@@ -1506,18 +1539,13 @@ export default function SalesTasks() {
         )}
 
         {hasMoreTasks && (
-          <div className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card">
-            <span className="text-xs text-muted-foreground/70">
-              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setTasksPage(prev => prev + 1)}
-              className="h-8 text-xs border-primary/20 text-primary hover:bg-primary/5 gap-1.5"
-            >
-              טען {Math.min(TASKS_PER_PAGE, totalFilteredCount - paginatedTasks.length)} נוספות
-            </Button>
+          // Auto-loading sentinel: scrolling near it reveals the next page.
+          <div
+            ref={loadMoreRef}
+            className="flex items-center justify-center gap-2 px-4 py-4 text-xs text-muted-foreground/70"
+          >
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            טוען עוד… ({paginatedTasks.length} מתוך {totalFilteredCount})
           </div>
         )}
       </div>
