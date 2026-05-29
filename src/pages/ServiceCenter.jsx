@@ -1,8 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import KPICard from '@/components/shared/KPICard';
@@ -28,6 +26,7 @@ import {
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import SendServiceSmsDialog from '@/components/service/SendServiceSmsDialog';
 import ImportServiceData from '@/components/service/ImportServiceData';
+import ServiceRequestModal from '@/components/service/ServiceRequestModal';
 
 const PRIORITY_CHIP = {
   urgent: 'bg-red-100 text-red-700 ring-1 ring-red-200',
@@ -40,7 +39,6 @@ const isOpen = (t) => OPEN_SERVICE_STATUSES.includes(t.status) || (!['resolved',
 const isOverdue = (t) => t.sla_due_date && new Date(t.sla_due_date) < new Date() && !['resolved', 'closed'].includes(t.status);
 
 export default function ServiceCenter() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const canAccess = canAccessServiceWorkspace(effectiveUser);
@@ -51,6 +49,7 @@ export default function ServiceCenter() {
   const [showOpenDialog, setShowOpenDialog] = useState(false);
   const [showSmsDialog, setShowSmsDialog] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
 
   const { data: tickets = [], isLoading } = useQuery({
     queryKey: ['service-tickets'],
@@ -111,8 +110,13 @@ export default function ServiceCenter() {
       toast.success('נוצרו 5 פניות דמה');
     },
     onError: (err) => {
-      console.error('[ServiceCenter] seed demo failed', err);
-      toast.error('יצירת נתוני הדמה נכשלה');
+      console.error('[ServiceCenter] seed demo failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code });
+      const missingColumn = err?.code === 'PGRST204' || /column .* does not exist|could not find .* column/i.test(`${err?.message || ''} ${err?.details || ''}`);
+      if (missingColumn) {
+        toast.error('נראה שמיגרציית מסד הנתונים טרם הורצה — חסרים שדות חדשים בטבלת הפניות. יש להריץ את המיגרציה 20260529000001_service_center.sql', { duration: 14000 });
+      } else {
+        toast.error(`יצירת נתוני הדמה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`, { duration: 9000 });
+      }
     },
   });
 
@@ -309,12 +313,17 @@ export default function ServiceCenter() {
         data={filtered}
         isLoading={isLoading}
         emptyMessage="לא נמצאו פניות שירות"
-        onRowClick={(row) => navigate(createPageUrl('ServiceRequestDetails') + `?id=${row.id}`)}
+        onRowClick={(row) => setSelectedTicketId(row.id)}
       />
 
       <OpenServiceTicketDialog open={showOpenDialog} onOpenChange={setShowOpenDialog} currentUser={effectiveUser} />
       <SendServiceSmsDialog open={showSmsDialog} onOpenChange={setShowSmsDialog} currentUser={effectiveUser} />
       {canManage && <ImportServiceData open={showImport} onOpenChange={setShowImport} />}
+      <ServiceRequestModal
+        ticketId={selectedTicketId}
+        open={!!selectedTicketId}
+        onOpenChange={(v) => { if (!v) setSelectedTicketId(null); }}
+      />
     </div>
   );
 }
