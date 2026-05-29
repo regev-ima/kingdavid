@@ -16,8 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles, PhoneMissed, Send, CalendarCheck, UserPlus, CalendarDays } from "lucide-react";
-import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles, PhoneMissed, Send, CalendarCheck, UserPlus, CalendarDays, ArrowUpDown, SlidersHorizontal, Check } from "lucide-react";
+import { format, isValid, startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
 const safeFormat = (dateStr, fmt) => {
@@ -111,6 +111,51 @@ const CATEGORY_ICON = {
   cat_meeting: CalendarCheck,
 };
 
+// Lead-status filter options — folded out of the always-on filter bar into
+// the compact "מסננים" menu. The 5 funnel category cards cover the common
+// stages; this keeps the finer-grained statuses reachable without clutter.
+const LEAD_STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'כל הסטטוסים' },
+  { value: 'new_lead', label: 'ליד חדש' },
+  { value: 'hot_lead', label: 'ליד רותח' },
+  { value: 'followup_before_quote', label: 'פולאפ - לפני הצעה' },
+  { value: 'followup_after_quote', label: 'פולאפ - אחרי הצעה' },
+  { value: 'coming_to_branch', label: 'יגיע לסניף' },
+  { value: 'no_answer_1', label: 'ללא מענה 1' },
+  { value: 'no_answer_2', label: 'ללא מענה 2' },
+  { value: 'no_answer_3', label: 'ללא מענה 3' },
+  { value: 'no_answer_4', label: 'ללא מענה 4' },
+  { value: 'no_answer_5', label: 'ללא מענה 5' },
+  { value: 'no_answer_whatsapp_sent', label: 'ללא מענה - ווטסאפ' },
+  { value: 'no_answer_calls', label: 'אין מענה - חיוגים' },
+  { value: 'changed_direction', label: 'שנה כיוון' },
+  { value: 'deal_closed', label: 'נסגרה עסקה' },
+  { value: 'not_relevant_duplicate', label: 'כפול' },
+  { value: 'heard_price_not_interested', label: 'שמע מחיר - לא מעוניין' },
+  { value: 'not_interested_hangs_up', label: 'לא מעוניין - מנתק' },
+  { value: 'closed_by_manager_to_mailing', label: 'נסגר - דיוור' },
+];
+
+// The rep's primary "when" filter. Quick chips that narrow the list to a
+// due-date window; picking one loads the open-task set broad enough to cover
+// the window (today maps to the cheap 'today' query, the rest to the open
+// backlog) and the window itself is applied client-side below.
+const TIME_RANGES = [
+  { id: 'today', label: 'היום' },
+  { id: 'yesterday', label: 'אתמול' },
+  { id: 'week', label: 'השבוע' },
+  { id: 'month', label: 'החודש' },
+  { id: 'all', label: 'הכל' },
+];
+
+function timeRangeWindow(range, now) {
+  if (range === 'today') return { start: startOfDay(now), end: endOfDay(now) };
+  if (range === 'yesterday') { const y = addDays(now, -1); return { start: startOfDay(y), end: endOfDay(y) }; }
+  if (range === 'week') return { start: startOfWeek(now), end: endOfWeek(now) };
+  if (range === 'month') return { start: startOfMonth(now), end: endOfMonth(now) };
+  return null;
+}
+
 // "Due now" window — a task whose due_date is within ±60min of the
 // current clock is highlighted as actionable-now (the brief's "מהבהב").
 const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
@@ -124,6 +169,9 @@ export default function SalesTasks() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
   const [dateFilter, setDateFilter] = useState('');
+  // Time-range chip ('today' | 'yesterday' | 'week' | 'month' | 'all'). Defaults
+  // to match the default 'today' tab so the chip and the list agree on load.
+  const [timeRange, setTimeRange] = useState((!initialTab || initialTab === 'today') ? 'today' : 'all');
   const [showStale, setShowStale] = useState(false);
   const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'day' | 'week'
@@ -133,6 +181,7 @@ export default function SalesTasks() {
   const [editingTask, setEditingTask] = useState(null);
   const [completingTask, setCompletingTask] = useState(null);
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const initialTaskId = urlParams.get('id');
 
@@ -487,7 +536,7 @@ export default function SalesTasks() {
   // Reset pagination when filters change
   useEffect(() => {
     setTasksPage(0);
-  }, [activeTab, search, sortBy, dateFilter, leadStatusFilter, showStale, showAssignmentTasks]);
+  }, [activeTab, search, sortBy, dateFilter, timeRange, leadStatusFilter, showStale, showAssignmentTasks]);
 
   // Assignment tab is admin-only. Bounce non-admins who land here via
   // a stale URL (?tab=assignment) back to the default view.
@@ -506,10 +555,23 @@ export default function SalesTasks() {
       const filterEnd = new Date(filterDate.getFullYear(), filterDate.getMonth(), filterDate.getDate(), 23, 59, 59);
       tasks = tasks.filter(t => {
         const d = parseSalesTaskDate(t.due_date);
-        
+
         if (!d) return false;
         return d >= filterStart && d <= filterEnd;
       });
+    }
+
+    // Time-range chip narrows to a due-date window (today / yesterday / week
+    // / month). 'all' is a no-op. Applied client-side on the loaded set; the
+    // chip handler loads the open backlog so week/month have data to filter.
+    if (timeRange && timeRange !== 'all') {
+      const win = timeRangeWindow(timeRange, now);
+      if (win) {
+        tasks = tasks.filter((t) => {
+          const d = parseSalesTaskDate(t.due_date);
+          return d && d >= win.start && d <= win.end;
+        });
+      }
     }
 
     if (search) {
@@ -533,7 +595,7 @@ export default function SalesTasks() {
     const total = tasks.length;
     const paginated = tasks.slice(0, (tasksPage + 1) * TASKS_PER_PAGE);
     return { totalFilteredCount: total, paginatedTasks: paginated };
-  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now]);
+  }, [scopedTasks, activeTab, dateFilter, timeRange, search, sortBy, tasksPage, now]);
 
   // 3. Fetch leads ONLY for the paginated (visible) tasks
   const paginatedTaskLeadIds = useMemo(() => 
@@ -1083,7 +1145,7 @@ export default function SalesTasks() {
             <button
               key={tile.id}
               type="button"
-              onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
+              onClick={() => { if (!tile.readOnly) { setActiveTab(tile.asTab || tile.id); setTimeRange(tile.id === 'today' ? 'today' : 'all'); } }}
               disabled={tile.readOnly}
               className={`text-right rounded-2xl border bg-card p-4 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
             >
@@ -1132,7 +1194,7 @@ export default function SalesTasks() {
               <button
                 key={catId}
                 type="button"
-                onClick={() => setActiveTab(catId)}
+                onClick={() => { setActiveTab(catId); setTimeRange('all'); }}
                 className={`text-right rounded-2xl border bg-card p-3 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle}`}
               >
                 <div className="flex items-center justify-between mb-1.5">
@@ -1173,7 +1235,7 @@ export default function SalesTasks() {
             {currentSecondary ? (
               <button
                 type="button"
-                onClick={() => setActiveTab('today')}
+                onClick={() => { setActiveTab('today'); setTimeRange('today'); }}
                 className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 transition-colors"
                 title="חזור לתצוגת היום"
               >
@@ -1195,7 +1257,7 @@ export default function SalesTasks() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[180px]">
                 {SECONDARY.map((s) => (
-                  <DropdownMenuItem key={s.id} onSelect={() => setActiveTab(s.id)}>
+                  <DropdownMenuItem key={s.id} onSelect={() => { setActiveTab(s.id); setTimeRange('all'); }}>
                     <s.Icon className="w-3.5 h-3.5 me-1.5" /> {s.label}
                     {s.count != null ? (
                       <span className="ms-auto text-xs font-bold opacity-70">{s.count}</span>
@@ -1208,12 +1270,54 @@ export default function SalesTasks() {
         );
       })()}
 
-      {/* ===== FILTER BAR ===== */}
-      <div className="flex flex-wrap items-center gap-2 bg-card rounded-xl border border-border px-3 py-2.5 shadow-card">
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">מיון:</span>
+      {/* ===== FILTER TOOLBAR =====
+          One tidy row instead of four crowded controls. Right (primary): the
+          rep's "when" filter as quick chips + a specific-date picker. Left
+          (secondary, compact): sort, the folded-away lead-status menu, and a
+          collapsed search that expands on demand. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-card rounded-xl border border-border px-3 py-2.5 shadow-card">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-muted-foreground hidden sm:inline">טווח זמן</span>
+          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5 text-xs font-semibold">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => { setTimeRange(r.id); setDateFilter(''); setActiveTab(r.id === 'today' ? 'today' : 'not_completed'); }}
+                className={`rounded-md px-3 py-1.5 transition-colors ${
+                  timeRange === r.id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative">
+            <Input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => { setDateFilter(e.target.value); if (e.target.value) setTimeRange('all'); }}
+              className="w-[150px] h-8 text-xs border-border bg-muted ps-2 pe-7"
+              title="בחר תאריך יעד ספציפי"
+            />
+            {dateFilter ? (
+              <button
+                onClick={() => setDateFilter('')}
+                className="absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground/80 p-0.5 rounded"
+                title="נקה תאריך"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            ) : (
+              <CalendarDays className="absolute end-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60 pointer-events-none" />
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[140px] h-8 text-xs border-border bg-muted">
+            <SelectTrigger className="w-auto gap-1.5 h-8 text-xs border-border bg-muted">
+              <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1224,68 +1328,61 @@ export default function SalesTasks() {
               <SelectItem value="created_date">לפי תאריך יצירה</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-        <div className="h-6 w-px bg-border flex-shrink-0 hidden sm:block" />
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">תאריך:</span>
-          <div className="relative">
-            <Input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-[140px] h-8 text-xs border-border bg-muted ps-2 pe-6"
-              title="סנן לפי תאריך יעד"
-            />
-            {dateFilter && (
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                onClick={() => setDateFilter('')}
-                className="absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground/80 p-0.5 rounded"
-                title="נקה תאריך"
+                type="button"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-muted text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X className="h-3 w-3" />
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                מסננים
+                {leadStatusFilter !== 'all' && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                <ChevronDown className="h-3 w-3 opacity-70" />
               </button>
-            )}
-          </div>
-        </div>
-        <div className="h-6 w-px bg-border flex-shrink-0 hidden sm:block" />
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">סטטוס ליד:</span>
-          <Select value={leadStatusFilter} onValueChange={setLeadStatusFilter}>
-            <SelectTrigger className="w-[160px] h-8 text-xs border-border bg-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">הכל</SelectItem>
-              <SelectItem value="new_lead">ליד חדש</SelectItem>
-              <SelectItem value="hot_lead">ליד רותח</SelectItem>
-              <SelectItem value="followup_before_quote">פולאפ - לפני הצעה</SelectItem>
-              <SelectItem value="followup_after_quote">פולאפ - אחרי הצעה</SelectItem>
-              <SelectItem value="coming_to_branch">יגיע לסניף</SelectItem>
-              <SelectItem value="no_answer_1">ללא מענה 1</SelectItem>
-              <SelectItem value="no_answer_2">ללא מענה 2</SelectItem>
-              <SelectItem value="no_answer_3">ללא מענה 3</SelectItem>
-              <SelectItem value="no_answer_4">ללא מענה 4</SelectItem>
-              <SelectItem value="no_answer_5">ללא מענה 5</SelectItem>
-              <SelectItem value="no_answer_whatsapp_sent">ללא מענה - ווטסאפ</SelectItem>
-              <SelectItem value="no_answer_calls">אין מענה - חיוגים</SelectItem>
-              <SelectItem value="changed_direction">שנה כיוון</SelectItem>
-              <SelectItem value="deal_closed">נסגרה עסקה</SelectItem>
-              <SelectItem value="not_relevant_duplicate">כפול</SelectItem>
-              <SelectItem value="heard_price_not_interested">שמע מחיר - לא מעוניין</SelectItem>
-              <SelectItem value="not_interested_hangs_up">לא מעוניין - מנתק</SelectItem>
-              <SelectItem value="closed_by_manager_to_mailing">נסגר - דיוור</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="h-6 w-px bg-border flex-shrink-0 hidden sm:block" />
-        <div className="relative flex-1 min-w-[160px]">
-          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70 pointer-events-none" />
-          <Input
-            placeholder="חפש שם, טלפון, סיכום..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 text-xs border-border bg-muted ps-8"
-          />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-[340px] overflow-y-auto min-w-[210px]">
+              <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">סטטוס ליד</div>
+              {LEAD_STATUS_FILTER_OPTIONS.map((o) => (
+                <DropdownMenuItem key={o.value} onSelect={() => setLeadStatusFilter(o.value)} className="text-xs">
+                  <Check className={`h-3.5 w-3.5 me-1.5 ${leadStatusFilter === o.value ? 'opacity-100' : 'opacity-0'}`} />
+                  {o.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {(searchOpen || search) ? (
+            <div className="relative">
+              <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70 pointer-events-none" />
+              <Input
+                autoFocus
+                placeholder="חפש שם, טלפון, סיכום..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onBlur={() => { if (!search) setSearchOpen(false); }}
+                className="w-[200px] h-8 text-xs border-border bg-muted ps-8 pe-7"
+              />
+              {search && (
+                <button
+                  onClick={() => { setSearch(''); setSearchOpen(false); }}
+                  className="absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground/80 p-0.5 rounded"
+                  title="נקה חיפוש"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="חיפוש"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
