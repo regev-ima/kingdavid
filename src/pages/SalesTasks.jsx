@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles, PhoneMissed, Send, CalendarCheck, UserPlus } from "lucide-react";
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles, PhoneMissed, Send, CalendarCheck, UserPlus, CalendarDays } from "lucide-react";
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -50,6 +50,7 @@ import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import TaskDayView from '@/components/task/TaskDayView';
 import TaskWeekView from '@/components/task/TaskWeekView';
+import TaskMonthView from '@/components/task/TaskMonthView';
 import StatusBadge from '@/components/shared/StatusBadge';
 import DataTable from '@/components/shared/DataTable';
 import UserAvatar from '@/components/shared/UserAvatar';
@@ -1000,6 +1001,15 @@ export default function SalesTasks() {
             >
               <Calendar className="h-3.5 w-3.5" /> שבוע
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('month')}
+              className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+                viewMode === 'month' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <CalendarDays className="h-3.5 w-3.5" /> חודש
+            </button>
           </div>
           <Button
             onClick={() => setShowImportDialog(true)}
@@ -1029,6 +1039,12 @@ export default function SalesTasks() {
         />
       ) : viewMode === 'week' ? (
         <TaskWeekView
+          effectiveUser={effectiveUser}
+          isAdmin={isAdmin}
+          onTaskClick={(task) => handleOpenTaskDetails(task)}
+        />
+      ) : viewMode === 'month' ? (
+        <TaskMonthView
           effectiveUser={effectiveUser}
           isAdmin={isAdmin}
           onTaskClick={(task) => handleOpenTaskDetails(task)}
