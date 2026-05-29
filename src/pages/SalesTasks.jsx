@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe } from "lucide-react";
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles } from "lucide-react";
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -197,7 +197,7 @@ export default function SalesTasks() {
     return c.toISOString();
   }, []);
 
-  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 } } = useQuery({
+  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 }, dataUpdatedAt: countsUpdatedAt } = useQuery({
     queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
@@ -936,12 +936,26 @@ export default function SalesTasks() {
   return (
     <div className="space-y-6" dir="rtl">
       {/* ===== HEADER ===== */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-border/50">
-        <div className="flex items-center gap-3">
-          <div className="w-1 h-12 rounded-full bg-gradient-to-b from-primary to-primary/70 flex-shrink-0" />
+      <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        {/* Greeting + task summary — moved here from the sales dashboard so
+            the rep's daily briefing sits on the screen where they actually
+            work the queue, instead of on a separate dashboard page. */}
+        <div className="flex items-center gap-4">
+          <div className="hidden h-14 w-14 sm:block">
+            <UserAvatar user={effectiveUser} className="h-14 w-14" />
+          </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground leading-tight">משימות מכירה</h1>
-            <p className="text-sm text-muted-foreground/70 mt-0.5">ניהול מעקב וטיפול בלידים</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-foreground">מה עכשיו, {effectiveUser?.full_name}?</h1>
+              <Sparkles className="h-5 w-5 text-primary" />
+            </div>
+            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              מסך עבודה למשימות מכירה • עודכן לאחרונה: {format(countsUpdatedAt ? new Date(countsUpdatedAt) : new Date(), 'HH:mm:ss')}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              יחידת העבודה הראשית כאן היא משימה. כרגע יש לך {notCompletedCount} משימות פתוחות, מהן {overdueCount} באיחור ו-{todayCount} לביצוע היום.
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2.5">
