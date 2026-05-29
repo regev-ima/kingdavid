@@ -19,7 +19,7 @@ function formatCurrency(value) {
   return `₪${Number(value || 0).toLocaleString()}`;
 }
 
-export default function OrdersTab({ current = {}, showListLink = true }) {
+export default function OrdersTab({ current = {} }) {
   const trend = current.revenueTrend || [];
 
   return (
@@ -44,14 +44,12 @@ export default function OrdersTab({ current = {}, showListLink = true }) {
               <ShoppingCart className="h-4 w-4 text-emerald-600" />
               מגמת הכנסות יומית
             </CardTitle>
-            {showListLink ? (
-              <Link to={createPageUrl('Orders')}>
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
-                  לרשימת ההזמנות
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </Button>
-              </Link>
-            ) : null}
+            <Link to={createPageUrl('Orders')}>
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                לרשימת ההזמנות
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+            </Link>
           </div>
         </CardHeader>
         <CardContent className="p-4">

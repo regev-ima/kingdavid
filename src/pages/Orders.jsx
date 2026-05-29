@@ -16,7 +16,7 @@ import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrdersWorkspace, filterOrdersForUser, canAccessAdminOnly } from '@/lib/rbac';
 import { getDateRange } from '@/utils/dateRange';
 import Dashboard2DateRange from '@/components/dashboard2/Dashboard2DateRange';
-import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
+import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 
 const filterOptions = [
@@ -250,16 +250,13 @@ export default function Orders() {
             />
           </div>
           {isSnapshotLoading && !snapshot.ordersCount ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
-              <Skeleton className="h-64 w-full" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-24 w-full rounded-xl" />
+              ))}
             </div>
           ) : (
-            <OrdersTab current={snapshot} showListLink={false} />
+            <OrdersSnapshotCards snapshot={snapshot} />
           )}
         </section>
       ) : null}
