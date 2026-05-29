@@ -1156,7 +1156,9 @@ export default function SalesTasks() {
           meaning and wears that accent at rest (icon chip + value), so the
           strip scans like a status heatmap; the active filter deepens to a
           tinted fill + ring. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div>
+        <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">מבט-על יומי</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
           { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
@@ -1195,6 +1197,7 @@ export default function SalesTasks() {
             </button>
           );
         })}
+        </div>
       </div>
 
       {/* ===== SALES-RETURN CATEGORIES =====
