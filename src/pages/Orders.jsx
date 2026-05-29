@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -9,10 +9,15 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Plus, LayoutDashboard } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canViewOrdersWorkspace, filterOrdersForUser } from '@/lib/rbac';
+import { canViewOrdersWorkspace, filterOrdersForUser, canAccessAdminOnly } from '@/lib/rbac';
+import { getDateRange } from '@/utils/dateRange';
+import Dashboard2DateRange from '@/components/dashboard2/Dashboard2DateRange';
+import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
+import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 
 const filterOptions = [
   {
@@ -44,6 +49,24 @@ const filterOptions = [
   },
 ];
 
+// Reverse-map an incoming start/end back to a preset key. The control
+// center's "כניסה לדשבורד" drill lands here as /Orders?startDate&endDate,
+// so this lets the range picker show "היום" / "החודש" instead of a raw
+// date span. Falls back to 'custom' when the dates don't line up with a
+// preset, and null when there are no usable dates.
+function rangeKeyFromDates(startIso, endIso, now = new Date()) {
+  if (!startIso || !endIso) return null;
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const matches = (key) => {
+    const r = getDateRange(key, null, null, now);
+    return Math.abs(r.start.getTime() - start.getTime()) < 1000
+      && Math.abs(r.end.getTime() - end.getTime()) < 1000;
+  };
+  return ['today', 'yesterday', 'week', 'month', '90days', 'year'].find(matches) || 'custom';
+}
+
 export default function Orders() {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
@@ -51,6 +74,43 @@ export default function Orders() {
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'in_production', 'ready_delivery'].includes(initialTab) ? initialTab : 'all');
   const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' });
   const canAccessSales = canViewOrdersWorkspace(effectiveUser);
+  const isManager = canAccessAdminOnly(effectiveUser);
+
+  // Managerial period snapshot (KPI cubes + revenue trend) mirroring the
+  // control center's orders view, so the manager gets the same picture on
+  // this page too. Initialises from the deep-link range when present,
+  // otherwise defaults to today.
+  const [rangeKey, setRangeKey] = useState(() => {
+    const sp = new URLSearchParams(window.location.search);
+    return rangeKeyFromDates(sp.get('startDate'), sp.get('endDate')) || 'today';
+  });
+  const [customRange, setCustomRange] = useState(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const s = sp.get('startDate');
+    const e = sp.get('endDate');
+    return rangeKeyFromDates(s, e) === 'custom' && s && e
+      ? { from: new Date(s), to: new Date(e) }
+      : null;
+  });
+  const { start, end } = useMemo(
+    () => getDateRange(rangeKey, customRange?.from, customRange?.to),
+    [rangeKey, customRange],
+  );
+  const overviewDateRange = useMemo(() => ({ from: start, to: end }), [start, end]);
+  const { data: snapshot = {}, isLoading: isSnapshotLoading } = useDashboard2Data({
+    start,
+    end,
+    enabled: isManager,
+    label: 'current',
+  });
+  const handlePresetChange = (key) => {
+    setRangeKey(key);
+    if (key !== 'custom') setCustomRange(null);
+  };
+  const handleCustomChange = (range) => {
+    setCustomRange(range || null);
+    if (range?.from && range?.to) setRangeKey('custom');
+  };
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ['orders'],
@@ -174,6 +234,35 @@ export default function Orders() {
           </Button>
         </Link>
       </div>
+
+      {isManager ? (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <LayoutDashboard className="h-4 w-4 text-primary" />
+              תמונת מצב — הזמנות והכנסות
+            </h2>
+            <Dashboard2DateRange
+              rangeKey={rangeKey}
+              dateRange={overviewDateRange}
+              onPresetChange={handlePresetChange}
+              onCustomChange={handleCustomChange}
+            />
+          </div>
+          {isSnapshotLoading && !snapshot.ordersCount ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+              <Skeleton className="h-64 w-full" />
+            </div>
+          ) : (
+            <OrdersTab current={snapshot} showListLink={false} />
+          )}
+        </section>
+      ) : null}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex flex-col sm:flex-row bg-card border h-auto gap-1 p-1.5 rounded-lg shadow-card">
