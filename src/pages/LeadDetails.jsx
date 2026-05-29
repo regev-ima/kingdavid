@@ -781,67 +781,74 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   </div>
                 </div>
               ) : (
-                <div className="space-y-5">
-                  {/* Contact Info Grid */}
-                  <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                    <DetailField label="שם מלא" value={lead.full_name} />
-                    <DetailField label="טלפון" value={lead.phone} />
-                    <DetailField label="אימייל" value={lead.email} />
-                    <DetailField label="עיר" value={lead.city} />
-                  </div>
-                  
-                  <div className="border-t border-border/50 pt-4">
-                    <DetailField label="כתובת" value={lead.address} />
-                  </div>
+                /* Compact, Google-card-style detail list. Replaced the
+                   old two-column DetailField grid (label on top, big
+                   value below, border-t between every section) — that
+                   layout was airy by design but wasted vertical space
+                   even when most fields were empty. The new structure:
+                   one row per field, slim label on the right, value
+                   on the left, rows with no value HIDDEN entirely so
+                   a sparse lead doesn't show six empty "-"s. */
+                <dl className="divide-y divide-border/30">
+                  {[
+                    { label: 'שם מלא', value: lead.full_name },
+                    { label: 'טלפון', value: lead.phone, dir: 'ltr' },
+                    { label: 'אימייל', value: lead.email, dir: 'ltr' },
+                    { label: 'עיר', value: lead.city },
+                    { label: 'כתובת', value: lead.address },
+                    { label: 'מקור', value: SOURCE_LABELS[lead.source] || lead.source },
+                    { label: 'טופס מקור', value: lead.source_form },
+                    { label: 'נושא הפנייה', value: lead.subject },
+                    { label: 'הערות', value: lead.notes, whitespace: 'pre-wrap' },
+                  ]
+                    .filter((row) => row.value)
+                    .map((row) => (
+                      <div key={row.label} className="flex items-baseline gap-4 py-2">
+                        <dt className="text-xs text-muted-foreground/80 w-24 flex-shrink-0">{row.label}</dt>
+                        <dd
+                          className={`text-sm text-foreground min-w-0 flex-1 ${row.whitespace === 'pre-wrap' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
+                          dir={row.dir}
+                        >
+                          {row.value}
+                        </dd>
+                      </div>
+                    ))}
 
-                  {/* Source */}
-                  <div className="border-t border-border/50 pt-4">
-                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                      <DetailField label="מקור" value={SOURCE_LABELS[lead.source] || lead.source} />
-                      {lead.source_form && (
-                        <DetailField label="טופס מקור" value={lead.source_form} />
-                      )}
-                    </div>
-                    {Array.isArray(lead.tags) && lead.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
+                  {/* Tags inline as their own row — only when present.
+                      Keeps the visual rhythm of the rest of the list. */}
+                  {Array.isArray(lead.tags) && lead.tags.length > 0 ? (
+                    <div className="flex items-baseline gap-4 py-2">
+                      <dt className="text-xs text-muted-foreground/80 w-24 flex-shrink-0">תגיות</dt>
+                      <dd className="flex flex-wrap gap-1.5 min-w-0 flex-1">
                         {lead.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-xs font-medium px-2 py-0.5"
+                            className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-[11px] font-medium px-1.5 py-0.5"
                           >
                             #{tag}
                           </span>
                         ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Subject (website contact form) */}
-                  {lead.subject && (
-                    <div className="border-t border-border/50 pt-4">
-                      <DetailField label="נושא הפנייה" value={lead.subject} />
+                      </dd>
                     </div>
-                  )}
+                  ) : null}
 
-                  {/* Dates Row */}
-                  <div className="border-t border-border/50 pt-4">
-                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                      <DetailField
-                        label="תאריך יצירה"
-                        value={lead.created_date ? formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
-                      />
-                      <DetailField
-                        label="תאריך עדכון"
-                        value={lead.updated_date ? formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
-                      />
+                  {/* Created / updated timestamps — kept as a single
+                      muted footer row so they don't compete with the
+                      contact details above. */}
+                  {lead.created_date || lead.updated_date ? (
+                    <div className="flex items-baseline gap-4 py-2 text-xs text-muted-foreground/70">
+                      <dt className="w-24 flex-shrink-0">תאריכים</dt>
+                      <dd className="min-w-0 flex-1 flex flex-wrap gap-x-4 gap-y-1">
+                        {lead.created_date ? (
+                          <span>נוצר: {formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}</span>
+                        ) : null}
+                        {lead.updated_date ? (
+                          <span>עודכן: {formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}</span>
+                        ) : null}
+                      </dd>
                     </div>
-                  </div>
-
-                  {/* Notes */}
-                  <div className="border-t border-border/50 pt-4">
-                    <DetailField label="הערות" value={lead.notes} />
-                  </div>
-                </div>
+                  ) : null}
+                </dl>
               )}
             </CardContent>
           </Card>
