@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon, Filter, X as XIcon } from "lucide-react";
+import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon, Filter, X as XIcon, FolderOpen, User, Sparkles } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth } from '@/lib/safe-date-fns';
@@ -973,99 +973,90 @@ export default function Leads() {
         )}
       </div>
 
-      {/* Dashboard-style Tabs */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {isAdmin && (
-          <div
-            onClick={() => setActiveTab('unassigned')}
-            className={`
-              relative p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2
-              ${activeTab === 'unassigned' 
-                ? 'border-primary bg-primary/5 text-primary shadow-sm' 
-                : 'border-border/50 bg-card hover:border-primary/20 hover:bg-muted/50 text-muted-foreground shadow-card'
-              }
-            `}
-          >
-            <span className="text-sm font-medium whitespace-nowrap">לא משויכים</span>
-            <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'unassigned' ? 'text-primary' : 'text-foreground'}`}>
-              {fmt(unassignedCount)}
-            </span>
-            {unassignedCount > 0 && (
-              <span className="absolute top-3 left-3 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-              </span>
-            )}
-          </div>
-        )}
+      {/* KPI / scope-filter cards — visually unified with the same
+          stat-card pattern used on /Orders: white card, small label
+          + big bold value, coloured icon chip on the side. The
+          difference vs Orders: these doubles as the page's tab
+          selector, so an active card gets a primary ring and the
+          unassigned card still pulses an amber dot when there's
+          work waiting. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {(() => {
+          const TONE = {
+            amber:   'bg-amber-100   text-amber-600',
+            blue:    'bg-blue-100    text-blue-600',
+            indigo:  'bg-indigo-100  text-indigo-600',
+            slate:   'bg-slate-100   text-slate-600',
+            emerald: 'bg-emerald-100 text-emerald-600',
+          };
+          const tabs = [
+            isAdmin
+              ? { key: 'unassigned', label: 'לא משויכים', value: fmt(unassignedCount), icon: UserPlus,   tone: 'amber',  dot: unassignedCount > 0 }
+              : null,
+            { key: 'open', label: 'פתוחים',    value: fmt(openLeadsCount),  icon: FolderOpen, tone: 'blue' },
+            { key: 'my',   label: 'הלידים שלי', value: fmt(myLeadsCount),    icon: User,       tone: 'indigo' },
+            isAdmin
+              ? { key: 'all', label: 'כל הלידים', value: fmt(totalLeadCount), icon: Users,     tone: 'slate' }
+              : null,
+          ].filter(Boolean);
+          const hint = dateRange?.from && dateRange?.to
+            ? `${format(dateRange.from, 'dd.MM.yy')} - ${format(dateRange.to, 'dd.MM.yy')}`
+            : 'מאז ומעולם';
+          return (
+            <>
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`relative text-right rounded-xl border bg-card p-4 shadow-card transition-all hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                      isActive ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground truncate" title={tab.label}>{tab.label}</p>
+                        <p className="text-2xl font-bold text-foreground mt-1 tabular-nums truncate">{tab.value}</p>
+                      </div>
+                      <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${TONE[tab.tone]}`}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                    </div>
+                    {tab.dot ? (
+                      <span className="absolute top-3 left-3 flex h-2.5 w-2.5" aria-hidden>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
 
-        {/* 2. Open */}
-        <div
-          onClick={() => setActiveTab('open')}
-          className={`
-            p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2
-            ${activeTab === 'open'
-              ? 'border-primary bg-primary/5 text-primary shadow-sm'
-              : 'border-border/50 bg-card hover:border-primary/20 hover:bg-muted/50 text-muted-foreground shadow-card'
-            }
-          `}
-        >
-          <span className="text-sm font-medium whitespace-nowrap">פתוחים</span>
-          <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'open' ? 'text-primary' : 'text-foreground'}`}>
-            {fmt(openLeadsCount)}
-          </span>
-        </div>
-
-        {/* 3. My Leads */}
-        <div
-          onClick={() => setActiveTab('my')}
-          className={`
-            p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2
-            ${activeTab === 'my' 
-              ? 'border-primary bg-primary/5 text-primary shadow-sm' 
-              : 'border-border/50 bg-card hover:border-primary/20 hover:bg-muted/50 text-muted-foreground shadow-card'
-            }
-          `}
-        >
-          <span className="text-sm font-medium whitespace-nowrap">הלידים שלי</span>
-          <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'my' ? 'text-primary' : 'text-foreground'}`}>
-            {fmt(myLeadsCount)}
-          </span>
-        </div>
-
-        {/* 4. All Leads (Admin only) */}
-        {isAdmin && (
-          <div
-            onClick={() => setActiveTab('all')}
-            className={`
-              p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col items-center justify-center gap-2
-              ${activeTab === 'all'
-                ? 'border-primary bg-primary/5 text-primary shadow-sm'
-                : 'border-border/50 bg-card hover:border-primary/20 hover:bg-muted/50 text-muted-foreground shadow-card'
-              }
-            `}
-          >
-            <span className="text-sm font-medium whitespace-nowrap">כל הלידים</span>
-            <span className={`text-2xl font-bold tabular-nums whitespace-nowrap ${activeTab === 'all' ? 'text-primary' : 'text-foreground'}`}>
-              {fmt(totalLeadCount)}
-            </span>
-          </div>
-        )}
-
-        {/* 5. New leads in the selected date range */}
-        <div
-          className="p-4 rounded-xl border-2 border-emerald-100 bg-emerald-50/40 flex flex-col items-center justify-center gap-2"
-        >
-          <span className="text-sm font-medium text-muted-foreground">לידים חדשים</span>
-          <span className="text-2xl font-bold text-emerald-700">
-            {newLeadsCount === null ? '...' : Number(newLeadsCount).toLocaleString()}
-          </span>
-          <span className="text-[11px] text-muted-foreground">
-            {dateRange?.from && dateRange?.to
-              ? `${format(dateRange.from, 'dd.MM.yy')} - ${format(dateRange.to, 'dd.MM.yy')}`
-              : 'מאז ומעולם'}
-          </span>
-        </div>
+              {/* Non-clickable "לידים חדשים בטווח" card. Kept here
+                  so the row reads as one visual unit, but rendered
+                  as a <div> instead of <button> because it doesn't
+                  switch tabs — it's a passive readout of the
+                  selected date range. */}
+              <div className="text-right rounded-xl border border-border bg-card p-4 shadow-card">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground truncate">לידים חדשים</p>
+                    <p className="text-2xl font-bold text-emerald-700 mt-1 tabular-nums truncate">
+                      {newLeadsCount === null ? '...' : Number(newLeadsCount).toLocaleString()}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-1 truncate" title={hint}>{hint}</p>
+                  </div>
+                  <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${TONE.emerald}`}>
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       <div className="space-y-3">
