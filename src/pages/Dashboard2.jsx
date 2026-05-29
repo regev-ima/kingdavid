@@ -190,7 +190,7 @@ export default function Dashboard2() {
         <LoadingState />
       ) : (
         <>
-          <HeroStrip current={current} previous={previous} dateRange={dateRange} />
+          <HeroStrip current={current} previous={previous} dateRange={dateRange} rangeKey={rangeKey} />
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4" dir="rtl">
             <TabsList
