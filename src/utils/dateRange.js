@@ -18,6 +18,10 @@ import {
 // Supports: today, yesterday, week, month, 90days, year, custom.
 export function getDateRange(rangeKey, customStart, customEnd, now = new Date()) {
   switch (rangeKey) {
+    case 'all':
+      // Everything up to now — lets the Orders page default to the full
+      // (non-empty) list while still flowing through the same range plumbing.
+      return { start: new Date(0), end: endOfDay(now) };
     case 'today':
       return { start: startOfDay(now), end: endOfDay(now) };
     case 'yesterday': {

@@ -27,26 +27,50 @@ const TONE = {
 };
 
 // Orders period snapshot, rendered with the platform's standard stat-card
-// look (white Card + shadow-card + icon chip), matching SalesDashboard and
-// the other workspace pages — rather than the dashboard-only MiniKPI boxes.
-export default function OrdersSnapshotCards({ snapshot = {} }) {
+// look. Each card is clickable and IS the status filter for the list below
+// (replacing the old status tabs). `filterKey` is the activeTab value the
+// click selects; the three aggregate cards pass null = "show everything in
+// range" and never highlight. The active status card shows a primary ring.
+export default function OrdersSnapshotCards({ snapshot = {}, onSelect, activeKey = null }) {
   const cards = [
-    { label: 'סכום מכירות', value: fmtCurrency(snapshot.revenue), icon: DollarSign, tone: 'emerald' },
-    { label: 'מס׳ הזמנות', value: fmtNumber(snapshot.ordersCount), icon: ShoppingCart, tone: 'blue' },
-    { label: 'ממוצע הזמנה', value: fmtCurrency(snapshot.avgOrder), icon: TrendingUp, tone: 'indigo' },
-    { label: 'ממתינות לתשלום', value: fmtNumber(snapshot.unpaidOrders), icon: CreditCard, tone: 'amber' },
-    { label: 'שולמו', value: fmtNumber(snapshot.paidOrders), icon: CheckCircle2, tone: 'emerald' },
-    { label: 'בייצור', value: fmtNumber(snapshot.inProduction), icon: Factory, tone: 'violet' },
-    { label: 'מוכן למשלוח', value: fmtNumber(snapshot.readyForDelivery), icon: Package, tone: 'cyan' },
-    { label: 'נמסרו', value: fmtNumber(snapshot.deliveredOrders), icon: Truck, tone: 'slate' },
+    { label: 'סכום מכירות', value: fmtCurrency(snapshot.revenue), icon: DollarSign, tone: 'emerald', filterKey: null },
+    { label: 'מס׳ הזמנות', value: fmtNumber(snapshot.ordersCount), icon: ShoppingCart, tone: 'blue', filterKey: null },
+    { label: 'ממוצע הזמנה', value: fmtCurrency(snapshot.avgOrder), icon: TrendingUp, tone: 'indigo', filterKey: null },
+    { label: 'ממתינות לתשלום', value: fmtNumber(snapshot.unpaidOrders), icon: CreditCard, tone: 'amber', filterKey: 'pending_payment' },
+    { label: 'שולמו', value: fmtNumber(snapshot.paidOrders), icon: CheckCircle2, tone: 'emerald', filterKey: 'paid' },
+    { label: 'בייצור', value: fmtNumber(snapshot.inProduction), icon: Factory, tone: 'violet', filterKey: 'in_production' },
+    { label: 'מוכן למשלוח', value: fmtNumber(snapshot.readyForDelivery), icon: Package, tone: 'cyan', filterKey: 'ready_delivery' },
+    { label: 'נמסרו', value: fmtNumber(snapshot.deliveredOrders), icon: Truck, tone: 'slate', filterKey: 'delivered' },
   ];
+
+  const clickable = typeof onSelect === 'function';
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {cards.map((c) => {
         const Icon = c.icon;
+        // Only status cubes highlight; the aggregate cubes (null) never do.
+        const active = clickable && c.filterKey != null && c.filterKey === activeKey;
+        const isStatusCube = clickable && c.filterKey != null;
         return (
-          <Card key={c.label} className="shadow-card border-border">
+          <Card
+            key={c.label}
+            onClick={clickable ? () => onSelect(c.filterKey) : undefined}
+            role={clickable ? 'button' : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            title={isStatusCube ? (active ? 'בטל סינון' : `הצג ${c.label}`) : undefined}
+            onKeyDown={clickable ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(c.filterKey);
+              }
+            } : undefined}
+            className={`shadow-card border-border transition-all ${
+              clickable
+                ? 'cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+                : ''
+            } ${active ? 'ring-2 ring-primary border-primary' : ''}`}
+          >
             <CardContent className="p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
