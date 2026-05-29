@@ -1,31 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   AlertTriangle,
-  ArrowRight,
   Calendar,
   CheckCircle2,
-  CheckSquare,
   ChevronRight,
   Clock,
   ListTodo,
-  Plus,
-  RefreshCw,
-  Sparkles,
   UserPlus,
   Zap,
 } from 'lucide-react';
 import { addHours, format, formatDistanceToNow, isValid } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 
-import UserAvatar from '@/components/shared/UserAvatar';
 import StatusBadge from '@/components/shared/StatusBadge';
-import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import {
@@ -203,8 +196,6 @@ export default function SalesDashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [editingTaskData, setEditingTaskData] = useState(null);
 
 
@@ -225,7 +216,7 @@ export default function SalesDashboard() {
     }
   }, [effectiveUser, navigate]);
 
-  const { data: leads = [], refetch: refetchLeads } = useQuery({
+  const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
     queryFn: async () => {
       let skip = 0;
@@ -242,7 +233,7 @@ export default function SalesDashboard() {
     enabled: canAccessSales,
   });
 
-  const { data: salesTasks = [], refetch: refetchTasks } = useQuery({
+  const { data: salesTasks = [] } = useQuery({
     queryKey: ['salesTasks', 'dashboard'],
     queryFn: async () => {
       // Same truncation pattern as SalesTasks.jsx — the 500-row cap on open
@@ -272,7 +263,7 @@ export default function SalesDashboard() {
     enabled: canAccessSales,
   });
 
-  const { data: taskCounters = [], refetch: refetchTaskCounters } = useQuery({
+  const { data: taskCounters = [] } = useQuery({
     queryKey: ['taskCounters'],
     queryFn: () => base44.entities.TaskCounter.list('-created_date', 200),
     staleTime: 60000,
@@ -325,11 +316,6 @@ export default function SalesDashboard() {
 
 
 
-
-  const handleRefresh = async () => {
-    await Promise.all([refetchLeads(), refetchTasks(), refetchTaskCounters()]);
-    setLastUpdated(new Date());
-  };
 
   const openTaskPopup = (taskId) => {
     const task = scopedTasks.find(t => t.id === taskId);
@@ -387,54 +373,6 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-5 shadow-sm lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-center gap-4">
-          <div className="hidden h-14 w-14 sm:block">
-            <UserAvatar user={effectiveUser} className="h-14 w-14" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-foreground">מה עכשיו, {effectiveUser?.full_name}?</h1>
-              <Sparkles className="h-5 w-5 text-primary" />
-            </div>
-            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              מסך עבודה למשימות מכירה • עודכן לאחרונה: {format(lastUpdated, 'HH:mm:ss')}
-            </p>
-            <p className="mt-2 text-sm text-muted-foreground">
-              יחידת העבודה הראשית כאן היא משימה. כרגע יש לך {metrics.taskOpenCount} משימות פתוחות, מהן {metrics.taskOverdueCount} באיחור ו-{metrics.taskTodayCount} לביצוע היום.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-3 lg:items-end">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              רענן
-            </Button>
-            <Button size="sm" onClick={() => setShowTaskDialog(true)}>
-              <CheckSquare className="me-2 h-4 w-4" />
-              משימה חדשה
-            </Button>
-            <Link to={createPageUrl('NewLead')}>
-              <Button variant="secondary" size="sm">
-                <Plus className="me-2 h-4 w-4" />
-                ליד חדש
-              </Button>
-            </Link>
-            <Link to={createPageUrl('SalesTasks')}>
-              <Button variant="outline" size="sm">
-                <ArrowRight className="me-2 h-4 w-4" />
-                לכל המשימות
-              </Button>
-            </Link>
-          </div>
-
-
-        </div>
-      </div>
-
       {/* KPI row */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
         <MiniKpiCard label="פתוחות" value={metrics.taskOpenCount} helper="ממתינות לביצוע" icon={Zap} tone="red" onClick={() => navigate(createPageUrl('SalesTasks') + '?tab=not_completed')} />
@@ -540,12 +478,6 @@ export default function SalesDashboard() {
         <PendingQuotesCard leadsById={leadsById} effectiveUser={effectiveUser} />
         <MyCommissionsCard effectiveUser={effectiveUser} />
       </div>
-
-      <AddSalesTaskDialog
-        isOpen={showTaskDialog}
-        onClose={() => setShowTaskDialog(false)}
-        effectiveUser={effectiveUser}
-      />
 
       <EditSalesTaskDialog
         isOpen={!!editingTaskData}

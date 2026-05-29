@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe } from "lucide-react";
-import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles, PhoneMissed, Send, CalendarCheck, UserPlus, CalendarDays, ArrowUpDown, SlidersHorizontal, Check } from "lucide-react";
+import { format, isValid, startOfDay, endOfDay, addDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
 const safeFormat = (dateStr, fmt) => {
@@ -50,6 +50,7 @@ import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import TaskDayView from '@/components/task/TaskDayView';
 import TaskWeekView from '@/components/task/TaskWeekView';
+import TaskMonthView from '@/components/task/TaskMonthView';
 import StatusBadge from '@/components/shared/StatusBadge';
 import DataTable from '@/components/shared/DataTable';
 import UserAvatar from '@/components/shared/UserAvatar';
@@ -95,8 +96,65 @@ const CATEGORY_META = {
   cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'rose',    desc: 'לידים שניסיתי להחזיר ולא ענו' },
   cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
   cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
-  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
+  cat_meeting:      { label: 'פגישות',                accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
 };
+
+// One glyph per funnel stage so the category grid reads like an icon
+// legend rather than five identical coloured numbers: new lead → tried,
+// no answer → our move (build the quote) → their move (quote sent) →
+// meeting booked.
+const CATEGORY_ICON = {
+  cat_new_lead: UserPlus,
+  cat_no_answer: PhoneMissed,
+  cat_before_quote: FileText,
+  cat_after_quote: Send,
+  cat_meeting: CalendarCheck,
+};
+
+// Lead-status filter options — folded out of the always-on filter bar into
+// the compact "מסננים" menu. The 5 funnel category cards cover the common
+// stages; this keeps the finer-grained statuses reachable without clutter.
+const LEAD_STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'כל הסטטוסים' },
+  { value: 'new_lead', label: 'ליד חדש' },
+  { value: 'hot_lead', label: 'ליד רותח' },
+  { value: 'followup_before_quote', label: 'פולאפ - לפני הצעה' },
+  { value: 'followup_after_quote', label: 'פולאפ - אחרי הצעה' },
+  { value: 'coming_to_branch', label: 'יגיע לסניף' },
+  { value: 'no_answer_1', label: 'ללא מענה 1' },
+  { value: 'no_answer_2', label: 'ללא מענה 2' },
+  { value: 'no_answer_3', label: 'ללא מענה 3' },
+  { value: 'no_answer_4', label: 'ללא מענה 4' },
+  { value: 'no_answer_5', label: 'ללא מענה 5' },
+  { value: 'no_answer_whatsapp_sent', label: 'ללא מענה - ווטסאפ' },
+  { value: 'no_answer_calls', label: 'אין מענה - חיוגים' },
+  { value: 'changed_direction', label: 'שנה כיוון' },
+  { value: 'deal_closed', label: 'נסגרה עסקה' },
+  { value: 'not_relevant_duplicate', label: 'כפול' },
+  { value: 'heard_price_not_interested', label: 'שמע מחיר - לא מעוניין' },
+  { value: 'not_interested_hangs_up', label: 'לא מעוניין - מנתק' },
+  { value: 'closed_by_manager_to_mailing', label: 'נסגר - דיוור' },
+];
+
+// The rep's primary "when" filter. Quick chips that narrow the list to a
+// due-date window; picking one loads the open-task set broad enough to cover
+// the window (today maps to the cheap 'today' query, the rest to the open
+// backlog) and the window itself is applied client-side below.
+const TIME_RANGES = [
+  { id: 'today', label: 'היום' },
+  { id: 'yesterday', label: 'אתמול' },
+  { id: 'week', label: 'השבוע' },
+  { id: 'month', label: 'החודש' },
+  { id: 'all', label: 'הכל' },
+];
+
+function timeRangeWindow(range, now) {
+  if (range === 'today') return { start: startOfDay(now), end: endOfDay(now) };
+  if (range === 'yesterday') { const y = addDays(now, -1); return { start: startOfDay(y), end: endOfDay(y) }; }
+  if (range === 'week') return { start: startOfWeek(now), end: endOfWeek(now) };
+  if (range === 'month') return { start: startOfMonth(now), end: endOfMonth(now) };
+  return null;
+}
 
 // "Due now" window — a task whose due_date is within ±60min of the
 // current clock is highlighted as actionable-now (the brief's "מהבהב").
@@ -111,6 +169,9 @@ export default function SalesTasks() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
   const [dateFilter, setDateFilter] = useState('');
+  // Time-range chip ('today' | 'yesterday' | 'week' | 'month' | 'all'). Defaults
+  // to match the default 'today' tab so the chip and the list agree on load.
+  const [timeRange, setTimeRange] = useState((!initialTab || initialTab === 'today') ? 'today' : 'all');
   const [showStale, setShowStale] = useState(false);
   const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'day' | 'week'
@@ -120,6 +181,7 @@ export default function SalesTasks() {
   const [editingTask, setEditingTask] = useState(null);
   const [completingTask, setCompletingTask] = useState(null);
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const initialTaskId = urlParams.get('id');
 
@@ -145,6 +207,9 @@ export default function SalesTasks() {
   }, [initialTask]);
 
   const [tasksPage, setTasksPage] = useState(0);
+  // Sentinel at the foot of the list; when it scrolls into view we reveal the
+  // next page automatically (infinite scroll) instead of a "load more" click.
+  const loadMoreRef = useRef(null);
   const TASKS_PER_PAGE = 50;
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
   const isAdmin = isAdminUser(effectiveUser);
@@ -197,7 +262,7 @@ export default function SalesTasks() {
     return c.toISOString();
   }, []);
 
-  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 } } = useQuery({
+  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 }, dataUpdatedAt: countsUpdatedAt } = useQuery({
     queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
@@ -405,7 +470,7 @@ export default function SalesTasks() {
     staleTime: 60_000,
     queryFn: async () => {
       let q = applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        base44.supabase.from('sales_tasks').select('lead_id, status, due_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
         { includeAssignment: includeAssignmentInCounts },
       ).limit(10_000);
       const { data, error } = await q;
@@ -414,24 +479,35 @@ export default function SalesTasks() {
     },
   });
 
-  // Category counts: prefer the task's own denormalised `status` mirror
-  // (it matches what the row in the table is showing), and fall back to
-  // the lead's current status from leadsById when the task didn't carry
-  // a mirror. Distinct by lead_id so a lead with three open tasks
-  // counts once.
+  // Category counts: one queue per funnel stage. We count TASKS (not distinct
+  // leads) so the number matches the rows the list shows when the card is
+  // clicked — a lead with two open tasks contributes two. Counts honour the
+  // active time-range window (and a specific date) so picking "השבוע" /
+  // "אתמול" recomputes them, exactly like the list. We read the task's own
+  // `status` mirror first (matches the row) and only fall back to leadsById
+  // when the mirror is missing.
   const categoryCounts = useMemo(() => {
     const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
-    const seen = new Set();
+    const win = timeRange && timeRange !== 'all' ? timeRangeWindow(timeRange, now) : null;
+    let dStart = null;
+    let dEnd = null;
+    if (dateFilter) {
+      const fd = new Date(dateFilter);
+      dStart = new Date(fd.getFullYear(), fd.getMonth(), fd.getDate());
+      dEnd = new Date(fd.getFullYear(), fd.getMonth(), fd.getDate(), 23, 59, 59);
+    }
     for (const row of openTaskRows) {
-      const lid = row?.lead_id;
-      if (!lid || seen.has(lid)) continue;
-      seen.add(lid);
-      const status = row.status || leadsById[lid]?.status;
+      if (win || dStart) {
+        const d = parseSalesTaskDate(row.due_date);
+        if (win && (!d || d < win.start || d > win.end)) continue;
+        if (dStart && (!d || d < dStart || d > dEnd)) continue;
+      }
+      const status = row.status || (row.lead_id ? leadsById[row.lead_id]?.status : null);
       const cat = CATEGORY_BY_LEAD_STATUS[status];
       if (cat) counts[cat] += 1;
     }
     return counts;
-  }, [openTaskRows, leadsById]);
+  }, [openTaskRows, leadsById, timeRange, dateFilter, now]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -474,7 +550,7 @@ export default function SalesTasks() {
   // Reset pagination when filters change
   useEffect(() => {
     setTasksPage(0);
-  }, [activeTab, search, sortBy, dateFilter, leadStatusFilter, showStale, showAssignmentTasks]);
+  }, [activeTab, search, sortBy, dateFilter, timeRange, leadStatusFilter, showStale, showAssignmentTasks]);
 
   // Assignment tab is admin-only. Bounce non-admins who land here via
   // a stale URL (?tab=assignment) back to the default view.
@@ -493,10 +569,23 @@ export default function SalesTasks() {
       const filterEnd = new Date(filterDate.getFullYear(), filterDate.getMonth(), filterDate.getDate(), 23, 59, 59);
       tasks = tasks.filter(t => {
         const d = parseSalesTaskDate(t.due_date);
-        
+
         if (!d) return false;
         return d >= filterStart && d <= filterEnd;
       });
+    }
+
+    // Time-range chip narrows to a due-date window (today / yesterday / week
+    // / month). 'all' is a no-op. Applied client-side on the loaded set; the
+    // chip handler loads the open backlog so week/month have data to filter.
+    if (timeRange && timeRange !== 'all') {
+      const win = timeRangeWindow(timeRange, now);
+      if (win) {
+        tasks = tasks.filter((t) => {
+          const d = parseSalesTaskDate(t.due_date);
+          return d && d >= win.start && d <= win.end;
+        });
+      }
     }
 
     if (search) {
@@ -520,7 +609,7 @@ export default function SalesTasks() {
     const total = tasks.length;
     const paginated = tasks.slice(0, (tasksPage + 1) * TASKS_PER_PAGE);
     return { totalFilteredCount: total, paginatedTasks: paginated };
-  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now]);
+  }, [scopedTasks, activeTab, dateFilter, timeRange, search, sortBy, tasksPage, now]);
 
   // 3. Fetch leads ONLY for the paginated (visible) tasks
   const paginatedTaskLeadIds = useMemo(() => 
@@ -572,6 +661,25 @@ export default function SalesTasks() {
     });
 
   const hasMoreTasks = paginatedTasks.length < totalFilteredCount;
+
+  // Infinite scroll: reveal the next page once the sentinel nears the
+  // viewport. Re-arming on paginatedTasks.length means that if the sentinel is
+  // still visible after a page loads (tall screen) it keeps filling until the
+  // viewport is covered, then waits for the next scroll. Pages are sliced from
+  // already-loaded rows, so revealing more is instant — no extra fetch.
+  useEffect(() => {
+    if (!hasMoreTasks) return undefined;
+    const el = loadMoreRef.current;
+    if (!el) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setTasksPage((p) => p + 1);
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreTasks, paginatedTasks.length]);
 
   // KPI numbers come straight from the server-side count query — no longer
   // capped by which rows happen to be loaded for the current tab. The
@@ -936,16 +1044,33 @@ export default function SalesTasks() {
   return (
     <div className="space-y-6" dir="rtl">
       {/* ===== HEADER ===== */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-border/50">
-        <div className="flex items-center gap-3">
-          <div className="w-1 h-12 rounded-full bg-gradient-to-b from-primary to-primary/70 flex-shrink-0" />
+      <div className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        {/* Greeting + task summary — moved here from the sales dashboard so
+            the rep's daily briefing sits on the screen where they actually
+            work the queue, instead of on a separate dashboard page. */}
+        <div className="flex items-center gap-4">
+          <div className="hidden h-14 w-14 sm:block">
+            <UserAvatar user={effectiveUser} className="h-14 w-14" />
+          </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground leading-tight">משימות מכירה</h1>
-            <p className="text-sm text-muted-foreground/70 mt-0.5">ניהול מעקב וטיפול בלידים</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-foreground">מה עכשיו, {effectiveUser?.full_name}?</h1>
+              <Sparkles className="h-5 w-5 text-primary" />
+            </div>
+            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="h-4 w-4" />
+              מסך עבודה למשימות מכירה • עודכן לאחרונה: {format(countsUpdatedAt ? new Date(countsUpdatedAt) : new Date(), 'HH:mm:ss')}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              יחידת העבודה הראשית כאן היא משימה. כרגע יש לך {notCompletedCount} משימות פתוחות, מהן {overdueCount} באיחור ו-{todayCount} לביצוע היום.
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2.5">
-          {/* View toggle: list ↔ day grid */}
+          {/* View switcher (list / day / week / month) — a VIEW, not a time
+              filter. Labelled "תצוגה" so it isn't confused with the "טווח
+              זמן" chips below, which share the שבוע/חודש wording. */}
+          <span className="text-xs font-semibold text-muted-foreground hidden sm:inline">תצוגה</span>
           <div className="inline-flex h-9 rounded-lg border border-border bg-card p-0.5 text-xs font-medium">
             <button
               type="button"
@@ -973,6 +1098,15 @@ export default function SalesTasks() {
               }`}
             >
               <Calendar className="h-3.5 w-3.5" /> שבוע
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('month')}
+              className={`flex items-center gap-1.5 rounded-md px-3 transition-colors ${
+                viewMode === 'month' ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <CalendarDays className="h-3.5 w-3.5" /> חודש
             </button>
           </div>
           <Button
@@ -1007,15 +1141,21 @@ export default function SalesTasks() {
           isAdmin={isAdmin}
           onTaskClick={(task) => handleOpenTaskDetails(task)}
         />
+      ) : viewMode === 'month' ? (
+        <TaskMonthView
+          effectiveUser={effectiveUser}
+          isAdmin={isAdmin}
+          onTaskClick={(task) => handleOpenTaskDetails(task)}
+        />
       ) : (
       <>
       {/* ===== TOP KPI STRIP =====
-          Per the customer brief: a four-tile header summarising the rep's
-          day. Each tile is clickable and sets the active filter on the
-          list below — tiles ARE the navigation, not decoration. Default
-          tone is muted (subtle gray surface, low-contrast value) and a
-          tile lights up to its full accent colour only when active or
-          on hover, so the rep can see at a glance which filter is on. */}
+          A four-tile header summarising the rep's day. Each tile is
+          clickable and sets the active filter on the list below — tiles
+          ARE the navigation, not decoration. Each tile is colour-coded by
+          meaning and wears that accent at rest (icon chip + value), so the
+          strip scans like a status heatmap; the active filter deepens to a
+          tinted fill + ring. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
@@ -1023,35 +1163,35 @@ export default function SalesTasks() {
           { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
         ].map((tile) => {
-          // Three-state styling: default (muted gray), hover (faint
-          // tint of the tile's accent), active (full accent + ring).
-          // Tailwind JIT requires the class strings spelled out, so the
-          // lookups stay colocated with the meaning instead of templated.
+          // Colour-coded-by-meaning styling: every tile carries its accent
+          // at rest (icon chip + value + hairline border) so the grid reads
+          // like a status heatmap at a glance — red = overdue/urgent, amber
+          // = due today, emerald = done, indigo = closed. Selecting a tile
+          // deepens it to a tinted fill + ring. Tailwind JIT needs the class
+          // strings spelled out, so each tone stays colocated with meaning.
           const tone = {
-            amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
-            red:     { value: 'text-red-700',     activeCard: 'bg-red-50 border-red-500 ring-2 ring-red-400',         hoverCard: 'hover:border-red-300 hover:bg-red-50/50' },
-            emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
-            indigo:  { value: 'text-indigo-700',  activeCard: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', hoverCard: 'hover:border-indigo-300 hover:bg-indigo-50/50' },
+            amber:   { chip: 'bg-amber-100 text-amber-600',     value: 'text-amber-700',   idle: 'border-amber-200 hover:bg-amber-50/60 hover:border-amber-300',       active: 'bg-amber-50 border-amber-400 ring-2 ring-amber-400' },
+            red:     { chip: 'bg-red-100 text-red-600',         value: 'text-red-700',     idle: 'border-red-200 hover:bg-red-50/60 hover:border-red-300',             active: 'bg-red-50 border-red-400 ring-2 ring-red-400' },
+            emerald: { chip: 'bg-emerald-100 text-emerald-600', value: 'text-emerald-700', idle: 'border-emerald-200 hover:bg-emerald-50/60 hover:border-emerald-300', active: 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400' },
+            indigo:  { chip: 'bg-indigo-100 text-indigo-600',   value: 'text-indigo-700',  idle: 'border-indigo-200',                                                  active: 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-400' },
           }[tile.tone];
           const isActive = !tile.readOnly && activeTab === (tile.asTab || tile.id);
-          const cardCls = isActive
-            ? tone.activeCard
-            : `border-border bg-muted/30 ${tile.readOnly ? '' : tone.hoverCard}`;
-          const valueCls = isActive ? tone.value : 'text-muted-foreground';
           const Icon = tile.icon;
           return (
             <button
               key={tile.id}
               type="button"
-              onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
+              onClick={() => { if (!tile.readOnly) { setActiveTab(tile.asTab || tile.id); setTimeRange(tile.id === 'today' ? 'today' : 'all'); } }}
               disabled={tile.readOnly}
-              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+              className={`text-right rounded-2xl border bg-card p-4 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
-                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-sm font-medium text-foreground/70">{tile.label}</p>
+                <div className={`rounded-xl p-2 ${tone.chip}`}>
+                  <Icon className="h-4 w-4" />
+                </div>
               </div>
-              <p className={`text-2xl font-bold tabular-nums ${valueCls}`}>{Number(tile.value || 0).toLocaleString()}</p>
+              <p className={`text-3xl font-bold tabular-nums ${tone.value}`}>{Number(tile.value || 0).toLocaleString()}</p>
             </button>
           );
         })}
@@ -1072,29 +1212,34 @@ export default function SalesTasks() {
             const meta = CATEGORY_META[catId];
             const value = categoryCounts[catId] || 0;
             const isActive = activeTab === catId;
-            // Same three-state pattern as the KPI tiles above: muted
-            // gray by default, accent tint on hover, full accent + ring
-            // when active. Class strings spelled out so Tailwind's JIT
-            // can see them.
+            const Icon = CATEGORY_ICON[catId];
+            // Same colour-coded-by-meaning treatment as the KPI tiles: each
+            // card wears its funnel colour at rest (icon chip + value +
+            // hairline border) and deepens to a tinted fill + ring when it's
+            // the active filter. Funnel temperature: sky (new) → rose (retry)
+            // → amber (our move) → violet (their move) → emerald (closing).
+            // Class strings spelled out so Tailwind's JIT can see them.
             const tone = {
-              sky:     { value: 'text-sky-700',     activeCard: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',         hoverCard: 'hover:border-sky-300 hover:bg-sky-50/50' },
-              rose:    { value: 'text-rose-700',    activeCard: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',      hoverCard: 'hover:border-rose-300 hover:bg-rose-50/50' },
-              amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
-              violet:  { value: 'text-violet-700',  activeCard: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', hoverCard: 'hover:border-violet-300 hover:bg-violet-50/50' },
-              emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
+              sky:     { chip: 'bg-sky-100 text-sky-600',         value: 'text-sky-700',     idle: 'border-sky-200 hover:bg-sky-50/60 hover:border-sky-300',         active: 'bg-sky-50 border-sky-400 ring-2 ring-sky-400' },
+              rose:    { chip: 'bg-rose-100 text-rose-600',       value: 'text-rose-700',    idle: 'border-rose-200 hover:bg-rose-50/60 hover:border-rose-300',      active: 'bg-rose-50 border-rose-400 ring-2 ring-rose-400' },
+              amber:   { chip: 'bg-amber-100 text-amber-600',     value: 'text-amber-700',   idle: 'border-amber-200 hover:bg-amber-50/60 hover:border-amber-300',   active: 'bg-amber-50 border-amber-400 ring-2 ring-amber-400' },
+              violet:  { chip: 'bg-violet-100 text-violet-600',   value: 'text-violet-700',  idle: 'border-violet-200 hover:bg-violet-50/60 hover:border-violet-300', active: 'bg-violet-50 border-violet-400 ring-2 ring-violet-400' },
+              emerald: { chip: 'bg-emerald-100 text-emerald-600', value: 'text-emerald-700', idle: 'border-emerald-200 hover:bg-emerald-50/60 hover:border-emerald-300', active: 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400' },
             }[meta.accent];
-            const cardCls = isActive ? tone.activeCard : `border-border bg-muted/30 ${tone.hoverCard}`;
-            const valueCls = isActive ? tone.value : 'text-muted-foreground';
-            const titleCls = isActive ? 'text-foreground' : 'text-muted-foreground';
             return (
               <button
                 key={catId}
                 type="button"
-                onClick={() => setActiveTab(catId)}
-                className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}
+                onClick={() => { setActiveTab(catId); setTimeRange('all'); }}
+                className={`text-right rounded-2xl border bg-card p-3 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle}`}
               >
-                <p className={`text-xs font-semibold leading-tight ${titleCls}`}>{meta.label}</p>
-                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold leading-tight text-foreground/80">{meta.label}</p>
+                  <div className={`rounded-lg p-1.5 ${tone.chip}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                </div>
+                <p className={`text-2xl font-bold tabular-nums ${tone.value}`}>{value.toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
               </button>
             );
@@ -1126,7 +1271,7 @@ export default function SalesTasks() {
             {currentSecondary ? (
               <button
                 type="button"
-                onClick={() => setActiveTab('today')}
+                onClick={() => { setActiveTab('today'); setTimeRange('today'); }}
                 className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 transition-colors"
                 title="חזור לתצוגת היום"
               >
@@ -1148,7 +1293,7 @@ export default function SalesTasks() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[180px]">
                 {SECONDARY.map((s) => (
-                  <DropdownMenuItem key={s.id} onSelect={() => setActiveTab(s.id)}>
+                  <DropdownMenuItem key={s.id} onSelect={() => { setActiveTab(s.id); setTimeRange('all'); }}>
                     <s.Icon className="w-3.5 h-3.5 me-1.5" /> {s.label}
                     {s.count != null ? (
                       <span className="ms-auto text-xs font-bold opacity-70">{s.count}</span>
@@ -1161,12 +1306,54 @@ export default function SalesTasks() {
         );
       })()}
 
-      {/* ===== FILTER BAR ===== */}
-      <div className="flex flex-wrap items-center gap-2 bg-card rounded-xl border border-border px-3 py-2.5 shadow-card">
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">מיון:</span>
+      {/* ===== FILTER TOOLBAR =====
+          One tidy row instead of four crowded controls. Right (primary): the
+          rep's "when" filter as quick chips + a specific-date picker. Left
+          (secondary, compact): sort, the folded-away lead-status menu, and a
+          collapsed search that expands on demand. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-card rounded-xl border border-border px-3 py-2.5 shadow-card">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-muted-foreground hidden sm:inline">טווח זמן</span>
+          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5 text-xs font-semibold">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => { setTimeRange(r.id); setDateFilter(''); setActiveTab(r.id === 'today' ? 'today' : 'not_completed'); }}
+                className={`rounded-md px-3 py-1.5 transition-colors ${
+                  timeRange === r.id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative">
+            <Input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => { setDateFilter(e.target.value); if (e.target.value) setTimeRange('all'); }}
+              className="w-[150px] h-8 text-xs border-border bg-muted ps-2 pe-7"
+              title="בחר תאריך יעד ספציפי"
+            />
+            {dateFilter ? (
+              <button
+                onClick={() => setDateFilter('')}
+                className="absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground/80 p-0.5 rounded"
+                title="נקה תאריך"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            ) : (
+              <CalendarDays className="absolute end-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60 pointer-events-none" />
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
           <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-[140px] h-8 text-xs border-border bg-muted">
+            <SelectTrigger className="w-auto gap-1.5 h-8 text-xs border-border bg-muted">
+              <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1177,68 +1364,61 @@ export default function SalesTasks() {
               <SelectItem value="created_date">לפי תאריך יצירה</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-        <div className="h-6 w-px bg-border flex-shrink-0 hidden sm:block" />
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">תאריך:</span>
-          <div className="relative">
-            <Input
-              type="date"
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-[140px] h-8 text-xs border-border bg-muted ps-2 pe-6"
-              title="סנן לפי תאריך יעד"
-            />
-            {dateFilter && (
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                onClick={() => setDateFilter('')}
-                className="absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground/80 p-0.5 rounded"
-                title="נקה תאריך"
+                type="button"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-muted text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                <X className="h-3 w-3" />
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                מסננים
+                {leadStatusFilter !== 'all' && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                <ChevronDown className="h-3 w-3 opacity-70" />
               </button>
-            )}
-          </div>
-        </div>
-        <div className="h-6 w-px bg-border flex-shrink-0 hidden sm:block" />
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">סטטוס ליד:</span>
-          <Select value={leadStatusFilter} onValueChange={setLeadStatusFilter}>
-            <SelectTrigger className="w-[160px] h-8 text-xs border-border bg-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">הכל</SelectItem>
-              <SelectItem value="new_lead">ליד חדש</SelectItem>
-              <SelectItem value="hot_lead">ליד רותח</SelectItem>
-              <SelectItem value="followup_before_quote">פולאפ - לפני הצעה</SelectItem>
-              <SelectItem value="followup_after_quote">פולאפ - אחרי הצעה</SelectItem>
-              <SelectItem value="coming_to_branch">יגיע לסניף</SelectItem>
-              <SelectItem value="no_answer_1">ללא מענה 1</SelectItem>
-              <SelectItem value="no_answer_2">ללא מענה 2</SelectItem>
-              <SelectItem value="no_answer_3">ללא מענה 3</SelectItem>
-              <SelectItem value="no_answer_4">ללא מענה 4</SelectItem>
-              <SelectItem value="no_answer_5">ללא מענה 5</SelectItem>
-              <SelectItem value="no_answer_whatsapp_sent">ללא מענה - ווטסאפ</SelectItem>
-              <SelectItem value="no_answer_calls">אין מענה - חיוגים</SelectItem>
-              <SelectItem value="changed_direction">שנה כיוון</SelectItem>
-              <SelectItem value="deal_closed">נסגרה עסקה</SelectItem>
-              <SelectItem value="not_relevant_duplicate">כפול</SelectItem>
-              <SelectItem value="heard_price_not_interested">שמע מחיר - לא מעוניין</SelectItem>
-              <SelectItem value="not_interested_hangs_up">לא מעוניין - מנתק</SelectItem>
-              <SelectItem value="closed_by_manager_to_mailing">נסגר - דיוור</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="h-6 w-px bg-border flex-shrink-0 hidden sm:block" />
-        <div className="relative flex-1 min-w-[160px]">
-          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70 pointer-events-none" />
-          <Input
-            placeholder="חפש שם, טלפון, סיכום..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-8 text-xs border-border bg-muted ps-8"
-          />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-[340px] overflow-y-auto min-w-[210px]">
+              <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">סטטוס ליד</div>
+              {LEAD_STATUS_FILTER_OPTIONS.map((o) => (
+                <DropdownMenuItem key={o.value} onSelect={() => setLeadStatusFilter(o.value)} className="text-xs">
+                  <Check className={`h-3.5 w-3.5 me-1.5 ${leadStatusFilter === o.value ? 'opacity-100' : 'opacity-0'}`} />
+                  {o.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {(searchOpen || search) ? (
+            <div className="relative">
+              <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70 pointer-events-none" />
+              <Input
+                autoFocus
+                placeholder="חפש שם, טלפון, סיכום..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onBlur={() => { if (!search) setSearchOpen(false); }}
+                className="w-[200px] h-8 text-xs border-border bg-muted ps-8 pe-7"
+              />
+              {search && (
+                <button
+                  onClick={() => { setSearch(''); setSearchOpen(false); }}
+                  className="absolute end-1 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-foreground/80 p-0.5 rounded"
+                  title="נקה חיפוש"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-border bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="חיפוש"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1359,18 +1539,13 @@ export default function SalesTasks() {
         )}
 
         {hasMoreTasks && (
-          <div className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card">
-            <span className="text-xs text-muted-foreground/70">
-              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setTasksPage(prev => prev + 1)}
-              className="h-8 text-xs border-primary/20 text-primary hover:bg-primary/5 gap-1.5"
-            >
-              טען {Math.min(TASKS_PER_PAGE, totalFilteredCount - paginatedTasks.length)} נוספות
-            </Button>
+          // Auto-loading sentinel: scrolling near it reveals the next page.
+          <div
+            ref={loadMoreRef}
+            className="flex items-center justify-center gap-2 px-4 py-4 text-xs text-muted-foreground/70"
+          >
+            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+            טוען עוד… ({paginatedTasks.length} מתוך {totalFilteredCount})
           </div>
         )}
       </div>
