@@ -15,9 +15,12 @@ import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrdersWorkspace, filterOrdersForUser, canAccessAdminOnly } from '@/lib/rbac';
 import { getDateRange } from '@/utils/dateRange';
-import Dashboard2DateRange from '@/components/dashboard2/Dashboard2DateRange';
+import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
 import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
-import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
+
+// The Orders page adds an "all time" option on top of the shared presets so
+// the operational list defaults to every order, not an empty "today".
+const ORDERS_PRESETS = [{ key: 'all', label: 'הכול' }, ...DEFAULT_PRESETS];
 
 const filterOptions = [
   {
@@ -82,7 +85,7 @@ export default function Orders() {
   // otherwise defaults to today.
   const [rangeKey, setRangeKey] = useState(() => {
     const sp = new URLSearchParams(window.location.search);
-    return rangeKeyFromDates(sp.get('startDate'), sp.get('endDate')) || 'today';
+    return rangeKeyFromDates(sp.get('startDate'), sp.get('endDate')) || 'all';
   });
   const [customRange, setCustomRange] = useState(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -97,12 +100,6 @@ export default function Orders() {
     [rangeKey, customRange],
   );
   const overviewDateRange = useMemo(() => ({ from: start, to: end }), [start, end]);
-  const { data: snapshot = {}, isLoading: isSnapshotLoading } = useDashboard2Data({
-    start,
-    end,
-    enabled: isManager,
-    label: 'current',
-  });
   const handlePresetChange = (key) => {
     setRangeKey(key);
     if (key !== 'custom') setCustomRange(null);
@@ -120,7 +117,21 @@ export default function Orders() {
   });
 
   const scopedOrders = filterOrdersForUser(effectiveUser, orders);
-  let filteredOrders = scopedOrders;
+
+  // Date-scope by the selected range for managers. The snapshot cubes are
+  // computed from this exact set, so a cube's number always equals what its
+  // click reveals in the list below. Reps have no snapshot and keep the full
+  // list.
+  const rangeStart = start.getTime();
+  const rangeEnd = end.getTime();
+  const rangeOrders = isManager
+    ? scopedOrders.filter((o) => {
+        const t = new Date(o.created_date).getTime();
+        return Number.isFinite(t) && t >= rangeStart && t <= rangeEnd;
+      })
+    : scopedOrders;
+
+  let filteredOrders = rangeOrders;
 
   if (activeTab === 'pending_payment') {
     filteredOrders = filteredOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid');
@@ -216,9 +227,46 @@ export default function Orders() {
     );
   }
 
-  const pendingPaymentCount = scopedOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
-  const inProductionCount = scopedOrders.filter(o => o.production_status === 'in_production').length;
-  const readyDeliveryCount = scopedOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
+  const pendingPaymentCount = rangeOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
+  const inProductionCount = rangeOrders.filter(o => o.production_status === 'in_production').length;
+  const readyDeliveryCount = rangeOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
+  const paidCount = rangeOrders.filter(o => o.payment_status === 'paid').length;
+  const deliveredCount = rangeOrders.filter(o => o.delivery_status === 'delivered').length;
+  const revenueTotal = rangeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+
+  // Snapshot cubes derive from rangeOrders (same source as the list), so each
+  // cube number is exactly the row count its click produces.
+  const snapshot = {
+    ordersCount: rangeOrders.length,
+    revenue: revenueTotal,
+    avgOrder: rangeOrders.length ? Math.round(revenueTotal / rangeOrders.length) : 0,
+    unpaidOrders: pendingPaymentCount,
+    paidOrders: paidCount,
+    inProduction: inProductionCount,
+    readyForDelivery: readyDeliveryCount,
+    deliveredOrders: deliveredCount,
+  };
+
+  // A cube click narrows the list to that status, reusing the existing tab /
+  // dropdown filters so the two stay in lock-step.
+  const baseFilters = { search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' };
+  const selectCube = (key) => {
+    switch (key) {
+      case 'unpaid': setActiveTab('pending_payment'); setFilters(baseFilters); break;
+      case 'in_production': setActiveTab('in_production'); setFilters(baseFilters); break;
+      case 'ready': setActiveTab('ready_delivery'); setFilters(baseFilters); break;
+      case 'paid': setActiveTab('all'); setFilters({ ...baseFilters, payment_status: 'paid' }); break;
+      case 'delivered': setActiveTab('all'); setFilters({ ...baseFilters, delivery_status: 'delivered' }); break;
+      default: setActiveTab('all'); setFilters(baseFilters); break;
+    }
+  };
+  const activeCubeKey =
+    filters.payment_status === 'paid' ? 'paid'
+    : filters.delivery_status === 'delivered' ? 'delivered'
+    : activeTab === 'pending_payment' ? 'unpaid'
+    : activeTab === 'in_production' ? 'in_production'
+    : activeTab === 'ready_delivery' ? 'ready'
+    : null;
 
   return (
     <div className="space-y-6">
@@ -247,16 +295,17 @@ export default function Orders() {
               dateRange={overviewDateRange}
               onPresetChange={handlePresetChange}
               onCustomChange={handleCustomChange}
+              presets={ORDERS_PRESETS}
             />
           </div>
-          {isSnapshotLoading && !snapshot.ordersCount ? (
+          {isLoading ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <Skeleton key={i} className="h-24 w-full rounded-xl" />
               ))}
             </div>
           ) : (
-            <OrdersSnapshotCards snapshot={snapshot} />
+            <OrdersSnapshotCards snapshot={snapshot} onSelect={selectCube} activeKey={activeCubeKey} />
           )}
         </section>
       ) : null}
