@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles } from "lucide-react";
+import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, Sparkles, PhoneMissed, Send, CalendarCheck, UserPlus } from "lucide-react";
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -96,6 +96,18 @@ const CATEGORY_META = {
   cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
   cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
   cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
+};
+
+// One glyph per funnel stage so the category grid reads like an icon
+// legend rather than five identical coloured numbers: new lead → tried,
+// no answer → our move (build the quote) → their move (quote sent) →
+// meeting booked.
+const CATEGORY_ICON = {
+  cat_new_lead: UserPlus,
+  cat_no_answer: PhoneMissed,
+  cat_before_quote: FileText,
+  cat_after_quote: Send,
+  cat_meeting: CalendarCheck,
 };
 
 // "Due now" window — a task whose due_date is within ±60min of the
@@ -1024,12 +1036,12 @@ export default function SalesTasks() {
       ) : (
       <>
       {/* ===== TOP KPI STRIP =====
-          Per the customer brief: a four-tile header summarising the rep's
-          day. Each tile is clickable and sets the active filter on the
-          list below — tiles ARE the navigation, not decoration. Default
-          tone is muted (subtle gray surface, low-contrast value) and a
-          tile lights up to its full accent colour only when active or
-          on hover, so the rep can see at a glance which filter is on. */}
+          A four-tile header summarising the rep's day. Each tile is
+          clickable and sets the active filter on the list below — tiles
+          ARE the navigation, not decoration. Each tile is colour-coded by
+          meaning and wears that accent at rest (icon chip + value), so the
+          strip scans like a status heatmap; the active filter deepens to a
+          tinted fill + ring. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
@@ -1037,21 +1049,19 @@ export default function SalesTasks() {
           { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
         ].map((tile) => {
-          // Three-state styling: default (muted gray), hover (faint
-          // tint of the tile's accent), active (full accent + ring).
-          // Tailwind JIT requires the class strings spelled out, so the
-          // lookups stay colocated with the meaning instead of templated.
+          // Colour-coded-by-meaning styling: every tile carries its accent
+          // at rest (icon chip + value + hairline border) so the grid reads
+          // like a status heatmap at a glance — red = overdue/urgent, amber
+          // = due today, emerald = done, indigo = closed. Selecting a tile
+          // deepens it to a tinted fill + ring. Tailwind JIT needs the class
+          // strings spelled out, so each tone stays colocated with meaning.
           const tone = {
-            amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
-            red:     { value: 'text-red-700',     activeCard: 'bg-red-50 border-red-500 ring-2 ring-red-400',         hoverCard: 'hover:border-red-300 hover:bg-red-50/50' },
-            emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
-            indigo:  { value: 'text-indigo-700',  activeCard: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', hoverCard: 'hover:border-indigo-300 hover:bg-indigo-50/50' },
+            amber:   { chip: 'bg-amber-100 text-amber-600',     value: 'text-amber-700',   idle: 'border-amber-200 hover:bg-amber-50/60 hover:border-amber-300',       active: 'bg-amber-50 border-amber-400 ring-2 ring-amber-400' },
+            red:     { chip: 'bg-red-100 text-red-600',         value: 'text-red-700',     idle: 'border-red-200 hover:bg-red-50/60 hover:border-red-300',             active: 'bg-red-50 border-red-400 ring-2 ring-red-400' },
+            emerald: { chip: 'bg-emerald-100 text-emerald-600', value: 'text-emerald-700', idle: 'border-emerald-200 hover:bg-emerald-50/60 hover:border-emerald-300', active: 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400' },
+            indigo:  { chip: 'bg-indigo-100 text-indigo-600',   value: 'text-indigo-700',  idle: 'border-indigo-200',                                                  active: 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-400' },
           }[tile.tone];
           const isActive = !tile.readOnly && activeTab === (tile.asTab || tile.id);
-          const cardCls = isActive
-            ? tone.activeCard
-            : `border-border bg-muted/30 ${tile.readOnly ? '' : tone.hoverCard}`;
-          const valueCls = isActive ? tone.value : 'text-muted-foreground';
           const Icon = tile.icon;
           return (
             <button
@@ -1059,13 +1069,15 @@ export default function SalesTasks() {
               type="button"
               onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
               disabled={tile.readOnly}
-              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+              className={`text-right rounded-2xl border bg-card p-4 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
-                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="text-sm font-medium text-foreground/70">{tile.label}</p>
+                <div className={`rounded-xl p-2 ${tone.chip}`}>
+                  <Icon className="h-4 w-4" />
+                </div>
               </div>
-              <p className={`text-2xl font-bold tabular-nums ${valueCls}`}>{Number(tile.value || 0).toLocaleString()}</p>
+              <p className={`text-3xl font-bold tabular-nums ${tone.value}`}>{Number(tile.value || 0).toLocaleString()}</p>
             </button>
           );
         })}
@@ -1086,29 +1098,34 @@ export default function SalesTasks() {
             const meta = CATEGORY_META[catId];
             const value = categoryCounts[catId] || 0;
             const isActive = activeTab === catId;
-            // Same three-state pattern as the KPI tiles above: muted
-            // gray by default, accent tint on hover, full accent + ring
-            // when active. Class strings spelled out so Tailwind's JIT
-            // can see them.
+            const Icon = CATEGORY_ICON[catId];
+            // Same colour-coded-by-meaning treatment as the KPI tiles: each
+            // card wears its funnel colour at rest (icon chip + value +
+            // hairline border) and deepens to a tinted fill + ring when it's
+            // the active filter. Funnel temperature: sky (new) → rose (retry)
+            // → amber (our move) → violet (their move) → emerald (closing).
+            // Class strings spelled out so Tailwind's JIT can see them.
             const tone = {
-              sky:     { value: 'text-sky-700',     activeCard: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',         hoverCard: 'hover:border-sky-300 hover:bg-sky-50/50' },
-              rose:    { value: 'text-rose-700',    activeCard: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',      hoverCard: 'hover:border-rose-300 hover:bg-rose-50/50' },
-              amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
-              violet:  { value: 'text-violet-700',  activeCard: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', hoverCard: 'hover:border-violet-300 hover:bg-violet-50/50' },
-              emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
+              sky:     { chip: 'bg-sky-100 text-sky-600',         value: 'text-sky-700',     idle: 'border-sky-200 hover:bg-sky-50/60 hover:border-sky-300',         active: 'bg-sky-50 border-sky-400 ring-2 ring-sky-400' },
+              rose:    { chip: 'bg-rose-100 text-rose-600',       value: 'text-rose-700',    idle: 'border-rose-200 hover:bg-rose-50/60 hover:border-rose-300',      active: 'bg-rose-50 border-rose-400 ring-2 ring-rose-400' },
+              amber:   { chip: 'bg-amber-100 text-amber-600',     value: 'text-amber-700',   idle: 'border-amber-200 hover:bg-amber-50/60 hover:border-amber-300',   active: 'bg-amber-50 border-amber-400 ring-2 ring-amber-400' },
+              violet:  { chip: 'bg-violet-100 text-violet-600',   value: 'text-violet-700',  idle: 'border-violet-200 hover:bg-violet-50/60 hover:border-violet-300', active: 'bg-violet-50 border-violet-400 ring-2 ring-violet-400' },
+              emerald: { chip: 'bg-emerald-100 text-emerald-600', value: 'text-emerald-700', idle: 'border-emerald-200 hover:bg-emerald-50/60 hover:border-emerald-300', active: 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400' },
             }[meta.accent];
-            const cardCls = isActive ? tone.activeCard : `border-border bg-muted/30 ${tone.hoverCard}`;
-            const valueCls = isActive ? tone.value : 'text-muted-foreground';
-            const titleCls = isActive ? 'text-foreground' : 'text-muted-foreground';
             return (
               <button
                 key={catId}
                 type="button"
                 onClick={() => setActiveTab(catId)}
-                className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}
+                className={`text-right rounded-2xl border bg-card p-3 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle}`}
               >
-                <p className={`text-xs font-semibold leading-tight ${titleCls}`}>{meta.label}</p>
-                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-xs font-semibold leading-tight text-foreground/80">{meta.label}</p>
+                  <div className={`rounded-lg p-1.5 ${tone.chip}`}>
+                    <Icon className="h-3.5 w-3.5" />
+                  </div>
+                </div>
+                <p className={`text-2xl font-bold tabular-nums ${tone.value}`}>{value.toLocaleString()}</p>
                 <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
               </button>
             );
