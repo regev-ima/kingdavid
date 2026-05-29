@@ -87,16 +87,26 @@ export default function LeadWorkbenchQueue({ state, onAction }) {
   ].filter((chip) => chip.count > 0);
 
   return (
-    <Card className="rounded-xl border-border shadow-card overflow-hidden">
-      <CardHeader className="py-3 border-b border-border/50 bg-muted/40">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Clock className="h-4 w-4 text-primary" />
-            מה עושים עכשיו
-            {queue.length > 0 ? (
-              <span className="text-xs font-medium text-muted-foreground">· {queue.length} משימות</span>
-            ) : null}
-          </CardTitle>
+    /* The "next-step" card is the rep's primary jump-off point on
+       any given lead, so it gets a distinct sky tint to stand out
+       from the surrounding white cards (customer details, tasks
+       history, etc.). Not red (would feel alarming) and not green
+       (would feel "done") — sky is calm but distinct, the same
+       family Google uses for primary actions in Gmail / Tasks. */
+    <Card className="rounded-2xl border-sky-200 bg-sky-50/40 shadow-card overflow-hidden">
+      <CardHeader className="px-5 py-4 border-b border-sky-200/60 bg-sky-100/40">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="space-y-0.5">
+            <CardTitle className="text-base font-bold flex items-center gap-2 text-sky-900">
+              <Clock className="h-4 w-4 text-sky-600" />
+              הצעד הבא
+            </CardTitle>
+            <p className="text-xs text-sky-800/70">
+              {queue.length === 0
+                ? 'אין משימות פתוחות לליד הזה'
+                : `${queue.length} ${queue.length === 1 ? 'משימה פתוחה במוקד שלך' : 'משימות פתוחות במוקד שלך'}`}
+            </p>
+          </div>
           {chips.length > 0 ? (
             <div className="flex items-center gap-1.5 flex-wrap">
               {chips.map((chip) => (
@@ -112,10 +122,10 @@ export default function LeadWorkbenchQueue({ state, onAction }) {
         </div>
       </CardHeader>
 
-      <CardContent className="p-0">
+      <CardContent className="p-0 bg-white">
         {queue.length === 0 ? (
-          <div className="p-6 text-sm text-muted-foreground flex items-center justify-between gap-3">
-            <span>אין משימות פתוחות כרגע — הכל מסודר.</span>
+          <div className="px-5 py-6 text-sm text-muted-foreground flex items-center justify-between gap-3">
+            <span>הכל מסודר כרגע — אין מה לעשות לליד הזה ברגע זה.</span>
             <Button size="sm" variant="outline" onClick={() => onAction?.({ type: 'empty' }, 'new_task')}>
               משימה חדשה
             </Button>
@@ -142,11 +152,11 @@ export default function LeadWorkbenchQueue({ state, onAction }) {
                       Red bar = overdue, amber = today, etc. */}
                   <span className={`w-1 flex-shrink-0 ${bucketStyle.rail}`} aria-hidden />
 
-                  <div className="flex-1 min-w-0 py-3 px-4 flex items-center gap-3">
-                    {/* Type chip — the verb. This is the rep's
-                        first answer to "what am I supposed to do
-                        here?" so it's the big visible label, not
-                        small grey text like before. */}
+                  {/* Bumped py-3 → py-4 and px-4 → px-5 so the rows
+                      get the same breathing room as the rest of the
+                      Google-style cards we've moved to. */}
+                  <div className="flex-1 min-w-0 py-4 px-5 flex items-center gap-4">
+                    {/* Type chip — the verb. */}
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold flex-shrink-0 ${typeMeta.tone}`}>
                       <TypeIcon className="h-3.5 w-3.5" />
                       {typeMeta.label}
@@ -158,7 +168,7 @@ export default function LeadWorkbenchQueue({ state, onAction }) {
                     {summary ? (
                       <span className="text-sm text-foreground truncate flex-1 min-w-0">{summary}</span>
                     ) : (
-                      <span className="text-sm text-muted-foreground/60 truncate flex-1 min-w-0">—</span>
+                      <span className="text-sm text-muted-foreground/50 truncate flex-1 min-w-0">—</span>
                     )}
 
                     {/* When? — relative time, glanceable. Overdue
