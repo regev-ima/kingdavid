@@ -1055,26 +1055,34 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
-          {/* Communication History */}
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                היסטוריית תקשורת
-              </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddCommunication(true)}>
+          {/* Communication History — temporarily hidden per product
+              decision. The card was almost always empty for new
+              leads, which made it dead visual weight. The
+              <CommunicationHistory /> component, the AddCommunication
+              dialog wiring, and the import above are all kept so
+              this is a one-line revert when we're ready to bring it
+              back. */}
+          {false && (
+            <Card className="rounded-xl border-border shadow-card overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  היסטוריית תקשורת
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddCommunication(true)}>
 
-                <Plus className="h-4 w-4 me-2" />
-                הוסף
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <CommunicationHistory leadId={leadId} />
-            </CardContent>
-          </Card>
+                  <Plus className="h-4 w-4 me-2" />
+                  הוסף
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <CommunicationHistory leadId={leadId} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Service section — always visible, no mode toggle.
               Replaces the old "switch to service mode" pattern with a
