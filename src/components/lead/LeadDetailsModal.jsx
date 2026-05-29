@@ -23,17 +23,21 @@ export default function LeadDetailsModal({ leadId, mode = 'sales', onClose }) {
           other DialogContent in this codebase. */}
       <DialogContent dir="rtl" className="w-[80vw] max-w-[1100px] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
         <DialogTitle className="sr-only">פרטי ליד</DialogTitle>
-        <div className="flex-1 overflow-auto p-6 pt-10">
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                טוען פרטי ליד…
-              </div>
-            }
-          >
-            <LazyLeadDetails leadId={leadId} initialMode={mode} isModal onClose={onClose} />
-          </Suspense>
-        </div>
+        {/* Hand the entire dialog body to LeadDetails. In isModal mode
+            it lays itself out as a flex column with a fixed top bar +
+            action bar and an internal scrollable body — that way the
+            header truly never moves and never gets occluded by content
+            scrolling past it, which sticky positioning was struggling
+            with in this portal/transform context. */}
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              טוען פרטי ליד…
+            </div>
+          }
+        >
+          <LazyLeadDetails leadId={leadId} initialMode={mode} isModal onClose={onClose} />
+        </Suspense>
       </DialogContent>
     </Dialog>
   );

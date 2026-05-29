@@ -496,18 +496,20 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header — name, status, SLA, mode toggle. In popup mode it
-          sticks to the top of the scrollable modal body so the
-          manager always sees which lead they're inside and can flip
-          the sales/service toggle no matter how far they've scrolled.
-          The negative margins extend the bar edge-to-edge of the
-          modal frame; pe-12 reserves space for the Radix close-X that
-          sits in the dialog's right corner. */}
+    /* In modal mode the LeadDetails IS the dialog body — it takes the
+       full dialog height and splits into a frozen top region (name +
+       action bar) and a scrollable body, so the header is genuinely
+       fixed instead of relying on sticky inside a portal/transform
+       context where sticky was unreliable. Full-page mode keeps the
+       original space-y-6 vertical flow. */
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {/* Header — name, status, SLA, mode toggle. In popup mode it's
+          flex-shrink-0 so it never scrolls; pe-12 reserves room for
+          the Radix close-X that sits in the dialog's right corner. */}
       <div className={
         `flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4` +
         (isModal
-          ? ' sticky top-0 z-20 -mt-10 -mx-6 px-6 pt-10 pb-3 pe-12 bg-card border-b border-border'
+          ? ' flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border'
           : '')
       }>
         <div className="flex items-center gap-3">
@@ -592,14 +594,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </Link>
       </div>
 
-      {/* Action bar — mode toggle + חייג / משימה / הצעה. Sticky so
-          the rep keeps the main actions one click away while reading
-          the lead. In page mode it lives below the global page chrome
-          (top-16). In popup mode it stacks directly below the sticky
-          header inside the modal body (top-[68px]). */}
+      {/* Action bar — mode toggle + חייג / משימה / הצעה. Always one
+          click away while reading the lead. In page mode it sticks
+          below the global chrome (top-16). In popup mode it sits as
+          a flex-shrink-0 sibling of the header — genuinely fixed at
+          the top of the dialog, no sticky involved. */}
       <div className={
-        `hidden lg:flex sticky z-10 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card ` +
-        (isModal ? 'top-[68px]' : 'top-16')
+        isModal
+          ? 'hidden lg:flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2'
+          : 'hidden lg:flex sticky top-16 z-10 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
       }>
         <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-1">
           <Button
@@ -673,6 +676,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Scrollable body. In modal mode this is the only thing inside
+          the dialog that actually scrolls — the header + action bar
+          above are fixed flex-shrink-0 siblings, so they NEVER move
+          and NEVER get occluded by content scrolling under them. In
+          full-page mode this is a passive wrapper that preserves the
+          original space-y-6 rhythm. */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4 space-y-6' : 'space-y-6'}>
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Main Info */}
@@ -1408,6 +1419,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </Card>
         </div>
       </div>
+
+      </div>{/* end of scrollable body wrapper (see comment near opener above) */}
 
       {/* Add Communication Dialog */}
       <AddCommunication
