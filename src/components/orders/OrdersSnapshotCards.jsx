@@ -27,19 +27,19 @@ const TONE = {
 };
 
 // Orders period snapshot, rendered with the platform's standard stat-card
-// look (white Card + shadow-card + icon chip). Each card is clickable: it
-// drills the list below to the matching status. The three aggregate cards
-// (filterKey 'all') reset the list to every order in range; the status
-// cards highlight when their filter is active.
+// look. Each card is clickable and IS the status filter for the list below
+// (replacing the old status tabs). `filterKey` is the activeTab value the
+// click selects; the three aggregate cards pass null = "show everything in
+// range" and never highlight. The active status card shows a primary ring.
 export default function OrdersSnapshotCards({ snapshot = {}, onSelect, activeKey = null }) {
   const cards = [
-    { label: 'סכום מכירות', value: fmtCurrency(snapshot.revenue), icon: DollarSign, tone: 'emerald', filterKey: 'all' },
-    { label: 'מס׳ הזמנות', value: fmtNumber(snapshot.ordersCount), icon: ShoppingCart, tone: 'blue', filterKey: 'all' },
-    { label: 'ממוצע הזמנה', value: fmtCurrency(snapshot.avgOrder), icon: TrendingUp, tone: 'indigo', filterKey: 'all' },
-    { label: 'ממתינות לתשלום', value: fmtNumber(snapshot.unpaidOrders), icon: CreditCard, tone: 'amber', filterKey: 'unpaid' },
+    { label: 'סכום מכירות', value: fmtCurrency(snapshot.revenue), icon: DollarSign, tone: 'emerald', filterKey: null },
+    { label: 'מס׳ הזמנות', value: fmtNumber(snapshot.ordersCount), icon: ShoppingCart, tone: 'blue', filterKey: null },
+    { label: 'ממוצע הזמנה', value: fmtCurrency(snapshot.avgOrder), icon: TrendingUp, tone: 'indigo', filterKey: null },
+    { label: 'ממתינות לתשלום', value: fmtNumber(snapshot.unpaidOrders), icon: CreditCard, tone: 'amber', filterKey: 'pending_payment' },
     { label: 'שולמו', value: fmtNumber(snapshot.paidOrders), icon: CheckCircle2, tone: 'emerald', filterKey: 'paid' },
     { label: 'בייצור', value: fmtNumber(snapshot.inProduction), icon: Factory, tone: 'violet', filterKey: 'in_production' },
-    { label: 'מוכן למשלוח', value: fmtNumber(snapshot.readyForDelivery), icon: Package, tone: 'cyan', filterKey: 'ready' },
+    { label: 'מוכן למשלוח', value: fmtNumber(snapshot.readyForDelivery), icon: Package, tone: 'cyan', filterKey: 'ready_delivery' },
     { label: 'נמסרו', value: fmtNumber(snapshot.deliveredOrders), icon: Truck, tone: 'slate', filterKey: 'delivered' },
   ];
 
@@ -49,15 +49,16 @@ export default function OrdersSnapshotCards({ snapshot = {}, onSelect, activeKey
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {cards.map((c) => {
         const Icon = c.icon;
-        // Only the status cubes carry an active state; the aggregate cubes
-        // ('all') show the whole list, so they never highlight.
-        const active = clickable && activeKey && c.filterKey === activeKey;
+        // Only status cubes highlight; the aggregate cubes (null) never do.
+        const active = clickable && c.filterKey != null && c.filterKey === activeKey;
+        const isStatusCube = clickable && c.filterKey != null;
         return (
           <Card
             key={c.label}
             onClick={clickable ? () => onSelect(c.filterKey) : undefined}
             role={clickable ? 'button' : undefined}
             tabIndex={clickable ? 0 : undefined}
+            title={isStatusCube ? (active ? 'בטל סינון' : `הצג ${c.label}`) : undefined}
             onKeyDown={clickable ? (e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
@@ -68,7 +69,7 @@ export default function OrdersSnapshotCards({ snapshot = {}, onSelect, activeKey
               clickable
                 ? 'cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
                 : ''
-            } ${active ? 'ring-2 ring-primary' : ''}`}
+            } ${active ? 'ring-2 ring-primary border-primary' : ''}`}
           >
             <CardContent className="p-4">
               <div className="flex items-center justify-between gap-2">

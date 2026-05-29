@@ -10,7 +10,7 @@ import QuickActions from '@/components/shared/QuickActions';
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, LayoutDashboard } from "lucide-react";
+import { Plus, LayoutDashboard, X } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrdersWorkspace, filterOrdersForUser, canAccessAdminOnly } from '@/lib/rbac';
@@ -21,6 +21,15 @@ import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
 // The Orders page adds an "all time" option on top of the shared presets so
 // the operational list defaults to every order, not an empty "today".
 const ORDERS_PRESETS = [{ key: 'all', label: 'הכול' }, ...DEFAULT_PRESETS];
+
+// Hebrew label per status-tab key, for the manager's "now showing X" chip.
+const STATUS_TAB_LABELS = {
+  pending_payment: 'ממתינות לתשלום',
+  paid: 'שולמו',
+  in_production: 'בייצור',
+  ready_delivery: 'מוכן למשלוח',
+  delivered: 'נמסרו',
+};
 
 const filterOptions = [
   {
@@ -74,7 +83,7 @@ export default function Orders() {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
-  const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'in_production', 'ready_delivery'].includes(initialTab) ? initialTab : 'all');
+  const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
   const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' });
   const canAccessSales = canViewOrdersWorkspace(effectiveUser);
   const isManager = canAccessAdminOnly(effectiveUser);
@@ -133,12 +142,19 @@ export default function Orders() {
 
   let filteredOrders = rangeOrders;
 
+  // Status quick-filter. For managers this is driven entirely by the cube
+  // clicks (the old tab strip is gone); reps still get the tab strip. Either
+  // way `activeTab` is the single source of truth.
   if (activeTab === 'pending_payment') {
     filteredOrders = filteredOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid');
+  } else if (activeTab === 'paid') {
+    filteredOrders = filteredOrders.filter(o => o.payment_status === 'paid');
   } else if (activeTab === 'in_production') {
     filteredOrders = filteredOrders.filter(o => o.production_status === 'in_production');
   } else if (activeTab === 'ready_delivery') {
     filteredOrders = filteredOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered');
+  } else if (activeTab === 'delivered') {
+    filteredOrders = filteredOrders.filter(o => o.delivery_status === 'delivered');
   }
 
   if (filters.search) {
@@ -247,26 +263,15 @@ export default function Orders() {
     deliveredOrders: deliveredCount,
   };
 
-  // A cube click narrows the list to that status, reusing the existing tab /
-  // dropdown filters so the two stay in lock-step.
-  const baseFilters = { search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' };
-  const selectCube = (key) => {
-    switch (key) {
-      case 'unpaid': setActiveTab('pending_payment'); setFilters(baseFilters); break;
-      case 'in_production': setActiveTab('in_production'); setFilters(baseFilters); break;
-      case 'ready': setActiveTab('ready_delivery'); setFilters(baseFilters); break;
-      case 'paid': setActiveTab('all'); setFilters({ ...baseFilters, payment_status: 'paid' }); break;
-      case 'delivered': setActiveTab('all'); setFilters({ ...baseFilters, delivery_status: 'delivered' }); break;
-      default: setActiveTab('all'); setFilters(baseFilters); break;
-    }
+  // The cubes ARE the status filter for managers. A click sets activeTab to
+  // that status (or back to 'all' when you click the already-active cube, so
+  // a second click clears it). filterKey null = an aggregate cube → 'all'.
+  const selectCube = (filterKey) => {
+    setActiveTab((prev) => (filterKey && prev === filterKey ? 'all' : (filterKey || 'all')));
   };
-  const activeCubeKey =
-    filters.payment_status === 'paid' ? 'paid'
-    : filters.delivery_status === 'delivered' ? 'delivered'
-    : activeTab === 'pending_payment' ? 'unpaid'
-    : activeTab === 'in_production' ? 'in_production'
-    : activeTab === 'ready_delivery' ? 'ready'
-    : null;
+  // Which status cube is highlighted = the active status tab (aggregate cubes
+  // never highlight, and 'all' highlights nothing).
+  const activeCubeKey = activeTab === 'all' ? null : activeTab;
 
   return (
     <div className="space-y-6">
@@ -310,26 +315,46 @@ export default function Orders() {
         </section>
       ) : null}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex flex-col sm:flex-row bg-card border h-auto gap-1 p-1.5 rounded-lg shadow-card">
-          <TabsTrigger value="all" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">כל ההזמנות ({rangeOrders.length})</TabsTrigger>
-          <TabsTrigger value="pending_payment" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            ממתין לתשלום ({pendingPaymentCount})
-          </TabsTrigger>
-          <TabsTrigger value="in_production" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            ייצור ({inProductionCount})
-          </TabsTrigger>
-          <TabsTrigger value="ready_delivery" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-            מוכן למשלוח ({readyDeliveryCount})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Status quick-filter. Managers get this from the cubes above, so the
+          tab strip would just duplicate them — show it for reps only. */}
+      {!isManager ? (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="flex flex-col sm:flex-row bg-card border h-auto gap-1 p-1.5 rounded-lg shadow-card">
+            <TabsTrigger value="all" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">כל ההזמנות ({rangeOrders.length})</TabsTrigger>
+            <TabsTrigger value="pending_payment" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              ממתין לתשלום ({pendingPaymentCount})
+            </TabsTrigger>
+            <TabsTrigger value="in_production" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              ייצור ({inProductionCount})
+            </TabsTrigger>
+            <TabsTrigger value="ready_delivery" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              מוכן למשלוח ({readyDeliveryCount})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      ) : null}
+
+      {/* When a manager has narrowed by a cube there's no tab strip to show
+          it, so surface the active status + a one-click clear right above the
+          list. */}
+      {isManager && activeCubeKey ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>
+            מציג: <span className="font-semibold text-foreground">{STATUS_TAB_LABELS[activeCubeKey]}</span>
+            {' '}({filteredOrders.length})
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => setActiveTab('all')} className="h-7 text-xs gap-1">
+            <X className="h-3.5 w-3.5" />
+            הצג הכל
+          </Button>
+        </div>
+      ) : null}
 
       <FilterBar
         filters={filterOptions}
         values={filters}
         onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-        onClear={() => setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' })}
+        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' }); setActiveTab('all'); }}
         searchPlaceholder="חפש לפי מספר הזמנה, שם או טלפון..."
       />
 
