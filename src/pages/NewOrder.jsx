@@ -31,6 +31,7 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
+import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
@@ -64,7 +65,7 @@ export default function NewOrder() {
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [] }],
+    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -75,6 +76,7 @@ export default function NewOrder() {
     delivery_status: 'need_scheduling',
     trial_30d_enabled: false,
     notes_sales: '',
+    special_requests: '',
   });
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
@@ -230,6 +232,7 @@ export default function NewOrder() {
         discount_total: quote.discount_total || 0,
         vat_amount: quote.vat_amount || 0,
         total: quote.total || 0,
+        special_requests: quote.special_requests || prev.special_requests,
       }));
     }
   }, [quote]);
@@ -457,7 +460,7 @@ export default function NewOrder() {
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [] }]
+      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
     }));
   };
 
@@ -725,6 +728,62 @@ export default function NewOrder() {
                           onVariationSelect={(variation) => handleVariationSelect(index, variation)}
                           placeholder="בחר מוצר ומידות"
                         />
+                        {/* Bed-only fabric catalog block */}
+                        {(() => {
+                          const product = products.find(p => p.id === item.product_id);
+                          if (product?.category !== 'bed') return null;
+                          return (
+                            <div className="mt-3 space-y-2 border-t border-border/40 pt-3">
+                              <Label className="text-xs text-muted-foreground">קטלוג בד</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  placeholder="שם קטלוג"
+                                  value={item.fabric_catalog_name || ''}
+                                  onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
+                                  className="h-8 text-xs"
+                                />
+                                <Input
+                                  placeholder="מס׳ צבע"
+                                  value={item.fabric_color_number || ''}
+                                  onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
+                                  className="h-8 text-xs"
+                                />
+                                <Input
+                                  placeholder="צבע"
+                                  value={item.fabric_color || ''}
+                                  onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
+                                  className="h-8 text-xs"
+                                />
+                                <Select
+                                  value={item.fabric_supplier || ''}
+                                  onValueChange={(val) => {
+                                    updateItem(index, 'fabric_supplier', val);
+                                    if (val !== FABRIC_SUPPLIER_OTHER) {
+                                      updateItem(index, 'fabric_supplier_other', '');
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue placeholder="ספק" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {FABRIC_SUPPLIERS.map((s) => (
+                                      <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
+                                <Input
+                                  placeholder="שם הספק"
+                                  value={item.fabric_supplier_other || ''}
+                                  onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
+                                  className="h-8 text-xs"
+                                />
+                              )}
+                            </div>
+                          );
+                        })()}
                         {item.variation_id && (() => {
                               const variation = variations.find(v => v.id === item.variation_id);
                               const product = products.find(p => p.id === item.product_id);
@@ -902,6 +961,15 @@ export default function NewOrder() {
               <Textarea
                 value={formData.notes_sales}
                 onChange={(e) => setFormData({...formData, notes_sales: e.target.value})}
+                rows={2}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>בקשות מיוחדות</Label>
+              <Textarea
+                value={formData.special_requests || ''}
+                onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
+                placeholder="בקשות מיוחדות שיופיעו על ההזמנה (אופציונלי)"
                 rows={2}
               />
             </div>
