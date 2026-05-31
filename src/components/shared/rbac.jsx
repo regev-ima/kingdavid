@@ -36,6 +36,15 @@ export function canAccessBookkeepingWorkspace(user) {
   return isBookkeeperUser(user);
 }
 
+// Grantable "manage service requests" permission (Service Center). Admins
+// always have it; otherwise it's the users.can_manage_service flag. Mirrors
+// canManageService in @/lib/rbac for the task-related components that import
+// from this module.
+export function canManageService(user) {
+  if (!user) return false;
+  return user.role === 'admin' || user.can_manage_service === true;
+}
+
 function taskBelongsToUser(user, task, leadsById) {
   if (!user || !task) return false;
   if (user.role === 'admin') return true;

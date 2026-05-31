@@ -180,7 +180,12 @@ export default function Orders() {
       header: 'מס\' הזמנה',
       accessor: 'order_number',
       render: (row) => (
-        <span className="font-medium text-primary">#{row.order_number}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-primary">#{row.order_number}</span>
+          {row.is_imported && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600 ring-1 ring-stone-200 whitespace-nowrap">הזמנה מיובאת</span>
+          )}
+        </div>
       )
     },
     {

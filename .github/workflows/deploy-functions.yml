@@ -67,6 +67,7 @@ jobs:
             extractData
             sendPushNotification
             importLeadsFromGoogleSheets
+            sendSms
           )
           for fn in "${FUNCTIONS[@]}"; do
             echo "Deploying $fn..."
