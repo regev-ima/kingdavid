@@ -451,6 +451,17 @@ const QuotePdfGenerator = async (quoteData) => {
         </div>
 
         ${
+          Array.isArray(quoteData.payment_terms_selection) && quoteData.payment_terms_selection.length
+            ? `
+          <div class="notes">
+            <p class="notes-label">אמצעי תשלום:</p>
+            <p>${quoteData.payment_terms_selection.map(esc).join(' · ')}</p>
+          </div>
+        `
+            : ""
+        }
+
+        ${
           quoteData.special_requests
             ? `
           <div class="notes">

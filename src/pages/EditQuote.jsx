@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,6 +72,7 @@ export default function EditQuote() {
     warranty_terms: '',
     notes: '',
     special_requests: '',
+    payment_terms_selection: [],
   });
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
@@ -154,6 +156,7 @@ export default function EditQuote() {
         warranty_terms: quote.warranty_terms || '',
         notes: quote.notes || '',
         special_requests: quote.special_requests || '',
+        payment_terms_selection: Array.isArray(quote.payment_terms_selection) ? quote.payment_terms_selection : [],
       });
     }
   }, [quote, variations]);
@@ -934,6 +937,36 @@ export default function EditQuote() {
                 rows={3}
                 className="resize-none"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">אמצעי תשלום</Label>
+              <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.</p>
+              <div className="flex flex-wrap gap-2">
+                {PAYMENT_TERMS_OPTIONS.map((opt) => {
+                  const selected = (formData.payment_terms_selection || []).includes(opt);
+                  return (
+                    <Button
+                      key={opt}
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        const current = formData.payment_terms_selection || [];
+                        setFormData({
+                          ...formData,
+                          payment_terms_selection: selected
+                            ? current.filter((x) => x !== opt)
+                            : [...current, opt],
+                        });
+                      }}
+                    >
+                      {selected && <Check className="h-3 w-3 me-1" />}
+                      {opt}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">תנאי אחריות</Label>
