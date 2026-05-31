@@ -182,6 +182,10 @@ export default function SalesTasks() {
   const [completingTask, setCompletingTask] = useState(null);
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
   const [searchOpen, setSearchOpen] = useState(false);
+  // Funnel-card drill-down: which category card is selected (null = none). It
+  // narrows the list WITHIN the current tile/time selection, and the cards show
+  // that selection's breakdown — so clicking composes instead of replacing.
+  const [categoryFilter, setCategoryFilter] = useState(null);
 
   const initialTaskId = urlParams.get('id');
 
@@ -453,61 +457,10 @@ export default function SalesTasks() {
     return filtered;
   }, [effectiveUser, allSalesTasks, leadsById, activeTab]);
 
-  // Lead IDs of every open task the current user owns — independent of
-  // the active tab so the category counters always reflect the full
-  // queue, not just "today's slice" or "what fit in the 1000-row page".
-  // Crucially, scoped by TASK ownership (rep1/rep2/pending_rep_email on
-  // the task), not by lead ownership: a rep often holds a task on a
-  // lead they don't own, and those tasks need to be counted in the
-  // category cards above. We also pull the task's own `status` mirror
-  // so we can categorise without a lookup hop through `leadsById` —
-  // that map is paginated from the leads table and may not have the
-  // row yet on first paint (the symptom: cards say 0 while rows for
-  // those exact leads sit in the table below).
-  const { data: openTaskRows = [] } = useQuery({
-    queryKey: ['salesTasks-open-lead-ids', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
-    enabled: canAccessSales,
-    staleTime: 60_000,
-    queryFn: async () => {
-      let q = applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status, due_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
-        { includeAssignment: includeAssignmentInCounts },
-      ).limit(10_000);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  // Category counts: one queue per funnel stage. We count TASKS (not distinct
-  // leads) so the number matches the rows the list shows when the card is
-  // clicked — a lead with two open tasks contributes two. Counts honour the
-  // active time-range window (and a specific date) so picking "השבוע" /
-  // "אתמול" recomputes them, exactly like the list. We read the task's own
-  // `status` mirror first (matches the row) and only fall back to leadsById
-  // when the mirror is missing.
-  const categoryCounts = useMemo(() => {
-    const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
-    const win = timeRange && timeRange !== 'all' ? timeRangeWindow(timeRange, now) : null;
-    let dStart = null;
-    let dEnd = null;
-    if (dateFilter) {
-      const fd = new Date(dateFilter);
-      dStart = new Date(fd.getFullYear(), fd.getMonth(), fd.getDate());
-      dEnd = new Date(fd.getFullYear(), fd.getMonth(), fd.getDate(), 23, 59, 59);
-    }
-    for (const row of openTaskRows) {
-      if (win || dStart) {
-        const d = parseSalesTaskDate(row.due_date);
-        if (win && (!d || d < win.start || d > win.end)) continue;
-        if (dStart && (!d || d < dStart || d > dEnd)) continue;
-      }
-      const status = row.status || (row.lead_id ? leadsById[row.lead_id]?.status : null);
-      const cat = CATEGORY_BY_LEAD_STATUS[status];
-      if (cat) counts[cat] += 1;
-    }
-    return counts;
-  }, [openTaskRows, leadsById, timeRange, dateFilter, now]);
+  // Funnel category breakdown is computed alongside the filtered list (see the
+  // paginatedTasks memo below) so the cards always reflect — and sum to — the
+  // current selection (active tile + time window), and clicking a card drills
+  // into it rather than replacing it.
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -550,7 +503,7 @@ export default function SalesTasks() {
   // Reset pagination when filters change
   useEffect(() => {
     setTasksPage(0);
-  }, [activeTab, search, sortBy, dateFilter, timeRange, leadStatusFilter, showStale, showAssignmentTasks]);
+  }, [activeTab, search, sortBy, dateFilter, timeRange, categoryFilter, leadStatusFilter, showStale, showAssignmentTasks]);
 
   // Assignment tab is admin-only. Bounce non-admins who land here via
   // a stale URL (?tab=assignment) back to the default view.
@@ -559,7 +512,7 @@ export default function SalesTasks() {
   }, [isAdmin, activeTab]);
 
   // 2. Filter & sort tasks BEFORE enriching with lead data (no lead data needed here)
-  const { totalFilteredCount, paginatedTasks } = useMemo(() => {
+  const { categoryCounts, totalFilteredCount, paginatedTasks } = useMemo(() => {
     let tasks = scopedTasks;
     tasks = tasks.filter((task) => matchesSalesTaskTab(task, activeTab, now));
 
@@ -588,6 +541,25 @@ export default function SalesTasks() {
       }
     }
 
+    // Funnel breakdown of the current selection (active tile + date/time
+    // window), counted BEFORE the category drill-down and search so the cards
+    // sum to the selection. Prefer the task's own status mirror; fall back to
+    // the lead only when it's missing.
+    const categoryCounts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
+    for (const t of tasks) {
+      const st = t.status || (t.lead_id ? leadsById[t.lead_id]?.status : null);
+      const cat = CATEGORY_BY_LEAD_STATUS[st];
+      if (cat) categoryCounts[cat] += 1;
+    }
+    // Drill-down: a selected funnel card narrows the list to that stage while
+    // keeping the tile/time selection intact.
+    if (categoryFilter) {
+      tasks = tasks.filter((t) => {
+        const st = t.status || (t.lead_id ? leadsById[t.lead_id]?.status : null);
+        return CATEGORY_BY_LEAD_STATUS[st] === categoryFilter;
+      });
+    }
+
     if (search) {
       const searchLower = search.toLowerCase();
       tasks = tasks.filter(t => t.summary?.toLowerCase().includes(searchLower));
@@ -608,8 +580,8 @@ export default function SalesTasks() {
 
     const total = tasks.length;
     const paginated = tasks.slice(0, (tasksPage + 1) * TASKS_PER_PAGE);
-    return { totalFilteredCount: total, paginatedTasks: paginated };
-  }, [scopedTasks, activeTab, dateFilter, timeRange, search, sortBy, tasksPage, now]);
+    return { categoryCounts, totalFilteredCount: total, paginatedTasks: paginated };
+  }, [scopedTasks, activeTab, dateFilter, timeRange, categoryFilter, search, sortBy, tasksPage, now, leadsById]);
 
   // 3. Fetch leads ONLY for the paginated (visible) tasks
   const paginatedTaskLeadIds = useMemo(() => 
@@ -1183,7 +1155,7 @@ export default function SalesTasks() {
             <button
               key={tile.id}
               type="button"
-              onClick={() => { if (!tile.readOnly) { setActiveTab(tile.asTab || tile.id); setTimeRange(tile.id === 'today' ? 'today' : 'all'); } }}
+              onClick={() => { if (!tile.readOnly) { setActiveTab(tile.asTab || tile.id); setTimeRange(tile.id === 'today' ? 'today' : 'all'); setCategoryFilter(null); } }}
               disabled={tile.readOnly}
               className={`text-right rounded-2xl border bg-card p-4 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
             >
@@ -1214,7 +1186,7 @@ export default function SalesTasks() {
           {Object.entries(LEAD_STATUSES_BY_CATEGORY).map(([catId]) => {
             const meta = CATEGORY_META[catId];
             const value = categoryCounts[catId] || 0;
-            const isActive = activeTab === catId;
+            const isActive = categoryFilter === catId;
             const Icon = CATEGORY_ICON[catId];
             // Same colour-coded-by-meaning treatment as the KPI tiles: each
             // card wears its funnel colour at rest (icon chip + value +
@@ -1233,7 +1205,7 @@ export default function SalesTasks() {
               <button
                 key={catId}
                 type="button"
-                onClick={() => { setActiveTab(catId); setTimeRange('all'); }}
+                onClick={() => setCategoryFilter((prev) => (prev === catId ? null : catId))}
                 className={`text-right rounded-2xl border bg-card p-3 shadow-sm transition-all hover:shadow-md ${isActive ? tone.active : tone.idle}`}
               >
                 <div className="flex items-center justify-between mb-1.5">
@@ -1274,7 +1246,7 @@ export default function SalesTasks() {
             {currentSecondary ? (
               <button
                 type="button"
-                onClick={() => { setActiveTab('today'); setTimeRange('today'); }}
+                onClick={() => { setActiveTab('today'); setTimeRange('today'); setCategoryFilter(null); }}
                 className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 transition-colors"
                 title="חזור לתצוגת היום"
               >
@@ -1296,7 +1268,7 @@ export default function SalesTasks() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[180px]">
                 {SECONDARY.map((s) => (
-                  <DropdownMenuItem key={s.id} onSelect={() => { setActiveTab(s.id); setTimeRange('all'); }}>
+                  <DropdownMenuItem key={s.id} onSelect={() => { setActiveTab(s.id); setTimeRange('all'); setCategoryFilter(null); }}>
                     <s.Icon className="w-3.5 h-3.5 me-1.5" /> {s.label}
                     {s.count != null ? (
                       <span className="ms-auto text-xs font-bold opacity-70">{s.count}</span>
@@ -1322,7 +1294,7 @@ export default function SalesTasks() {
               <button
                 key={r.id}
                 type="button"
-                onClick={() => { setTimeRange(r.id); setDateFilter(''); setActiveTab(r.id === 'today' ? 'today' : 'not_completed'); }}
+                onClick={() => { setTimeRange(r.id); setDateFilter(''); setActiveTab(r.id === 'today' ? 'today' : 'not_completed'); setCategoryFilter(null); }}
                 className={`rounded-md px-3 py-1.5 transition-colors ${
                   timeRange === r.id ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                 }`}
