@@ -32,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
 import DiscountPopover from '@/components/quote/DiscountPopover';
+import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewQuote } from '@/lib/rbac';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -72,6 +73,9 @@ export default function EditQuote() {
     notes: '',
     special_requests: '',
   });
+  // Two-phase save: handleSubmit only validates and opens the preview dialog;
+  // the mutation runs from the dialog's confirm button.
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -404,7 +408,13 @@ export default function EditQuote() {
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
-    updateQuoteMutation.mutate(formData);
+    setShowConfirm(true);
+  };
+
+  const confirmSave = () => {
+    updateQuoteMutation.mutate(formData, {
+      onSettled: () => setShowConfirm(false),
+    });
   };
 
   const isExpired = quote.valid_until && new Date(quote.valid_until) < new Date();
@@ -1011,6 +1021,17 @@ export default function EditQuote() {
           </div>
         </div>
       </form>
+      <QuoteConfirmDialog
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        formData={formData}
+        products={products}
+        variations={variations}
+        onConfirm={confirmSave}
+        isPending={updateQuoteMutation.isPending}
+        title="אישור לפני עדכון ההצעה"
+        confirmLabel="אישור ועדכון"
+      />
     </div>
   );
 }
