@@ -1087,7 +1087,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                                 className="text-xs h-8 bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
                               >
                                 <Plus className="w-3 h-3 me-1" />
-                                הוסף {addon.name} (₪{finalAddonPrice?.toLocaleString()})
+                                הוסף {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
                               </Button>
                             );
                           })}
