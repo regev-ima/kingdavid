@@ -225,22 +225,41 @@ export function sortSalesTasks(tasks, tab = 'not_completed', now = new Date()) {
   return [...tasks].sort((a, b) => compareSalesTasks(a, b, tab, now));
 }
 
-// Priority sort — independent of tab. Used by the "מומלץ" sort option to
-// dictate the rep's work order: SLA breach first, then hottest leads, then
-// followups, with due_date as tiebreaker inside each tier. Lead status is
-// usually denormalized onto the task (`task.status`); fall back to the lead.
-const HOT_LEAD_STATUSES = new Set(['hot_lead', 'coming_to_branch']);
-const NEW_LEAD_STATUSES = new Set(['new_lead']);
-const FOLLOWUP_LEAD_STATUSES = new Set([
-  'followup_before_quote',
-  'followup_after_quote',
-]);
+// Priority sort — the rep's default ("מומלץ") work order. A three-way tier
+// sets the top-level grouping; the day's schedule (SLA bucket, then time)
+// orders tasks within each tier:
+//
+//   1. פגישות         — task_type 'meeting', always a block at the very top.
+//   2. תואם מראש       — the rep coordinated this: either the lead is already
+//                        engaged, or the rep booked the slot themselves. A
+//                        pre-coordinated task ALWAYS wins over a fresh lead the
+//                        manager just parked on the rep.
+//   3. ליד חדש שהוצב   — an untouched new lead the manager assigned.
+//
+// Lead stage is denormalized onto the task (`task.status`); fall back to the
+// lead record when it's missing.
+const WORK_TIER_MEETING = 0;
+const WORK_TIER_COORDINATED = 1;
+const WORK_TIER_MANAGER_NEW = 2;
 
-function getLeadHeatTier(leadStatus) {
-  if (HOT_LEAD_STATUSES.has(leadStatus)) return 0;
-  if (NEW_LEAD_STATUSES.has(leadStatus)) return 1;
-  if (FOLLOWUP_LEAD_STATUSES.has(leadStatus)) return 2;
-  return 3;
+// A lead nobody has worked yet. Any stage past this (no-answer, follow-up,
+// hot, coming-to-branch…) means the rep already engaged the customer, so a
+// task on that lead counts as coordinated.
+const UNWORKED_LEAD_STATUSES = new Set(['new_lead']);
+
+function getRepWorkTier(task, leadsById = {}) {
+  if (task?.task_type === 'meeting') return WORK_TIER_MEETING;
+
+  const leadStatus = task?.status || (task?.lead_id ? leadsById[task.lead_id]?.status : null);
+  const isUnworkedLead =
+    task?.task_type === 'assignment' || !leadStatus || UNWORKED_LEAD_STATUSES.has(leadStatus);
+
+  // The rep deliberately creating the task counts as coordinating it — even on
+  // a brand-new lead. The "משימה חדשה" dialog always stamps manual_created_date;
+  // the manager's auto-placed lead tasks never carry it.
+  const repCoordinated = Boolean(task?.manual_created_date);
+
+  return isUnworkedLead && !repCoordinated ? WORK_TIER_MANAGER_NEW : WORK_TIER_COORDINATED;
 }
 
 function getBucketRank(bucket) {
@@ -254,22 +273,25 @@ function getBucketRank(bucket) {
 }
 
 export function compareTasksByPriority(a, b, leadsById = {}, now = new Date()) {
-  const bucketA = getSalesTaskQueueBucket(a, now);
-  const bucketB = getSalesTaskQueueBucket(b, now);
-  const heatA = getLeadHeatTier(a.status || leadsById[a.lead_id]?.status);
-  const heatB = getLeadHeatTier(b.status || leadsById[b.lead_id]?.status);
+  // 1) Work-order tier: meetings → coordinated → manager-placed new leads.
+  const tierA = getRepWorkTier(a, leadsById);
+  const tierB = getRepWorkTier(b, leadsById);
+  if (tierA !== tierB) return tierA - tierB;
 
-  // Composite: bucket dominates (SLA-first), heat ranks within the bucket.
-  const scoreA = getBucketRank(bucketA) * 10 + heatA;
-  const scoreB = getBucketRank(bucketB) * 10 + heatB;
-  if (scoreA !== scoreB) return scoreA - scoreB;
+  // 2) Within a tier, follow the day's schedule: overdue, then today, then
+  //    upcoming, then undated.
+  const rankA = getBucketRank(getSalesTaskQueueBucket(a, now));
+  const rankB = getBucketRank(getSalesTaskQueueBucket(b, now));
+  if (rankA !== rankB) return rankA - rankB;
 
+  // 3) "לפי השעות והזמנים" — earliest scheduled time first.
   const dueA = parseSalesTaskDate(a.due_date);
   const dueB = parseSalesTaskDate(b.due_date);
-  if (dueA && dueB) return dueA.getTime() - dueB.getTime();
-  if (dueA) return -1;
-  if (dueB) return 1;
+  if (dueA && dueB && dueA.getTime() !== dueB.getTime()) return dueA.getTime() - dueB.getTime();
+  if (dueA && !dueB) return -1;
+  if (!dueA && dueB) return 1;
 
+  // 4) Stable tiebreak: most recently created first.
   return (
     (parseGenericDate(b.created_date)?.getTime() || 0) -
     (parseGenericDate(a.created_date)?.getTime() || 0)
