@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X } from "lucide-react";
+import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X, Check } from "lucide-react";
 import { productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductSelector from '@/components/quote/ProductSelector';
@@ -32,6 +32,7 @@ import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
@@ -77,6 +78,7 @@ export default function NewOrder() {
     trial_30d_enabled: false,
     notes_sales: '',
     special_requests: '',
+    payment_terms_selection: [],
   });
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
@@ -233,6 +235,9 @@ export default function NewOrder() {
         vat_amount: quote.vat_amount || 0,
         total: quote.total || 0,
         special_requests: quote.special_requests || prev.special_requests,
+        payment_terms_selection: Array.isArray(quote.payment_terms_selection)
+          ? quote.payment_terms_selection
+          : prev.payment_terms_selection,
       }));
     }
   }, [quote]);
@@ -972,6 +977,36 @@ export default function NewOrder() {
                 placeholder="בקשות מיוחדות שיופיעו על ההזמנה (אופציונלי)"
                 rows={2}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>אמצעי תשלום</Label>
+              <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההזמנה.</p>
+              <div className="flex flex-wrap gap-2">
+                {PAYMENT_TERMS_OPTIONS.map((opt) => {
+                  const selected = (formData.payment_terms_selection || []).includes(opt);
+                  return (
+                    <Button
+                      key={opt}
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        const current = formData.payment_terms_selection || [];
+                        setFormData({
+                          ...formData,
+                          payment_terms_selection: selected
+                            ? current.filter((x) => x !== opt)
+                            : [...current, opt],
+                        });
+                      }}
+                    >
+                      {selected && <Check className="h-3 w-3 me-1" />}
+                      {opt}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
           </CardContent>
         </Card>

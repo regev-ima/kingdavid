@@ -304,6 +304,19 @@ const OrderPdfGenerator = async (orderData) => {
         </table>
 
         ${
+          Array.isArray(orderData.payment_terms_selection) && orderData.payment_terms_selection.length
+            ? `
+        <div class="card" style="margin-bottom:10px;">
+          <div class="cardTitle"><span>אמצעי תשלום</span></div>
+          <div style="font-size:12px; color:#0B1220; line-height:1.6; font-weight:500;">
+            ${orderData.payment_terms_selection.map(esc).join(' · ')}
+          </div>
+        </div>
+        `
+            : ""
+        }
+
+        ${
           orderData.special_requests
             ? `
         <div class="card" style="margin-bottom:10px;">

@@ -15,6 +15,7 @@ function normalizePhoneForLookup(raw) {
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,12 +92,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 * מחיר ההובלה וההרכבה במדרגות, עד קומה 3, כל קומה נוספת בעלות ₪50 עבור כל פריט שאינו נכנס למעלית.
 * הלקוח מצהיר כי יש לו גישה להכנסת הסחורה לביתו, ומאשר כי האחריות להכנסת כל מוצר שהוא לביתו חלה עליו בלבד.
 *מסירת הסחורה ללקוח תבוצע אך ורק לאחר גמר חשבון ותשלום מלא בפועל.
-* משלוח והובלה ללקוח תבוצע בתיאום מראש בהתראה של יום אחד קודם המשלוח. כמו כן ללקוח האפשרות לדחות את מועד האספקה.
+* בהזמנת מזרן: תאום משלוח יבוצע יום אחד קודם. ביום המשלוח תינתן התראה לפני הגעת המוביל. ללקוח האפשרות לדחות את מועד האספקה.
 * איסוף עצמי בתיאום מראש ישירות במפעל ברח׳ העמל 6 קרית מלאכי בימים א-ה בין השעות 9:00 - 16:00.
 
 הלקוח מאשר בחתימתו אישור סופי ומוחלט לכל הכתוב לעיל,
 ומצהיר בזאת כי הוא עבר על כל פרטי ההזמנה ומסכים לתנאי החברה ומדיניותה.`,
     special_requests: '',
+    payment_terms_selection: [],
   });
 
   // NOTE: this useState used to live below the early-return branches at line ~305,
@@ -1266,6 +1268,36 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 rows={3}
                 className="resize-none"
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">אמצעי תשלום</Label>
+              <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.</p>
+              <div className="flex flex-wrap gap-2">
+                {PAYMENT_TERMS_OPTIONS.map((opt) => {
+                  const selected = (formData.payment_terms_selection || []).includes(opt);
+                  return (
+                    <Button
+                      key={opt}
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        const current = formData.payment_terms_selection || [];
+                        setFormData({
+                          ...formData,
+                          payment_terms_selection: selected
+                            ? current.filter((x) => x !== opt)
+                            : [...current, opt],
+                        });
+                      }}
+                    >
+                      {selected && <Check className="h-3 w-3 me-1" />}
+                      {opt}
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">תנאי אחריות</Label>
