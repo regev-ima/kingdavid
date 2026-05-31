@@ -70,7 +70,6 @@ export default function EditQuote() {
     total: 0,
     valid_until: '',
     terms: '',
-    warranty_terms: '',
     notes: '',
     special_requests: '',
     payment_terms_selection: [],
@@ -157,7 +156,6 @@ export default function EditQuote() {
         total: quote.total || 0,
         valid_until: quote.valid_until || '',
         terms: quote.terms || '',
-        warranty_terms: quote.warranty_terms || '',
         notes: quote.notes || '',
         special_requests: quote.special_requests || '',
         payment_terms_selection: Array.isArray(quote.payment_terms_selection) ? quote.payment_terms_selection : [],
@@ -977,15 +975,6 @@ export default function EditQuote() {
                   );
                 })}
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">תנאי אחריות</Label>
-              <Textarea
-                value={formData.warranty_terms}
-                onChange={(e) => setFormData({...formData, warranty_terms: e.target.value})}
-                rows={3}
-                className="resize-none"
-              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">הערות</Label>

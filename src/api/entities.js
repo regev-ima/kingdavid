@@ -43,6 +43,7 @@ const TABLE_MAP = {
   UpsellSuggestion: 'upsell_suggestions',
   Representative: 'representatives',
   ClubSignup: 'club_signups',
+  QuoteDefaults: 'quote_defaults',
 };
 
 /**

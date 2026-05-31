@@ -81,23 +81,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     vat_amount: 0,
     total: 0,
     valid_until: format(addBusinessDays(new Date(), 7), 'yyyy-MM-dd'),
-    terms: 'תשלום מלא עם ההזמנה. אספקה תוך 14-21 ימי עסקים.',
-    warranty_terms: 'אחריות יצרן ל-10 שנים על המזרן.',
+    // terms / notes / payment_terms_selection are seeded from the
+    // QuoteDefaults singleton via an effect below — they start blank so
+    // we don't flash a stale hardcoded string before the row arrives.
+    terms: '',
     status: 'draft',
-    notes: `ניתן להחליף/לבטל הזמנה של מזרן תוך 30 יום מקבלתו בהחזר כספי מלא, למעט דמי הובלה.
-* מזרנים שהוגדרו במידה מיוחדת על פי תקנון החברה אינם ניתנים לביטול/החלפה על אף אריזתם המקורית.
-* החזרת מזרן יתבצע בתיאום מראש בלבד, בטלפון או במייל מול מחלקת שירות לקוחות.
-* בסיסים ומיטות מכל סוג הינם הזמנה אישית, בעיצוב וייצור אישי ללקוח, עפ''י דרישותיו ולכן אינם ניתנים לביטול או החלפה בשום אופן.
-* שינוי או ביטול הזמנה של בסיסים או מיטות יינתן עד 48 שעות מרגע ההזמנה בלבד. לאחר מכן לא יהיה ניתן לבטל.
-*במידה וההובלה כרוכה במנוף/חבלים או פירוק/פינוי, העלות הנוספת תחול על חשבון הלקוח מול חברת השילוח וההובלה.
-* מחיר ההובלה וההרכבה במדרגות, עד קומה 3, כל קומה נוספת בעלות ₪50 עבור כל פריט שאינו נכנס למעלית.
-* הלקוח מצהיר כי יש לו גישה להכנסת הסחורה לביתו, ומאשר כי האחריות להכנסת כל מוצר שהוא לביתו חלה עליו בלבד.
-*מסירת הסחורה ללקוח תבוצע אך ורק לאחר גמר חשבון ותשלום מלא בפועל.
-* בהזמנת מזרן: תאום משלוח יבוצע יום אחד קודם. ביום המשלוח תינתן התראה לפני הגעת המוביל. ללקוח האפשרות לדחות את מועד האספקה.
-* איסוף עצמי בתיאום מראש ישירות במפעל ברח׳ העמל 6 קרית מלאכי בימים א-ה בין השעות 9:00 - 16:00.
-
-הלקוח מאשר בחתימתו אישור סופי ומוחלט לכל הכתוב לעיל,
-ומצהיר בזאת כי הוא עבר על כל פרטי ההזמנה ומסכים לתנאי החברה ומדיניותה.`,
+    notes: '',
     special_requests: '',
     payment_terms_selection: [],
   });
@@ -221,6 +210,35 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     queryFn: () => base44.entities.ExtraCharge.filter({ is_active: true }),
     enabled: canAccessSales,
   });
+
+  // Admin-editable defaults for terms / notes / payment methods. Seeded into
+  // formData via the effect below — only when the user hasn't typed anything
+  // into those fields yet, so we never stomp in-progress edits.
+  const { data: quoteDefaults } = useQuery({
+    queryKey: ['quote-defaults'],
+    queryFn: async () => {
+      const rows = await base44.entities.QuoteDefaults.list();
+      return rows[0] || null;
+    },
+    enabled: canAccessSales,
+    staleTime: 5 * 60_000,
+  });
+  const [defaultsSeeded, setDefaultsSeeded] = useState(false);
+  useEffect(() => {
+    if (!quoteDefaults || defaultsSeeded) return;
+    setFormData((prev) => ({
+      ...prev,
+      terms: prev.terms || quoteDefaults.terms || '',
+      notes: prev.notes || quoteDefaults.notes || '',
+      payment_terms_selection:
+        prev.payment_terms_selection && prev.payment_terms_selection.length
+          ? prev.payment_terms_selection
+          : Array.isArray(quoteDefaults.payment_terms_selection)
+            ? quoteDefaults.payment_terms_selection
+            : [],
+    }));
+    setDefaultsSeeded(true);
+  }, [quoteDefaults, defaultsSeeded]);
 
   const { data: addons = [] } = useQuery({
     queryKey: ['product-addons'],
@@ -1309,15 +1327,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                   );
                 })}
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">תנאי אחריות</Label>
-              <Textarea
-                value={formData.warranty_terms}
-                onChange={(e) => setFormData({...formData, warranty_terms: e.target.value})}
-                rows={3}
-                className="resize-none"
-              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">הערות</Label>
