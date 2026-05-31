@@ -503,7 +503,7 @@ export default function QuoteDetails() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">אספקה</p>
+                  <p className="text-sm text-muted-foreground mb-1">תנאי אספקה</p>
                   <p>{quote.terms}</p>
                 </div>
               </CardContent>
