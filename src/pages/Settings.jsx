@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -21,6 +21,7 @@ import UserAvatar from "@/components/shared/UserAvatar";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import ImportOrders from '@/components/service/ImportOrders';
+import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
@@ -102,6 +103,12 @@ export default function Settings() {
             <TabsTrigger value="import" className="flex items-center gap-2">
               <FileSpreadsheet className="h-4 w-4" />
               ייבוא נתונים
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="quote-defaults" className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              ברירות-מחדל הצעה
             </TabsTrigger>
           )}
         </TabsList>
@@ -347,6 +354,12 @@ export default function Settings() {
                 </Button>
               </CardContent>
             </Card>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="quote-defaults" className="space-y-6">
+            <QuoteDefaultsTab />
           </TabsContent>
         )}
       </Tabs>

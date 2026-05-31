@@ -496,24 +496,16 @@ export default function QuoteDetails() {
           </Card>
 
           {/* Terms */}
-          {(quote.terms || quote.warranty_terms) && (
+          {quote.terms && (
             <Card>
               <CardHeader>
-                <CardTitle>תנאים ואחריות</CardTitle>
+                <CardTitle>תנאים</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {quote.terms && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">תנאי תשלום ואספקה</p>
-                    <p>{quote.terms}</p>
-                  </div>
-                )}
-                {quote.warranty_terms && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">אחריות</p>
-                    <p>{quote.warranty_terms}</p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">תנאי תשלום ואספקה</p>
+                  <p>{quote.terms}</p>
+                </div>
               </CardContent>
             </Card>
           )}

@@ -473,12 +473,11 @@ const QuotePdfGenerator = async (quoteData) => {
         }
 
         ${
-          quoteData.terms || quoteData.warranty_terms || quoteData.notes
+          quoteData.terms || quoteData.notes
             ? `
           <div class="notes">
             ${quoteData.notes ? `<p class="notes-label">הערות:</p>${formatNotesAsList(quoteData.notes)}` : ""}
             ${quoteData.terms ? `<p>${esc(quoteData.terms)}</p>` : ""}
-            ${quoteData.warranty_terms ? `<p>${esc(quoteData.warranty_terms)}</p>` : ""}
           </div>
         `
             : ""
