@@ -16,6 +16,7 @@ import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
+import { QUOTE_DEFAULTS_FALLBACK } from '@/constants/quoteDefaultsFallback';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -213,8 +214,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
   // Admin-editable defaults for terms / notes / payment methods. Seeded into
   // formData via the effect below — only when the user hasn't typed anything
-  // into those fields yet, so we never stomp in-progress edits.
-  const { data: quoteDefaults } = useQuery({
+  // into those fields yet, so we never stomp in-progress edits. If the
+  // query fails (table not migrated yet on this env, RLS blocked, network),
+  // the QUOTE_DEFAULTS_FALLBACK constant kicks in so reps never see a blank
+  // step-3.
+  const { data: quoteDefaults, isLoading: defaultsLoading, isError: defaultsErrored } = useQuery({
     queryKey: ['quote-defaults'],
     queryFn: async () => {
       const rows = await base44.entities.QuoteDefaults.list();
@@ -222,23 +226,26 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     },
     enabled: canAccessSales,
     staleTime: 5 * 60_000,
+    retry: false,
   });
   const [defaultsSeeded, setDefaultsSeeded] = useState(false);
   useEffect(() => {
-    if (!quoteDefaults || defaultsSeeded) return;
+    if (defaultsSeeded) return;
+    if (defaultsLoading) return;
+    const src = (quoteDefaults && !defaultsErrored) ? quoteDefaults : QUOTE_DEFAULTS_FALLBACK;
     setFormData((prev) => ({
       ...prev,
-      terms: prev.terms || quoteDefaults.terms || '',
-      notes: prev.notes || quoteDefaults.notes || '',
+      terms: prev.terms || src.terms || '',
+      notes: prev.notes || src.notes || '',
       payment_terms_selection:
         prev.payment_terms_selection && prev.payment_terms_selection.length
           ? prev.payment_terms_selection
-          : Array.isArray(quoteDefaults.payment_terms_selection)
-            ? quoteDefaults.payment_terms_selection
+          : Array.isArray(src.payment_terms_selection)
+            ? src.payment_terms_selection
             : [],
     }));
     setDefaultsSeeded(true);
-  }, [quoteDefaults, defaultsSeeded]);
+  }, [quoteDefaults, defaultsLoading, defaultsErrored, defaultsSeeded]);
 
   const { data: addons = [] } = useQuery({
     queryKey: ['product-addons'],
@@ -601,18 +608,34 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     return count + (product?.category === 'mattress' ? (item.quantity || 0) : 0);
   }, 0);
 
-  const hasBeds = formData.items.some(item => {
+  // Sum quantity of bed-type line items, not just "is there one" — the
+  // delivery extras come in flavors keyed to an exact bed count
+  // ("ל-2 מיטות" vs. singular "מיטה") and we need to hide the ones that
+  // don't match what's actually on the quote.
+  const bedCount = formData.items.reduce((count, item) => {
     const product = products.find(p => p.id === item.product_id);
-    return hasBedType(product);
-  });
+    return count + (hasBedType(product) ? (item.quantity || 0) : 0);
+  }, 0);
 
   const filteredExtraCharges = extraCharges.filter(ec => {
     if (ec.name === 'שירותי מנוף') return false;
     if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
-    if (ec.name.includes('מיטות') && !hasBeds) return false;
-    const multiMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
-    if (multiMatch) return mattressCount === parseInt(multiMatch[1]);
-    if (ec.name === 'הובלה למזרן') return mattressCount <= 1;
+
+    // Bed-count gating. Order matters: try the explicit count first,
+    // then fall through to the plural/singular heuristic. Note that "מיטה"
+    // is NOT a substring of "מיטות" (different ending letters in Hebrew),
+    // so a plain `includes('מיטה')` doesn't accidentally match the plural.
+    const multiBedMatch = ec.name.match(/ל[- ]?(\d+) מיטות/);
+    if (multiBedMatch) return bedCount === parseInt(multiBedMatch[1], 10);
+    if (ec.name.includes('מיטות')) return bedCount >= 2;
+    if (ec.name.includes('מיטה')) return bedCount === 1;
+
+    // Mattress-count gating.
+    const multiMattressMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
+    if (multiMattressMatch) return mattressCount === parseInt(multiMattressMatch[1], 10);
+    if (ec.name === 'הובלה למזרן' || ec.name === 'הובלה מזרן') {
+      return mattressCount >= 1 && bedCount === 0;
+    }
     return true;
   });
 

@@ -436,18 +436,28 @@ export default function EditQuote() {
     return count + (product?.category === 'mattress' ? (item.quantity || 0) : 0);
   }, 0);
 
-  const hasBeds = formData.items.some(item => {
+  // Sum quantity of bed-type line items so we can hide delivery options that
+  // don't match the exact bed count on the quote. See NewQuote.jsx for the
+  // shape of the rules — kept in sync intentionally.
+  const bedCount = formData.items.reduce((count, item) => {
     const product = products.find(p => p.id === item.product_id);
-    return hasBedType(product);
-  });
+    return count + (hasBedType(product) ? (item.quantity || 0) : 0);
+  }, 0);
 
   const filteredExtraCharges = extraCharges.filter(ec => {
     if (ec.name === 'שירותי מנוף') return false;
     if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
-    if (ec.name.includes('מיטות') && !hasBeds) return false;
-    const multiMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
-    if (multiMatch) return mattressCount === parseInt(multiMatch[1]);
-    if (ec.name === 'הובלה למזרן') return mattressCount <= 1;
+
+    const multiBedMatch = ec.name.match(/ל[- ]?(\d+) מיטות/);
+    if (multiBedMatch) return bedCount === parseInt(multiBedMatch[1], 10);
+    if (ec.name.includes('מיטות')) return bedCount >= 2;
+    if (ec.name.includes('מיטה')) return bedCount === 1;
+
+    const multiMattressMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
+    if (multiMattressMatch) return mattressCount === parseInt(multiMattressMatch[1], 10);
+    if (ec.name === 'הובלה למזרן' || ec.name === 'הובלה מזרן') {
+      return mattressCount >= 1 && bedCount === 0;
+    }
     return true;
   });
 
