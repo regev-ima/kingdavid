@@ -21,7 +21,11 @@ export default function LeadDetailsModal({ leadId, mode = 'sales', onClose }) {
           Layout.jsx, so without this override the Hebrew content
           renders left-aligned. Matches the convention used by every
           other DialogContent in this codebase. */}
-      <DialogContent dir="rtl" className="w-[80vw] max-w-[1100px] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl">
+      <DialogContent
+        dir="rtl"
+        className="w-[80vw] max-w-[1100px] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl
+                   [&>button.absolute]:right-auto [&>button.absolute]:left-4"
+      >
         <DialogTitle className="sr-only">פרטי ליד</DialogTitle>
         {/* Hand the entire dialog body to LeadDetails. In isModal mode
             it lays itself out as a flex column with a fixed top bar +
