@@ -31,6 +31,7 @@ import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
 import DiscountPopover from '@/components/quote/DiscountPopover';
+import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, canViewLead } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
@@ -106,6 +107,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // Minified React error #310). Moved up here so it runs unconditionally on
   // every render.
   const [emptyItemIndex, setEmptyItemIndex] = useState(null);
+  // Two-phase save: handleSubmit only validates and opens the preview dialog;
+  // the actual mutation runs from the dialog's confirm button. Hook stays at
+  // the top of the component to satisfy Rules of Hooks across early returns.
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Phone-based lookup so a quote started from "create new quote" (no
   // existing lead context) can still snap to an existing customer / lead.
@@ -564,7 +569,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       setCurrentStep(1);
       return;
     }
-    createQuoteMutation.mutate(formData);
+    setShowConfirm(true);
+  };
+
+  const confirmSave = () => {
+    createQuoteMutation.mutate(formData, {
+      onSettled: () => setShowConfirm(false),
+    });
   };
 
   const mattressCount = formData.items.reduce((count, item) => {
@@ -1380,6 +1391,17 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
         </div>
       </form>
+      <QuoteConfirmDialog
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        formData={formData}
+        products={products}
+        variations={variations}
+        onConfirm={confirmSave}
+        isPending={createQuoteMutation.isPending}
+        title="אישור לפני שמירת ההצעה"
+        confirmLabel="אישור ושמירה"
+      />
     </div>
   );
 }
