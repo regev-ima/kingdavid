@@ -18,9 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon, Filter, X as XIcon, FolderOpen, User, Sparkles } from "lucide-react";
+import { Plus, AlertCircle, UserPlus, FileSpreadsheet, Phone, Users, FileText, ShoppingCart, MessageCircle, Calendar as CalendarIcon, Filter, X as XIcon, FolderOpen, User, Sparkles, Clock } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth } from '@/lib/safe-date-fns';
 import { format } from '@/lib/safe-date-fns';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
@@ -102,37 +104,6 @@ export default function Leads() {
   const isAdmin = effectiveUser?.role === 'admin';
   const userEmail = effectiveUser?.email;
 
-  // Live KPI counts. Previously the strip read from the cached `lead_counters`
-  // table, but that cache had no DB trigger keeping it in sync — values drifted
-  // (e.g. "הלידים שלי: 3" while the table actually showed 5). This runs four
-  // server-side `count: 'exact', head: true` queries in parallel, ~150 ms total
-  // even at 100k+ rows. Same pattern SalesTasks moved to in #76.
-  const { data: kpiCounts = { total: 0, my: 0, open: 0, unassigned: 0 } } = useQuery({
-    queryKey: ['leadsKpiCounts', isAdmin, userEmail],
-    enabled: !!effectiveUser && !!userEmail,
-    staleTime: 60_000,
-    queryFn: async () => {
-      const myFilter = {
-        '$or': [
-          { rep1: userEmail },
-          { rep2: userEmail },
-          { pending_rep_email: userEmail },
-        ],
-      };
-      const unassignedFilter = { '$or': [{ rep1: null }, { rep1: '' }] };
-      const openFilter = { status: { '$nin': CLOSED_STATUSES } };
-      const myOpenFilter = { '$and': [myFilter, openFilter] };
-
-      const [total, my, open, unassigned] = await Promise.all([
-        isAdmin ? base44.entities.Lead.count({}) : base44.entities.Lead.count(myFilter),
-        base44.entities.Lead.count(myFilter),
-        isAdmin ? base44.entities.Lead.count(openFilter) : base44.entities.Lead.count(myOpenFilter),
-        base44.entities.Lead.count(unassignedFilter),
-      ]);
-      return { total, my, open, unassigned };
-    },
-  });
-
   useEffect(() => {
     if (!effectiveUser) return;
 
@@ -148,7 +119,11 @@ export default function Leads() {
 
   const closedStatuses = CLOSED_STATUSES;
 
-  const buildQuery = () => {
+  // tabOverride: when supplied, builds the query as if a different tab were
+  // active. Used by the KPI-cube counts so each cube shows the count for its
+  // own tab under the current filter combo, without disturbing the list query.
+  const buildQuery = (tabOverride) => {
+    const tab = tabOverride ?? activeTab;
     const conditions = [];
     const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
     const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
@@ -159,27 +134,27 @@ export default function Leads() {
       !Number.isNaN(endDate.getTime());
 
     // Role-based filter: non-admin only sees their own leads (unless viewing unassigned pool)
-    if (!isAdmin && activeTab !== 'unassigned') {
+    if (!isAdmin && tab !== 'unassigned') {
       conditions.push({
         '$or': [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }]
       });
     }
 
     // Tab-based filter
-    if (activeTab === 'unassigned') {
-      conditions.push({ 
+    if (tab === 'unassigned') {
+      conditions.push({
         '$or': [
           { rep1: null },
           { rep1: '' }
         ]
       });
-    } else if (activeTab === 'my') {
+    } else if (tab === 'my') {
       if (isAdmin) {
         conditions.push({
           '$or': [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }]
         });
       }
-    } else if (activeTab === 'open') {
+    } else if (tab === 'open') {
       conditions.push({ status: { '$nin': closedStatuses } });
     }
 
@@ -256,32 +231,31 @@ export default function Leads() {
     placeholderData: (prev) => prev,
   });
 
-  // Count of "new" leads within the selected date range. Uses
-  // effective_sort_date so a returning lead (פניה חוזרת) whose latest
-  // activity falls in the range is counted as a new lead for volume
-  // purposes — a re-contact is treated as a new lead. When no range is
-  // selected, this is just the total lead count.
-  const { data: newLeadsCount = null } = useQuery({
-    queryKey: ['newLeadsCount', fromIso, toIso, isAdmin, userEmail],
-    queryFn: () => {
-      const conditions = [];
-      if (!isAdmin) {
-        conditions.push({
-          '$or': [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }],
-        });
-      }
-      if (fromIso && toIso) {
-        conditions.push({ effective_sort_date: { '$gte': fromIso, '$lte': toIso } });
-      }
-      const query = conditions.length === 0
-        ? {}
-        : conditions.length === 1 ? conditions[0] : { '$and': conditions };
-      return base44.entities.Lead.count(query);
-    },
-    enabled: !!effectiveUser,
-    staleTime: 60000,
+  // Filter-aware KPI cube counts. Each cube re-uses buildQuery with its own
+  // tab override, so all four cubes reflect the same status/source/rep/search/
+  // date filters as the list below — the count on every cube agrees with what
+  // you'd see if you clicked into that scope. Same precedent SalesTasks
+  // adopted in #76 to fix cube-vs-list mismatch.
+  const cubeQueryKey = ['leadsKpiCounts', isAdmin, userEmail, filters.rep1, filters.search, filters.status, filters.source, repScope, fromIso, toIso];
+  const { data: kpiCounts = { total: 0, my: 0, open: 0, unassigned: 0 } } = useQuery({
+    queryKey: cubeQueryKey,
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
     placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const [total, my, open, unassigned] = await Promise.all([
+        base44.entities.Lead.count(buildQuery('all')),
+        base44.entities.Lead.count(buildQuery('my')),
+        base44.entities.Lead.count(buildQuery('open')),
+        base44.entities.Lead.count(buildQuery('unassigned')),
+      ]);
+      return { total, my, open, unassigned };
+    },
   });
+
+  // "New leads" cube reads from the same filteredCount as the result-card
+  // below — both represent "leads matching the active filter combo".
+  const newLeadsCount = filteredCount;
 
   const hasMore = leads.length >= limit;
   const loadMoreRef = useRef(null);
@@ -765,16 +739,20 @@ export default function Leads() {
 
   const handleDatePreset = (preset) => {
     setLimit(100);
-    const today = new Date();
+    const now = new Date();
     switch (preset) {
       case 'today':
-        setDateRange({ from: startOfDay(today), to: endOfDay(today) });
+        setDateRange({ from: startOfDay(now), to: endOfDay(now) });
+        break;
+      case 'last24h':
+        // Rolling 24-hour window ending now, to the minute.
+        setDateRange({ from: new Date(now.getTime() - 24 * 60 * 60 * 1000), to: now });
         break;
       case 'week':
-        setDateRange({ from: startOfWeek(today, { weekStartsOn: 0 }), to: endOfDay(today) });
+        setDateRange({ from: startOfWeek(now, { weekStartsOn: 0 }), to: endOfDay(now) });
         break;
       case 'month':
-        setDateRange({ from: startOfMonth(today), to: endOfDay(today) });
+        setDateRange({ from: startOfMonth(now), to: endOfDay(now) });
         break;
       case 'clear':
       default:
@@ -782,16 +760,35 @@ export default function Leads() {
     }
   };
 
+  // When the calendar picks new dates, preserve any time-of-day the user has
+  // already dialed in via the time inputs. First pick defaults to 00:00–23:59.
   const handleDateRangeSelect = (range) => {
     setLimit(100);
     if (!range?.from) {
       setDateRange(undefined);
       return;
     }
-    setDateRange({
-      from: startOfDay(range.from),
-      to: endOfDay(range.to || range.from),
-    });
+    const fromH = dateRange?.from?.getHours() ?? 0;
+    const fromM = dateRange?.from?.getMinutes() ?? 0;
+    const toH = dateRange?.to?.getHours() ?? 23;
+    const toM = dateRange?.to?.getMinutes() ?? 59;
+    const newFrom = new Date(range.from);
+    newFrom.setHours(fromH, fromM, 0, 0);
+    const newTo = new Date(range.to || range.from);
+    newTo.setHours(toH, toM, 59, 999);
+    setDateRange({ from: newFrom, to: newTo });
+  };
+
+  // Updates just the hour/minute portion of dateRange.from or .to without
+  // touching the date itself, so users can dial in a sub-day window.
+  const handleTimeChange = (which, timeStr) => {
+    if (!dateRange?.from || !dateRange?.to) return;
+    const [h, m] = (timeStr || '').split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return;
+    setLimit(100);
+    const updated = new Date(dateRange[which]);
+    updated.setHours(h, m, which === 'to' ? 59 : 0, which === 'to' ? 999 : 0);
+    setDateRange({ ...dateRange, [which]: updated });
   };
 
   const totalLeadCount = kpiCounts.total;
@@ -897,8 +894,8 @@ export default function Leads() {
           variant={(() => {
             if (!dateRange?.from || !dateRange?.to) return 'outline';
             const today = new Date();
-            return dateRange.from.toDateString() === startOfDay(today).toDateString()
-              && dateRange.to.toDateString() === endOfDay(today).toDateString()
+            return dateRange.from.getTime() === startOfDay(today).getTime()
+              && dateRange.to.getTime() === endOfDay(today).getTime()
               ? 'default' : 'outline';
           })()}
           size="sm"
@@ -910,9 +907,25 @@ export default function Leads() {
         <Button
           variant={(() => {
             if (!dateRange?.from || !dateRange?.to) return 'outline';
+            // 24h preset is a rolling window — match by relative diff, not exact ms.
+            const diff = dateRange.to.getTime() - dateRange.from.getTime();
+            const within24h = Math.abs(diff - 24 * 60 * 60 * 1000) < 60_000;
+            const endsRecently = Math.abs(Date.now() - dateRange.to.getTime()) < 5 * 60_000;
+            return within24h && endsRecently ? 'default' : 'outline';
+          })()}
+          size="sm"
+          onClick={() => handleDatePreset('last24h')}
+          className="h-8 text-xs"
+        >
+          <Clock className="me-1 h-3.5 w-3.5" />
+          24 שעות אחרונות
+        </Button>
+        <Button
+          variant={(() => {
+            if (!dateRange?.from || !dateRange?.to) return 'outline';
             const today = new Date();
-            return dateRange.from.toDateString() === startOfWeek(today, { weekStartsOn: 0 }).toDateString()
-              && dateRange.to.toDateString() === endOfDay(today).toDateString()
+            return dateRange.from.getTime() === startOfWeek(today, { weekStartsOn: 0 }).getTime()
+              && dateRange.to.getTime() === endOfDay(today).getTime()
               ? 'default' : 'outline';
           })()}
           size="sm"
@@ -925,8 +938,8 @@ export default function Leads() {
           variant={(() => {
             if (!dateRange?.from || !dateRange?.to) return 'outline';
             const today = new Date();
-            return dateRange.from.toDateString() === startOfMonth(today).toDateString()
-              && dateRange.to.toDateString() === endOfDay(today).toDateString()
+            return dateRange.from.getTime() === startOfMonth(today).getTime()
+              && dateRange.to.getTime() === endOfDay(today).getTime()
               ? 'default' : 'outline';
           })()}
           size="sm"
@@ -939,14 +952,21 @@ export default function Leads() {
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 text-xs font-normal" dir="rtl">
               <CalendarIcon className="me-2 h-4 w-4" />
-              {dateRange?.from && dateRange?.to ? (
-                <>
-                  {format(dateRange.from, 'dd.MM.yy')}
-                  {' - '}
-                  {format(dateRange.to, 'dd.MM.yy')}
-                </>
-              ) : (
-                <span>טווח תאריכים</span>
+              {dateRange?.from && dateRange?.to ? (() => {
+                const customTime = (
+                  dateRange.from.getHours() !== 0 || dateRange.from.getMinutes() !== 0 ||
+                  dateRange.to.getHours() !== 23 || dateRange.to.getMinutes() !== 59
+                );
+                const f = customTime ? 'dd.MM.yy HH:mm' : 'dd.MM.yy';
+                return (
+                  <>
+                    {format(dateRange.from, f)}
+                    {' - '}
+                    {format(dateRange.to, f)}
+                  </>
+                );
+              })() : (
+                <span>טווח תאריכים ושעות</span>
               )}
             </Button>
           </PopoverTrigger>
@@ -959,6 +979,30 @@ export default function Leads() {
               onSelect={handleDateRangeSelect}
               numberOfMonths={1}
             />
+            <div className="border-t p-3 flex items-center gap-3 text-xs" dir="rtl">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="dateRange-from-time" className="text-muted-foreground whitespace-nowrap">משעה</Label>
+                <Input
+                  id="dateRange-from-time"
+                  type="time"
+                  value={dateRange?.from ? format(dateRange.from, 'HH:mm') : '00:00'}
+                  onChange={(e) => handleTimeChange('from', e.target.value)}
+                  disabled={!dateRange?.from}
+                  className="h-8 w-24 text-xs"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="dateRange-to-time" className="text-muted-foreground whitespace-nowrap">עד שעה</Label>
+                <Input
+                  id="dateRange-to-time"
+                  type="time"
+                  value={dateRange?.to ? format(dateRange.to, 'HH:mm') : '23:59'}
+                  onChange={(e) => handleTimeChange('to', e.target.value)}
+                  disabled={!dateRange?.to}
+                  className="h-8 w-24 text-xs"
+                />
+              </div>
+            </div>
           </PopoverContent>
         </Popover>
         {dateRange?.from && (
@@ -999,8 +1043,15 @@ export default function Leads() {
               ? { key: 'all', label: 'כל הלידים', value: fmt(totalLeadCount), icon: Users,     tone: 'slate' }
               : null,
           ].filter(Boolean);
+          // Show times only when the user has dialed in a sub-day window —
+          // otherwise the default 00:00–23:59 is noise.
+          const hasCustomTime = dateRange?.from && dateRange?.to && (
+            dateRange.from.getHours() !== 0 || dateRange.from.getMinutes() !== 0 ||
+            dateRange.to.getHours() !== 23 || dateRange.to.getMinutes() !== 59
+          );
+          const hintFmt = hasCustomTime ? 'dd.MM.yy HH:mm' : 'dd.MM.yy';
           const hint = dateRange?.from && dateRange?.to
-            ? `${format(dateRange.from, 'dd.MM.yy')} - ${format(dateRange.to, 'dd.MM.yy')}`
+            ? `${format(dateRange.from, hintFmt)} - ${format(dateRange.to, hintFmt)}`
             : 'מאז ומעולם';
           return (
             <>

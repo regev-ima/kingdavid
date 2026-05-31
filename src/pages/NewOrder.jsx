@@ -768,7 +768,7 @@ export default function NewOrder() {
                                           }}
                                           className="text-xs"
                                         >
-                                          {addon.name} (₪{finalAddonPrice?.toLocaleString()})
+                                          {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
                                         </Button>
                                       );
                                     })}
