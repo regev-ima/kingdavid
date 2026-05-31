@@ -11,12 +11,13 @@ import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 
 export default function QuoteDefaultsTab() {
   const queryClient = useQueryClient();
-  const { data: row, isLoading } = useQuery({
+  const { data: row, isLoading, isError, error } = useQuery({
     queryKey: ['quote-defaults'],
     queryFn: async () => {
       const rows = await base44.entities.QuoteDefaults.list();
       return rows[0] || null;
     },
+    retry: false,
   });
 
   const [draft, setDraft] = useState({ terms: '', notes: '', payment_terms_selection: [] });
@@ -53,6 +54,22 @@ export default function QuoteDefaultsTab() {
       <div className="flex justify-center py-10">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>ברירות-מחדל להצעה</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-destructive">
+            לא ניתן לטעון את ברירות-המחדל מהשרת. ייתכן שה-migration של quote_defaults עדיין לא הופעל. נסה שוב בעוד כמה דקות.
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">{error?.message}</p>
+        </CardContent>
+      </Card>
     );
   }
 
