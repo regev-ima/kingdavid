@@ -29,26 +29,11 @@ const TASK_TYPE_OPTIONS = [
   { value: 'close_order', label: 'סגירת הזמנה', emoji: '✅' },
 ];
 
-const TASK_STATUS_OPTIONS = [
-  { value: 'not_completed', label: 'ממתין' },
-  { value: 'completed', label: 'בוצע' },
-  { value: 'not_done', label: 'לא בוצע' },
-  { value: 'cancelled', label: 'בוטל' },
-];
-
-const TASK_TYPE_COLORS = {
-  call: 'border-blue-500 bg-blue-50 text-blue-600',
-  meeting: 'border-amber-500 bg-amber-50 text-amber-600',
-  quote_preparation: 'border-primary/50 bg-primary/5 text-primary',
-  close_order: 'border-emerald-500 bg-emerald-50 text-emerald-600',
-};
-
-const TASK_STATUS_STYLES = {
-  not_completed: { on: 'border-amber-400/50 bg-amber-50 text-amber-700', off: 'border-border hover:border-amber-300 hover:bg-amber-50/50 text-muted-foreground' },
-  completed: { on: 'border-emerald-400/50 bg-emerald-50 text-emerald-700', off: 'border-border hover:border-emerald-300 hover:bg-emerald-50/50 text-muted-foreground' },
-  not_done: { on: 'border-red-400/50 bg-red-50 text-red-700', off: 'border-border hover:border-red-300 hover:bg-red-50/50 text-muted-foreground' },
-  cancelled: { on: 'border-border bg-muted text-foreground', off: 'border-border hover:border-border/80 hover:bg-muted/50 text-muted-foreground' },
-};
+// TASK_STATUS_OPTIONS / TASK_STATUS_STYLES / TASK_TYPE_COLORS were
+// removed alongside the status picker — new tasks are always created
+// as "ממתין" (not_completed) so there's nothing to choose at
+// creation time. Status transitions happen via the per-task complete
+// / cancel buttons in the lead view.
 
 export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, effectiveUser: effectiveUserProp }) {
   const queryClient = useQueryClient();
@@ -60,12 +45,15 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
     lead_id: preSelectedLead?.id || '',
     status: '',
     task_type: 'call',
-    task_status: 'not_completed',
     rep1: '',
     rep2: '',
-    work_start_date: new Date().toISOString(),
-    due_date: '',
-    manual_created_date: '',
+    // Single user-facing date — "מתי תתבצע?". Empty means "now" on
+    // submit (rep just wants to log/schedule with no specific time).
+    scheduled_at: '',
+    // Only meaningful when task_type === 'call' — picked via preset
+    // buttons (5/10/15). Used on submit to set due_date = scheduled +
+    // duration so the queue knows when to surface it as overdue.
+    duration_minutes: 10,
     summary: '',
   });
   const [validationError, setValidationError] = useState('');
@@ -161,6 +149,12 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
       queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
+      // Also refresh the lead-detail-scoped queries so the popup's
+      // "מה עושים עכשיו" / tasks history / activity log update the
+      // instant the new task is created, instead of showing stale
+      // data until the next page navigation.
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['leadActivityLogs'] });
       handleClose();
     },
   });
@@ -170,12 +164,10 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
       lead_id: '',
       status: '',
       task_type: 'call',
-      task_status: 'not_completed',
       rep1: '',
       rep2: '',
-      work_start_date: '',
-      due_date: '',
-      manual_created_date: '',
+      scheduled_at: '',
+      duration_minutes: 10,
       summary: '',
     });
     setValidationError('');
@@ -184,13 +176,31 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
 
   const handleSubmit = () => {
     if (!formData.lead_id) { setValidationError('יש לבחור ליד'); return; }
-    if (!formData.summary) { setValidationError('יש למלא תוכן משימה'); return; }
+    // Task content is intentionally optional — a rep should be able
+    // to drop a quick "call back" task without being forced to type
+    // anything. Previously this was required and reps were typing
+    // placeholder text ("חובה") just to get past validation, which
+    // poisoned the task list with junk.
     if (!formData.rep1) { setValidationError('יש לבחור נציג ראשי'); return; }
     setValidationError('');
+    // Derive the backend date fields from the simplified form. The
+    // user picks ONE date ("מתי תתבצע?") and — for call tasks only —
+    // a duration via preset buttons. Everything else (creation
+    // timestamp, status defaulting to "ממתין", end time = start +
+    // duration) is computed here so the form stays minimal.
+    const scheduledISO = formData.scheduled_at || new Date().toISOString();
+    const dueISO = formData.task_type === 'call' && formData.duration_minutes
+      ? new Date(new Date(scheduledISO).getTime() + Number(formData.duration_minutes) * 60_000).toISOString()
+      : scheduledISO;
     createTaskMutation.mutate({
-      ...formData,
+      lead_id: formData.lead_id,
+      task_type: formData.task_type,
+      summary: formData.summary,
       rep1: formData.rep1 || effectiveUser?.email || '',
       rep2: isAdmin ? formData.rep2 : '',
+      task_status: 'not_completed',
+      work_start_date: scheduledISO,
+      due_date: dueISO,
       manual_created_date: new Date().toISOString(),
     });
   };
@@ -301,32 +311,14 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
             </div>
           </div>
 
-          {/* סטטוס משימה */}
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">סטטוס משימה</Label>
-            <div className="flex gap-2 flex-wrap">
-              {TASK_STATUS_OPTIONS.map((status) => {
-                const isSelected = formData.task_status === status.value;
-                const styles = TASK_STATUS_STYLES[status.value] || TASK_STATUS_STYLES.not_completed;
-                return (
-                  <button
-                    key={status.value}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, task_status: status.value })}
-                    className={`px-4 py-2 rounded-full border text-sm font-medium transition-all ${
-                      isSelected ? styles.on : `bg-white ${styles.off}`
-                    }`}
-                  >
-                    {status.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* סטטוס משימה — removed from the UI. New tasks are always
+              created as "ממתין" (not_completed); status changes happen
+              from inside the task itself (complete / cancel buttons),
+              never at creation time. */}
 
           {/* תוכן המשימה */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תוכן המשימה *</Label>
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תוכן המשימה</Label>
             <Textarea
               placeholder="הקלד את תוכן המשימה והפרטים כאן..."
               value={formData.summary}
@@ -335,33 +327,50 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
             />
           </div>
 
-          {/* תאריכים */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תאריך יצירה</Label>
-              <DateTimePicker
-                value={formData.manual_created_date}
-                onChange={(value) => setFormData({ ...formData, manual_created_date: value })}
-                placeholder="בחר תאריך"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תחילת עבודה</Label>
-              <DateTimePicker
-                value={formData.work_start_date}
-                onChange={(value) => setFormData({ ...formData, work_start_date: value })}
-                placeholder="בחר תאריך"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תאריך יעד</Label>
-              <DateTimePicker
-                value={formData.due_date}
-                onChange={(value) => setFormData({ ...formData, due_date: value })}
-                placeholder="בחר תאריך"
-              />
-            </div>
+          {/* "מתי תתבצע?" — single date picker that replaces the old
+              three-field grid (creation / start / due). Creation time
+              is auto-set on submit, and for call tasks the duration
+              buttons below determine the implicit "end" time. */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">מתי תתבצע?</Label>
+            <DateTimePicker
+              value={formData.scheduled_at}
+              onChange={(value) => setFormData({ ...formData, scheduled_at: value })}
+              placeholder="עכשיו (ברירת מחדל)"
+            />
           </div>
+
+          {/* Duration buttons — call tasks only. The rep picks how
+              long they expect the call to take; we store this as
+              due_date = scheduled_at + duration on submit, so the
+              queue can later flag the task as overdue at the right
+              moment. Non-call tasks (meeting / quote / order close)
+              don't need a duration — they're "do by then" rather
+              than "block out time for". */}
+          {formData.task_type === 'call' ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">משך משוער</Label>
+              <div className="flex gap-2 flex-wrap">
+                {[5, 10, 15].map((mins) => {
+                  const isSelected = Number(formData.duration_minutes) === mins;
+                  return (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, duration_minutes: mins })}
+                      className={`px-4 py-2 rounded-full border text-sm font-medium transition-all ${
+                        isSelected
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-white text-muted-foreground border-border hover:border-foreground/30'
+                      }`}
+                    >
+                      {mins} דק׳
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {/* נציגים */}
           <div className="grid grid-cols-2 gap-3">

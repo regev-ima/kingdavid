@@ -70,6 +70,18 @@ const OrderPdfGenerator = async (orderData) => {
         .join(", ");
       extraInfo.push(`תוספות: ${addonsText}`);
     }
+    // Fabric catalog details — only present on bed items where the rep filled them in.
+    const fabricParts = [];
+    if (item?.fabric_catalog_name) fabricParts.push(`קטלוג: ${safe(item.fabric_catalog_name)}`);
+    if (item?.fabric_color_number) fabricParts.push(`מס׳ צבע: ${safe(item.fabric_color_number)}`);
+    if (item?.fabric_color) fabricParts.push(`צבע: ${safe(item.fabric_color)}`);
+    const supplier = item?.fabric_supplier === 'אחר'
+      ? (item?.fabric_supplier_other || 'אחר')
+      : item?.fabric_supplier;
+    if (supplier) fabricParts.push(`ספק: ${safe(supplier)}`);
+    if (fabricParts.length) {
+      extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
+    }
     return {
       idx: idx + 1,
       name: esc(item?.name),
@@ -290,6 +302,19 @@ const OrderPdfGenerator = async (orderData) => {
             }
           </tbody>
         </table>
+
+        ${
+          orderData.special_requests
+            ? `
+        <div class="card" style="margin-bottom:10px;">
+          <div class="cardTitle"><span>בקשות מיוחדות</span></div>
+          <div style="font-size:12px; color:#0B1220; line-height:1.6; font-weight:500;">
+            ${esc(orderData.special_requests)}
+          </div>
+        </div>
+        `
+            : ""
+        }
 
         <div class="summaryRow">
           <div class="card">

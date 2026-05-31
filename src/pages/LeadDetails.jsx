@@ -47,11 +47,19 @@ import {
   MoreVertical,
   Headphones,
   ShoppingBag,
+  AlertTriangle,
   Crown,
   Plus,
   Activity,
   History,
-  Phone
+  Phone,
+  Mail,
+  MapPin,
+  Home,
+  Globe,
+  StickyNote,
+  MessageSquare,
+  CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import SLABadge from '@/components/sla/SLABadge';
@@ -96,9 +104,23 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  // Gating dialog for "משימה חדשה" on unassigned leads — instead of
+  // letting the rep open a task on a lead that has no owner (and then
+  // wondering who's supposed to do it), we intercept and require an
+  // assignment first. Holds the candidate rep email until confirmed.
+  const [assignBeforeTaskRep, setAssignBeforeTaskRep] = useState('');
+  const [showAssignBeforeTask, setShowAssignBeforeTask] = useState(false);
+  const [isAssigningBeforeTask, setIsAssigningBeforeTask] = useState(false);
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
-  const [workMode, setWorkMode] = useState(initialMode);
+  // The old `workMode` state (sales vs service) was removed when we
+  // collapsed the two modes into a single unified lead screen. Sales
+  // and service info now live side-by-side, the service section is a
+  // permanent card in the main column, and the only cross-functional
+  // signal is the open-tickets badge in the header. `initialMode` is
+  // still accepted as a prop for backwards-compat with any caller
+  // that passes it; it's just ignored.
+  void initialMode;
   const { hiddenStatuses } = useHiddenStatuses();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -198,19 +220,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     if (lead && !isEditing) setFormData(lead);
   }, [leadUpdatedDate, isEditing]);
 
-  useEffect(() => {
-    // In popup mode the URL belongs to the list page underneath — don't
-    // rewrite it to sync the sales/service toggle (that would navigate
-    // and close the overlay). The toggle lives purely in local state.
-    if (isModal) return;
-    const params = new URLSearchParams(window.location.search);
-    const urlMode = params.get('mode') === 'service' ? 'service' : 'sales';
-    if (urlMode !== workMode) {
-      params.set('mode', workMode);
-      if (leadId) params.set('id', leadId);
-      navigate(`${createPageUrl('LeadDetails')}?${params.toString()}`, { replace: true });
-    }
-  }, [workMode, leadId, navigate, isModal]);
+  // The URL ?mode=service sync useEffect was removed alongside the
+  // sales/service toggle — the lead screen no longer has modes, so
+  // there's nothing to sync. ?mode query params on existing bookmarks
+  // are simply ignored (initialMode prop is no-op now).
 
   // Real-time subscription: auto-refresh lead when it changes (e.g. status updated from task dialog)
   useEffect(() => {
@@ -291,8 +304,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   );
   const workbenchState = useMemo(() => buildLeadWorkbenchState({
     tasks,
-    mode: workMode,
-  }), [tasks, workMode]);
+  }), [tasks]);
 
   const handleSave = async () => {
     const { id, created_date, updated_date, created_by, ...updateData } = formData;
@@ -348,7 +360,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       }
       case 'new_task':
       case 'empty':
-        setShowAddTaskDialog(true);
+        requestAddTask();
         return;
       default:
         return;
@@ -458,6 +470,37 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     }
   };
 
+  // Single entry point for "open the add-task dialog". If the lead
+  // already has a primary rep, opens the dialog directly. If not,
+  // intercepts with the assign-first gate so a task can never be
+  // attached to an owner-less lead. Every "משימה חדשה" trigger in
+  // this screen goes through here.
+  const requestAddTask = () => {
+    if (lead?.rep1) {
+      setShowAddTaskDialog(true);
+    } else {
+      setAssignBeforeTaskRep('');
+      setShowAssignBeforeTask(true);
+    }
+  };
+
+  // Confirm handler for the assign-first gate: assigns the chosen rep
+  // via the existing full quick-assign flow (which also creates the
+  // standard call-back task and audit log), then immediately opens
+  // the add-task dialog so the user lands exactly where they tried
+  // to go in the first place — no second click required.
+  const confirmAssignThenAddTask = async () => {
+    if (!assignBeforeTaskRep || isAssigningBeforeTask) return;
+    setIsAssigningBeforeTask(true);
+    try {
+      await handleQuickAssignRep1(assignBeforeTaskRep);
+      setShowAssignBeforeTask(false);
+      setShowAddTaskDialog(true);
+    } finally {
+      setIsAssigningBeforeTask(false);
+    }
+  };
+
   const handleQuickAssignRep2 = async (email) => {
     const repName = salesReps.find(r => r.email === email)?.full_name || email;
 
@@ -496,18 +539,20 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header — name, status, SLA, mode toggle. In popup mode it
-          sticks to the top of the scrollable modal body so the
-          manager always sees which lead they're inside and can flip
-          the sales/service toggle no matter how far they've scrolled.
-          The negative margins extend the bar edge-to-edge of the
-          modal frame; pe-12 reserves space for the Radix close-X that
-          sits in the dialog's right corner. */}
+    /* In modal mode the LeadDetails IS the dialog body — it takes the
+       full dialog height and splits into a frozen top region (name +
+       action bar) and a scrollable body, so the header is genuinely
+       fixed instead of relying on sticky inside a portal/transform
+       context where sticky was unreliable. Full-page mode keeps the
+       original space-y-6 vertical flow. */
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {/* Header — name, status, SLA, mode toggle. In popup mode it's
+          flex-shrink-0 so it never scrolls; pe-12 reserves room for
+          the Radix close-X that sits in the dialog's right corner. */}
       <div className={
         `flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4` +
         (isModal
-          ? ' sticky top-0 z-20 -mt-10 -mx-6 px-6 pt-10 pb-3 pe-12 bg-card border-b border-border'
+          ? ' flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border'
           : '')
       }>
         <div className="flex items-center gap-3">
@@ -531,35 +576,26 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </div>
         </div>
 
-        <div className="inline-flex items-center rounded-xl border border-border bg-muted/40 p-1">
-          <Button
+        {/* Open-tickets alert: replaces the old "sales / service mode"
+            toggle. Now that the lead screen shows sales and service
+            together in one scroll (no mode switching), this badge is
+            the one cross-functional signal a sales rep needs — "this
+            customer has open service issues" — and clicking it jumps
+            them straight to the service section. Hidden when there
+            are no open tickets so the header stays clean. */}
+        {openServiceTicketsCount > 0 ? (
+          <button
             type="button"
-            size="sm"
-            className="h-8 text-xs"
-            variant={workMode === 'sales' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('sales')}
+            onClick={() => {
+              document.getElementById('lead-service-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
+            title="עבור לאזור פניות השירות"
           >
-            מצב מכירה
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-            variant={workMode === 'service' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('service')}
-          >
-            מצב שירות
-            {openServiceTicketsCount > 0 && (
-              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
-                workMode === 'service'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-amber-500 text-white'
-              }`}>
-                {openServiceTicketsCount}
-              </span>
-            )}
-          </Button>
-        </div>
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {openServiceTicketsCount === 1 ? 'קריאת שירות פתוחה' : `${openServiceTicketsCount} קריאות שירות פתוחות`}
+          </button>
+        ) : null}
       </div>
 
       <div className="lg:hidden flex flex-wrap gap-2">
@@ -575,7 +611,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setShowAddTaskDialog(true)}
+          onClick={requestAddTask}
           className="flex-1 min-w-[120px] justify-center h-9 text-xs"
         >
           <Clock className="h-3.5 w-3.5 me-1.5" />
@@ -592,43 +628,18 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </Link>
       </div>
 
-      {/* Action bar — mode toggle + חייג / משימה / הצעה. Sticky so
-          the rep keeps the main actions one click away while reading
-          the lead. In page mode it lives below the global page chrome
-          (top-16). In popup mode it stacks directly below the sticky
-          header inside the modal body (top-[68px]). */}
+      {/* Action bar — חייג / משימה / הצעה. Always one click away
+          while reading the lead. In page mode it sticks below the
+          global chrome (top-16). In popup mode it sits as a
+          flex-shrink-0 sibling of the header — genuinely fixed at
+          the top of the dialog, no sticky involved. The old
+          sales/service mode toggle that used to live here was
+          removed in favor of a single unified lead screen. */}
       <div className={
-        `hidden lg:flex sticky z-10 items-center justify-between gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card ` +
-        (isModal ? 'top-[68px]' : 'top-16')
+        isModal
+          ? 'hidden lg:flex flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2'
+          : 'hidden lg:flex sticky top-16 z-10 items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
       }>
-        <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-1">
-          <Button
-            size="sm"
-            className="h-8 text-xs"
-            variant={workMode === 'sales' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('sales')}
-          >
-            מכירה
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-            variant={workMode === 'service' ? 'default' : 'ghost'}
-            onClick={() => setWorkMode('service')}
-          >
-            שירות
-            {openServiceTicketsCount > 0 && (
-              <span className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold ${
-                workMode === 'service'
-                  ? 'bg-white/25 text-white'
-                  : 'bg-amber-500 text-white'
-              }`}>
-                {openServiceTicketsCount}
-              </span>
-            )}
-          </Button>
-        </div>
-
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -639,7 +650,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <Phone className="h-3.5 w-3.5 me-1" />
             חייג
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowAddTaskDialog(true)} className="h-8 text-xs">
+          <Button variant="outline" size="sm" onClick={requestAddTask} className="h-8 text-xs">
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
           </Button>
@@ -673,6 +684,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Scrollable body. In modal mode this is the only thing inside
+          the dialog that actually scrolls — the header + action bar
+          above are fixed flex-shrink-0 siblings, so they NEVER move
+          and NEVER get occluded by content scrolling under them. In
+          full-page mode this is a passive wrapper that preserves the
+          original space-y-6 rhythm. */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4 space-y-6' : 'space-y-6'}>
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Main Info */}
@@ -769,67 +788,90 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   </div>
                 </div>
               ) : (
-                <div className="space-y-5">
-                  {/* Contact Info Grid */}
-                  <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                    <DetailField label="שם מלא" value={lead.full_name} />
-                    <DetailField label="טלפון" value={lead.phone} />
-                    <DetailField label="אימייל" value={lead.email} />
-                    <DetailField label="עיר" value={lead.city} />
-                  </div>
-                  
-                  <div className="border-t border-border/50 pt-4">
-                    <DetailField label="כתובת" value={lead.address} />
-                  </div>
+                /* Compact, Google-card-style detail list. Replaced the
+                   old two-column DetailField grid (label on top, big
+                   value below, border-t between every section) — that
+                   layout was airy by design but wasted vertical space
+                   even when most fields were empty. The new structure:
+                   one row per field with a small leading icon, slim
+                   label, value on the left, rows with no value HIDDEN
+                   entirely so a sparse lead doesn't show six empty
+                   "-"s. dir is left at default (RTL) so even phone /
+                   email values render aligned to the right edge next
+                   to their label — the digits inside stay LTR-readable
+                   thanks to browser bidi without forcing the whole
+                   cell to switch sides. */
+                <dl className="divide-y divide-border/30">
+                  {[
+                    { label: 'שם מלא',     value: lead.full_name,                                       icon: User },
+                    { label: 'טלפון',      value: lead.phone,                                           icon: Phone },
+                    { label: 'אימייל',     value: lead.email,                                           icon: Mail },
+                    { label: 'עיר',        value: lead.city,                                            icon: MapPin },
+                    { label: 'כתובת',      value: lead.address,                                         icon: Home },
+                    { label: 'מקור',       value: SOURCE_LABELS[lead.source] || lead.source,            icon: Globe },
+                    { label: 'טופס מקור',  value: lead.source_form,                                     icon: FileText },
+                    { label: 'נושא הפנייה', value: lead.subject,                                        icon: MessageSquare },
+                    { label: 'הערות',      value: lead.notes, whitespace: 'pre-wrap',                   icon: StickyNote },
+                  ]
+                    .filter((row) => row.value)
+                    .map((row) => {
+                      const Icon = row.icon;
+                      return (
+                        <div key={row.label} className="flex items-baseline gap-3 py-3">
+                          <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                            <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                            <span>{row.label}</span>
+                          </dt>
+                          <dd
+                            className={`text-sm text-foreground min-w-0 flex-1 ${row.whitespace === 'pre-wrap' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
+                          >
+                            {row.value}
+                          </dd>
+                        </div>
+                      );
+                    })}
 
-                  {/* Source */}
-                  <div className="border-t border-border/50 pt-4">
-                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                      <DetailField label="מקור" value={SOURCE_LABELS[lead.source] || lead.source} />
-                      {lead.source_form && (
-                        <DetailField label="טופס מקור" value={lead.source_form} />
-                      )}
-                    </div>
-                    {Array.isArray(lead.tags) && lead.tags.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
+                  {/* Tags inline as their own row — only when present.
+                      Keeps the visual rhythm of the rest of the list. */}
+                  {Array.isArray(lead.tags) && lead.tags.length > 0 ? (
+                    <div className="flex items-baseline gap-3 py-3">
+                      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                        <Tag className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                        <span>תגיות</span>
+                      </dt>
+                      <dd className="flex flex-wrap gap-1.5 min-w-0 flex-1">
                         {lead.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-xs font-medium px-2 py-0.5"
+                            className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-[11px] font-medium px-1.5 py-0.5"
                           >
                             #{tag}
                           </span>
                         ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Subject (website contact form) */}
-                  {lead.subject && (
-                    <div className="border-t border-border/50 pt-4">
-                      <DetailField label="נושא הפנייה" value={lead.subject} />
+                      </dd>
                     </div>
-                  )}
+                  ) : null}
 
-                  {/* Dates Row */}
-                  <div className="border-t border-border/50 pt-4">
-                    <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
-                      <DetailField
-                        label="תאריך יצירה"
-                        value={lead.created_date ? formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
-                      />
-                      <DetailField
-                        label="תאריך עדכון"
-                        value={lead.updated_date ? formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
-                      />
+                  {/* Created / updated timestamps — kept as a single
+                      muted footer row so they don't compete with the
+                      contact details above. */}
+                  {lead.created_date || lead.updated_date ? (
+                    <div className="flex items-baseline gap-3 py-3 text-xs text-muted-foreground/70">
+                      <dt className="flex items-center gap-1.5 w-28 flex-shrink-0">
+                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                        <span>תאריכים</span>
+                      </dt>
+                      <dd className="min-w-0 flex-1 flex flex-wrap gap-x-4 gap-y-1">
+                        {lead.created_date ? (
+                          <span>נוצר: {formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}</span>
+                        ) : null}
+                        {lead.updated_date ? (
+                          <span>עודכן: {formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}</span>
+                        ) : null}
+                      </dd>
                     </div>
-                  </div>
-
-                  {/* Notes */}
-                  <div className="border-t border-border/50 pt-4">
-                    <DetailField label="הערות" value={lead.notes} />
-                  </div>
-                </div>
+                  ) : null}
+                </dl>
               )}
             </CardContent>
           </Card>
@@ -841,7 +883,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 היסטוריית משימות ({historicalTasks.length})
               </CardTitle>
-              <Button variant="outline" size="sm" onClick={() => setShowAddTaskDialog(true)}>
+              <Button variant="outline" size="sm" onClick={requestAddTask}>
                 <Plus className="h-4 w-4 me-2" />
                 הוסף משימה
               </Button>
@@ -850,7 +892,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               {historicalTasks.length === 0 ? (
                 <div className="px-4 py-5 flex items-center justify-between gap-3 text-sm">
                   <span className="text-muted-foreground">אין משימות סגורות/היסטוריות כרגע.</span>
-                  <Button size="sm" variant="outline" onClick={() => setShowAddTaskDialog(true)}>
+                  <Button size="sm" variant="outline" onClick={requestAddTask}>
                     <Plus className="h-3.5 w-3.5 me-1" />
                     משימה חדשה
                   </Button>
@@ -1013,24 +1055,100 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
-          {/* Communication History */}
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+          {/* Communication History — temporarily hidden per product
+              decision. The card was almost always empty for new
+              leads, which made it dead visual weight. The
+              <CommunicationHistory /> component, the AddCommunication
+              dialog wiring, and the import above are all kept so
+              this is a one-line revert when we're ready to bring it
+              back. */}
+          {false && (
+            <Card className="rounded-xl border-border shadow-card overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  היסטוריית תקשורת
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddCommunication(true)}>
+
+                  <Plus className="h-4 w-4 me-2" />
+                  הוסף
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <CommunicationHistory leadId={leadId} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Service section — always visible, no mode toggle.
+              Replaces the old "switch to service mode" pattern with a
+              permanent card so a sales rep doing day-to-day work
+              never misses that their customer has an open ticket, and
+              a service rep doing follow-ups never has to switch
+              context to see the sales history. The header alert badge
+              scrolls smoothly here via this id. */}
+          <Card id="lead-service-section" className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                היסטוריית תקשורת
+                <Headphones className="h-4 w-4 text-muted-foreground" />
+                שירות
+                {openServiceTicketsCount > 0 ? (
+                  <Badge variant="warning">{openServiceTicketsCount} פתוחות</Badge>
+                ) : null}
               </CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddCommunication(true)}>
-
-                <Plus className="h-4 w-4 me-2" />
-                הוסף
-              </Button>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1">
+                  <ShoppingBag className="h-3.5 w-3.5" />
+                  {linkedOrderIds.length} {linkedOrderIds.length === 1 ? 'הזמנה מקושרת' : 'הזמנות מקושרות'}
+                </span>
+              </div>
             </CardHeader>
-            <CardContent>
-              <CommunicationHistory leadId={leadId} />
+            <CardContent className="p-4">
+              {linkedOrderIds.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  ללקוח אין הזמנות פעילות, ולכן אין נתיב לפתיחת קריאת שירות מכאן.
+                  קריאת שירות נפתחת תמיד מתוך הזמנה קיימת.
+                </div>
+              ) : serviceTickets.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-6">
+                  אין קריאות שירות פתוחות או היסטוריות עבור ההזמנות של הלקוח.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Open tickets first, then resolved/closed by recency.
+                      Open ones get an amber tint so they pop visually
+                      when a rep glances at this section. */}
+                  {[...serviceTickets]
+                    .sort((a, b) => {
+                      const aOpen = !['resolved', 'closed'].includes(String(a.status || '').toLowerCase());
+                      const bOpen = !['resolved', 'closed'].includes(String(b.status || '').toLowerCase());
+                      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+                      return new Date(b.updated_date || b.created_date || 0) - new Date(a.updated_date || a.created_date || 0);
+                    })
+                    .map((ticket) => {
+                      const isOpen = !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase());
+                      return (
+                        <Link
+                          key={ticket.id}
+                          to={createPageUrl('TicketDetails') + `?id=${ticket.id}`}
+                          className={`block border rounded-lg p-3 transition-colors ${isOpen ? 'border-amber-200 bg-amber-50/40 hover:bg-amber-50' : 'border-border hover:bg-muted/40'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-foreground">
+                              #{ticket.ticket_number || ticket.id?.slice(0, 6)}
+                            </span>
+                            <StatusBadge status={ticket.status} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1 truncate">{ticket.subject || 'פניית שירות'}</p>
+                        </Link>
+                      );
+                    })}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1176,55 +1294,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
-          {workMode === 'service' ? (
-            <Card className="rounded-xl border-border shadow-card overflow-hidden">
-              <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Headphones className="h-4 w-4 text-muted-foreground" />
-                  הקשר שירות (לפי הזמנה)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <ShoppingBag className="h-3.5 w-3.5" />
-                    הזמנות מקושרות
-                  </span>
-                  <Badge variant="outline">{linkedOrderIds.length}</Badge>
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>קריאות שירות פתוחות</span>
-                  <Badge variant={serviceTickets.some((ticket) => !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase())) ? 'warning' : 'outline'}>
-                    {serviceTickets.filter((ticket) => !['resolved', 'closed'].includes(String(ticket.status || '').toLowerCase())).length}
-                  </Badge>
-                </div>
+          {/* The old conditional sidebar service-summary card was
+              removed — its content is now a permanent, full-detail
+              section in the main column (#lead-service-section). */}
 
-                {serviceTickets.length === 0 ? (
-                  <div className="text-sm text-muted-foreground border rounded-lg p-3">
-                    לא נמצאו קריאות שירות מקושרות להזמנות של הליד.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {serviceTickets.slice(0, 4).map((ticket) => (
-                      <Link
-                        key={ticket.id}
-                        to={createPageUrl('TicketDetails') + `?id=${ticket.id}`}
-                        className="block border rounded-lg p-2.5 hover:bg-muted/40 transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-foreground truncate">
-                            #{ticket.ticket_number || ticket.id?.slice(0, 6)}
-                          </span>
-                          <StatusBadge status={ticket.status} />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1 truncate">{ticket.subject || 'פניית שירות'}</p>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
 
           {/* Assignment */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
@@ -1409,6 +1482,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </div>
       </div>
 
+      </div>{/* end of scrollable body wrapper (see comment near opener above) */}
+
       {/* Add Communication Dialog */}
       <AddCommunication
         leadId={leadId}
@@ -1430,6 +1505,42 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         task={editingTask ? { ...editingTask, lead } : null}
         effectiveUser={effectiveUser}
       />
+
+      {/* Assign-before-task gate: blocks "משימה חדשה" on a lead that
+          has no primary rep. Forces the user to pick an owner first
+          (via the existing handleQuickAssignRep1 flow), then jumps
+          straight into the task dialog so the original intent
+          isn't lost. */}
+      <Dialog open={showAssignBeforeTask} onOpenChange={(open) => { if (!open) setShowAssignBeforeTask(false); }}>
+        <DialogContent dir="rtl" className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">נדרש שיוך לפני פתיחת משימה</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm px-3 py-2 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span>לא ניתן לפתוח משימה לליד שלא משויך. בחר נציג ראשי לשיוך, והמשימה תיפתח מיד אחרי השיוך.</span>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
+              <Select value={assignBeforeTaskRep} onValueChange={setAssignBeforeTaskRep}>
+                <SelectTrigger className="h-10"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                <SelectContent>
+                  {salesReps.map((rep) => (
+                    <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setShowAssignBeforeTask(false)} disabled={isAssigningBeforeTask}>ביטול</Button>
+              <Button onClick={confirmAssignThenAddTask} disabled={!assignBeforeTaskRep || isAssigningBeforeTask}>
+                {isAssigningBeforeTask ? 'משייך…' : 'שייך ופתח משימה'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* No-answer callback scheduling dialog */}
       <Dialog open={!!noAnswerFlow} onOpenChange={(open) => {

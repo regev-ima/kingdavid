@@ -61,6 +61,11 @@ export function matchesSalesTaskTab(task, tab, now) {
     case 'undated': return normalized === 'not_completed' && !dueDate;
     case 'not_completed': return normalized === 'not_completed';
     case 'completed': return normalized === 'completed';
+    case 'completed_today': {
+      if (normalized !== 'completed') return false;
+      const completedAt = parseGenericDate(task.updated_date || task.created_date);
+      return !!completedAt && completedAt >= todayStart && completedAt <= todayEnd;
+    }
     case 'not_done': return normalized === 'not_done';
     case 'cancelled': return normalized === 'cancelled';
     case 'all': return true;

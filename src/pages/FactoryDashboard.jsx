@@ -41,7 +41,7 @@ export default function FactoryDashboard() {
         
         // Redirect BEFORE setting state
         if (!canAccessFactoryWorkspace(effectiveUser)) {
-          navigate(createPageUrl('Dashboard'));
+          navigate(createPageUrl('Dashboard2'));
           return;
         }
         

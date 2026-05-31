@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
+import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,6 +70,7 @@ export default function EditQuote() {
     terms: '',
     warranty_terms: '',
     notes: '',
+    special_requests: '',
   });
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
@@ -151,6 +153,7 @@ export default function EditQuote() {
         terms: quote.terms || '',
         warranty_terms: quote.warranty_terms || '',
         notes: quote.notes || '',
+        special_requests: quote.special_requests || '',
       });
     }
   }, [quote, variations]);
@@ -175,7 +178,12 @@ export default function EditQuote() {
             addon_id: addon.addon_id || '',
             name: addon.name || '',
             price: addon.price || 0
-          }))
+          })),
+          fabric_catalog_name: item.fabric_catalog_name || '',
+          fabric_color_number: item.fabric_color_number || '',
+          fabric_color: item.fabric_color || '',
+          fabric_supplier: item.fabric_supplier || '',
+          fabric_supplier_other: item.fabric_supplier_other || ''
         }))
       };
 
@@ -265,7 +273,7 @@ export default function EditQuote() {
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [] }]
+      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
     }));
   };
 
@@ -701,6 +709,64 @@ export default function EditQuote() {
                   </div>
                   </TooltipProvider>
 
+                  {/* Bed-only fabric catalog block — appears for items whose
+                      selected product is in the bed category. */}
+                  {(() => {
+                    const product = products.find(p => p.id === item.product_id);
+                    if (product?.category !== 'bed') return null;
+                    return (
+                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
+                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <Input
+                            placeholder="שם קטלוג"
+                            value={item.fabric_catalog_name || ''}
+                            onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="מס׳ צבע"
+                            value={item.fabric_color_number || ''}
+                            onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="צבע"
+                            value={item.fabric_color || ''}
+                            onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Select
+                            value={item.fabric_supplier || ''}
+                            onValueChange={(val) => {
+                              updateItem(index, 'fabric_supplier', val);
+                              if (val !== FABRIC_SUPPLIER_OTHER) {
+                                updateItem(index, 'fabric_supplier_other', '');
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="ספק" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {FABRIC_SUPPLIERS.map((s) => (
+                                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
+                          <Input
+                            placeholder="שם הספק"
+                            value={item.fabric_supplier_other || ''}
+                            onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* Addons */}
                   {item.variation_id && (() => {
                     const variation = variations.find(v => v.id === item.variation_id);
@@ -757,7 +823,7 @@ export default function EditQuote() {
                                 className="text-xs h-8 bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
                               >
                                 <Plus className="w-3 h-3 me-1" />
-                                הוסף {addon.name} (₪{finalAddonPrice?.toLocaleString()})
+                                הוסף {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
                               </Button>
                             );
                           })}
@@ -883,6 +949,16 @@ export default function EditQuote() {
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                rows={3}
+                className="resize-none"
+              />
+              </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">בקשות מיוחדות</Label>
+              <Textarea
+                value={formData.special_requests || ''}
+                onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
+                placeholder="בקשות מיוחדות שיופיעו על ההצעה ועל ההזמנה (אופציונלי)"
                 rows={3}
                 className="resize-none"
               />

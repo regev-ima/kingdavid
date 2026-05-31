@@ -84,6 +84,18 @@ const QuotePdfGenerator = async (quoteData) => {
         const addonsText = (item.selected_addons || []).map(a => `${a.name} (+₪${normalizeNumber(a.price).toLocaleString()})`).join(', ');
         extraInfo.push(`תוספות: ${addonsText}`);
       }
+      // Fabric catalog details — only present on bed items where the rep filled them in.
+      const fabricParts = [];
+      if (item?.fabric_catalog_name) fabricParts.push(`קטלוג: ${safe(item.fabric_catalog_name)}`);
+      if (item?.fabric_color_number) fabricParts.push(`מס׳ צבע: ${safe(item.fabric_color_number)}`);
+      if (item?.fabric_color) fabricParts.push(`צבע: ${safe(item.fabric_color)}`);
+      const supplier = item?.fabric_supplier === 'אחר'
+        ? (item?.fabric_supplier_other || 'אחר')
+        : item?.fabric_supplier;
+      if (supplier) fabricParts.push(`ספק: ${safe(supplier)}`);
+      if (fabricParts.length) {
+        extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
+      }
       
       return {
         idx: idx + 1,
@@ -437,6 +449,17 @@ const QuotePdfGenerator = async (quoteData) => {
             <div class="line total"><span class="label">סה״כ לתשלום</span><span>${money(total)}</span></div>
           </div>
         </div>
+
+        ${
+          quoteData.special_requests
+            ? `
+          <div class="notes">
+            <p class="notes-label">בקשות מיוחדות:</p>
+            <p>${esc(quoteData.special_requests)}</p>
+          </div>
+        `
+            : ""
+        }
 
         ${
           quoteData.terms || quoteData.warranty_terms || quoteData.notes

@@ -16,7 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Clock, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
+import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
+import StatCube from "@/components/shared/StatCube";
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -98,6 +99,16 @@ const CATEGORY_META = {
   cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
 };
 
+// Funnel-stage icon per category, for the StatCube chips. Phone (new lead),
+// missed retry, quote/build, sent-quote follow-up, booked meeting.
+const CATEGORY_ICON = {
+  cat_new_lead: Phone,
+  cat_no_answer: RefreshCw,
+  cat_before_quote: FileText,
+  cat_after_quote: MessageCircle,
+  cat_meeting: Calendar,
+};
+
 // "Due now" window — a task whose due_date is within ±60min of the
 // current clock is highlighted as actionable-now (the brief's "מהבהב").
 const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
@@ -106,7 +117,7 @@ export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'not_done', 'cancelled', 'all',
+  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'completed_today', 'not_done', 'cancelled', 'all',
     'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
@@ -238,6 +249,14 @@ export default function SalesTasks() {
         if (error) throw error;
         return count || 0;
       };
+      // How many open tasks the stale filter (>30d overdue) is hiding from
+      // the list right now. All stale tasks are overdue (due < cutoff <
+      // today), so subtracting this from total/open/overdue makes those
+      // cube numbers equal exactly what the de-noised list renders. When
+      // showStale is on, nothing is hidden so it's 0.
+      const staleOpenHidden = showStale
+        ? 0
+        : await head((q) => q.eq('task_status', 'not_completed').lt('due_date', staleCutoffIso));
       const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden] = await Promise.all([
         head((q) => q),
         head((q) => q.eq('task_status', 'not_completed')),
@@ -250,7 +269,18 @@ export default function SalesTasks() {
         assignmentHead(),
         staleAssignmentHiddenHead(),
       ]);
-      return { total, open, completed, today: todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden };
+      return {
+        total: total - staleOpenHidden,
+        open: open - staleOpenHidden,
+        completed,
+        today: todayCnt,
+        overdue: overdue - staleOpenHidden,
+        upcoming,
+        undated,
+        completedToday,
+        assignmentOpen,
+        staleAssignmentHidden,
+      };
     },
   });
 
@@ -278,6 +308,11 @@ export default function SalesTasks() {
       } else if (activeTab === 'assignment') {
         q = q.eq('task_status', 'not_completed').eq('task_type', 'assignment');
         if (!showStale) q = q.gte('created_date', staleCutoffIso);
+      } else if (activeTab === 'completed_today') {
+        // "הושלמו היום" cube: completed AND touched within today's window —
+        // must mirror the count query's completedToday, not the generic
+        // "all completed ever" the plain `completed` tab shows.
+        q = q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
       } else if (activeTab.startsWith('cat_')) {
@@ -294,10 +329,14 @@ export default function SalesTasks() {
       // but descending for overdue so the *most recent* misses come back
       // first. With 6k+ migration leftovers, ascending pulled only ancient
       // garbage and crowded out anything actionable.
-      const recentlyTouched = ['completed', 'not_done', 'cancelled'].includes(activeTab);
+      const recentlyTouched = ['completed', 'completed_today', 'not_done', 'cancelled'].includes(activeTab);
       if (recentlyTouched) {
         q = q.order('updated_date', { ascending: false, nullsFirst: false });
-      } else if (activeTab === 'overdue') {
+      } else if (activeTab === 'overdue' || activeTab.startsWith('cat_')) {
+        // Overdue + funnel categories: newest-due first, so within the
+        // 1000-row fetch cap we keep the freshest, most-actionable tasks
+        // rather than ancient migration leftovers. For categories this also
+        // keeps the list in sync with the (uncapped) category counts.
         q = q.order('due_date', { ascending: false, nullsFirst: false });
       } else {
         q = q.order('due_date', { ascending: true, nullsFirst: false });
@@ -459,7 +498,14 @@ export default function SalesTasks() {
   // tab always shows assignment tasks regardless of the toggle.
   const scopedTasks = useMemo(() => {
     let tasks = ownedTasks;
-    if (!showStale) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
+    // Stale (>30d overdue) tasks are migration noise on the time buckets, so
+    // they're hidden there by default. But the funnel-category queues
+    // (cat_*) are an explicit "work these leads now" request — a new-lead
+    // callback must show up there regardless of age, or the card says 3
+    // while the list shows 0. So skip stale-hiding for category tabs; their
+    // counts (categoryCounts) don't apply it either, keeping the two equal.
+    const isCategoryTab = activeTab.startsWith('cat_');
+    if (!showStale && !isCategoryTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
     if (activeTab === 'assignment') {
       tasks = tasks.filter(isAssignmentTask);
     } else if (!showAssignmentTasks) {
@@ -1021,39 +1067,23 @@ export default function SalesTasks() {
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
           { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
-          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2, asTab: 'completed' },
+          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2 },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
         ].map((tile) => {
-          // Three-state styling: default (muted gray), hover (faint
-          // tint of the tile's accent), active (full accent + ring).
-          // Tailwind JIT requires the class strings spelled out, so the
-          // lookups stay colocated with the meaning instead of templated.
-          const tone = {
-            amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
-            red:     { value: 'text-red-700',     activeCard: 'bg-red-50 border-red-500 ring-2 ring-red-400',         hoverCard: 'hover:border-red-300 hover:bg-red-50/50' },
-            emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
-            indigo:  { value: 'text-indigo-700',  activeCard: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', hoverCard: 'hover:border-indigo-300 hover:bg-indigo-50/50' },
-          }[tile.tone];
-          const isActive = !tile.readOnly && activeTab === (tile.asTab || tile.id);
-          const cardCls = isActive
-            ? tone.activeCard
-            : `border-border bg-muted/30 ${tile.readOnly ? '' : tone.hoverCard}`;
-          const valueCls = isActive ? tone.value : 'text-muted-foreground';
-          const Icon = tile.icon;
+          const target = tile.asTab || tile.id;
+          const isActive = !tile.readOnly && activeTab === target;
           return (
-            <button
+            <StatCube
               key={tile.id}
-              type="button"
-              onClick={() => { if (!tile.readOnly) setActiveTab(tile.asTab || tile.id); }}
+              label={tile.label}
+              value={Number(tile.value || 0).toLocaleString()}
+              icon={tile.icon}
+              tone={tile.tone}
+              active={isActive}
               disabled={tile.readOnly}
-              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls} ${tile.readOnly ? 'cursor-default' : 'cursor-pointer'}`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
-                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
-              </div>
-              <p className={`text-2xl font-bold tabular-nums ${valueCls}`}>{Number(tile.value || 0).toLocaleString()}</p>
-            </button>
+              onClick={tile.readOnly ? undefined : () => setActiveTab(isActive ? 'all' : target)}
+              title={tile.readOnly ? undefined : (isActive ? 'בטל סינון' : `הצג ${tile.label}`)}
+            />
           );
         })}
       </div>
@@ -1073,31 +1103,18 @@ export default function SalesTasks() {
             const meta = CATEGORY_META[catId];
             const value = categoryCounts[catId] || 0;
             const isActive = activeTab === catId;
-            // Same three-state pattern as the KPI tiles above: muted
-            // gray by default, accent tint on hover, full accent + ring
-            // when active. Class strings spelled out so Tailwind's JIT
-            // can see them.
-            const tone = {
-              sky:     { value: 'text-sky-700',     activeCard: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',         hoverCard: 'hover:border-sky-300 hover:bg-sky-50/50' },
-              rose:    { value: 'text-rose-700',    activeCard: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',      hoverCard: 'hover:border-rose-300 hover:bg-rose-50/50' },
-              amber:   { value: 'text-amber-700',   activeCard: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',   hoverCard: 'hover:border-amber-300 hover:bg-amber-50/50' },
-              violet:  { value: 'text-violet-700',  activeCard: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', hoverCard: 'hover:border-violet-300 hover:bg-violet-50/50' },
-              emerald: { value: 'text-emerald-700', activeCard: 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-400', hoverCard: 'hover:border-emerald-300 hover:bg-emerald-50/50' },
-            }[meta.accent];
-            const cardCls = isActive ? tone.activeCard : `border-border bg-muted/30 ${tone.hoverCard}`;
-            const valueCls = isActive ? tone.value : 'text-muted-foreground';
-            const titleCls = isActive ? 'text-foreground' : 'text-muted-foreground';
             return (
-              <button
+              <StatCube
                 key={catId}
-                type="button"
-                onClick={() => setActiveTab(catId)}
-                className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}
-              >
-                <p className={`text-xs font-semibold leading-tight ${titleCls}`}>{meta.label}</p>
-                <p className={`text-2xl font-bold tabular-nums mt-1.5 ${valueCls}`}>{value.toLocaleString()}</p>
-                <p className="text-[10px] text-muted-foreground mt-1 leading-tight">{meta.desc}</p>
-              </button>
+                label={meta.label}
+                value={value.toLocaleString()}
+                sub={meta.desc}
+                icon={CATEGORY_ICON[catId] || List}
+                tone={meta.accent}
+                active={isActive}
+                onClick={() => setActiveTab(isActive ? 'all' : catId)}
+                title={isActive ? 'בטל סינון' : `הצג ${meta.label}`}
+              />
             );
           })}
         </div>

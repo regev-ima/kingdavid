@@ -6,7 +6,7 @@ export {
   addDays, addHours, addMinutes, addMonths, addWeeks,
   subDays, subMonths, subWeeks,
   startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear,
-  differenceInDays, differenceInHours, differenceInMinutes, differenceInBusinessDays,
+  differenceInDays, differenceInHours, differenceInMinutes, differenceInBusinessDays, differenceInCalendarDays,
   isAfter, isBefore, isValid, isPast, isToday, isSameDay, isWithinInterval,
   parseISO,
   getDay, getMonth, getYear,

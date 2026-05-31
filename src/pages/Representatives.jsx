@@ -326,7 +326,7 @@ export default function Representatives() {
   const handleImpersonate = (rep) => {
     if (canAccessAdminOnly(getEffectiveUser(user))) {
       startImpersonation(user, rep);
-      navigate(createPageUrl('Dashboard'));
+      navigate(createPageUrl('Dashboard2'));
     }
   };
 
