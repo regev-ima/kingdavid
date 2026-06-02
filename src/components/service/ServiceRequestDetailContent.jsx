@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot } from 'lucide-react';
+import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot, FileText } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -248,6 +248,13 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
               <p className="text-xs font-semibold text-muted-foreground mb-1.5">תיאור הבעיה</p>
               <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
             </div>
+          )}
+
+          {ticket.invoice_url && (
+            <a href={ticket.invoice_url} target="_blank" rel="noreferrer"
+               className="rounded-xl border border-border p-4 flex items-center gap-2 text-sm font-medium hover:bg-muted/40 transition">
+              <FileText className="h-4 w-4 text-primary" /> צפייה בחשבונית שצורפה
+            </a>
           )}
 
           {Object.keys(answers).length > 0 && (

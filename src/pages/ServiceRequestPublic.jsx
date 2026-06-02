@@ -6,21 +6,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, CheckCircle2, Crown, ShieldCheck } from 'lucide-react';
+import { Loader2, CheckCircle2, Crown, ShieldCheck, FileText, X } from 'lucide-react';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import { compressImage } from '@/lib/imageCompression';
 import {
   REQUEST_TYPE_OPTIONS, DIAGNOSTIC_QUESTIONS, CONTACT_PREFERENCE_OPTIONS,
 } from '@/constants/serviceOptions';
 
-// Public, unauthenticated self-service intake form. Two ways in:
-//   1. Token link from an SMS (/service-request?token=...) — a rep already
-//      created a draft ticket; we greet the customer and finalise that ticket
-//      through service_request_get / service_request_submit.
-//   2. Open intake (/service-request, no token) — the customer arrives on
-//      their own, types their order number + contact details, and we create a
-//      fresh ticket via service_request_create_public, auto-linking it to the
-//      matching order/customer when found.
+// Public, unauthenticated self-service intake form.
+//
+// Token-only by design: a customer can only reach a usable form through the
+// unique link a rep sends by SMS (/service-request?token=...). The token is
+// valid for 24h (enforced server-side in service_request_get/submit), after
+// which the link shows an "expired" state. There is deliberately NO open,
+// link-less intake — that would invite junk tickets.
+//
 // Mounted outside the app's auth gate (see App.jsx).
 //
 // NOTE: Shell is declared at module scope on purpose. Defining it inside the
@@ -43,7 +43,6 @@ const Shell = ({ children }) => (
 
 export default function ServiceRequestPublic() {
   const token = useMemo(() => new URLSearchParams(window.location.search).get('token'), []);
-  const openIntake = !token; // no token → self-initiated intake
 
   const { data: info, isLoading } = useQuery({
     queryKey: ['public-service-request', token],
@@ -56,11 +55,6 @@ export default function ServiceRequestPublic() {
   });
 
   const [form, setForm] = useState({
-    // Contact + order — only collected in open intake (token mode already knows them).
-    customer_name: '',
-    customer_phone: '',
-    customer_email: '',
-    order_number: '',
     request_type: '',
     order_date: '',
     warranty_years: '',
@@ -69,20 +63,45 @@ export default function ServiceRequestPublic() {
     contact_preference: 'phone',
     issue_answers: {},
     photo_urls: [],
+    invoice_url: '',
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const setAnswer = (k, v) => setForm((p) => ({ ...p, issue_answers: { ...p.issue_answers, [k]: v } }));
   const [error, setError] = useState('');
+  const [invoiceUploading, setInvoiceUploading] = useState(false);
 
   // Anon upload straight into the 'uploads' bucket under the service-requests/
   // prefix the storage policy whitelists for anonymous inserts.
   const publicUpload = async (file) => {
-    const safeName = (file.name || 'photo.jpg').replace(/[^\w.\-]/g, '_');
-    const path = `service-requests/${token || 'public'}/${Date.now()}_${safeName}`;
+    const safeName = (file.name || 'file').replace(/[^\w.\-]/g, '_');
+    const path = `service-requests/${token}/${Date.now()}_${safeName}`;
     const { error: upErr } = await base44.supabase.storage.from('uploads').upload(path, file, { upsert: false });
     if (upErr) throw upErr;
     const { data } = base44.supabase.storage.from('uploads').getPublicUrl(path);
     return { file_url: data.publicUrl };
+  };
+
+  // Invoice: a single optional file (image or PDF). Images are compressed;
+  // PDFs are uploaded as-is.
+  const handleInvoice = async (e) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+    if (!isImage && !isPdf) { setError('ניתן לצרף חשבונית כתמונה או PDF בלבד'); return; }
+    setError('');
+    setInvoiceUploading(true);
+    try {
+      const toUpload = isImage ? await compressImage(file, { maxSizeMB: 0.6, maxWidthOrHeight: 1600 }) : file;
+      const { file_url } = await publicUpload(toUpload);
+      set('invoice_url', file_url);
+    } catch (err) {
+      console.error('[ServiceRequestPublic] invoice upload failed', err);
+      setError('העלאת החשבונית נכשלה. נסו שוב.');
+    } finally {
+      setInvoiceUploading(false);
+    }
   };
 
   const submitMutation = useMutation({
@@ -96,24 +115,9 @@ export default function ServiceRequestPublic() {
         contact_preference: form.contact_preference,
         issue_answers: form.issue_answers,
         photo_urls: form.photo_urls,
+        invoice_url: form.invoice_url || null,
         product_name: form.issue_answers.product || '',
       };
-
-      if (openIntake) {
-        const { data, error: rpcErr } = await base44.supabase.rpc('service_request_create_public', {
-          p_data: {
-            ...payload,
-            customer_name: form.customer_name,
-            customer_phone: form.customer_phone,
-            customer_email: form.customer_email,
-            order_number: form.order_number,
-          },
-        });
-        if (rpcErr) throw rpcErr;
-        if (data && data.ok === false) throw new Error('create_failed');
-        return data;
-      }
-
       const { data, error: rpcErr } = await base44.supabase.rpc('service_request_submit', { p_token: token, p_data: payload });
       if (rpcErr) throw rpcErr;
       if (data && data.ok === false) throw new Error('link_unavailable');
@@ -121,32 +125,35 @@ export default function ServiceRequestPublic() {
     },
     onError: (err) => {
       console.error('[ServiceRequestPublic] submit failed', err);
-      setError(err?.message === 'link_unavailable' ? 'הקישור כבר נוצל או אינו תקין.' : 'אירעה שגיאה בשליחה. נסו שוב.');
+      setError(err?.message === 'link_unavailable' ? 'הקישור כבר נוצל או שפג תוקפו.' : 'אירעה שגיאה בשליחה. נסו שוב.');
     },
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (openIntake) {
-      if (form.customer_name.trim().length < 2) return setError('יש להזין שם מלא');
-      if (form.customer_phone.replace(/\D/g, '').length < 9) return setError('יש להזין מספר טלפון תקין');
-    }
     if (!form.request_type) return setError('יש לבחור סוג פנייה');
     if (!form.description.trim()) return setError('יש לתאר את הבעיה');
     setError('');
     submitMutation.mutate();
   };
 
-  // Token-mode gating (open intake skips all of this).
-  if (!openIntake && isLoading) {
+  if (!token) {
+    return <Shell><div className="bg-white rounded-2xl border p-6 text-center text-muted-foreground mt-6">קישור לא תקין.</div></Shell>;
+  }
+  if (isLoading) {
     return <Shell><div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div></Shell>;
   }
-  if (!openIntake && (!info?.found || info?.already_submitted)) {
+  if (!info?.found || info?.already_submitted || info?.expired) {
+    const msg = info?.already_submitted
+      ? 'הפנייה כבר נשלחה — תודה!'
+      : info?.expired
+      ? 'הקישור פג תוקף (תקף ל-24 שעות). אנא פנו אלינו ונשלח לכם קישור חדש.'
+      : 'הקישור אינו תקין או שפג תוקפו.';
     return (
       <Shell>
         <div className="bg-white rounded-2xl border p-6 text-center mt-6 space-y-2">
           <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto" />
-          <p className="font-medium">{info?.already_submitted ? 'הפנייה כבר נשלחה — תודה!' : 'הקישור אינו תקין או שפג תוקפו.'}</p>
+          <p className="font-medium">{msg}</p>
           <p className="text-sm text-muted-foreground">צוות השירות יחזור אליכם בהקדם. לכל שאלה: 1700-700-464.</p>
         </div>
       </Shell>
@@ -154,14 +161,12 @@ export default function ServiceRequestPublic() {
   }
 
   if (submitMutation.isSuccess) {
-    const tn = submitMutation.data?.ticket_number;
     return (
       <Shell>
         <div className="bg-white rounded-2xl border p-8 text-center mt-6 space-y-3">
           <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
           <h2 className="text-xl font-bold">תודה רבה!</h2>
           <p className="text-muted-foreground">פנייתך התקבלה. צוות שירות הלקוחות שלנו יחזור אליך בהקדם האפשרי.</p>
-          {tn && <p className="text-sm text-muted-foreground">מספר הפנייה שלך: <span className="font-semibold text-foreground">#{tn}</span></p>}
         </div>
       </Shell>
     );
@@ -173,38 +178,12 @@ export default function ServiceRequestPublic() {
         <div>
           <h1 className="text-lg font-bold">פתיחת פניית שירות</h1>
           <p className="text-sm text-muted-foreground">
-            {openIntake
-              ? 'נשמח לעזור. אנא מלאו את פרטי ההזמנה ופרטי הקשר, ותארו את הבעיה.'
-              : `שלום${info?.customer_name ? ` ${info.customer_name}` : ''}, נשמח לעזור. אנא מלאו את הפרטים הבאים${info?.order_number ? ` (הזמנה #${info.order_number})` : ''}.`}
+            שלום{info.customer_name ? ` ${info.customer_name}` : ''}, נשמח לעזור. אנא מלאו את הפרטים הבאים
+            {info.order_number ? ` (הזמנה #${info.order_number})` : ''}.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Contact + order details — open intake only */}
-          {openIntake && (
-            <div className="space-y-3 p-3 rounded-xl bg-slate-50 border">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>שם מלא *</Label>
-                  <Input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="שם פרטי ומשפחה" required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>טלפון *</Label>
-                  <Input type="tel" dir="ltr" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="050-0000000" required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>אימייל</Label>
-                  <Input type="email" dir="ltr" value={form.customer_email} onChange={(e) => set('customer_email', e.target.value)} placeholder="name@example.com" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>מספר הזמנה</Label>
-                  <Input dir="ltr" value={form.order_number} onChange={(e) => set('order_number', e.target.value)} placeholder="למשל 12345" />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">אם יש לכם מספר הזמנה — נשמח שתזינו אותו כדי שנשייך את הפנייה להזמנה שלכם.</p>
-            </div>
-          )}
-
           {/* Request type */}
           <div className="space-y-2">
             <Label>סוג הפנייה *</Label>
@@ -284,6 +263,27 @@ export default function ServiceRequestPublic() {
             />
           </div>
 
+          {/* Invoice (optional) */}
+          <div className="space-y-1.5">
+            <Label>צירוף חשבונית (לא חובה)</Label>
+            {form.invoice_url ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-2.5 text-sm">
+                <a href={form.invoice_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-primary truncate">
+                  <FileText className="h-4 w-4 shrink-0" /> החשבונית צורפה — צפייה
+                </a>
+                <button type="button" onClick={() => set('invoice_url', '')} className="text-muted-foreground hover:text-red-600" aria-label="הסר חשבונית">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 rounded-lg border-2 border-dashed border-border hover:border-primary/50 hover:bg-muted/40 p-3 text-sm text-muted-foreground cursor-pointer transition-colors">
+                {invoiceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {invoiceUploading ? 'מעלה...' : 'העלאת חשבונית (תמונה או PDF)'}
+                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleInvoice} disabled={invoiceUploading} />
+              </label>
+            )}
+          </div>
+
           {/* Contact preference */}
           <div className="space-y-1.5">
             <Label>איך תעדיפו שניצור קשר?</Label>
@@ -295,7 +295,7 @@ export default function ServiceRequestPublic() {
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
 
-          <Button type="submit" className="w-full" disabled={submitMutation.isPending}>
+          <Button type="submit" className="w-full" disabled={submitMutation.isPending || invoiceUploading}>
             {submitMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
             שליחת הפנייה
           </Button>
