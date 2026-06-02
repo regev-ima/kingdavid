@@ -249,6 +249,7 @@ export default function ResponsiveLeadsTable({
           onRowSelect={(row) => onToggleSelect(row, !selectedIds.includes(row.id))}
           rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
           tableClassName="table-fixed min-w-[1120px]"
+          dense
         />
       </div>
 

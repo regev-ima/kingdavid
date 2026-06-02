@@ -27,7 +27,13 @@ export default function DataTable({
   showRowNumbers = true,
   rowNumberStart = 1,
   tableClassName = '',
+  dense = false,
 }) {
+  const cellPadding = dense ? 'py-2 px-3' : 'py-4 px-4';
+  const headerPadding = dense ? 'py-2 px-3' : 'py-3';
+  const stickyHeaderClass = 'sticky end-0 z-20 bg-muted/40';
+  const stickyCellClass = 'sticky end-0 z-10 bg-card group-hover:bg-primary/[0.03] group-focus-within:bg-primary/[0.03] border-s border-border/40';
+
   if (isLoading) {
     return (
       <div className="rounded-xl border border-black/[0.06] bg-card overflow-hidden shadow-card">
@@ -45,6 +51,7 @@ export default function DataTable({
                   key={idx}
                   className={cn(
                     "text-right font-semibold text-[11px] uppercase tracking-wider text-muted-foreground py-2.5 px-3",
+                    col.sticky && stickyHeaderClass,
                     col.headerClassName
                   )}
                 >
@@ -55,16 +62,20 @@ export default function DataTable({
           </TableHeader>
           <TableBody>
             {[1, 2, 3, 4, 5].map((i) => (
-              <TableRow key={i} className="border-b border-border/30">
+              <TableRow key={i} className="border-b border-border/30 group">
                 {showRowNumbers ? (
-                  <TableCell className="py-3 px-3 text-center w-14">
+                  <TableCell className={cn(cellPadding, "text-center w-14")}>
                     <Skeleton className="h-4 w-8 rounded mx-auto" />
                   </TableCell>
                 ) : null}
                 {columns.map((col, idx) => (
                   <TableCell
                     key={idx}
-                    className={cn("py-3 px-3", col.cellClassName)}
+                    className={cn(
+                      cellPadding,
+                      col.sticky && stickyCellClass,
+                      col.cellClassName
+                    )}
                   >
                     <Skeleton className="h-4 w-full rounded" />
                   </TableCell>
@@ -96,8 +107,8 @@ export default function DataTable({
               {showRowNumbers ? (
                 <TableHead
                   className={cn(
-                    "text-center font-medium text-xs text-muted-foreground py-3 w-14",
-                    "px-2"
+                    "text-center font-medium text-xs text-muted-foreground w-14 px-2",
+                    headerPadding
                   )}
                 >
                   #
@@ -108,13 +119,15 @@ export default function DataTable({
                   key={idx}
                   className={cn(
                     col.align === 'center' ? 'text-center' : 'text-right',
-                    "font-medium text-xs text-muted-foreground py-3 first:pr-4 last:pl-4",
+                    "font-medium text-xs text-muted-foreground first:pr-4 last:pl-4",
+                    headerPadding,
+                    col.sticky && stickyHeaderClass,
                     col.headerClassName
                   )}
-                  style={{ 
+                  style={{
                     width: col.width,
-                    paddingLeft: '1rem',
-                    paddingRight: '1rem'
+                    paddingLeft: dense ? '0.75rem' : '1rem',
+                    paddingRight: dense ? '0.75rem' : '1rem'
                   }}
                 >
                   {typeof col.header === 'function' ? col.header() : col.header}
@@ -139,7 +152,10 @@ export default function DataTable({
                 role={onRowClick ? 'button' : undefined}
               >
                 {showRowNumbers ? (
-                  <TableCell className="text-center py-4 px-2 text-sm text-muted-foreground font-semibold tabular-nums w-14">
+                  <TableCell className={cn(
+                    "text-center px-2 text-sm text-muted-foreground font-semibold tabular-nums w-14",
+                    cellPadding
+                  )}>
                     {rowNumberStart + rowIdx}
                   </TableCell>
                 ) : null}
@@ -148,7 +164,9 @@ export default function DataTable({
                     key={colIdx}
                     className={cn(
                       col.align === 'center' ? 'text-center' : 'text-right',
-                      "py-4 px-4 text-sm text-foreground/80",
+                      "text-sm text-foreground/80",
+                      cellPadding,
+                      col.sticky && stickyCellClass,
                       col.cellClassName
                     )}
                     style={col.width ? { width: col.width } : undefined}

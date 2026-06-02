@@ -713,10 +713,12 @@ export default function Leads() {
     },
     {
       header: 'פעולות',
+      align: 'center',
+      sticky: true,
       render: (row) => (
         <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
-          <QuickActions 
-            type="lead" 
+          <QuickActions
+            type="lead"
             data={row}
             hideContactButtons={true}
             onView={() => openLead(row.id)}
