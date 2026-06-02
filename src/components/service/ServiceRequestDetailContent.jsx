@@ -274,7 +274,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
           {order && (
             <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="flex items-center gap-2 font-medium text-sm"><ShoppingCart className="h-4 w-4" /> הזמנה מקושרת #{order.order_number}</p>
+                <p className="flex items-center gap-2 font-medium text-sm"><ShoppingCart className="h-4 w-4" /> הזמנה מקושרת{order.order_number && !/nan/i.test(String(order.order_number)) ? ` #${order.order_number}` : ''}</p>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   {order.total != null && <span className="text-xs text-muted-foreground">₪{Number(order.total).toLocaleString()}</span>}
                   {Array.isArray(order.tags) && order.tags.map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{t}</span>)}
