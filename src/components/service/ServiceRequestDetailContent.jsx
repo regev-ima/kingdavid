@@ -222,12 +222,12 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         {/* Details */}
         <TabsContent value="details" className="mt-5 space-y-5">
           <div className="rounded-xl border border-border p-5">
-            <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
-            <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+            <p className="text-xs font-semibold text-muted-foreground mb-3 text-right">פרטי לקוח</p>
+            <div dir="rtl" className="flex flex-wrap items-start justify-start gap-x-8 gap-y-3 text-right">
               <Field icon={User} label="שם">{ticket.customer_name}</Field>
               <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
-              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
               {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
+              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
             </div>
           </div>
 
