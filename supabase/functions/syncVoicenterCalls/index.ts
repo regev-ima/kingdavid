@@ -76,11 +76,24 @@ Deno.serve(async (req) => {
 
     const results = { newCalls: 0, pendingResolved: 0, errors: 0 };
 
+    // Optional query params:
+    //   ?debug=1   — return diagnostics about what Voicenter actually sent back
+    //                (the date window used, how many CDRs came, and their
+    //                min/max dates) instead of relying on the DB to guess.
+    //   ?days=N    — widen the import window to the last N days instead of the
+    //                default 30 minutes. Doubles as a one-off backfill.
+    const reqUrl = new URL(req.url);
+    const debug = reqUrl.searchParams.get('debug') === '1';
+    const days = Math.max(0, parseInt(reqUrl.searchParams.get('days') || '0', 10) || 0);
+    let debugInfo: any = null;
+
     // --- PHASE 1: Import new calls from VoiceCenter CDR ---
     try {
       const now = new Date();
-      const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-      const fromDate = thirtyMinutesAgo.toISOString().slice(0, 19);
+      const windowStart = days > 0
+        ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - 30 * 60 * 1000);
+      const fromDate = windowStart.toISOString().slice(0, 19);
       const toDate = now.toISOString().slice(0, 19);
 
       const apiUrl = new URL('http://46.224.211.60/hub/cdr/');
@@ -105,6 +118,18 @@ Deno.serve(async (req) => {
           : Array.isArray(data?.CDRList)
           ? data.CDRList
           : [];
+
+        if (debug) {
+          const dates = cdrList.map((c: any) => c?.date).filter(Boolean).sort();
+          debugInfo = {
+            window: { fromDate, toDate, days: days || 0.02 },
+            httpStatus: response.status,
+            received: cdrList.length,
+            minDate: dates[0] || null,
+            maxDate: dates[dates.length - 1] || null,
+            sampleKeys: cdrList[0] ? Object.keys(cdrList[0]) : [],
+          };
+        }
 
         if (cdrList.length > 0) {
           // Fetch users and leads once for efficient lookup
@@ -195,9 +220,12 @@ Deno.serve(async (req) => {
             }
           }
         }
+      } else if (debug) {
+        debugInfo = { httpStatus: response.status, body: (await response.text()).slice(0, 500) };
       }
     } catch (phase1Error) {
       // Phase 1 failed but we can still try phase 2
+      if (debug) debugInfo = { error: String((phase1Error as any)?.message || phase1Error) };
       results.errors++;
     }
 
@@ -276,6 +304,7 @@ Deno.serve(async (req) => {
       success: true,
       message: `Synced ${results.newCalls} new calls, resolved ${results.pendingResolved} pending`,
       ...results,
+      ...(debug ? { debug: debugInfo } : {}),
     }, { headers: corsHeaders });
 
   } catch (error) {
