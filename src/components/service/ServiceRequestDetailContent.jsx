@@ -40,7 +40,7 @@ function Field({ icon: Icon, label, children, ltr }) {
       {Icon && <Icon className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />}
       <div className="min-w-0">
         <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium text-foreground truncate" dir={ltr ? 'ltr' : undefined}>{children || '—'}</p>
+        <p className="text-sm font-medium text-foreground whitespace-nowrap" dir={ltr ? 'ltr' : undefined}>{children || '—'}</p>
       </div>
     </div>
   );
@@ -223,7 +223,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         <TabsContent value="details" className="mt-5 space-y-5">
           <div className="rounded-xl border border-border p-5">
             <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
-            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
+            <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
               <Field icon={User} label="שם">{ticket.customer_name}</Field>
               <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
               {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
