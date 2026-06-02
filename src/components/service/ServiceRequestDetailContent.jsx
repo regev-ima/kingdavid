@@ -164,7 +164,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-lg font-bold text-foreground">פנייה #{ticket.ticket_number}</h2>
             <span className={`text-[11px] px-2 py-0.5 rounded-full ${SOURCE_CHIP[srcKey] || ''}`}>{SOURCE_LABELS[srcKey] || srcKey}</span>
-            {ticket.opened_by_customer && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">נפתחה ע״י הלקוח</span>}
+            {ticket.opened_by_customer && srcKey !== 'customer_self' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">נפתחה ע״י הלקוח</span>}
             {ticket.public_status === 'pending' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ממתין למילוי הלקוח</span>}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">{ticket.subject}</p>

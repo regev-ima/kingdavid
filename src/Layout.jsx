@@ -127,6 +127,17 @@ function LayoutContent({ children, currentPageName }) {
     retry: 1,
   });
 
+  // Count of NEW service requests = customer-opened tickets still awaiting
+  // handling (status 'open'). Drives the badge on the מרכז שירות nav item;
+  // it clears naturally once a rep moves the ticket out of 'open'.
+  const { data: newServiceCount = 0 } = useQuery({
+    queryKey: ['service-new-count'],
+    queryFn: () => base44.entities.SupportTicket.count({ status: 'open', opened_by_customer: true }),
+    staleTime: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
+    enabled: !!user,
+  });
+
   // Auto-claim on login intentionally removed (product decision): we
   // don't want leads silently shifting from pending_rep_email to rep1
   // just because a rep signed in. All assignment now goes through a
@@ -356,6 +367,11 @@ function LayoutContent({ children, currentPageName }) {
               >
                 <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/50'}`} />
                 <span className="truncate">{item.name}</span>
+                {item.href === 'ServiceCenter' && newServiceCount > 0 && (
+                  <span className="ms-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold leading-none">
+                    {newServiceCount > 99 ? '99+' : newServiceCount}
+                  </span>
+                )}
               </Link>
             );
           })}
