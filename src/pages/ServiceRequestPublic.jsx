@@ -22,6 +22,25 @@ import {
 //      fresh ticket via service_request_create_public, auto-linking it to the
 //      matching order/customer when found.
 // Mounted outside the app's auth gate (see App.jsx).
+//
+// NOTE: Shell is declared at module scope on purpose. Defining it inside the
+// component would create a new component identity on every render, so React
+// would unmount/remount the whole subtree on each keystroke and the inputs
+// would lose focus after a single character.
+const Shell = ({ children }) => (
+  <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
+    <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
+      <div className="inline-flex items-center gap-2">
+        <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
+        <span className="text-xl font-bold">KING DAVID</span>
+      </div>
+      <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
+    </header>
+    <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
+    <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
+  </div>
+);
+
 export default function ServiceRequestPublic() {
   const token = useMemo(() => new URLSearchParams(window.location.search).get('token'), []);
   const openIntake = !token; // no token → self-initiated intake
@@ -117,21 +136,6 @@ export default function ServiceRequestPublic() {
     setError('');
     submitMutation.mutate();
   };
-
-  // ── Shell ────────────────────────────────────────────────────────────────
-  const Shell = ({ children }) => (
-    <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
-        <div className="inline-flex items-center gap-2">
-          <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
-          <span className="text-xl font-bold">KING DAVID</span>
-        </div>
-        <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
-      </header>
-      <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
-      <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
-    </div>
-  );
 
   // Token-mode gating (open intake skips all of this).
   if (!openIntake && isLoading) {
