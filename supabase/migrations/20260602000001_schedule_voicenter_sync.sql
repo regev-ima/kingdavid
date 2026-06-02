@@ -57,11 +57,14 @@ select cron.schedule(
       timeout_milliseconds := 30000
     )
   from (
+    -- btrim/rtrim defend against a stray newline or trailing slash pasted into
+    -- the Vault secret, which would otherwise make pg_net reject the URL with
+    -- "Quote command returned error".
     select
-      (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')      as url_base,
-      (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')  as svc_key
+      rtrim(btrim((select decrypted_secret from vault.decrypted_secrets where name = 'project_url')), '/') as url_base,
+      btrim((select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key'))         as svc_key
   ) cfg
-  where cfg.url_base is not null
-    and cfg.svc_key  is not null;
+  where nullif(cfg.url_base, '') is not null
+    and nullif(cfg.svc_key, '')  is not null;
   $cron$
 );
