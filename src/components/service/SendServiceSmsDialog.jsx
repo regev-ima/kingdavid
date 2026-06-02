@@ -72,13 +72,25 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
 
       // Also link the customer's most recent order (by customer, then by phone)
       // so the order number is pre-planted on the ticket and shown in the form.
+      // Pick the most recent order with a USABLE number — skip rows whose
+      // order_number is blank or malformed (e.g. legacy "ORDNaN") so the form
+      // shows a real order instead of garbage.
       let resolvedOrderId = order?.id || null;
       if (!resolvedOrderId && (resolvedCustomerId || tail.length >= 7)) {
+        const pickValidOrder = (list) =>
+          (list || []).find((o) => {
+            const n = String(o?.order_number || '').trim();
+            return n && !/nan/i.test(n);
+          });
         try {
-          let ords = [];
-          if (resolvedCustomerId) ords = await base44.entities.Order.filter({ customer_id: resolvedCustomerId }, '-created_date', 1);
-          if (!ords?.[0] && tail.length >= 7) ords = await base44.entities.Order.filter({ customer_phone: { $regex: tail } }, '-created_date', 1);
-          if (ords?.[0]) resolvedOrderId = ords[0].id;
+          let chosen = null;
+          if (resolvedCustomerId) {
+            chosen = pickValidOrder(await base44.entities.Order.filter({ customer_id: resolvedCustomerId }, '-created_date', 10));
+          }
+          if (!chosen && tail.length >= 7) {
+            chosen = pickValidOrder(await base44.entities.Order.filter({ customer_phone: { $regex: tail } }, '-created_date', 10));
+          }
+          if (chosen) resolvedOrderId = chosen.id;
         } catch (e) {
           console.warn('[SendServiceSmsDialog] order lookup failed', e);
         }

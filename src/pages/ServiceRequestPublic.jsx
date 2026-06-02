@@ -72,6 +72,9 @@ export default function ServiceRequestPublic() {
   const [error, setError] = useState('');
   const [invoiceUploading, setInvoiceUploading] = useState(false);
 
+  // Never surface a malformed order number (e.g. legacy "ORDNaN").
+  const orderNumber = info?.order_number && !/nan/i.test(String(info.order_number)) ? info.order_number : '';
+
   // Prefill name/phone from whatever the rep stored on the link; the customer
   // can correct them. Only fills empty fields so it won't clobber typing.
   useEffect(() => {
@@ -196,7 +199,7 @@ export default function ServiceRequestPublic() {
           <h1 className="text-lg font-bold">פתיחת פניית שירות</h1>
           <p className="text-sm text-muted-foreground">
             שלום{info.customer_name ? ` ${info.customer_name}` : ''}, נשמח לעזור. אנא מלאו את הפרטים הבאים
-            {info.order_number ? ` (הזמנה #${info.order_number})` : ''}.
+            {orderNumber ? ` (הזמנה #${orderNumber})` : ''}.
           </p>
         </div>
 
@@ -213,8 +216,8 @@ export default function ServiceRequestPublic() {
                 <Input type="tel" dir="ltr" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="050-0000000" required />
               </div>
             </div>
-            {info.order_number && (
-              <p className="text-sm text-muted-foreground">הזמנה מקושרת: <span className="font-semibold text-foreground" dir="ltr">#{info.order_number}</span></p>
+            {orderNumber && (
+              <p className="text-sm text-muted-foreground">הזמנה מקושרת: <span className="font-semibold text-foreground" dir="ltr">#{orderNumber}</span></p>
             )}
           </div>
 
