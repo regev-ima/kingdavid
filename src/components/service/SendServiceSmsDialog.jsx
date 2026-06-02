@@ -44,12 +44,52 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
       const recent = await base44.entities.SupportTicket.list('-created_date', 1);
       const ticketNumber = nextTicketNumber(recent[0]?.ticket_number);
 
+      // Tie the ticket to a customer/lead up front (by phone) so we know whose
+      // request it is BEFORE the customer fills the form. If the dialog was
+      // opened from an order/customer we already have it; otherwise look up by
+      // the phone the rep entered.
+      let resolvedCustomerId = order?.customer_id || customer?.id || null;
+      let resolvedLeadId = order?.lead_id || null;
+      let resolvedName = name;
+      const tail = (phone || '').replace(/\D/g, '').slice(-9);
+      if (!resolvedCustomerId && !resolvedLeadId && tail.length >= 7) {
+        try {
+          const custs = await base44.entities.Customer.filter({ phone: { $regex: tail } }, '-created_date', 1);
+          if (custs?.[0]) {
+            resolvedCustomerId = custs[0].id;
+            resolvedName = resolvedName || custs[0].full_name || '';
+          } else {
+            const leads = await base44.entities.Lead.filter({ phone: { $regex: tail } }, '-created_date', 1);
+            if (leads?.[0]) {
+              resolvedLeadId = leads[0].id;
+              resolvedName = resolvedName || leads[0].full_name || '';
+            }
+          }
+        } catch (e) {
+          console.warn('[SendServiceSmsDialog] phone lookup failed', e);
+        }
+      }
+
+      // Also link the customer's most recent order (by customer, then by phone)
+      // so the order number is pre-planted on the ticket and shown in the form.
+      let resolvedOrderId = order?.id || null;
+      if (!resolvedOrderId && (resolvedCustomerId || tail.length >= 7)) {
+        try {
+          let ords = [];
+          if (resolvedCustomerId) ords = await base44.entities.Order.filter({ customer_id: resolvedCustomerId }, '-created_date', 1);
+          if (!ords?.[0] && tail.length >= 7) ords = await base44.entities.Order.filter({ customer_phone: { $regex: tail } }, '-created_date', 1);
+          if (ords?.[0]) resolvedOrderId = ords[0].id;
+        } catch (e) {
+          console.warn('[SendServiceSmsDialog] order lookup failed', e);
+        }
+      }
+
       await base44.entities.SupportTicket.create({
         ticket_number: ticketNumber,
-        order_id: order?.id || null,
-        customer_id: order?.customer_id || customer?.id || null,
-        lead_id: order?.lead_id || null,
-        customer_name: name || '',
+        order_id: resolvedOrderId,
+        customer_id: resolvedCustomerId,
+        lead_id: resolvedLeadId,
+        customer_name: resolvedName || '',
         customer_phone: phone,
         category: 'other',
         priority: 'medium',

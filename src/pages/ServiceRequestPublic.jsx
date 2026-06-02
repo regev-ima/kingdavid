@@ -202,15 +202,20 @@ export default function ServiceRequestPublic() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Contact details — prefilled from the link, confirmable by the customer */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border">
-            <div className="space-y-1.5">
-              <Label>שם מלא *</Label>
-              <Input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="שם פרטי ומשפחה" required />
+          <div className="space-y-3 p-3 rounded-xl bg-slate-50 border">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>שם מלא *</Label>
+                <Input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="שם פרטי ומשפחה" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label>טלפון *</Label>
+                <Input type="tel" dir="ltr" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="050-0000000" required />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>טלפון *</Label>
-              <Input type="tel" dir="ltr" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="050-0000000" required />
-            </div>
+            {info.order_number && (
+              <p className="text-sm text-muted-foreground">הזמנה מקושרת: <span className="font-semibold text-foreground" dir="ltr">#{info.order_number}</span></p>
+            )}
           </div>
 
           {/* Request type */}
