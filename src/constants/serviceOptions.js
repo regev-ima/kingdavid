@@ -94,12 +94,6 @@ export const DIAGNOSTIC_QUESTIONS = [
     type: 'select',
     options: ['בימים האחרונים', 'בחודש האחרון', 'לפני מספר חודשים', 'לפני שנה ויותר'],
   },
-  {
-    key: 'usage',
-    label: 'תדירות שימוש',
-    type: 'select',
-    options: ['שימוש יומיומי', 'שימוש מזדמן', 'חדר אורחים / לא בשימוש קבוע'],
-  },
   { key: 'notes', label: 'פרטים נוספים שיעזרו לנו', type: 'textarea', placeholder: 'כל מידע נוסף' },
 ];
 
