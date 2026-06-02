@@ -6,7 +6,7 @@ import FilterBar from '@/components/shared/FilterBar';
 import KPICard from '@/components/shared/KPICard';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Headphones, AlertTriangle, CheckCircle, MessageSquare, FileSpreadsheet, Image as ImageIcon, UserPlus, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Headphones, AlertTriangle, CheckCircle, MessageSquare, FileSpreadsheet, Image as ImageIcon, UserPlus, Sparkles, Loader2, Trash2, Link as LinkIcon } from 'lucide-react';
 import { format, addHours } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -186,6 +186,49 @@ export default function ServiceCenter() {
     },
   });
 
+  // Remove the seeded demo records (tickets prefixed "דמו —"/"דמו:" and the
+  // demo order that backs the showcase ticket) so the area shows only real data.
+  const cleanupMutation = useMutation({
+    mutationFn: async () => {
+      const demoTickets = tickets.filter(
+        (t) => t.customer_name?.startsWith('דמו —') || t.subject?.startsWith('דמו:'),
+      );
+      for (const t of demoTickets) {
+        await base44.entities.SupportTicket.delete(t.id);
+      }
+      let removedOrders = 0;
+      try {
+        const demoOrders = await base44.entities.Order.filter({ import_source: 'demo' });
+        for (const o of demoOrders) {
+          await base44.entities.Order.delete(o.id);
+          removedOrders++;
+        }
+      } catch { /* demo orders are best-effort */ }
+      return { tickets: demoTickets.length, orders: removedOrders };
+    },
+    onSuccess: ({ tickets: nT }) => {
+      queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
+      toast.success(nT ? `נוקו ${nT} רשומות דמה` : 'לא נמצאו רשומות דמה לניקוי');
+    },
+    onError: (err) => {
+      console.error('[ServiceCenter] cleanup demo failed', { message: err?.message, code: err?.code });
+      toast.error(`ניקוי נתוני הדמה נכשל: ${err?.message || 'שגיאה לא ידועה'}`, { duration: 9000 });
+    },
+  });
+
+  const hasDemoData = useMemo(
+    () => tickets.some((t) => t.customer_name?.startsWith('דמו —') || t.subject?.startsWith('דמו:')),
+    [tickets],
+  );
+
+  const copyPublicLink = () => {
+    const url = `${window.location.origin}/service-request`;
+    navigator.clipboard?.writeText(url).then(
+      () => toast.success('הקישור לטופס הציבורי הועתק'),
+      () => toast.error('לא ניתן להעתיק — העתיקו ידנית: ' + url),
+    );
+  };
+
   // Scope: managers/admin/factory see everything; a plain rep sees tickets
   // assigned to them or that they opened.
   const scoped = useMemo(() => {
@@ -327,6 +370,20 @@ export default function ServiceCenter() {
               {seedMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} נתוני דמה
             </Button>
           )}
+          {canManage && hasDemoData && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => { if (window.confirm('לנקות את כל רשומות הדמה (פניות והזמנות דמו)?')) cleanupMutation.mutate(); }}
+              disabled={cleanupMutation.isPending}
+            >
+              {cleanupMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} נקה נתוני דמה
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={copyPublicLink}>
+            <LinkIcon className="h-4 w-4" /> קישור לטופס ציבורי
+          </Button>
           {canManage && (
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
               <FileSpreadsheet className="h-4 w-4" /> ייבוא פניות

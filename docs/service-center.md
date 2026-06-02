@@ -39,6 +39,13 @@
    `source='customer_self'`, ונכנסת למרכז השירות.
 6. **פתיחה ידנית ע״י הנציג** — אותו `OpenServiceTicketDialog`, גם בלי הזמנה
    (חיפוש לפי טלפון לקישור ללקוח/ליד).
+7. **פתיחה עצמאית ע״י הלקוח (ללא קישור SMS)** — אותו `/service-request` **בלי
+   token** מציג טופס פתוח: הלקוח מזין מספר הזמנה + שם/טלפון/אימייל ומתאר את
+   הבעיה. ה-RPC `service_request_create_public` יוצר פנייה חדשה ומשייך אוטומטית:
+   קודם לפי **מספר הזמנה** (→ `order_id` + ה-`customer_id` של ההזמנה), ואם אין
+   התאמה — לפי **טלפון** ללקוח קיים, ואחרת לליד קיים. ללא התאמה הפנייה נוצרת
+   לא-משויכת ונציג ישייך ידנית. כפתור "קישור לטופס ציבורי" במרכז השירות מעתיק
+   את הכתובת לשיתוף.
 
 ## תוספות שהוספתי (להחלטתך)
 
@@ -56,6 +63,8 @@
 
 ```
 supabase/migrations/20260529000001_service_center.sql   הרחבת טבלאות + RPCs + storage policy
+supabase/migrations/20260602000002_service_request_public_intake.sql  RPC ציבורי לפתיחה עצמאית + שיוך אוטומטי
+supabase/migrations/20260602000001_schedule_voicenter_sync.sql  תזמון pg_cron לסנכרון שיחות Voicenter
 supabase/functions/sendSms/index.ts                     שליחת SMS דרך 019
 src/constants/serviceOptions.js                          קבועים משותפים (סוגים/סטטוסים/שאלות)
 src/components/service/ServicePhotoUploader.jsx          העלאת תמונות רב-פעמית
