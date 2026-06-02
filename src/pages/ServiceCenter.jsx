@@ -379,7 +379,7 @@ export default function ServiceCenter() {
             </Button>
           )}
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowSmsDialog(true)}>
-            <MessageSquare className="h-4 w-4" /> שלח SMS ללקוח
+            <MessageSquare className="h-4 w-4" /> צור קישור ללקוח
           </Button>
           <Button size="sm" className="gap-1.5" onClick={() => setShowOpenDialog(true)}>
             <Plus className="h-4 w-4" /> פנייה חדשה
