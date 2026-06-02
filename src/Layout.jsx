@@ -17,7 +17,6 @@ import {
   Users,
   FileText,
   ShoppingCart,
-  Headphones,
   Truck,
   RotateCcw,
   Factory,
@@ -64,7 +63,6 @@ const navigationByRole = {
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
     { name: 'מלאי', href: 'Inventory', icon: Package },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
-    { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
@@ -98,7 +96,6 @@ const navigationByRole = {
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
-    { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],
   bookkeeper: [

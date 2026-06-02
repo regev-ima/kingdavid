@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -55,6 +55,8 @@ export default function ServiceRequestPublic() {
   });
 
   const [form, setForm] = useState({
+    customer_name: '',
+    customer_phone: '',
     request_type: '',
     order_date: '',
     warranty_years: '',
@@ -69,6 +71,17 @@ export default function ServiceRequestPublic() {
   const setAnswer = (k, v) => setForm((p) => ({ ...p, issue_answers: { ...p.issue_answers, [k]: v } }));
   const [error, setError] = useState('');
   const [invoiceUploading, setInvoiceUploading] = useState(false);
+
+  // Prefill name/phone from whatever the rep stored on the link; the customer
+  // can correct them. Only fills empty fields so it won't clobber typing.
+  useEffect(() => {
+    if (!info?.found) return;
+    setForm((p) => ({
+      ...p,
+      customer_name: p.customer_name || info.customer_name || '',
+      customer_phone: p.customer_phone || info.customer_phone || '',
+    }));
+  }, [info]);
 
   // Anon upload straight into the 'uploads' bucket under the service-requests/
   // prefix the storage policy whitelists for anonymous inserts.
@@ -107,6 +120,8 @@ export default function ServiceRequestPublic() {
   const submitMutation = useMutation({
     mutationFn: async () => {
       const payload = {
+        customer_name: form.customer_name,
+        customer_phone: form.customer_phone,
         request_type: form.request_type,
         order_date: form.order_date || null,
         warranty_years: form.warranty_years || null,
@@ -131,6 +146,8 @@ export default function ServiceRequestPublic() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (form.customer_name.trim().length < 2) return setError('יש להזין שם מלא');
+    if (form.customer_phone.replace(/\D/g, '').length < 9) return setError('יש להזין מספר טלפון תקין');
     if (!form.request_type) return setError('יש לבחור סוג פנייה');
     if (!form.description.trim()) return setError('יש לתאר את הבעיה');
     setError('');
@@ -184,6 +201,18 @@ export default function ServiceRequestPublic() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Contact details — prefilled from the link, confirmable by the customer */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border">
+            <div className="space-y-1.5">
+              <Label>שם מלא *</Label>
+              <Input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="שם פרטי ומשפחה" required />
+            </div>
+            <div className="space-y-1.5">
+              <Label>טלפון *</Label>
+              <Input type="tel" dir="ltr" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="050-0000000" required />
+            </div>
+          </div>
+
           {/* Request type */}
           <div className="space-y-2">
             <Label>סוג הפנייה *</Label>
