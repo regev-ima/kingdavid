@@ -370,11 +370,13 @@ export default function LeadManagement() {
   if (!effectiveUser) return <div className="text-center py-12 text-muted-foreground">טוען...</div>;
 
   const repNameByEmail = new Map(salesReps.map((u) => [u.email, u.full_name || u.email]));
-  const sortedReps = [...repsForPanel].sort((a, b) => {
-    const aw = workloadByRep.byRep.get(a.email) || { newCount: 0, handlingCount: 0 };
-    const bw = workloadByRep.byRep.get(b.email) || { newCount: 0, handlingCount: 0 };
-    return (bw.newCount + bw.handlingCount) - (aw.newCount + aw.handlingCount);
-  });
+  // Stable alphabetical order. Sorting by current workload made the cards
+  // reshuffle every time the date range changed (the per-rep counts move
+  // with the range), which is disorienting — so the order is fixed by name
+  // and only the numbers inside each card respond to the range.
+  const sortedReps = [...repsForPanel].sort((a, b) =>
+    (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'he'),
+  );
 
   const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== 'all' || scope !== 'all';
 
