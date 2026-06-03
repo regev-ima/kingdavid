@@ -8,6 +8,7 @@ import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
  * 2. Resolving pending call statuses for calls that were initiated but not yet completed
  *
  * Should run every 15-30 minutes via scheduled invocation (pg_cron or external).
+ * Writes are error-checked so a failed insert/update surfaces (firstError).
  */
 
 const normalizePhoneNumber = (phone: string | null): string | null => {
