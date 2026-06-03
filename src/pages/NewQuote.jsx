@@ -75,7 +75,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [{ _uid: crypto.randomUUID(), sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -492,7 +492,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     }
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [] }]
+      items: [...prev.items, { _uid: crypto.randomUUID(), sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [] }]
     }));
   };
 
@@ -985,7 +985,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           <CardContent>
             <div className="space-y-4">
               {formData.items.map((item, index) => (
-                <div key={index} className={`rounded-xl overflow-hidden bg-white shadow-card border-2 transition-colors ${emptyItemIndex === index ? 'border-red-400 animate-pulse' : 'border-border'}`}>
+                <div key={item._uid || index} className={`rounded-xl overflow-hidden bg-white shadow-card border-2 transition-colors ${emptyItemIndex === index ? 'border-red-400 animate-pulse' : 'border-border'}`}>
                   <TooltipProvider delayDuration={300}>
                   {/* Top: Product selector full width */}
                   <div className="px-3 pt-3 pb-2">

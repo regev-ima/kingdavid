@@ -148,7 +148,7 @@ export default function EditQuote() {
         floor: quote.floor || 0,
         apartment_number: quote.apartment_number || '',
         elevator_type: quote.elevator_type || 'none',
-        items: enrichedItems,
+        items: enrichedItems.map((it) => ({ _uid: crypto.randomUUID(), ...it })),
         extras: quote.extras || [],
         subtotal: quote.subtotal || 0,
         discount_total: quote.discount_total || 0,
@@ -278,7 +278,7 @@ export default function EditQuote() {
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
+      items: [...prev.items, { _uid: crypto.randomUUID(), sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
     }));
   };
 
@@ -622,7 +622,7 @@ export default function EditQuote() {
           <CardContent>
             <div className="space-y-4">
               {formData.items.map((item, index) => (
-                <div key={index} className="rounded-xl overflow-hidden bg-white shadow-card border-2 border-border">
+                <div key={item._uid || index} className="rounded-xl overflow-hidden bg-white shadow-card border-2 border-border">
                   <TooltipProvider delayDuration={300}>
                   {/* Top: Product selector full width */}
                   <div className="px-3 pt-3 pb-2">
