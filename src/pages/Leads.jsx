@@ -492,20 +492,21 @@ export default function Leads() {
           ? `נוצר ${formatInTimeZone(createdAt, 'Asia/Jerusalem', 'dd/MM/yyyy')} · חזר ${formatInTimeZone(returnedAt, 'Asia/Jerusalem', 'dd/MM/yyyy')}`
           : '';
         return (
-          <div className="min-w-0">
+          <div className="min-w-0 flex flex-col justify-center gap-0.5 min-h-[44px]">
             <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{row.full_name}</p>
+              <p className="text-sm font-medium text-foreground truncate" title={row.full_name}>{row.full_name}</p>
               {returning && (
                 <span
-                  title={returningTooltip}
-                  className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0"
+                  title={returningTooltip || 'פניה חוזרת'}
+                  aria-label="פניה חוזרת"
+                  className="inline-flex items-center rounded-md bg-indigo-50 text-indigo-700 text-[11px] leading-none px-1 py-1 flex-shrink-0"
                 >
-                  🔁 פניה חוזרת
+                  🔁
                 </span>
               )}
             </div>
             <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-sm text-muted-foreground whitespace-nowrap" dir="ltr">{formatPhone(row.phone)}</p>
+              <p className="text-sm text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
               {row.phone && (
                 <button
                   onClick={(e) => { e.stopPropagation(); handleClickToCall(row.phone, row.id); }}
@@ -515,8 +516,8 @@ export default function Leads() {
                   <Phone className="h-3.5 w-3.5 text-green-700" />
                 </button>
               )}
+              {row.unique_id && <span className="text-[11px] text-muted-foreground/60 truncate" title={`ID: ${row.unique_id}`}>· {row.unique_id}</span>}
             </div>
-            {row.unique_id && <p className="text-xs text-muted-foreground/70 mt-0.5">ID: {row.unique_id}</p>}
           </div>
         );
       }
@@ -525,11 +526,11 @@ export default function Leads() {
       header: 'סטטוס',
       accessor: 'status',
       render: (row) => (
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 min-w-0">
           <StatusBadge status={row.status} />
           {(row.source === 'website' || (Array.isArray(row.tags) && row.tags.includes('אתר'))) && (
             <span
-              className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-semibold px-1.5 py-0.5"
+              className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-semibold px-1.5 py-0.5 flex-shrink-0"
               title={row.source_form || 'הגיע מהאתר'}
             >
               אתר
@@ -545,7 +546,7 @@ export default function Leads() {
       render: (row) => {
         const adName = row.facebook_ad_name;
         if (!adName) return <span className="text-muted-foreground/40 text-sm">-</span>;
-        return <span className="text-sm text-foreground/80 line-clamp-2">{adName}</span>;
+        return <span className="text-sm text-foreground/80 line-clamp-2 leading-snug" title={adName}>{adName}</span>;
       },
       width: '150px'
     },
@@ -568,24 +569,22 @@ export default function Leads() {
         let color = 'text-green-600';
         if (diffMinutes > SLA_THRESHOLDS.AMBER_MAX_MINUTES) color = 'text-red-600';
         else if (diffMinutes > SLA_THRESHOLDS.GREEN_MAX_MINUTES) color = 'text-amber-600';
-        
+
+        let label;
         if (diffMinutes < 60) {
-          return <span className={`text-sm font-medium ${color}`}>{diffMinutes === 1 ? 'דקה אחת' : `${diffMinutes} דקות`}</span>;
+          label = diffMinutes === 1 ? 'דקה אחת' : `${diffMinutes} דקות`;
         } else if (diffMinutes < 1440) {
           const hours = Math.floor(diffMinutes / 60);
           const mins = diffMinutes % 60;
           const hoursText = hours === 1 ? 'שעה אחת' : `${hours} שעות`;
-          if (mins === 0) return <span className={`text-sm font-medium ${color}`}>{hoursText}</span>;
-          const minsText = mins === 1 ? 'דקה' : `${mins} דקות`;
-          return <span className={`text-sm font-medium ${color}`}>{hoursText} ו-{minsText}</span>;
+          label = mins === 0 ? hoursText : `${hoursText} ו-${mins === 1 ? 'דקה' : `${mins} דקות`}`;
         } else {
           const days = Math.floor(diffMinutes / 1440);
           const hours = Math.floor((diffMinutes % 1440) / 60);
           const daysText = days === 1 ? 'יום אחד' : `${days} ימים`;
-          if (hours === 0) return <span className={`text-sm font-medium ${color}`}>{daysText}</span>;
-          const hoursText = hours === 1 ? 'שעה' : `${hours} שעות`;
-          return <span className={`text-sm font-medium ${color}`}>{daysText} ו-{hoursText}</span>;
+          label = hours === 0 ? daysText : `${daysText} ו-${hours === 1 ? 'שעה' : `${hours} שעות`}`;
         }
+        return <span className={`block text-sm font-medium whitespace-nowrap truncate ${color}`} title={label}>{label}</span>;
       },
       width: '128px'
     },
@@ -599,9 +598,9 @@ export default function Leads() {
           return <span className="text-muted-foreground/70 text-xs">-</span>;
         }
         return (
-          <div className="text-xs leading-relaxed">
-            <span className="font-medium">{SOURCE_LABELS[source] || source || '-'}</span>
-            {utmSource && <p className="text-muted-foreground">{utmSource}</p>}
+          <div className="text-xs leading-snug min-w-0">
+            <p className="font-medium truncate" title={SOURCE_LABELS[source] || source || '-'}>{SOURCE_LABELS[source] || source || '-'}</p>
+            {utmSource && <p className="text-muted-foreground truncate" title={utmSource}>{utmSource}</p>}
           </div>
         );
       },
@@ -616,16 +615,16 @@ export default function Leads() {
           const pendingRep = users.find(u => u.email === row.pending_rep_email);
           const pendingName = pendingRep?.full_name || row.pending_rep_email;
           return (
-            <span className="text-amber-600 flex items-center gap-1 text-sm">
-              <AlertCircle className="h-4 w-4" />
-              ממתין: {pendingName}
+            <span className="text-amber-600 flex items-center gap-1 text-sm min-w-0">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              <span className="truncate" title={`ממתין: ${pendingName}`}>ממתין: {pendingName}</span>
             </span>
           );
         }
         if (!row.rep1 || row.rep1 === '') {
           return (
             <span className="text-amber-600 flex items-center gap-1 text-sm">
-              <AlertCircle className="h-4 w-4" />
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
               לא משויך
             </span>
           );
@@ -635,7 +634,7 @@ export default function Leads() {
         return (
           <div className="flex items-center gap-2 min-w-0">
             <UserAvatar user={displayUser} size="sm" />
-            <span className="text-sm truncate">{displayUser.full_name}</span>
+            <span className="text-sm truncate" title={displayUser.full_name}>{displayUser.full_name}</span>
           </div>
         );
       },
@@ -677,17 +676,17 @@ export default function Leads() {
           setCompletingTask({ ...task, rep1: task.rep1 || row.rep1, rep2: task.rep2 || row.rep2 });
         };
         return (
-          <div onClick={(e) => e.stopPropagation()} className="space-y-1">
-            <div className="flex items-center gap-1.5 text-sm">
-              <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
-              <span className="font-medium">{meta.label}</span>
+          <div onClick={(e) => e.stopPropagation()} className="flex flex-col justify-center gap-1 min-w-0 min-h-[44px]">
+            <div className="flex items-center gap-1.5 text-sm min-w-0">
+              <meta.Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.color}`} />
+              <span className="font-medium flex-shrink-0">{meta.label}</span>
+              <span className={`text-xs font-medium whitespace-nowrap truncate ${
+                overdueDays > 0 ? 'text-red-600' : isToday ? 'text-amber-600' : 'text-muted-foreground'
+              }`}>
+                {timeLabel}
+              </span>
             </div>
-            <div className={`text-xs font-medium whitespace-nowrap ${
-              overdueDays > 0 ? 'text-red-600' : isToday ? 'text-amber-600' : 'text-muted-foreground'
-            }`}>
-              {timeLabel}
-            </div>
-            <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={handleQuickComplete}>
+            <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] w-fit" onClick={handleQuickComplete}>
               סיים משימה
             </Button>
           </div>
@@ -713,9 +712,10 @@ export default function Leads() {
     },
     {
       header: 'פעולות',
+      align: 'center',
       render: (row) => (
         <div onClick={(e) => e.stopPropagation()} className="flex justify-center">
-          <QuickActions 
+          <QuickActions
             type="lead" 
             data={row}
             hideContactButtons={true}

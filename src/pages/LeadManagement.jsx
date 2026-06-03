@@ -17,7 +17,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import UserAvatar from '@/components/shared/UserAvatar';
 import {
-  Users, UserPlus, UserCheck, Crown, Calendar as CalendarIcon,
+  Users, UserPlus, UserCheck, Calendar as CalendarIcon,
   Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
 } from 'lucide-react';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, format } from '@/lib/safe-date-fns';
@@ -741,7 +741,8 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
         </div>
       ),
       accessor: 'select',
-      width: '44px',
+      align: 'center',
+      width: '52px',
       render: (row) => (
         <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <Checkbox
@@ -757,8 +758,8 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
       width: '260px',
       render: (row) => (
         <div className="min-w-0">
-          <p className="text-sm font-medium truncate">{row.full_name || '—'}</p>
-          <p className="text-xs text-muted-foreground" dir="ltr">{formatPhone(row.phone)}</p>
+          <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
+          <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
         </div>
       ),
     },
@@ -771,9 +772,9 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
       header: 'מקור',
       width: '120px',
       render: (row) => (
-        <span className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground truncate" title={row.source ? (SOURCE_LABELS[row.source] || row.source) : ''}>
           {row.source ? (SOURCE_LABELS[row.source] || row.source) : '—'}
-        </span>
+        </p>
       ),
     },
     {
@@ -781,7 +782,8 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
       width: '160px',
       render: (row) => {
         if (!row.rep1) return <span className="text-xs text-amber-700">לא משויך</span>;
-        return <span className="text-sm">{repNameByEmail.get(row.rep1) || row.rep1}</span>;
+        const name = repNameByEmail.get(row.rep1) || row.rep1;
+        return <p className="text-sm truncate" title={name}>{name}</p>;
       },
     },
     {
@@ -803,7 +805,7 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
       emptyMessage="לא נמצאו לידים תואמים"
       onRowClick={onRowClick}
       rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
-      tableClassName="min-w-[900px]"
+      tableClassName="w-full table-fixed min-w-[720px]"
     />
   );
 }
