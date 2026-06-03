@@ -172,7 +172,7 @@ export default function LeadManagement() {
   useEffect(() => {
     if (!effectiveUser) return;
     if (!canAccessSalesWorkspace(effectiveUser)) {
-      navigate(createPageUrl(isFactoryUser(effectiveUser) ? 'FactoryDashboard' : 'Dashboard'));
+      navigate(createPageUrl(isFactoryUser(effectiveUser) ? 'FactoryDashboard' : 'Dashboard2'));
     }
   }, [effectiveUser, navigate]);
 

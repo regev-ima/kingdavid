@@ -108,7 +108,7 @@ export default function Leads() {
     if (!effectiveUser) return;
 
     if (!canAccessSalesWorkspace(effectiveUser)) {
-      navigate(createPageUrl(isFactoryUser(effectiveUser) ? 'FactoryDashboard' : 'Dashboard'));
+      navigate(createPageUrl(isFactoryUser(effectiveUser) ? 'FactoryDashboard' : 'Dashboard2'));
       return;
     }
 

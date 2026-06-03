@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -138,6 +138,23 @@ export default function OrderDetails() {
       console.error('updateOrder error — full object:', err);
     },
   });
+
+  // Notes edit locally and save on blur — writing on every keystroke (then
+  // refetching) reset the textarea mid-typing.
+  const [notesForm, setNotesForm] = useState({ notes_sales: '', notes_factory: '', notes_logistics: '' });
+  useEffect(() => {
+    if (order) {
+      setNotesForm({
+        notes_sales: order.notes_sales ?? '',
+        notes_factory: order.notes_factory ?? '',
+        notes_logistics: order.notes_logistics ?? '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.id]);
+  const saveNote = (field, value) => {
+    if ((order?.[field] ?? '') !== value) updateOrderMutation.mutate({ [field]: value });
+  };
 
   const generatePdfMutation = useMutation({
     mutationFn: async () => {
@@ -389,24 +406,27 @@ export default function OrderDetails() {
               <div className="space-y-2">
                 <Label>הערות מכירות</Label>
                 <Textarea
-                  value={order.notes_sales || ''}
-                  onChange={(e) => updateOrderMutation.mutate({ notes_sales: e.target.value })}
+                  value={notesForm.notes_sales}
+                  onChange={(e) => setNotesForm((p) => ({ ...p, notes_sales: e.target.value }))}
+                  onBlur={() => saveNote('notes_sales', notesForm.notes_sales)}
                   rows={2}
                 />
               </div>
               <div className="space-y-2">
                 <Label>הערות מפעל</Label>
                 <Textarea
-                  value={order.notes_factory || ''}
-                  onChange={(e) => updateOrderMutation.mutate({ notes_factory: e.target.value })}
+                  value={notesForm.notes_factory}
+                  onChange={(e) => setNotesForm((p) => ({ ...p, notes_factory: e.target.value }))}
+                  onBlur={() => saveNote('notes_factory', notesForm.notes_factory)}
                   rows={2}
                 />
               </div>
               <div className="space-y-2">
                 <Label>הערות לוגיסטיקה</Label>
                 <Textarea
-                  value={order.notes_logistics || ''}
-                  onChange={(e) => updateOrderMutation.mutate({ notes_logistics: e.target.value })}
+                  value={notesForm.notes_logistics}
+                  onChange={(e) => setNotesForm((p) => ({ ...p, notes_logistics: e.target.value }))}
+                  onBlur={() => saveNote('notes_logistics', notesForm.notes_logistics)}
                   rows={2}
                 />
               </div>

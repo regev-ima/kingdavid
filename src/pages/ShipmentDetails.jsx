@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -68,6 +68,24 @@ export default function ShipmentDetails() {
       queryClient.invalidateQueries(['shipment', shipmentId]);
     },
   });
+
+  // Free-text fields edit locally and save on blur — writing on every keystroke
+  // (then refetching) reset the input mid-typing.
+  const [form, setForm] = useState({ carrier: '', tracking_id: '', notes: '', failure_reason: '' });
+  useEffect(() => {
+    if (shipment) {
+      setForm({
+        carrier: shipment.carrier ?? '',
+        tracking_id: shipment.tracking_id ?? '',
+        notes: shipment.notes ?? '',
+        failure_reason: shipment.failure_reason ?? '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipment?.id]);
+  const saveField = (field, value) => {
+    if ((shipment?.[field] ?? '') !== value) updateShipmentMutation.mutate({ [field]: value });
+  };
 
   if (isLoadingUser || isLoading) {
     return (
@@ -239,16 +257,18 @@ export default function ShipmentDetails() {
                 <div className="space-y-2">
                   <Label>חברת משלוחים</Label>
                   <Input
-                    value={shipment.carrier || ''}
-                    onChange={(e) => updateShipmentMutation.mutate({ carrier: e.target.value })}
+                    value={form.carrier}
+                    onChange={(e) => setForm((p) => ({ ...p, carrier: e.target.value }))}
+                    onBlur={() => saveField('carrier', form.carrier)}
                     placeholder="שם המוביל"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>מספר מעקב</Label>
                   <Input
-                    value={shipment.tracking_id || ''}
-                    onChange={(e) => updateShipmentMutation.mutate({ tracking_id: e.target.value })}
+                    value={form.tracking_id}
+                    onChange={(e) => setForm((p) => ({ ...p, tracking_id: e.target.value }))}
+                    onBlur={() => saveField('tracking_id', form.tracking_id)}
                     placeholder="מספר מעקב"
                   />
                 </div>
@@ -257,8 +277,9 @@ export default function ShipmentDetails() {
               <div className="space-y-2">
                 <Label>הערות</Label>
                 <Textarea
-                  value={shipment.notes || ''}
-                  onChange={(e) => updateShipmentMutation.mutate({ notes: e.target.value })}
+                  value={form.notes}
+                  onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+                  onBlur={() => saveField('notes', form.notes)}
                   rows={2}
                 />
               </div>
@@ -378,8 +399,9 @@ export default function ShipmentDetails() {
               </CardHeader>
               <CardContent>
                 <Textarea
-                  value={shipment.failure_reason || ''}
-                  onChange={(e) => updateShipmentMutation.mutate({ failure_reason: e.target.value })}
+                  value={form.failure_reason}
+                  onChange={(e) => setForm((p) => ({ ...p, failure_reason: e.target.value }))}
+                  onBlur={() => saveField('failure_reason', form.failure_reason)}
                   rows={2}
                   placeholder="מה הסיבה לכישלון המשלוח?"
                 />
