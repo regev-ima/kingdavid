@@ -25,6 +25,7 @@ on:
       - 'supabase/migrations/20260602000002_service_request_public_intake.sql'
       - 'supabase/migrations/20260602000003_service_link_expiry_invoice.sql'
       - 'supabase/migrations/20260602000004_service_public_contact.sql'
+      - 'supabase/migrations/20260603000001_call_logs_sync_columns.sql'
       - '.github/workflows/service-public-intake-deploy.yml'
   workflow_dispatch:
 
@@ -47,7 +48,8 @@ jobs:
             supabase/migrations/20260602000001_schedule_voicenter_sync.sql \
             supabase/migrations/20260602000002_service_request_public_intake.sql \
             supabase/migrations/20260602000003_service_link_expiry_invoice.sql \
-            supabase/migrations/20260602000004_service_public_contact.sql; do
+            supabase/migrations/20260602000004_service_public_contact.sql \
+            supabase/migrations/20260603000001_call_logs_sync_columns.sql; do
             echo "Applying $f ..."
             payload=$(jq -Rs '{query: .}' "$f")
             code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
