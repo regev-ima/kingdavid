@@ -5,8 +5,6 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { PhoneOff } from "lucide-react";
-import { Link } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { format } from '@/lib/safe-date-fns';
 

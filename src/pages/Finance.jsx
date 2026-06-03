@@ -145,7 +145,7 @@ export default function Finance() {
   const paidRevenue = useMemo(() => monthOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   const unpaidAmount = useMemo(() => monthOrders.filter(o => o.payment_status === 'unpaid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   // Tracked for completeness; not surfaced as a KPI card today.
-  // eslint-disable-next-line no-unused-vars
+   
   const depositAmount = useMemo(() => monthOrders.filter(o => o.payment_status === 'deposit_paid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   const refundedAmount = useMemo(
     () => returns.filter(r => r.refund_status === 'paid').reduce((s, r) => s + (r.refund_amount || 0), 0),
@@ -486,12 +486,16 @@ export default function Finance() {
 
   // Hebrew label for the comparison hint under each KPI ("vs last month" etc.)
   const periodCompareLabel =
-    dateRange === 'today'
+    dateRange === 'all'
+      ? ''
+      : dateRange === 'today'
       ? 'מול אתמול'
       : dateRange === 'week'
       ? 'מול שבוע שעבר'
       : dateRange === 'month'
       ? 'מול חודש שעבר'
+      : dateRange === 'previous_month'
+      ? 'מול חודשיים אחורה'
       : 'מול תקופה קודמת';
 
   return (
@@ -507,9 +511,11 @@ export default function Finance() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">כל הזמן</SelectItem>
               <SelectItem value="today">היום</SelectItem>
               <SelectItem value="week">השבוע</SelectItem>
               <SelectItem value="month">החודש</SelectItem>
+              <SelectItem value="previous_month">חודש קודם</SelectItem>
               <SelectItem value="custom">טווח מותאם</SelectItem>
             </SelectContent>
           </Select>

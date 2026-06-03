@@ -17,7 +17,6 @@ import {
   Users,
   FileText,
   ShoppingCart,
-  Headphones,
   Truck,
   RotateCcw,
   Factory,
@@ -64,7 +63,6 @@ const navigationByRole = {
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
     { name: 'מלאי', href: 'Inventory', icon: Package },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
-    { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
@@ -98,7 +96,6 @@ const navigationByRole = {
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
-    { name: 'שירות לקוחות', href: 'Support', icon: Headphones },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],
   bookkeeper: [
@@ -128,6 +125,18 @@ function LayoutContent({ children, currentPageName }) {
     staleTime: 30 * 60 * 1000,
     gcTime: 60 * 60 * 1000,
     retry: 1,
+  });
+
+  // Count of OPEN customer service requests (both those still awaiting the
+  // customer's fill and those the customer submitted and we haven't handled).
+  // Drives the badge on the מרכז שירות nav item; resolving/closing a ticket
+  // moves it out of 'open' and drops the count.
+  const { data: newServiceCount = 0 } = useQuery({
+    queryKey: ['service-new-count'],
+    queryFn: () => base44.entities.SupportTicket.count({ status: 'open', source: 'customer_self' }),
+    staleTime: 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
+    enabled: !!user,
   });
 
   // Auto-claim on login intentionally removed (product decision): we
@@ -359,6 +368,11 @@ function LayoutContent({ children, currentPageName }) {
               >
                 <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/50'}`} />
                 <span className="truncate">{item.name}</span>
+                {item.href === 'ServiceCenter' && newServiceCount > 0 && (
+                  <span className="ms-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold leading-none">
+                    {newServiceCount > 99 ? '99+' : newServiceCount}
+                  </span>
+                )}
               </Link>
             );
           })}

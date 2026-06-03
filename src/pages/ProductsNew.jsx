@@ -35,7 +35,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronLeft, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";
@@ -396,7 +396,7 @@ export default function ProductsNew() {
       sale_ends_at: saleEndsAt,
       hardness: product.hardness ?? '',
       features: product.features || '',
-      technologies: Array.isArray(product.technologies) ? product.technologies : []
+      technologies: (Array.isArray(product.technologies) ? product.technologies : []).map((t) => ({ _uid: crypto.randomUUID(), ...t }))
     });
     setIsProductDialogOpen(true);
   };
@@ -625,7 +625,7 @@ export default function ProductsNew() {
                     setProductForm({ ...productForm, technologies: next });
                   };
                   return (
-                    <div key={idx} className="border rounded-md p-3 bg-muted/20">
+                    <div key={tech._uid || idx} className="border rounded-md p-3 bg-muted/20">
                       <div className="flex gap-2 items-start">
                         <div className="flex-1 space-y-2">
                           <Input
@@ -682,7 +682,7 @@ export default function ProductsNew() {
                   onClick={() =>
                     setProductForm({
                       ...productForm,
-                      technologies: [...(productForm.technologies || []), { name: '', description: '' }],
+                      technologies: [...(productForm.technologies || []), { _uid: crypto.randomUUID(), name: '', description: '' }],
                     })
                   }
                 >

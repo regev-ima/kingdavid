@@ -105,13 +105,15 @@ export default function LandingPages() {
     }
   };
 
-  const SortHeader = ({ field, children }) => (
+  // A render helper (called, not used as <SortHeader/>) so it doesn't remount
+  // the header subtree on every parent render.
+  const sortHeader = (field, label) => (
     <TableHead
       className="text-right cursor-pointer hover:bg-muted/50 select-none"
       onClick={() => handleSort(field)}
     >
       <div className="flex items-center gap-1">
-        {children}
+        {label}
         {sortField === field && (
           <ArrowUpDown className="h-3 w-3 text-primary" />
         )}
@@ -214,14 +216,14 @@ export default function LandingPages() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortHeader field="landing_page">דף נחיתה</SortHeader>
+                  {sortHeader('landing_page', 'דף נחיתה')}
                   <TableHead className="text-right">מקורות</TableHead>
-                  <SortHeader field="total_leads">לידים</SortHeader>
-                  <SortHeader field="open_leads">פתוחים</SortHeader>
-                  <SortHeader field="quote_rate">% הצעה</SortHeader>
-                  <SortHeader field="conversion_rate">% המרה</SortHeader>
-                  <SortHeader field="won_leads">סגירות</SortHeader>
-                  <SortHeader field="revenue">הכנסות</SortHeader>
+                  {sortHeader('total_leads', 'לידים')}
+                  {sortHeader('open_leads', 'פתוחים')}
+                  {sortHeader('quote_rate', '% הצעה')}
+                  {sortHeader('conversion_rate', '% המרה')}
+                  {sortHeader('won_leads', 'סגירות')}
+                  {sortHeader('revenue', 'הכנסות')}
                 </TableRow>
               </TableHeader>
               <TableBody>

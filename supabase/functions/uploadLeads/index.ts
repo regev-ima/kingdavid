@@ -39,10 +39,13 @@ Deno.serve(async (req) => {
               ? `${existingLead.notes}\n[${new Date().toLocaleDateString('he-IL')}] ${leadData.notes}`.trim()
               : leadData.notes;
           }
-          await supabase.from('leads').update(updateData).eq('id', existingLead.id);
+          // supabase-js returns { error } instead of throwing — check it so a
+          // failed write is counted as failed (via catch) rather than updated.
+          const { error: upErr } = await supabase.from('leads').update(updateData).eq('id', existingLead.id);
+          if (upErr) throw upErr;
           results.updated++;
         } else {
-          await supabase.from('leads').insert({
+          const { error: insErr } = await supabase.from('leads').insert({
             full_name: leadData.full_name,
             phone: leadData.phone,
             email: leadData.email || '',
@@ -59,6 +62,7 @@ Deno.serve(async (req) => {
             rep1: leadData.rep1 || null,
             effective_sort_date: new Date().toISOString(),
           });
+          if (insErr) throw insErr;
           results.created++;
         }
       } catch (error) {

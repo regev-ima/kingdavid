@@ -66,7 +66,6 @@ import SLABadge from '@/components/sla/SLABadge';
 import CommunicationHistory from '@/components/lead/CommunicationHistory';
 import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
-import DetailField from '@/components/lead/DetailField';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
 import { formatDistanceToNow, addHours, addDays, startOfDay, format } from '@/lib/safe-date-fns';

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Check, Search, Bed, Armchair, Layers, Package, X, ChevronLeft, Ruler, Clock, AlertTriangle } from 'lucide-react';
+import { Check, Search, Bed, Layers, Package, ChevronLeft, Ruler, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

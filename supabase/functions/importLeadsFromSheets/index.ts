@@ -221,10 +221,13 @@ Deno.serve(async (req) => {
     // Update existing leads one by one
     for (const { id, data: updateData } of toUpdate) {
       try {
-        await supabase
+        // supabase-js returns { error } instead of throwing — check it so a
+        // failed update is recorded in errors rather than silently counted.
+        const { error: updateError } = await supabase
           .from('leads')
           .update(updateData)
           .eq('id', id);
+        if (updateError) throw updateError;
       } catch (e) {
         errors.push({ error: `Failed to update lead: ${e.message}` });
       }

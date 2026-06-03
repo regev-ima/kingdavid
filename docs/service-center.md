@@ -39,6 +39,14 @@
    `source='customer_self'`, ונכנסת למרכז השירות.
 6. **פתיחה ידנית ע״י הנציג** — אותו `OpenServiceTicketDialog`, גם בלי הזמנה
    (חיפוש לפי טלפון לקישור ללקוח/ליד).
+7. **טופס ציבורי — טוקן בלבד, בתוקף 24 שעות (אנטי-ספאם)** — הדרך היחידה לפתוח
+   פנייה היא דרך הקישור ש**הנציג שולח** ב-SMS (`/service-request?token=...`).
+   הטוקן תקף 24 שעות מרגע השליחה (`public_sent_at`); אחריו `service_request_get`
+   מחזיר `expired` והטופס מציג "הקישור פג תוקף". `service_request_submit` חוסם
+   שליחה לאחר תפוגה. כניסה ל-`/service-request` ללא token מציגה "קישור לא תקין".
+   *(ה-RPC הפתוח `service_request_create_public` הוסר — נדחה לטובת מודל הטוקן.)*
+8. **צירוף חשבונית (לא חובה)** — הלקוח יכול לצרף חשבונית (תמונה או PDF) בטופס;
+   נשמרת ב-`support_tickets.invoice_url` ומוצגת בפרטי הפנייה.
 
 ## תוספות שהוספתי (להחלטתך)
 
@@ -56,6 +64,8 @@
 
 ```
 supabase/migrations/20260529000001_service_center.sql   הרחבת טבלאות + RPCs + storage policy
+supabase/migrations/20260602000002_service_request_public_intake.sql  RPC ציבורי לפתיחה עצמאית + שיוך אוטומטי
+supabase/migrations/20260602000001_schedule_voicenter_sync.sql  תזמון pg_cron לסנכרון שיחות Voicenter
 supabase/functions/sendSms/index.ts                     שליחת SMS דרך 019
 src/constants/serviceOptions.js                          קבועים משותפים (סוגים/סטטוסים/שאלות)
 src/components/service/ServicePhotoUploader.jsx          העלאת תמונות רב-פעמית

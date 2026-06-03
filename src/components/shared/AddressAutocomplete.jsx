@@ -108,12 +108,12 @@ export default function AddressAutocomplete({
         autocompleteRef.current = ac;
         setLoading(false);
         // Diagnostic — remove once verified in production
-        // eslint-disable-next-line no-console
+         
         console.log('[AddressAutocomplete] attached to input', inputRef.current);
       })
       .catch((err) => {
         if (cancelled) return;
-        // eslint-disable-next-line no-console
+         
         console.warn('[AddressAutocomplete] load failed:', err.message);
         setError(err.message);
         setLoading(false);

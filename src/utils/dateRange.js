@@ -32,6 +32,10 @@ export function getDateRange(rangeKey, customStart, customEnd, now = new Date())
       return { start: startOfWeek(now, { weekStartsOn: 0 }), end: endOfWeek(now, { weekStartsOn: 0 }) };
     case 'month':
       return { start: startOfMonth(now), end: endOfMonth(now) };
+    case 'previous_month': {
+      const lastMonth = subMonths(now, 1);
+      return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) };
+    }
     case '90days':
       return { start: startOfDay(subDays(now, 89)), end: endOfDay(now) };
     case 'year':
@@ -52,6 +56,15 @@ export function getDateRange(rangeKey, customStart, customEnd, now = new Date())
 // back by their own length.
 export function getPreviousDateRange(rangeKey, customStart, customEnd, now = new Date()) {
   switch (rangeKey) {
+    case 'all':
+      // No meaningful prior period for "all time" — return an empty range so
+      // the comparison delta is neutral.
+      return { start: new Date(0), end: new Date(0) };
+    case 'previous_month': {
+      // Compare the previous month to the month before it.
+      const twoMonthsAgo = subMonths(now, 2);
+      return { start: startOfMonth(twoMonthsAgo), end: endOfMonth(twoMonthsAgo) };
+    }
     case 'today': {
       const yesterday = subDays(now, 1);
       return { start: startOfDay(yesterday), end: endOfDay(yesterday) };

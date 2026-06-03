@@ -81,7 +81,6 @@ export const SOURCE_CHIP = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value
 // extend this list later.
 export const DIAGNOSTIC_QUESTIONS = [
   { key: 'product', label: 'באיזה מוצר מדובר?', type: 'text', placeholder: 'למשל: מזרן קפיצים מבודדים 160/200' },
-  { key: 'problem_summary', label: 'מה הבעיה בקצרה?', type: 'text', placeholder: 'תארו את התקלה' },
   {
     key: 'problem_area',
     label: 'היכן ממוקמת הבעיה?',
@@ -94,13 +93,6 @@ export const DIAGNOSTIC_QUESTIONS = [
     type: 'select',
     options: ['בימים האחרונים', 'בחודש האחרון', 'לפני מספר חודשים', 'לפני שנה ויותר'],
   },
-  {
-    key: 'usage',
-    label: 'תדירות שימוש',
-    type: 'select',
-    options: ['שימוש יומיומי', 'שימוש מזדמן', 'חדר אורחים / לא בשימוש קבוע'],
-  },
-  { key: 'notes', label: 'פרטים נוספים שיעזרו לנו', type: 'textarea', placeholder: 'כל מידע נוסף' },
 ];
 
 // Standard contact-preference choices for the public form.

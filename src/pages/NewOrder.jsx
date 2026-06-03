@@ -66,7 +66,7 @@ export default function NewOrder() {
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [{ _uid: crypto.randomUUID(), sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -228,7 +228,7 @@ export default function NewOrder() {
         floor: quote.floor ?? prev.floor,
         apartment_number: quote.apartment_number || prev.apartment_number,
         elevator_type: quote.elevator_type || prev.elevator_type,
-        items: quote.items || prev.items,
+        items: (quote.items || prev.items).map((it) => ({ _uid: crypto.randomUUID(), ...it })),
         extras: quote.extras || prev.extras,
         subtotal: quote.subtotal || 0,
         discount_total: quote.discount_total || 0,
@@ -465,7 +465,7 @@ export default function NewOrder() {
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
+      items: [...prev.items, { _uid: crypto.randomUUID(), sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
     }));
   };
 
@@ -721,7 +721,7 @@ export default function NewOrder() {
               </TableHeader>
               <TableBody>
                 {formData.items.map((item, index) => (
-                  <TableRow key={index}>
+                  <TableRow key={item._uid || index}>
                     <TableCell>
                       <div className="space-y-2">
                         <ProductSelector

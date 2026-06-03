@@ -31,7 +31,9 @@ Deno.serve(async (req) => {
 
     // Always record an in-app notification (regardless of whether FCM is configured)
     if (targetUser) {
-      await supabase.from('notifications').insert({
+      // supabase-js returns { error } instead of throwing — surface a failed
+      // notification insert (best-effort: don't block the push send).
+      const { error: notifErr } = await supabase.from('notifications').insert({
         user_id: targetUser.id,
         user_email: targetUser.email,
         title,
@@ -40,6 +42,7 @@ Deno.serve(async (req) => {
         type: 'push',
         is_read: false,
       });
+      if (notifErr) console.error('Failed to insert notification:', notifErr);
     }
 
     if (tokens.length === 0) {

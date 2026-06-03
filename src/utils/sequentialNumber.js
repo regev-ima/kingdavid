@@ -96,14 +96,14 @@ export async function createWithSequentialNumber({
     try {
       const created = await entity.create(buildPayload(candidate));
       if (attempt > 0) {
-        // eslint-disable-next-line no-console
+         
         console.info(`[sequentialNumber] ${prefix}* allocated as ${candidate} on attempt ${attempt + 1}`);
       }
       return created;
     } catch (err) {
       lastErr = err;
       if (isUniqueViolation(err)) {
-        // eslint-disable-next-line no-console
+         
         console.warn(`[sequentialNumber] collision on ${candidate} (attempt ${attempt + 1}/${maxAttempts}), retrying`);
         continue;
       }

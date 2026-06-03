@@ -228,30 +228,35 @@ Deno.serve(async (req) => {
 
     // Create new
     if (toCreate.length > 0) {
-      await supabase
+      // supabase-js returns { error } instead of throwing — check it so a
+      // failed write surfaces (500) instead of reporting success.
+      const { error: insErr } = await supabase
         .from('dashboard_counters')
         .insert(toCreate);
+      if (insErr) throw insErr;
     }
 
     // Update existing
     for (let i = 0; i < toUpdate.length; i += 5) {
       const batch = toUpdate.slice(i, i + 5);
-      await Promise.all(batch.map((item: any) =>
-        supabase
+      await Promise.all(batch.map(async (item: any) => {
+        const { error: upErr } = await supabase
           .from('dashboard_counters')
           .update(item.data)
-          .eq('id', item.id)
-      ));
+          .eq('id', item.id);
+        if (upErr) throw upErr;
+      }));
       if (i + 5 < toUpdate.length) await sleep(100);
     }
 
     // Delete stale
     const staleIds = Object.values(existingMap).map((c: any) => c.id);
     for (const id of staleIds) {
-      await supabase
+      const { error: delErr } = await supabase
         .from('dashboard_counters')
         .delete()
         .eq('id', id);
+      if (delErr) throw delErr;
     }
 
     return Response.json({

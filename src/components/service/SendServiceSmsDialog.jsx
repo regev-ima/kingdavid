@@ -9,10 +9,11 @@ import { Loader2, MessageSquare, Copy, Check, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner';
 import { nextTicketNumber, normalizePhone, toInternationalPhone } from '@/constants/serviceOptions';
 
-// Rep-initiated self-service: the rep types the customer's phone, we create a
-// "pending" ticket carrying an opaque public_token, send the customer an SMS
-// (via 019) with a link to the public intake form, and ALWAYS show a copyable
-// link + WhatsApp button as a fallback (e.g. before 019 is configured).
+// Rep-initiated self-service: the rep creates a unique, 24h-valid public_token
+// link for a customer. The link is ALWAYS shown for copying / WhatsApp so the
+// rep can send it however they like; if a phone is given (and 019 is wired) we
+// also fire an SMS automatically. The ticket starts as "pending" and is filled
+// in by the customer through the public form.
 export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, order, customer }) {
   const queryClient = useQueryClient();
 
@@ -43,12 +44,64 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
       const recent = await base44.entities.SupportTicket.list('-created_date', 1);
       const ticketNumber = nextTicketNumber(recent[0]?.ticket_number);
 
+      // Tie the ticket to a customer/lead up front (by phone) so we know whose
+      // request it is BEFORE the customer fills the form. If the dialog was
+      // opened from an order/customer we already have it; otherwise look up by
+      // the phone the rep entered.
+      let resolvedCustomerId = order?.customer_id || customer?.id || null;
+      let resolvedLeadId = order?.lead_id || null;
+      let resolvedName = name;
+      const tail = (phone || '').replace(/\D/g, '').slice(-9);
+      if (!resolvedCustomerId && !resolvedLeadId && tail.length >= 7) {
+        try {
+          const custs = await base44.entities.Customer.filter({ phone: { $regex: tail } }, '-created_date', 1);
+          if (custs?.[0]) {
+            resolvedCustomerId = custs[0].id;
+            resolvedName = resolvedName || custs[0].full_name || '';
+          } else {
+            const leads = await base44.entities.Lead.filter({ phone: { $regex: tail } }, '-created_date', 1);
+            if (leads?.[0]) {
+              resolvedLeadId = leads[0].id;
+              resolvedName = resolvedName || leads[0].full_name || '';
+            }
+          }
+        } catch (e) {
+          console.warn('[SendServiceSmsDialog] phone lookup failed', e);
+        }
+      }
+
+      // Also link the customer's most recent order (by customer, then by phone)
+      // so the order number is pre-planted on the ticket and shown in the form.
+      // Pick the most recent order with a USABLE number — skip rows whose
+      // order_number is blank or malformed (e.g. legacy "ORDNaN") so the form
+      // shows a real order instead of garbage.
+      let resolvedOrderId = order?.id || null;
+      if (!resolvedOrderId && (resolvedCustomerId || tail.length >= 7)) {
+        const pickValidOrder = (list) =>
+          (list || []).find((o) => {
+            const n = String(o?.order_number || '').trim();
+            return n && !/nan/i.test(n);
+          });
+        try {
+          let chosen = null;
+          if (resolvedCustomerId) {
+            chosen = pickValidOrder(await base44.entities.Order.filter({ customer_id: resolvedCustomerId }, '-created_date', 10));
+          }
+          if (!chosen && tail.length >= 7) {
+            chosen = pickValidOrder(await base44.entities.Order.filter({ customer_phone: { $regex: tail } }, '-created_date', 10));
+          }
+          if (chosen) resolvedOrderId = chosen.id;
+        } catch (e) {
+          console.warn('[SendServiceSmsDialog] order lookup failed', e);
+        }
+      }
+
       await base44.entities.SupportTicket.create({
         ticket_number: ticketNumber,
-        order_id: order?.id || null,
-        customer_id: order?.customer_id || customer?.id || null,
-        lead_id: order?.lead_id || null,
-        customer_name: name || '',
+        order_id: resolvedOrderId,
+        customer_id: resolvedCustomerId,
+        lead_id: resolvedLeadId,
+        customer_name: resolvedName || '',
         customer_phone: phone,
         category: 'other',
         priority: 'medium',
@@ -66,19 +119,21 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
 
       const link = buildLink(token);
       let smsSent = false;
-      try {
-        const res = await base44.functions.invoke('sendSms', { phone, message: buildMessage(link) });
-        smsSent = !!res?.ok;
-      } catch (err) {
-        console.warn('[SendServiceSmsDialog] sendSms failed, falling back to manual link', err);
+      if (phone) {
+        try {
+          const res = await base44.functions.invoke('sendSms', { phone, message: buildMessage(link) });
+          smsSent = !!res?.ok;
+        } catch (err) {
+          console.warn('[SendServiceSmsDialog] sendSms failed, falling back to manual link', err);
+        }
       }
       return { link, smsSent };
     },
     onSuccess: (data) => {
       setResult(data);
       queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
-      if (data.smsSent) toast.success('נשלח SMS ללקוח עם קישור לפתיחת פנייה');
-      else toast('הקישור נוצר — ניתן לשלוח ללקוח ידנית', { description: 'אינטגרציית ה-SMS אינה מוגדרת או שהשליחה נכשלה' });
+      if (data.smsSent) toast.success('הקישור נוצר ונשלח ב-SMS ללקוח');
+      else toast.success('הקישור נוצר — העתיקו ושלחו ללקוח בכל אמצעי');
     },
     onError: (err) => {
       console.error('[SendServiceSmsDialog] failed', err);
@@ -101,8 +156,6 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
     ? `https://wa.me/${toInternationalPhone(phone)}?text=${encodeURIComponent(buildMessage(result.link))}`
     : '#';
 
-  const phoneValid = normalizePhone(phone).length >= 9;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md" dir="rtl">
@@ -116,30 +169,33 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
         {!result ? (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              הזן את מספר הטלפון של הלקוח. תישלח אליו הודעת SMS עם קישור למילוי טופס פניית השירות בעצמו.
+              צרו קישור ייחודי לפתיחת פנייה ושלחו אותו ללקוח בכל אמצעי (וואטסאפ / SMS / אימייל).
+              הטלפון אופציונלי — אם תזינו אותו וכשתחובר אינטגרציית 019, גם יישלח SMS אוטומטי.
+              <span className="block mt-1 font-medium text-foreground/70">הקישור תקף 24 שעות.</span>
             </p>
             <div className="space-y-1.5">
               <Label>שם הלקוח</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="שם (אופציונלי)" />
             </div>
             <div className="space-y-1.5">
-              <Label>טלפון *</Label>
+              <Label>טלפון (אופציונלי)</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="050-0000000" dir="ltr" />
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>ביטול</Button>
-              <Button onClick={() => sendMutation.mutate()} disabled={!phoneValid || sendMutation.isPending}>
+              <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
                 {sendMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
-                שלח קישור
+                צור קישור
               </Button>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className={`rounded-lg border p-3 text-sm ${result.smsSent ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+            <div className={`rounded-lg border p-3 text-sm ${result.smsSent ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
               {result.smsSent
-                ? '✓ נשלח SMS ללקוח עם הקישור לפתיחת הפנייה.'
-                : 'ה-SMS לא נשלח אוטומטית (האינטגרציה אינה מוגדרת). שלח את הקישור ללקוח ידנית:'}
+                ? '✓ הקישור נוצר ונשלח ב-SMS ללקוח. ניתן גם להעתיק ולשלוח בכל אמצעי.'
+                : 'הקישור נוצר — העתיקו ושלחו ללקוח בכל אמצעי (וואטסאפ / SMS / אימייל).'}
+              <span className="block mt-1 text-xs opacity-80">הקישור תקף ל-24 שעות.</span>
             </div>
 
             <div className="space-y-1.5">
@@ -153,11 +209,13 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
             </div>
 
             <div className="flex gap-2">
-              <a href={whatsappHref} target="_blank" rel="noreferrer" className="flex-1">
-                <Button type="button" variant="outline" className="w-full gap-2">
-                  <ExternalLink className="h-4 w-4" /> שלח בוואטסאפ
-                </Button>
-              </a>
+              {normalizePhone(phone).length >= 9 && (
+                <a href={whatsappHref} target="_blank" rel="noreferrer" className="flex-1">
+                  <Button type="button" variant="outline" className="w-full gap-2">
+                    <ExternalLink className="h-4 w-4" /> שלח בוואטסאפ
+                  </Button>
+                </a>
+              )}
               <Button type="button" onClick={() => onOpenChange(false)} className="flex-1">סגור</Button>
             </div>
           </div>

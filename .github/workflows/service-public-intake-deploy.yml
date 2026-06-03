@@ -1,0 +1,66 @@
+name: Service public intake + VoiceCenter cron — migrate
+
+# Applies the two June migrations to the (shared) Supabase database via the
+# Management API query endpoint, mirroring service-center-deploy.yml:
+#   • 20260602000001_schedule_voicenter_sync.sql      — pg_cron schedule that
+#     re-attaches the VoiceCenter call sync (every 15 min).
+#   • 20260602000002_service_request_public_intake.sql — the anon RPC powering
+#     the self-initiated public service-request form.
+#
+# Both are idempotent (CREATE OR REPLACE / IF NOT EXISTS / unschedule-then-
+# schedule), so re-runs are safe. We apply only these two files (not `db push`)
+# so older seed migrations are never re-run.
+#
+# NOTE: the cron job stays a no-op until the operator creates the Vault secrets
+# 'project_url' and 'service_role_key' once (see the header of
+# 20260602000001_schedule_voicenter_sync.sql).
+
+on:
+  push:
+    branches:
+      - main
+      - claude/zen-mayer-odR18
+    paths:
+      - 'supabase/migrations/20260602000001_schedule_voicenter_sync.sql'
+      - 'supabase/migrations/20260602000002_service_request_public_intake.sql'
+      - 'supabase/migrations/20260602000003_service_link_expiry_invoice.sql'
+      - 'supabase/migrations/20260602000004_service_public_contact.sql'
+      - 'supabase/migrations/20260603000001_call_logs_sync_columns.sql'
+      - 'supabase/migrations/20260603000002_return_requests_customer_link.sql'
+      - '.github/workflows/service-public-intake-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply migrations (Supabase Management API)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+          for f in \
+            supabase/migrations/20260602000001_schedule_voicenter_sync.sql \
+            supabase/migrations/20260602000002_service_request_public_intake.sql \
+            supabase/migrations/20260602000003_service_link_expiry_invoice.sql \
+            supabase/migrations/20260602000004_service_public_contact.sql \
+            supabase/migrations/20260603000001_call_logs_sync_columns.sql \
+            supabase/migrations/20260603000002_return_requests_customer_link.sql; do
+            echo "Applying $f ..."
+            payload=$(jq -Rs '{query: .}' "$f")
+            code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+              "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "$payload")
+            echo "Management API HTTP $code"
+            cat /tmp/resp.json || true
+            echo
+            test "$code" -lt 400
+          done

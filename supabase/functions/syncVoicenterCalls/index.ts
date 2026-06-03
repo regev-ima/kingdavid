@@ -8,6 +8,7 @@ import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
  * 2. Resolving pending call statuses for calls that were initiated but not yet completed
  *
  * Should run every 15-30 minutes via scheduled invocation (pg_cron or external).
+ * Writes are error-checked so a failed insert/update surfaces (firstError).
  */
 
 const normalizePhoneNumber = (phone: string | null): string | null => {
@@ -75,13 +76,38 @@ Deno.serve(async (req) => {
     }
 
     const results = { newCalls: 0, pendingResolved: 0, errors: 0 };
+    // Captures the first write error so a silent insert/update failure is
+    // visible in the response (and in cron run history) instead of being
+    // miscounted as a successful sync.
+    let firstError: any = null;
+
+    // Optional query params:
+    //   ?debug=1   — return diagnostics about what Voicenter actually sent back
+    //                (the date window used, how many CDRs came, and their
+    //                min/max dates) instead of relying on the DB to guess.
+    //   ?days=N    — widen the import window to the last N days instead of the
+    //                default 30 minutes.
+    //   ?from&?to  — explicit ISO datetimes for a precise window. Used by the
+    //                chunked backfill (one call per day) so each window stays
+    //                under VoiceCenter's ~10k-record-per-response cap.
+    const reqUrl = new URL(req.url);
+    const debug = reqUrl.searchParams.get('debug') === '1';
+    const days = Math.max(0, parseInt(reqUrl.searchParams.get('days') || '0', 10) || 0);
+    const fromParam = reqUrl.searchParams.get('from');
+    const toParam = reqUrl.searchParams.get('to');
+    let debugInfo: any = null;
 
     // --- PHASE 1: Import new calls from VoiceCenter CDR ---
     try {
       const now = new Date();
-      const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-      const fromDate = thirtyMinutesAgo.toISOString().slice(0, 19);
-      const toDate = now.toISOString().slice(0, 19);
+      const windowStart = fromParam
+        ? new Date(fromParam)
+        : days > 0
+        ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() - 30 * 60 * 1000);
+      const windowEnd = toParam ? new Date(toParam) : now;
+      const fromDate = windowStart.toISOString().slice(0, 19);
+      const toDate = windowEnd.toISOString().slice(0, 19);
 
       const apiUrl = new URL('http://46.224.211.60/hub/cdr/');
       apiUrl.searchParams.append('code', voicenterApiKey);
@@ -105,6 +131,23 @@ Deno.serve(async (req) => {
           : Array.isArray(data?.CDRList)
           ? data.CDRList
           : [];
+
+        if (debug) {
+          const dates = cdrList.map((c: any) => c?.date).filter(Boolean).sort();
+          debugInfo = {
+            window: { fromDate, toDate, days: days || 0.02 },
+            httpStatus: response.status,
+            received: cdrList.length,
+            minDate: dates[0] || null,
+            maxDate: dates[dates.length - 1] || null,
+            sampleKeys: cdrList[0] ? Object.keys(cdrList[0]) : [],
+            sampleRecord: cdrList[0] || null,
+          };
+          // Short-circuit: debug only inspects what VoiceCenter returned — it
+          // does NOT import (the import loop is slow over a wide window and
+          // would time out). Return immediately so the diagnostics come back.
+          return Response.json({ success: true, debug: debugInfo, ...results }, { headers: corsHeaders });
+        }
 
         if (cdrList.length > 0) {
           // Fetch users and leads once for efficient lookup
@@ -179,25 +222,43 @@ Deno.serve(async (req) => {
                 recording_url: call.recordurl || null,
               };
 
+              // supabase-js does NOT throw on a failed write — it returns
+              // { error }. Check it explicitly, otherwise a constraint/column
+              // failure is silently counted as a success (the original bug:
+              // "Synced N new calls" while nothing was actually written).
               if (existingCall && existingCall.length > 0) {
-                await supabase
+                const { error: upErr } = await supabase
                   .from('call_logs')
                   .update(callData)
                   .eq('id', existingCall[0].id);
+                if (upErr) throw upErr;
               } else {
-                await supabase
+                const { error: insErr } = await supabase
                   .from('call_logs')
                   .insert(callData);
+                if (insErr) throw insErr;
               }
               results.newCalls++;
-            } catch {
+            } catch (writeErr) {
               results.errors++;
+              if (!firstError) {
+                firstError = {
+                  message: (writeErr as any)?.message ?? String(writeErr),
+                  details: (writeErr as any)?.details ?? null,
+                  hint: (writeErr as any)?.hint ?? null,
+                  code: (writeErr as any)?.code ?? null,
+                };
+              }
             }
           }
         }
+      } else if (debug) {
+        debugInfo = { httpStatus: response.status, body: (await response.text()).slice(0, 500) };
+        return Response.json({ success: false, debug: debugInfo, ...results }, { headers: corsHeaders });
       }
     } catch (phase1Error) {
       // Phase 1 failed but we can still try phase 2
+      if (debug) debugInfo = { error: String((phase1Error as any)?.message || phase1Error) };
       results.errors++;
     }
 
@@ -276,6 +337,8 @@ Deno.serve(async (req) => {
       success: true,
       message: `Synced ${results.newCalls} new calls, resolved ${results.pendingResolved} pending`,
       ...results,
+      ...(firstError ? { firstError } : {}),
+      ...(debug ? { debug: debugInfo } : {}),
     }, { headers: corsHeaders });
 
   } catch (error) {

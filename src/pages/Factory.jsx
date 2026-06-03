@@ -5,9 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
-import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -16,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Factory as FactoryIcon, Package, Clock, CheckCircle, AlertTriangle, List, LayoutGrid } from "lucide-react";
+import { Factory as FactoryIcon, Clock, CheckCircle, AlertTriangle, List, LayoutGrid } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import FactoryKanban from '@/components/factory/FactoryKanban';
 import FactoryCalendarBoard from '@/components/factory/FactoryCalendarBoard';

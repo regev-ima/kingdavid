@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot } from 'lucide-react';
+import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot, FileText } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -40,7 +40,7 @@ function Field({ icon: Icon, label, children, ltr }) {
       {Icon && <Icon className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />}
       <div className="min-w-0">
         <p className="text-[11px] text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium text-foreground truncate" dir={ltr ? 'ltr' : undefined}>{children || '—'}</p>
+        <p className="text-sm font-medium text-foreground whitespace-nowrap" dir={ltr ? 'ltr' : undefined}>{children || '—'}</p>
       </div>
     </div>
   );
@@ -92,6 +92,9 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-ticket', ticketId] });
       queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
+      // Refresh the sidebar "new requests" badge so closing/resolving a ticket
+      // drops the count immediately instead of after the periodic refetch.
+      queryClient.invalidateQueries({ queryKey: ['service-new-count'] });
     },
   });
 
@@ -164,7 +167,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-lg font-bold text-foreground">פנייה #{ticket.ticket_number}</h2>
             <span className={`text-[11px] px-2 py-0.5 rounded-full ${SOURCE_CHIP[srcKey] || ''}`}>{SOURCE_LABELS[srcKey] || srcKey}</span>
-            {ticket.opened_by_customer && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">נפתחה ע״י הלקוח</span>}
+            {ticket.opened_by_customer && srcKey !== 'customer_self' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">נפתחה ע״י הלקוח</span>}
             {ticket.public_status === 'pending' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ממתין למילוי הלקוח</span>}
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">{ticket.subject}</p>
@@ -222,12 +225,12 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         {/* Details */}
         <TabsContent value="details" className="mt-5 space-y-5">
           <div className="rounded-xl border border-border p-5">
-            <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
-            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
+            <p className="text-xs font-semibold text-muted-foreground mb-3 text-right">פרטי לקוח</p>
+            <div dir="rtl" className="flex flex-wrap items-start justify-start gap-x-8 gap-y-3 text-right">
               <Field icon={User} label="שם">{ticket.customer_name}</Field>
               <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
-              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
               {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
+              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
             </div>
           </div>
 
@@ -250,6 +253,13 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
             </div>
           )}
 
+          {ticket.invoice_url && (
+            <a href={ticket.invoice_url} target="_blank" rel="noreferrer"
+               className="rounded-xl border border-border p-4 flex items-center gap-2 text-sm font-medium hover:bg-muted/40 transition">
+              <FileText className="h-4 w-4 text-primary" /> צפייה בחשבונית שצורפה
+            </a>
+          )}
+
           {Object.keys(answers).length > 0 && (
             <div className="rounded-xl border border-border p-5">
               <p className="text-xs font-semibold text-muted-foreground mb-2">שאלות אבחון</p>
@@ -267,7 +277,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
           {order && (
             <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="flex items-center gap-2 font-medium text-sm"><ShoppingCart className="h-4 w-4" /> הזמנה מקושרת #{order.order_number}</p>
+                <p className="flex items-center gap-2 font-medium text-sm"><ShoppingCart className="h-4 w-4" /> הזמנה מקושרת{order.order_number && !/nan/i.test(String(order.order_number)) ? ` #${order.order_number}` : ''}</p>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   {order.total != null && <span className="text-xs text-muted-foreground">₪{Number(order.total).toLocaleString()}</span>}
                   {Array.isArray(order.tags) && order.tags.map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{t}</span>)}

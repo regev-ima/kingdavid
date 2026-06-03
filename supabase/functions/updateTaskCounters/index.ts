@@ -159,19 +159,23 @@ Deno.serve(async (req) => {
         if (matches && matches.length > 0) {
           const counter = matches[0];
           const newCount = (counter.count || 0) + delta;
-          await supabase
+          // supabase-js returns { error } instead of throwing — check it so a
+          // failed counter write surfaces (500) instead of reporting success.
+          const { error: upErr } = await supabase
             .from('task_counters')
             .update({ count: newCount })
             .eq('id', counter.id);
+          if (upErr) throw upErr;
         } else {
           if (delta > 0) {
-            await supabase
+            const { error: insErr } = await supabase
               .from('task_counters')
               .insert({
                 counter_key: key,
                 count: delta,
                 rep_email: rep || '',
               });
+            if (insErr) throw insErr;
           }
         }
       }
@@ -314,29 +318,34 @@ Deno.serve(async (req) => {
       // Bulk Create
       if (toCreate.length > 0) {
         for (let i = 0; i < toCreate.length; i += 50) {
-          await supabase
+          // supabase-js returns { error } instead of throwing — check it so a
+          // failed write surfaces (500) instead of reporting success.
+          const { error: insErr } = await supabase
             .from('task_counters')
             .insert(toCreate.slice(i, i + 50));
+          if (insErr) throw insErr;
           await delay(500);
         }
       }
 
       // Update
       for (let i = 0; i < toUpdate.length; i++) {
-        await supabase
+        const { error: upErr } = await supabase
           .from('task_counters')
           .update(toUpdate[i].data)
           .eq('id', toUpdate[i].id);
+        if (upErr) throw upErr;
         if (i > 0 && i % 20 === 0) await delay(500);
       }
 
       // Delete stale
       const staleIds = Object.values(existingMap).map((c: any) => c.id).filter((id: string) => !touchedIds.has(id));
       for (let i = 0; i < staleIds.length; i++) {
-        await supabase
+        const { error: delErr } = await supabase
           .from('task_counters')
           .delete()
           .eq('id', staleIds[i]);
+        if (delErr) throw delErr;
         if (i > 0 && i % 20 === 0) await delay(500);
       }
 

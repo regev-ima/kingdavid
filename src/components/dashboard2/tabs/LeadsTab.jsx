@@ -15,7 +15,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts';
 import MiniKPI from '../MiniKPI';
 import LeadsByStatusTable from '../LeadsByStatusTable';

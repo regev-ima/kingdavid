@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -57,6 +57,40 @@ export default function ReturnDetails() {
     mutationFn: (data) => base44.entities.ReturnRequest.update(returnId, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['return', returnId]);
+    },
+  });
+
+  // Free-text/number fields are edited locally and saved on blur — writing to
+  // the DB on every keystroke (then refetching) reset the input mid-typing,
+  // which is why the refund amount couldn't be typed.
+  const [form, setForm] = useState({ refund_amount: '', internal_notes: '', inspection_notes: '' });
+  useEffect(() => {
+    if (returnReq) {
+      setForm({
+        refund_amount: returnReq.refund_amount ?? '',
+        internal_notes: returnReq.internal_notes ?? '',
+        inspection_notes: returnReq.inspection_notes ?? '',
+      });
+    }
+    // Re-init only when the record itself changes, so saves+refetches don't
+    // clobber what the rep is currently typing.
+     
+  }, [returnReq?.id]);
+  const saveField = (field, value) => {
+    if ((returnReq?.[field] ?? '') !== value) updateReturnMutation.mutate({ [field]: value });
+  };
+
+  // The customer's orders, so a return can be linked to the right order even
+  // when the customer has several (by customer_id, falling back to phone).
+  const phoneTail = (returnReq?.customer_phone || '').replace(/\D/g, '').slice(-9);
+  const { data: customerOrders = [] } = useQuery({
+    queryKey: ['return-customer-orders', returnReq?.customer_id, phoneTail],
+    enabled: !!returnReq && canAccessReturns && (!!returnReq.customer_id || phoneTail.length >= 7),
+    queryFn: async () => {
+      let orders = [];
+      if (returnReq.customer_id) orders = await base44.entities.Order.filter({ customer_id: returnReq.customer_id }, '-created_date', 20);
+      if (!orders.length && phoneTail.length >= 7) orders = await base44.entities.Order.filter({ customer_phone: { $regex: phoneTail } }, '-created_date', 20);
+      return (orders || []).filter((o) => { const n = String(o?.order_number || '').trim(); return n && !/nan/i.test(n); });
     },
   });
 
@@ -254,8 +288,9 @@ export default function ReturnDetails() {
               <div className="space-y-2">
                 <Label>הערות בדיקה</Label>
                 <Textarea
-                  value={returnReq.inspection_notes || ''}
-                  onChange={(e) => updateReturnMutation.mutate({ inspection_notes: e.target.value })}
+                  value={form.inspection_notes}
+                  onChange={(e) => setForm((p) => ({ ...p, inspection_notes: e.target.value }))}
+                  onBlur={() => saveField('inspection_notes', form.inspection_notes)}
                   rows={3}
                   placeholder="תוצאות הבדיקה..."
                 />
@@ -270,8 +305,9 @@ export default function ReturnDetails() {
             </CardHeader>
             <CardContent>
               <Textarea
-                value={returnReq.internal_notes || ''}
-                onChange={(e) => updateReturnMutation.mutate({ internal_notes: e.target.value })}
+                value={form.internal_notes}
+                onChange={(e) => setForm((p) => ({ ...p, internal_notes: e.target.value }))}
+                onBlur={() => saveField('internal_notes', form.internal_notes)}
                 rows={3}
               />
             </CardContent>
@@ -363,8 +399,9 @@ export default function ReturnDetails() {
                 <Label>סכום זיכוי</Label>
                 <Input
                   type="number"
-                  value={returnReq.refund_amount || ''}
-                  onChange={(e) => updateReturnMutation.mutate({ refund_amount: parseFloat(e.target.value) })}
+                  value={form.refund_amount}
+                  onChange={(e) => setForm((p) => ({ ...p, refund_amount: e.target.value }))}
+                  onBlur={() => saveField('refund_amount', form.refund_amount === '' ? null : parseFloat(form.refund_amount))}
                   placeholder="₪"
                 />
               </div>
@@ -389,22 +426,41 @@ export default function ReturnDetails() {
             </CardContent>
           </Card>
 
-          {/* Order Link */}
-          {returnReq.order_id && (
-            <Card>
-              <CardHeader>
-                <CardTitle>הזמנה מקורית</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Link 
+          {/* Linked order — pick / change among the customer's orders */}
+          <Card>
+            <CardHeader>
+              <CardTitle>הזמנה מקושרת</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {customerOrders.length > 0 ? (
+                <Select
+                  value={returnReq.order_id || ''}
+                  onValueChange={(val) => updateReturnMutation.mutate({ order_id: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="בחר הזמנה..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customerOrders.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        #{o.order_number}{o.total != null ? ` · ₪${Number(o.total).toLocaleString()}` : ''}{o.created_date ? ` · ${new Date(o.created_date).toLocaleDateString('he-IL')}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm text-muted-foreground">לא נמצאו הזמנות מקושרות ללקוח זה.</p>
+              )}
+              {returnReq.order_id && (
+                <Link
                   to={createPageUrl('OrderDetails') + `?id=${returnReq.order_id}`}
-                  className="text-primary hover:underline"
+                  className="text-primary hover:underline text-sm inline-block"
                 >
                   צפה בהזמנה
                 </Link>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

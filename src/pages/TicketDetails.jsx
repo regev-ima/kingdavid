@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
@@ -58,6 +58,23 @@ export default function TicketDetails() {
       queryClient.invalidateQueries(['ticket', ticketId]);
     },
   });
+
+  // Free-text fields edit locally and save on blur — writing on every keystroke
+  // (then refetching) reset the textarea mid-typing.
+  const [form, setForm] = useState({ root_cause: '', resolution: '', internal_notes: '' });
+  useEffect(() => {
+    if (ticket) {
+      setForm({
+        root_cause: ticket.root_cause ?? '',
+        resolution: ticket.resolution ?? '',
+        internal_notes: ticket.internal_notes ?? '',
+      });
+    }
+     
+  }, [ticket?.id]);
+  const saveField = (field, value) => {
+    if ((ticket?.[field] ?? '') !== value) updateTicketMutation.mutate({ [field]: value });
+  };
 
   if (isLoadingUser || isLoading) {
     return (
@@ -194,8 +211,9 @@ export default function TicketDetails() {
               <div className="space-y-2">
                 <Label>סיבת שורש</Label>
                 <Textarea
-                  value={ticket.root_cause || ''}
-                  onChange={(e) => updateTicketMutation.mutate({ root_cause: e.target.value })}
+                  value={form.root_cause}
+                  onChange={(e) => setForm((p) => ({ ...p, root_cause: e.target.value }))}
+                  onBlur={() => saveField('root_cause', form.root_cause)}
                   rows={2}
                   placeholder="מה גרם לבעיה?"
                 />
@@ -203,8 +221,9 @@ export default function TicketDetails() {
               <div className="space-y-2">
                 <Label>פתרון</Label>
                 <Textarea
-                  value={ticket.resolution || ''}
-                  onChange={(e) => updateTicketMutation.mutate({ resolution: e.target.value })}
+                  value={form.resolution}
+                  onChange={(e) => setForm((p) => ({ ...p, resolution: e.target.value }))}
+                  onBlur={() => saveField('resolution', form.resolution)}
                   rows={3}
                   placeholder="איך הבעיה נפתרה?"
                 />
@@ -212,8 +231,9 @@ export default function TicketDetails() {
               <div className="space-y-2">
                 <Label>הערות פנימיות</Label>
                 <Textarea
-                  value={ticket.internal_notes || ''}
-                  onChange={(e) => updateTicketMutation.mutate({ internal_notes: e.target.value })}
+                  value={form.internal_notes}
+                  onChange={(e) => setForm((p) => ({ ...p, internal_notes: e.target.value }))}
+                  onBlur={() => saveField('internal_notes', form.internal_notes)}
                   rows={2}
                   placeholder="הערות לשימוש פנימי..."
                 />

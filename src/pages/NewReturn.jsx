@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2 } from "lucide-react";
+import { ArrowRight, Save, Loader2, Search } from "lucide-react";
+import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessReturnsWorkspace, canViewOrder } from '@/lib/rbac';
 
@@ -29,6 +30,7 @@ export default function NewReturn() {
 
   const [formData, setFormData] = useState({
     order_id: orderId || '',
+    customer_id: '',
     customer_name: '',
     customer_phone: '',
     reason: 'changed_mind',
@@ -39,14 +41,59 @@ export default function NewReturn() {
     status: 'requested',
     internal_notes: '',
   });
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [lookingUp, setLookingUp] = useState(false);
 
   const canAccessReturns = canAccessReturnsWorkspace(effectiveUser);
 
+  // Drive the order card from whichever order is selected (URL param or picked
+  // after a phone lookup), so a standalone return links to a real order too.
+  const selectedOrderId = formData.order_id;
   const { data: order } = useQuery({
-    queryKey: ['order', orderId],
-    queryFn: () => base44.entities.Order.filter({ id: orderId }).then(res => res[0]),
-    enabled: !!orderId && canAccessReturns,
+    queryKey: ['order', selectedOrderId],
+    queryFn: () => base44.entities.Order.filter({ id: selectedOrderId }).then(res => res[0]),
+    enabled: !!selectedOrderId && canAccessReturns,
   });
+
+  // Find the customer (and their orders) by phone, and link them. Mirrors the
+  // service flow: a return should be tied to the customer + the right order.
+  const lookupByPhone = async () => {
+    const tail = (formData.customer_phone || '').replace(/\D/g, '').slice(-9);
+    if (tail.length < 7) { toast.error('הזינו מספר טלפון תקין לחיפוש'); return; }
+    setLookingUp(true);
+    try {
+      const customers = await base44.entities.Customer.filter({ phone: { $regex: tail } }, '-created_date', 1);
+      const customer = customers?.[0];
+      let orders = [];
+      if (customer) {
+        orders = await base44.entities.Order.filter({ customer_id: customer.id }, '-created_date', 20);
+      }
+      if (!orders.length) {
+        orders = await base44.entities.Order.filter({ customer_phone: { $regex: tail } }, '-created_date', 20);
+      }
+      const validOrders = (orders || []).filter((o) => {
+        const n = String(o?.order_number || '').trim();
+        return n && !/nan/i.test(n);
+      });
+      setCustomerOrders(validOrders);
+      setFormData((prev) => ({
+        ...prev,
+        customer_id: customer?.id || validOrders[0]?.customer_id || '',
+        customer_name: prev.customer_name || customer?.full_name || validOrders[0]?.customer_name || '',
+        order_id: validOrders[0]?.id || prev.order_id || '',
+      }));
+      if (customer || validOrders.length) {
+        toast.success(`נמצא לקוח${validOrders.length ? ` · ${validOrders.length} הזמנות` : ''}`);
+      } else {
+        toast('לא נמצא לקוח/הזמנה לטלפון הזה — אפשר להזין ידנית', { description: 'הבקשה תישמר ללא קישור' });
+      }
+    } catch (err) {
+      console.error('[NewReturn] phone lookup failed', err);
+      toast.error('החיפוש נכשל');
+    } finally {
+      setLookingUp(false);
+    }
+  };
 
   useEffect(() => {
     if (order) {
@@ -67,6 +114,8 @@ export default function NewReturn() {
       
       return base44.entities.ReturnRequest.create({
         ...data,
+        order_id: data.order_id || null,
+        customer_id: data.customer_id || null,
         return_number: newNumber,
       });
     },
@@ -137,16 +186,43 @@ export default function NewReturn() {
               </div>
               <div className="space-y-2">
                 <Label>טלפון *</Label>
-                <Input
-                  value={formData.customer_phone}
-                  onChange={(e) => setFormData({...formData, customer_phone: e.target.value})}
-                  required
-                />
+                <div className="flex gap-2">
+                  <Input
+                    value={formData.customer_phone}
+                    onChange={(e) => setFormData({...formData, customer_phone: e.target.value})}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupByPhone(); } }}
+                    placeholder="050-0000000"
+                    dir="ltr"
+                    required
+                  />
+                  <Button type="button" variant="outline" onClick={lookupByPhone} disabled={lookingUp} title="חפש לקוח והזמנות לפי טלפון">
+                    {lookingUp ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  </Button>
+                </div>
+                {formData.customer_id && <p className="text-xs text-emerald-600">✓ מקושר ללקוח</p>}
               </div>
             </div>
+
+            {/* Pick which order this return is for (after a phone lookup) */}
+            {customerOrders.length > 0 && (
+              <div className="space-y-2">
+                <Label>הזמנה לקישור</Label>
+                <Select value={formData.order_id || ''} onValueChange={(v) => setFormData({ ...formData, order_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="בחר הזמנה..." /></SelectTrigger>
+                  <SelectContent>
+                    {customerOrders.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        #{o.order_number}{o.total != null ? ` · ₪${Number(o.total).toLocaleString()}` : ''}{o.created_date ? ` · ${new Date(o.created_date).toLocaleDateString('he-IL')}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {order && (
               <div className="p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">הזמנה מקורית</p>
+                <p className="text-sm text-muted-foreground">הזמנה מקושרת</p>
                 <p className="font-semibold">#{order.order_number}</p>
                 <p className="text-sm">₪{order.total?.toLocaleString()}</p>
               </div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -6,17 +6,41 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, CheckCircle2, Crown, ShieldCheck } from 'lucide-react';
+import { Loader2, CheckCircle2, Crown, ShieldCheck, FileText, X } from 'lucide-react';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import { compressImage } from '@/lib/imageCompression';
 import {
   REQUEST_TYPE_OPTIONS, DIAGNOSTIC_QUESTIONS, CONTACT_PREFERENCE_OPTIONS,
 } from '@/constants/serviceOptions';
 
-// Public, unauthenticated self-service intake form. A customer reaches it from
-// the SMS link (/service-request?token=...). It talks to the DB only through
-// two SECURITY DEFINER RPCs scoped to the single ticket the token points at —
-// no broad anon access. Mounted outside the app's auth gate (see App.jsx).
+// Public, unauthenticated self-service intake form.
+//
+// Token-only by design: a customer can only reach a usable form through the
+// unique link a rep sends by SMS (/service-request?token=...). The token is
+// valid for 24h (enforced server-side in service_request_get/submit), after
+// which the link shows an "expired" state. There is deliberately NO open,
+// link-less intake — that would invite junk tickets.
+//
+// Mounted outside the app's auth gate (see App.jsx).
+//
+// NOTE: Shell is declared at module scope on purpose. Defining it inside the
+// component would create a new component identity on every render, so React
+// would unmount/remount the whole subtree on each keystroke and the inputs
+// would lose focus after a single character.
+const Shell = ({ children }) => (
+  <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
+    <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
+      <div className="inline-flex items-center gap-2">
+        <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
+        <span className="text-xl font-bold">KING DAVID</span>
+      </div>
+      <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
+    </header>
+    <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
+    <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
+  </div>
+);
+
 export default function ServiceRequestPublic() {
   const token = useMemo(() => new URLSearchParams(window.location.search).get('token'), []);
 
@@ -31,6 +55,8 @@ export default function ServiceRequestPublic() {
   });
 
   const [form, setForm] = useState({
+    customer_name: '',
+    customer_phone: '',
     request_type: '',
     order_date: '',
     warranty_years: '',
@@ -39,15 +65,31 @@ export default function ServiceRequestPublic() {
     contact_preference: 'phone',
     issue_answers: {},
     photo_urls: [],
+    invoice_url: '',
   });
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const setAnswer = (k, v) => setForm((p) => ({ ...p, issue_answers: { ...p.issue_answers, [k]: v } }));
   const [error, setError] = useState('');
+  const [invoiceUploading, setInvoiceUploading] = useState(false);
+
+  // Never surface a malformed order number (e.g. legacy "ORDNaN").
+  const orderNumber = info?.order_number && !/nan/i.test(String(info.order_number)) ? info.order_number : '';
+
+  // Prefill name/phone from whatever the rep stored on the link; the customer
+  // can correct them. Only fills empty fields so it won't clobber typing.
+  useEffect(() => {
+    if (!info?.found) return;
+    setForm((p) => ({
+      ...p,
+      customer_name: p.customer_name || info.customer_name || '',
+      customer_phone: p.customer_phone || info.customer_phone || '',
+    }));
+  }, [info]);
 
   // Anon upload straight into the 'uploads' bucket under the service-requests/
   // prefix the storage policy whitelists for anonymous inserts.
   const publicUpload = async (file) => {
-    const safeName = (file.name || 'photo.jpg').replace(/[^\w.\-]/g, '_');
+    const safeName = (file.name || 'file').replace(/[^\w.\-]/g, '_');
     const path = `service-requests/${token}/${Date.now()}_${safeName}`;
     const { error: upErr } = await base44.supabase.storage.from('uploads').upload(path, file, { upsert: false });
     if (upErr) throw upErr;
@@ -55,9 +97,34 @@ export default function ServiceRequestPublic() {
     return { file_url: data.publicUrl };
   };
 
+  // Invoice: a single optional file (image or PDF). Images are compressed;
+  // PDFs are uploaded as-is.
+  const handleInvoice = async (e) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+    if (!isImage && !isPdf) { setError('ניתן לצרף חשבונית כתמונה או PDF בלבד'); return; }
+    setError('');
+    setInvoiceUploading(true);
+    try {
+      const toUpload = isImage ? await compressImage(file, { maxSizeMB: 0.6, maxWidthOrHeight: 1600 }) : file;
+      const { file_url } = await publicUpload(toUpload);
+      set('invoice_url', file_url);
+    } catch (err) {
+      console.error('[ServiceRequestPublic] invoice upload failed', err);
+      setError('העלאת החשבונית נכשלה. נסו שוב.');
+    } finally {
+      setInvoiceUploading(false);
+    }
+  };
+
   const submitMutation = useMutation({
     mutationFn: async () => {
       const payload = {
+        customer_name: form.customer_name,
+        customer_phone: form.customer_phone,
         request_type: form.request_type,
         order_date: form.order_date || null,
         warranty_years: form.warranty_years || null,
@@ -66,6 +133,7 @@ export default function ServiceRequestPublic() {
         contact_preference: form.contact_preference,
         issue_answers: form.issue_answers,
         photo_urls: form.photo_urls,
+        invoice_url: form.invoice_url || null,
         product_name: form.issue_answers.product || '',
       };
       const { data, error: rpcErr } = await base44.supabase.rpc('service_request_submit', { p_token: token, p_data: payload });
@@ -75,32 +143,19 @@ export default function ServiceRequestPublic() {
     },
     onError: (err) => {
       console.error('[ServiceRequestPublic] submit failed', err);
-      setError(err?.message === 'link_unavailable' ? 'הקישור כבר נוצל או אינו תקין.' : 'אירעה שגיאה בשליחה. נסו שוב.');
+      setError(err?.message === 'link_unavailable' ? 'הקישור כבר נוצל או שפג תוקפו.' : 'אירעה שגיאה בשליחה. נסו שוב.');
     },
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (form.customer_name.trim().length < 2) return setError('יש להזין שם מלא');
+    if (form.customer_phone.replace(/\D/g, '').length < 9) return setError('יש להזין מספר טלפון תקין');
     if (!form.request_type) return setError('יש לבחור סוג פנייה');
     if (!form.description.trim()) return setError('יש לתאר את הבעיה');
     setError('');
     submitMutation.mutate();
   };
-
-  // ── Shell ────────────────────────────────────────────────────────────────
-  const Shell = ({ children }) => (
-    <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
-        <div className="inline-flex items-center gap-2">
-          <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
-          <span className="text-xl font-bold">KING DAVID</span>
-        </div>
-        <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
-      </header>
-      <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
-      <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
-    </div>
-  );
 
   if (!token) {
     return <Shell><div className="bg-white rounded-2xl border p-6 text-center text-muted-foreground mt-6">קישור לא תקין.</div></Shell>;
@@ -108,12 +163,17 @@ export default function ServiceRequestPublic() {
   if (isLoading) {
     return <Shell><div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div></Shell>;
   }
-  if (!info?.found || info?.already_submitted) {
+  if (!info?.found || info?.already_submitted || info?.expired) {
+    const msg = info?.already_submitted
+      ? 'הפנייה כבר נשלחה — תודה!'
+      : info?.expired
+      ? 'הקישור פג תוקף (תקף ל-24 שעות). אנא פנו אלינו ונשלח לכם קישור חדש.'
+      : 'הקישור אינו תקין או שפג תוקפו.';
     return (
       <Shell>
         <div className="bg-white rounded-2xl border p-6 text-center mt-6 space-y-2">
           <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto" />
-          <p className="font-medium">{info?.already_submitted ? 'הפנייה כבר נשלחה — תודה!' : 'הקישור אינו תקין או שפג תוקפו.'}</p>
+          <p className="font-medium">{msg}</p>
           <p className="text-sm text-muted-foreground">צוות השירות יחזור אליכם בהקדם. לכל שאלה: 1700-700-464.</p>
         </div>
       </Shell>
@@ -139,11 +199,28 @@ export default function ServiceRequestPublic() {
           <h1 className="text-lg font-bold">פתיחת פניית שירות</h1>
           <p className="text-sm text-muted-foreground">
             שלום{info.customer_name ? ` ${info.customer_name}` : ''}, נשמח לעזור. אנא מלאו את הפרטים הבאים
-            {info.order_number ? ` (הזמנה #${info.order_number})` : ''}.
+            {orderNumber ? ` (הזמנה #${orderNumber})` : ''}.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Contact details — prefilled from the link, confirmable by the customer */}
+          <div className="space-y-3 p-3 rounded-xl bg-slate-50 border">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>שם מלא *</Label>
+                <Input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} placeholder="שם פרטי ומשפחה" required />
+              </div>
+              <div className="space-y-1.5">
+                <Label>טלפון *</Label>
+                <Input type="tel" dir="ltr" value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} placeholder="050-0000000" required />
+              </div>
+            </div>
+            {orderNumber && (
+              <p className="text-sm text-muted-foreground">הזמנה מקושרת: <span className="font-semibold text-foreground" dir="ltr">#{orderNumber}</span></p>
+            )}
+          </div>
+
           {/* Request type */}
           <div className="space-y-2">
             <Label>סוג הפנייה *</Label>
@@ -223,6 +300,27 @@ export default function ServiceRequestPublic() {
             />
           </div>
 
+          {/* Invoice (optional) */}
+          <div className="space-y-1.5">
+            <Label>צירוף חשבונית (לא חובה)</Label>
+            {form.invoice_url ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border p-2.5 text-sm">
+                <a href={form.invoice_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-primary truncate">
+                  <FileText className="h-4 w-4 shrink-0" /> החשבונית צורפה — צפייה
+                </a>
+                <button type="button" onClick={() => set('invoice_url', '')} className="text-muted-foreground hover:text-red-600" aria-label="הסר חשבונית">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 rounded-lg border-2 border-dashed border-border hover:border-primary/50 hover:bg-muted/40 p-3 text-sm text-muted-foreground cursor-pointer transition-colors">
+                {invoiceUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {invoiceUploading ? 'מעלה...' : 'העלאת חשבונית (תמונה או PDF)'}
+                <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleInvoice} disabled={invoiceUploading} />
+              </label>
+            )}
+          </div>
+
           {/* Contact preference */}
           <div className="space-y-1.5">
             <Label>איך תעדיפו שניצור קשר?</Label>
@@ -234,7 +332,7 @@ export default function ServiceRequestPublic() {
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
 
-          <Button type="submit" className="w-full" disabled={submitMutation.isPending}>
+          <Button type="submit" className="w-full" disabled={submitMutation.isPending || invoiceUploading}>
             {submitMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
             שליחת הפנייה
           </Button>

@@ -7,19 +7,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Clock,
   Factory,
   Truck,
   Headphones,
-  TrendingUp,
-  TrendingDown,
   Calendar,
-  BarChart3,
   Download,
 } from "lucide-react";
 import { format, differenceInHours, differenceInDays, startOfMonth, endOfMonth } from '@/lib/safe-date-fns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { fetchAllList } from '@/lib/base44Pagination';
+import { toCsv, downloadCsv } from '@/utils/csv';
+import { toast } from 'sonner';
 
 export default function OperationalReports() {
   const now = new Date();
@@ -149,6 +147,29 @@ export default function OperationalReports() {
     };
   }, [filteredData.tickets]);
 
+  const handleExport = () => {
+    const rows = [
+      { metric: 'זמן ייצור ממוצע (ימים)', value: productionMetrics.avgDays },
+      { metric: 'סה״כ הזמנות בייצור', value: productionMetrics.totalOrders },
+      { metric: 'הזמנות בזמן', value: productionMetrics.onTimeCount },
+      { metric: 'הזמנות באיחור', value: productionMetrics.delayedCount },
+      { metric: 'זמן משלוח ממוצע (ימים)', value: deliveryMetrics.avgDays },
+      { metric: 'סה״כ משלוחים', value: deliveryMetrics.totalDeliveries },
+      { metric: 'משלוחים בזמן', value: deliveryMetrics.onTimeCount },
+      { metric: 'משלוחים שנכשלו', value: deliveryMetrics.failedCount },
+      { metric: 'זמן טיפול ממוצע בפנייה (שעות)', value: supportMetrics.avgHours },
+      { metric: 'סה״כ פניות שטופלו', value: supportMetrics.totalTickets },
+      { metric: 'פניות שנפתרו תוך 24ש׳', value: supportMetrics.under24hCount },
+      { metric: 'פניות מעל 48ש׳', value: supportMetrics.over48hCount },
+    ];
+    const csv = toCsv(rows, [
+      { header: 'מדד', value: (r) => r.metric },
+      { header: 'ערך', value: (r) => r.value },
+    ]);
+    downloadCsv(`operational_report_${format(new Date(), 'yyyy-MM-dd')}.csv`, csv);
+    toast.success('הדוח יוצא');
+  };
+
   // Chart Data
   const productionStatusData = useMemo(() => {
     const statusCounts = {};
@@ -228,7 +249,7 @@ export default function OperationalReports() {
           <h1 className="text-3xl font-bold text-foreground">דוחות תפעוליים</h1>
           <p className="text-muted-foreground">ניתוח זמני ייצור, משלוח ושירות</p>
         </div>
-        <Button variant="outline" className="flex items-center gap-2">
+        <Button variant="outline" className="flex items-center gap-2" onClick={handleExport}>
           <Download className="h-4 w-4" />
           ייצא לאקסל
         </Button>

@@ -5,9 +5,9 @@ import { useLeadModal } from '@/components/lead/LeadModalContext';
 import KPICard from '@/components/shared/KPICard';
 import ExpiringQuotesFromCounters from '@/components/dashboard/ExpiringQuotesFromCounters.jsx';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Users, FileText, AlertTriangle, Clock, Target,
+  Users, AlertTriangle, Clock, Target,
   TrendingUp, DollarSign, UserPlus, ArrowRight, Phone,
   CheckSquare, AlertCircle, ShoppingCart,
 } from "lucide-react";
