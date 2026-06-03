@@ -17,7 +17,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import UserAvatar from '@/components/shared/UserAvatar';
 import {
-  Users, UserPlus, UserCheck, Crown, Calendar as CalendarIcon,
+  Users, UserPlus, UserCheck, Calendar as CalendarIcon,
   Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
 } from 'lucide-react';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, format } from '@/lib/safe-date-fns';

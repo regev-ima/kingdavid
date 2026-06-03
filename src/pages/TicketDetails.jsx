@@ -70,7 +70,7 @@ export default function TicketDetails() {
         internal_notes: ticket.internal_notes ?? '',
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [ticket?.id]);
   const saveField = (field, value) => {
     if ((ticket?.[field] ?? '') !== value) updateTicketMutation.mutate({ [field]: value });

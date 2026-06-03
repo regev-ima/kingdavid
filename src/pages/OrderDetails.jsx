@@ -134,7 +134,7 @@ export default function OrderDetails() {
       // appears to happen.
       const detail = err?.message || err?.details || err?.hint || JSON.stringify(err);
       toast.error(`שגיאה בשמירת ההזמנה: ${detail}`, { duration: 10000 });
-      // eslint-disable-next-line no-console
+       
       console.error('updateOrder error — full object:', err);
     },
   });
@@ -150,7 +150,7 @@ export default function OrderDetails() {
         notes_logistics: order.notes_logistics ?? '',
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [order?.id]);
   const saveNote = (field, value) => {
     if ((order?.[field] ?? '') !== value) updateOrderMutation.mutate({ [field]: value });

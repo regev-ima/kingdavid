@@ -65,7 +65,7 @@ export function loadGoogleMaps() {
     script.setAttribute('data-google-maps-loader', 'true');
     script.onload = () => {
       if (window.google?.maps?.places) {
-        // eslint-disable-next-line no-console
+         
         console.log('[googleMapsLoader] loaded successfully');
         resolve(window.google);
       } else {

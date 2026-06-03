@@ -40,7 +40,9 @@ Deno.serve(async (req) => {
       if (leadData.rep1) {
         const dueDate = new Date();
         dueDate.setHours(dueDate.getHours() + 3);
-        await supabase
+        // supabase-js returns { error } instead of throwing — check it so a
+        // failed write surfaces (500) instead of reporting success.
+        const { error: insErr } = await supabase
           .from('sales_tasks')
           .insert({
             lead_id: leadData.id,
@@ -52,6 +54,7 @@ Deno.serve(async (req) => {
             rep1: leadData.rep1,
             status: leadData.status || 'new_lead',
           });
+        if (insErr) throw insErr;
         return Response.json({ message: 'Initial task created for assigned rep on lead creation' }, { headers: corsHeaders });
       }
       return Response.json({ message: 'No assignment on creation' }, { headers: corsHeaders });
@@ -86,13 +89,16 @@ Deno.serve(async (req) => {
 
       const updatedHistory = [...(leadData.assignment_history || []), assignmentRecord];
 
-      await supabase
+      // supabase-js returns { error } instead of throwing — check it so a
+      // failed write surfaces (500) instead of reporting success.
+      const { error: upErr } = await supabase
         .from('leads')
         .update({ assignment_history: updatedHistory })
         .eq('id', leadData.id);
+      if (upErr) throw upErr;
 
       // Create a LeadActivityLog entry
-      await supabase
+      const { error: logErr } = await supabase
         .from('lead_activity_logs')
         .insert({
           lead_id: leadData.id,
@@ -105,6 +111,7 @@ Deno.serve(async (req) => {
           new_value: changes.new_rep1 || changes.new_rep2 || null,
           metadata: assignmentRecord,
         });
+      if (logErr) throw logErr;
 
       return Response.json({ message: 'Lead assignment tracked successfully' }, { headers: corsHeaders });
     }

@@ -35,7 +35,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronLeft, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";

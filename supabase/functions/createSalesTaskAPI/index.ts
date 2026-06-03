@@ -197,10 +197,20 @@ Deno.serve(async (req) => {
 
       // Update the Lead's status if provided in the task payload
       if (leadId && resolvedStatus) {
-        await supabase
+        // supabase-js returns { error } instead of throwing — record a failed
+        // lead status update as a failed result rather than silently ignoring it.
+        const { error: leadUpdateError } = await supabase
           .from('leads')
           .update({ status: resolvedStatus })
           .eq('id', leadId);
+        if (leadUpdateError) {
+          results.push({
+            success: false,
+            error: `Failed to update lead status: ${leadUpdateError.message}`,
+            input: task,
+          });
+          continue;
+        }
       }
 
       const { data: created, error } = await supabase

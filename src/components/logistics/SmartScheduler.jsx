@@ -272,7 +272,7 @@ export default function SmartScheduler({ shipments, orders }) {
 
   // ביצוע שיבוץ אוטומטי (currently unused — kept for the richer optimization
   // toast; primary flow is `scheduleAllPending` below).
-  // eslint-disable-next-line no-unused-vars
+   
   const executeScheduling = async () => {
     if (analyzedShipments.length === 0) {
       toast.error('אין משלוחים לשיבוץ');

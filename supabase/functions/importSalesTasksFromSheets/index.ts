@@ -113,11 +113,14 @@ Deno.serve(async (req) => {
         }
         if (taskData.status) {
           salesTaskData.status = taskData.status;
-          // Also update the lead status to match
-          await supabase
+          // Also update the lead status to match.
+          // supabase-js returns { error } instead of throwing — check it so a
+          // failed write is recorded (via catch) rather than silently ignored.
+          const { error: leadStatusError } = await supabase
             .from('leads')
             .update({ status: taskData.status })
             .eq('id', matchedLead.id);
+          if (leadStatusError) throw leadStatusError;
         }
         if (taskData.task_type) {
           salesTaskData.task_type = taskData.task_type;
@@ -136,11 +139,14 @@ Deno.serve(async (req) => {
         }
         if (taskData.pending_rep_email) {
           salesTaskData.pending_rep_email = taskData.pending_rep_email;
-          // Also update the lead with pending_rep_email
-          await supabase
+          // Also update the lead with pending_rep_email.
+          // supabase-js returns { error } instead of throwing — check it so a
+          // failed write is recorded (via catch) rather than silently ignored.
+          const { error: leadRepError } = await supabase
             .from('leads')
             .update({ pending_rep_email: taskData.pending_rep_email })
             .eq('id', matchedLead.id);
+          if (leadRepError) throw leadRepError;
         }
 
         // Set default values if not provided

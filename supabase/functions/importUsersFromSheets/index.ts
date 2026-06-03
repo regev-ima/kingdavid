@@ -135,10 +135,13 @@ Deno.serve(async (req) => {
           .eq('email', email);
 
         if (existingUsers && existingUsers.length > 0) {
-          await supabase
+          // supabase-js returns { error } instead of throwing — check it so a
+          // failed write is counted as failed (via catch) rather than success.
+          const { error: upErr } = await supabase
             .from('users')
             .update(updateData)
             .eq('id', existingUsers[0].id);
+          if (upErr) throw upErr;
         } else {
           // Create user profile if it doesn't exist yet
           // Link to auth user if we created one
@@ -149,9 +152,10 @@ Deno.serve(async (req) => {
           if (authData?.user) {
             profileData.auth_id = authData.user.id;
           }
-          await supabase
+          const { error: insErr } = await supabase
             .from('users')
             .insert(profileData);
+          if (insErr) throw insErr;
         }
 
         results.success++;

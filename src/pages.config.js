@@ -1,4 +1,4 @@
-/* eslint-disable -- auto-generated */
+ 
 /**
  * pages.config.js - Page routing configuration
  *

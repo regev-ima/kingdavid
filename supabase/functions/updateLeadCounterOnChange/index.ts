@@ -40,19 +40,23 @@ Deno.serve(async (req) => {
             ? Math.max(0, current.count - 1)
             : current.count; // update doesn't change total count
 
-        await supabase
+        // supabase-js returns { error } instead of throwing — check it so a
+        // failed write surfaces (500) instead of reporting success.
+        const { error: upErr } = await supabase
           .from('lead_counters')
           .update({ count: newCount })
           .eq('id', current.id);
+        if (upErr) throw upErr;
       } else if (event.type === 'create') {
         // Create new counter starting at 1
-        await supabase
+        const { error: insErr } = await supabase
           .from('lead_counters')
           .insert({
             counter_key: key,
             count: 1,
             rep_email: repEmail || '',
           });
+        if (insErr) throw insErr;
       }
     };
 
@@ -80,10 +84,12 @@ Deno.serve(async (req) => {
           .eq('rep_email', '');
 
         if (counter && counter.length > 0) {
-          await supabase
+          // supabase-js returns { error } instead of throwing — check it.
+          const { error: upErr } = await supabase
             .from('lead_counters')
             .update({ count: Math.max(0, counter[0].count - 1) })
             .eq('id', counter[0].id);
+          if (upErr) throw upErr;
         }
       } else if (!wasUnassigned && isUnassigned) {
         // Was assigned, now unassigned - increment unassigned
@@ -108,10 +114,12 @@ Deno.serve(async (req) => {
             .eq('rep_email', oldLead.rep1);
 
           if (oldCounter && oldCounter.length > 0) {
-            await supabase
+            // supabase-js returns { error } instead of throwing — check it.
+            const { error: upErr } = await supabase
               .from('lead_counters')
               .update({ count: Math.max(0, oldCounter[0].count - 1) })
               .eq('id', oldCounter[0].id);
+            if (upErr) throw upErr;
           }
         }
         // Increment new rep

@@ -58,14 +58,19 @@ Deno.serve(async (req) => {
     if (leadId && callId) {
       try {
         const supabase = createServiceClient();
-        await supabase.from('call_logs').insert({
+        // supabase-js returns { error } instead of throwing — surface a failed
+        // log insert (the call itself already succeeded, so don't fail the request).
+        const { error: insErr } = await supabase.from('call_logs').insert({
           lead_id: leadId,
           phone_number: customerPhone,
           call_type: 'outbound',
           duration_seconds: 0,
           notes: `Call ID: ${callId}`,
         });
-      } catch {}
+        if (insErr) throw insErr;
+      } catch (logErr) {
+        console.error('Failed to log call to call_logs:', logErr);
+      }
     }
 
     return Response.json({ success: true, message: 'השיחה התחילה בהצלחה', callId }, { headers: corsHeaders });

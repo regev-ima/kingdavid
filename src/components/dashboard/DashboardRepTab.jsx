@@ -4,7 +4,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { TrendingUp, AlertTriangle, Trophy, Crown } from "lucide-react";
+import { TrendingUp, AlertTriangle, Crown } from "lucide-react";
 import UserAvatar from '@/components/shared/UserAvatar';
 
 const formatNumber = (num) => new Intl.NumberFormat('en-US').format(num || 0);

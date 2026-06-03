@@ -74,7 +74,7 @@ export default function ReturnDetails() {
     }
     // Re-init only when the record itself changes, so saves+refetches don't
     // clobber what the rep is currently typing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [returnReq?.id]);
   const saveField = (field, value) => {
     if ((returnReq?.[field] ?? '') !== value) updateReturnMutation.mutate({ [field]: value });

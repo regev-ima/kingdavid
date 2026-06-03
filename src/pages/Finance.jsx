@@ -145,7 +145,7 @@ export default function Finance() {
   const paidRevenue = useMemo(() => monthOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   const unpaidAmount = useMemo(() => monthOrders.filter(o => o.payment_status === 'unpaid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   // Tracked for completeness; not surfaced as a KPI card today.
-  // eslint-disable-next-line no-unused-vars
+   
   const depositAmount = useMemo(() => monthOrders.filter(o => o.payment_status === 'deposit_paid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   const refundedAmount = useMemo(
     () => returns.filter(r => r.refund_status === 'paid').reduce((s, r) => s + (r.refund_amount || 0), 0),

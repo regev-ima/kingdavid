@@ -81,7 +81,7 @@ export default function ShipmentDetails() {
         failure_reason: shipment.failure_reason ?? '',
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [shipment?.id]);
   const saveField = (field, value) => {
     if ((shipment?.[field] ?? '') !== value) updateShipmentMutation.mutate({ [field]: value });
