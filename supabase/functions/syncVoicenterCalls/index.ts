@@ -128,7 +128,12 @@ Deno.serve(async (req) => {
             minDate: dates[0] || null,
             maxDate: dates[dates.length - 1] || null,
             sampleKeys: cdrList[0] ? Object.keys(cdrList[0]) : [],
+            sampleRecord: cdrList[0] || null,
           };
+          // Short-circuit: debug only inspects what VoiceCenter returned — it
+          // does NOT import (the import loop is slow over a wide window and
+          // would time out). Return immediately so the diagnostics come back.
+          return Response.json({ success: true, debug: debugInfo, ...results }, { headers: corsHeaders });
         }
 
         if (cdrList.length > 0) {
@@ -222,6 +227,7 @@ Deno.serve(async (req) => {
         }
       } else if (debug) {
         debugInfo = { httpStatus: response.status, body: (await response.text()).slice(0, 500) };
+        return Response.json({ success: false, debug: debugInfo, ...results }, { headers: corsHeaders });
       }
     } catch (phase1Error) {
       // Phase 1 failed but we can still try phase 2
