@@ -221,44 +221,66 @@ export default function LeadManagement() {
     [salesReps],
   );
 
-  // Per-rep workload via exact COUNT queries (new + handling per rep) plus two
-  // team-wide totals. The previous version pulled every open lead and bucketed
-  // client-side, but it capped the fetch at 50k rows with no ordering — so on
-  // this 100k+ table it kept an arbitrary slice (effectively the oldest rows)
-  // and silently zeroed out any rep whose leads fell outside it: a rep with
-  // thousands of brand-new leads showed 0/0. COUNTs are exact, indexed, cached
-  // and run in parallel, the team is small so the fan-out stays modest, and the
-  // numbers track the selected date range just like the KPI tiles above.
+  // Per-rep workload via exact COUNT queries. For each rep (and team-wide) we
+  // count four buckets that PARTITION every lead assigned to the rep, so they
+  // sum to exactly what filtering the list by that rep shows:
+  //   • new      – status new_lead
+  //   • handling – open but no longer new: hot lead, follow-up before/after
+  //                quote, coming to branch, no-answer 1-5, changed direction, …
+  //   • won      – deal_closed
+  //   • lost     – every other closed status (not-relevant / disqualified / …)
+  // Rep match is rep1 OR rep2, mirroring the list filter, so each card's total
+  // reconciles with the filter count. COUNTs are exact, indexed, cached and run
+  // in parallel; the team is small so the fan-out stays modest, and every count
+  // honors the selected date range like the KPI tiles above. (The previous
+  // version pulled all open leads and bucketed client-side, but capped at 50k
+  // rows with no ordering — so on this 100k+ table it silently zeroed out reps
+  // whose leads fell outside the slice.)
   const repEmailsKey = useMemo(
     () => repsForPanel.map((r) => r.email).sort().join(','),
     [repsForPanel],
   );
-  const { data: workloadByRep = { byRep: new Map(), teamNew: 0, teamHandling: 0 } } = useQuery({
+  const EMPTY_WL = { newCount: 0, handlingCount: 0, wonCount: 0, lostCount: 0 };
+  const { data: workloadByRep = { byRep: new Map(), team: EMPTY_WL } } = useQuery({
     queryKey: ['leadMgmt-workload', fromIso, toIso, repEmailsKey],
     enabled: !!effectiveUser && isAdmin && repsForPanel.length > 0,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      const withRange = (conditions) => {
-        if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
-        return conditions.length === 1 ? conditions[0] : { $and: conditions };
+      const build = (conditions) => {
+        const all = [...conditions];
+        if (fromIso && toIso) all.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (all.length === 0) return {};
+        if (all.length === 1) return all[0];
+        return { $and: all };
       };
-      // "handling" = open but no longer brand-new (i.e. not closed and not new_lead).
-      const openNotNew = { $nin: [...CLOSED_STATUSES, 'new_lead'] };
+      // Four COUNTs per scope: total, new, won, closed. "handling" and "lost"
+      // are derived, so any open status that is neither new nor closed (e.g. a
+      // follow-up) still lands in "handling", and the buckets always sum to the
+      // total.
+      const countsFor = async (repEmail) => {
+        const base = repEmail ? [{ $or: [{ rep1: repEmail }, { rep2: repEmail }] }] : [];
+        const [total, newCount, wonCount, closedCount] = await Promise.all([
+          base44.entities.Lead.count(build(base)),
+          base44.entities.Lead.count(build([...base, { status: 'new_lead' }])),
+          base44.entities.Lead.count(build([...base, { status: 'deal_closed' }])),
+          base44.entities.Lead.count(build([...base, { status: { $in: CLOSED_STATUSES } }])),
+        ]);
+        return {
+          newCount,
+          handlingCount: Math.max(0, total - newCount - closedCount),
+          wonCount,
+          lostCount: Math.max(0, closedCount - wonCount),
+        };
+      };
       const emails = repsForPanel.map((r) => r.email);
-      const [teamNew, teamHandling, ...repCounts] = await Promise.all([
-        base44.entities.Lead.count(withRange([{ status: 'new_lead' }])),
-        base44.entities.Lead.count(withRange([{ status: openNotNew }])),
-        ...emails.flatMap((email) => [
-          base44.entities.Lead.count(withRange([{ rep1: email }, { status: 'new_lead' }])),
-          base44.entities.Lead.count(withRange([{ rep1: email }, { status: openNotNew }])),
-        ]),
+      const [team, ...repResults] = await Promise.all([
+        countsFor(null),
+        ...emails.map((email) => countsFor(email)),
       ]);
       const byRep = new Map();
-      emails.forEach((email, i) => {
-        byRep.set(email, { newCount: repCounts[i * 2], handlingCount: repCounts[i * 2 + 1] });
-      });
-      return { byRep, teamNew, teamHandling };
+      emails.forEach((email, i) => byRep.set(email, repResults[i]));
+      return { byRep, team };
     },
   });
 
@@ -498,14 +520,16 @@ export default function LeadManagement() {
             <RepWorkloadCard
               label="כל הצוות"
               avatar={<span className="h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">כל</span>}
-              newCount={workloadByRep.teamNew}
-              handlingCount={workloadByRep.teamHandling}
+              newCount={workloadByRep.team.newCount}
+              handlingCount={workloadByRep.team.handlingCount}
+              wonCount={workloadByRep.team.wonCount}
+              lostCount={workloadByRep.team.lostCount}
               isActive={filters.rep === 'all'}
               accent="indigo"
               onClick={() => setFilters((f) => ({ ...f, rep: 'all' }))}
             />
             {sortedReps.map((rep) => {
-              const wl = workloadByRep.byRep.get(rep.email) || { newCount: 0, handlingCount: 0 };
+              const wl = workloadByRep.byRep.get(rep.email) || EMPTY_WL;
               return (
                 <RepWorkloadCard
                   key={rep.email}
@@ -513,6 +537,8 @@ export default function LeadManagement() {
                   avatar={<UserAvatar user={rep} size="sm" />}
                   newCount={wl.newCount}
                   handlingCount={wl.handlingCount}
+                  wonCount={wl.wonCount}
+                  lostCount={wl.lostCount}
                   isActive={filters.rep === rep.email}
                   accent="emerald"
                   onClick={() => setFilters((f) => ({ ...f, rep: f.rep === rep.email ? 'all' : rep.email }))}
@@ -682,13 +708,22 @@ export default function LeadManagement() {
 }
 
 // ─── Rep workload card ──────────────────────────────────────────
-function RepWorkloadCard({ label, avatar, newCount, handlingCount, isActive, accent, onClick }) {
-  const total = newCount + handlingCount;
+function RepWorkloadCard({ label, avatar, newCount, handlingCount, wonCount, lostCount, isActive, accent, onClick }) {
+  const total = newCount + handlingCount + wonCount + lostCount;
   const tones = {
     indigo:  { active: 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-400',   total: 'text-indigo-700' },
     emerald: { active: 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400', total: 'text-emerald-700' },
   }[accent];
   const cardCls = isActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
+  // Four buckets that partition all of the rep's leads (sum to the total, which
+  // matches what filtering the list by this rep shows): open work (new +
+  // handling) and closed outcomes (won + lost).
+  const stats = [
+    { label: 'לידים חדשים',    value: newCount,      box: 'bg-sky-50',     text: 'text-sky-700',     sub: 'text-sky-700/80' },
+    { label: 'בטיפול',         value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80' },
+    { label: 'נסגר בהצלחה',    value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80' },
+    { label: 'נסגר ללא עסקה',  value: lostCount,     box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80' },
+  ];
   return (
     <button
       type="button"
@@ -700,14 +735,12 @@ function RepWorkloadCard({ label, avatar, newCount, handlingCount, isActive, acc
         <span className="text-xs font-semibold truncate flex-1" title={label}>{label}</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5 text-xs">
-        <div className="bg-sky-50 rounded p-1.5 text-center">
-          <p className="text-[10px] text-sky-700/80">לידים חדשים</p>
-          <p className="text-base font-bold text-sky-700 tabular-nums leading-tight">{fmt(newCount)}</p>
-        </div>
-        <div className="bg-amber-50 rounded p-1.5 text-center">
-          <p className="text-[10px] text-amber-700/80">משימות חזרה ללידים</p>
-          <p className="text-base font-bold text-amber-700 tabular-nums leading-tight">{fmt(handlingCount)}</p>
-        </div>
+        {stats.map((s) => (
+          <div key={s.label} className={`${s.box} rounded p-1.5 text-center`}>
+            <p className={`text-[10px] leading-tight ${s.sub}`}>{s.label}</p>
+            <p className={`text-base font-bold tabular-nums leading-tight ${s.text}`}>{fmt(s.value)}</p>
+          </div>
+        ))}
       </div>
       {total > 0 ? (
         <p className={`text-[10px] mt-1.5 font-semibold ${isActive ? tones.total : 'text-muted-foreground'}`}>
