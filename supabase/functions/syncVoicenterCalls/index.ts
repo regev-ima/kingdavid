@@ -75,6 +75,10 @@ Deno.serve(async (req) => {
     }
 
     const results = { newCalls: 0, pendingResolved: 0, errors: 0 };
+    // Captures the first write error so a silent insert/update failure is
+    // visible in the response (and in cron run history) instead of being
+    // miscounted as a successful sync.
+    let firstError: any = null;
 
     // Optional query params:
     //   ?debug=1   — return diagnostics about what Voicenter actually sent back
@@ -209,19 +213,33 @@ Deno.serve(async (req) => {
                 recording_url: call.recordurl || null,
               };
 
+              // supabase-js does NOT throw on a failed write — it returns
+              // { error }. Check it explicitly, otherwise a constraint/column
+              // failure is silently counted as a success (the original bug:
+              // "Synced N new calls" while nothing was actually written).
               if (existingCall && existingCall.length > 0) {
-                await supabase
+                const { error: upErr } = await supabase
                   .from('call_logs')
                   .update(callData)
                   .eq('id', existingCall[0].id);
+                if (upErr) throw upErr;
               } else {
-                await supabase
+                const { error: insErr } = await supabase
                   .from('call_logs')
                   .insert(callData);
+                if (insErr) throw insErr;
               }
               results.newCalls++;
-            } catch {
+            } catch (writeErr) {
               results.errors++;
+              if (!firstError) {
+                firstError = {
+                  message: (writeErr as any)?.message ?? String(writeErr),
+                  details: (writeErr as any)?.details ?? null,
+                  hint: (writeErr as any)?.hint ?? null,
+                  code: (writeErr as any)?.code ?? null,
+                };
+              }
             }
           }
         }
@@ -310,6 +328,7 @@ Deno.serve(async (req) => {
       success: true,
       message: `Synced ${results.newCalls} new calls, resolved ${results.pendingResolved} pending`,
       ...results,
+      ...(firstError ? { firstError } : {}),
       ...(debug ? { debug: debugInfo } : {}),
     }, { headers: corsHeaders });
 
