@@ -726,7 +726,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             <Button variant="outline" onClick={() => setShowPaymentScreen(false)} className="h-11">
               חזרה
             </Button>
-            <Button className="h-11 gap-2">
+            <Button
+              type="button"
+              className="h-11 gap-2"
+              onClick={() => toast('סליקת אשראי אינה מחוברת עדיין', { description: 'מסך זה הוא הדגמה — יש לחבר ספק סליקה (Hyp) לפני חיוב אמיתי.' })}
+            >
               <CreditCard className="h-4 w-4" />
               חייב ₪100
             </Button>
