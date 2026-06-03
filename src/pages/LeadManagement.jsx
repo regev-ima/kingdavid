@@ -221,41 +221,46 @@ export default function LeadManagement() {
     [salesReps],
   );
 
-  // Pull every open lead's `rep1` once and bucket client-side. One small
-  // query (head:false but select limited to two columns) and no per-rep
-  // fanout — keeps the workload panel snappy even on 100k+ tables and
-  // means the numbers track the active date range without N requests.
-  const { data: openLeadsForWorkload = [] } = useQuery({
-    queryKey: ['leadMgmt-workload', fromIso, toIso],
-    enabled: !!effectiveUser && isAdmin,
+  // Per-rep workload via exact COUNT queries (new + handling per rep) plus two
+  // team-wide totals. The previous version pulled every open lead and bucketed
+  // client-side, but it capped the fetch at 50k rows with no ordering — so on
+  // this 100k+ table it kept an arbitrary slice (effectively the oldest rows)
+  // and silently zeroed out any rep whose leads fell outside it: a rep with
+  // thousands of brand-new leads showed 0/0. COUNTs are exact, indexed, cached
+  // and run in parallel, the team is small so the fan-out stays modest, and the
+  // numbers track the selected date range just like the KPI tiles above.
+  const repEmailsKey = useMemo(
+    () => repsForPanel.map((r) => r.email).sort().join(','),
+    [repsForPanel],
+  );
+  const { data: workloadByRep = { byRep: new Map(), teamNew: 0, teamHandling: 0 } } = useQuery({
+    queryKey: ['leadMgmt-workload', fromIso, toIso, repEmailsKey],
+    enabled: !!effectiveUser && isAdmin && repsForPanel.length > 0,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      let q = base44.supabase
-        .from('leads')
-        .select('rep1, status')
-        .not('status', 'in', `(${CLOSED_STATUSES.join(',')})`)
-        .limit(50_000);
-      if (fromIso) q = q.gte('effective_sort_date', fromIso);
-      if (toIso)   q = q.lte('effective_sort_date', toIso);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data || [];
+      const withRange = (conditions) => {
+        if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        return conditions.length === 1 ? conditions[0] : { $and: conditions };
+      };
+      // "handling" = open but no longer brand-new (i.e. not closed and not new_lead).
+      const openNotNew = { $nin: [...CLOSED_STATUSES, 'new_lead'] };
+      const emails = repsForPanel.map((r) => r.email);
+      const [teamNew, teamHandling, ...repCounts] = await Promise.all([
+        base44.entities.Lead.count(withRange([{ status: 'new_lead' }])),
+        base44.entities.Lead.count(withRange([{ status: openNotNew }])),
+        ...emails.flatMap((email) => [
+          base44.entities.Lead.count(withRange([{ rep1: email }, { status: 'new_lead' }])),
+          base44.entities.Lead.count(withRange([{ rep1: email }, { status: openNotNew }])),
+        ]),
+      ]);
+      const byRep = new Map();
+      emails.forEach((email, i) => {
+        byRep.set(email, { newCount: repCounts[i * 2], handlingCount: repCounts[i * 2 + 1] });
+      });
+      return { byRep, teamNew, teamHandling };
     },
   });
-
-  const workloadByRep = useMemo(() => {
-    const map = new Map();
-    let teamNew = 0, teamHandling = 0;
-    for (const lead of openLeadsForWorkload) {
-      const rep = lead.rep1 || null;
-      if (!map.has(rep)) map.set(rep, { newCount: 0, handlingCount: 0 });
-      const row = map.get(rep);
-      if (lead.status === 'new_lead') { row.newCount += 1; teamNew += 1; }
-      else { row.handlingCount += 1; teamHandling += 1; }
-    }
-    return { byRep: map, teamNew, teamHandling };
-  }, [openLeadsForWorkload]);
 
   // ───────────────────────────────────────────────────────────────
   // Lead list + filtered count.
