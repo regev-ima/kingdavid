@@ -92,6 +92,9 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['service-ticket', ticketId] });
       queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
+      // Refresh the sidebar "new requests" badge so closing/resolving a ticket
+      // drops the count immediately instead of after the periodic refetch.
+      queryClient.invalidateQueries({ queryKey: ['service-new-count'] });
     },
   });
 

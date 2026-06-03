@@ -486,12 +486,16 @@ export default function Finance() {
 
   // Hebrew label for the comparison hint under each KPI ("vs last month" etc.)
   const periodCompareLabel =
-    dateRange === 'today'
+    dateRange === 'all'
+      ? ''
+      : dateRange === 'today'
       ? 'מול אתמול'
       : dateRange === 'week'
       ? 'מול שבוע שעבר'
       : dateRange === 'month'
       ? 'מול חודש שעבר'
+      : dateRange === 'previous_month'
+      ? 'מול חודשיים אחורה'
       : 'מול תקופה קודמת';
 
   return (
@@ -507,9 +511,11 @@ export default function Finance() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all">כל הזמן</SelectItem>
               <SelectItem value="today">היום</SelectItem>
               <SelectItem value="week">השבוע</SelectItem>
               <SelectItem value="month">החודש</SelectItem>
+              <SelectItem value="previous_month">חודש קודם</SelectItem>
               <SelectItem value="custom">טווח מותאם</SelectItem>
             </SelectContent>
           </Select>

@@ -127,12 +127,13 @@ function LayoutContent({ children, currentPageName }) {
     retry: 1,
   });
 
-  // Count of NEW service requests = customer-opened tickets still awaiting
-  // handling (status 'open'). Drives the badge on the מרכז שירות nav item;
-  // it clears naturally once a rep moves the ticket out of 'open'.
+  // Count of OPEN customer service requests (both those still awaiting the
+  // customer's fill and those the customer submitted and we haven't handled).
+  // Drives the badge on the מרכז שירות nav item; resolving/closing a ticket
+  // moves it out of 'open' and drops the count.
   const { data: newServiceCount = 0 } = useQuery({
     queryKey: ['service-new-count'],
-    queryFn: () => base44.entities.SupportTicket.count({ status: 'open', opened_by_customer: true }),
+    queryFn: () => base44.entities.SupportTicket.count({ status: 'open', source: 'customer_self' }),
     staleTime: 60 * 1000,
     refetchInterval: 2 * 60 * 1000,
     enabled: !!user,
