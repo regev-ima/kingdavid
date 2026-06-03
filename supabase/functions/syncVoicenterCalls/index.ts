@@ -86,20 +86,28 @@ Deno.serve(async (req) => {
     //                (the date window used, how many CDRs came, and their
     //                min/max dates) instead of relying on the DB to guess.
     //   ?days=N    — widen the import window to the last N days instead of the
-    //                default 30 minutes. Doubles as a one-off backfill.
+    //                default 30 minutes.
+    //   ?from&?to  — explicit ISO datetimes for a precise window. Used by the
+    //                chunked backfill (one call per day) so each window stays
+    //                under VoiceCenter's ~10k-record-per-response cap.
     const reqUrl = new URL(req.url);
     const debug = reqUrl.searchParams.get('debug') === '1';
     const days = Math.max(0, parseInt(reqUrl.searchParams.get('days') || '0', 10) || 0);
+    const fromParam = reqUrl.searchParams.get('from');
+    const toParam = reqUrl.searchParams.get('to');
     let debugInfo: any = null;
 
     // --- PHASE 1: Import new calls from VoiceCenter CDR ---
     try {
       const now = new Date();
-      const windowStart = days > 0
+      const windowStart = fromParam
+        ? new Date(fromParam)
+        : days > 0
         ? new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
         : new Date(now.getTime() - 30 * 60 * 1000);
+      const windowEnd = toParam ? new Date(toParam) : now;
       const fromDate = windowStart.toISOString().slice(0, 19);
-      const toDate = now.toISOString().slice(0, 19);
+      const toDate = windowEnd.toISOString().slice(0, 19);
 
       const apiUrl = new URL('http://46.224.211.60/hub/cdr/');
       apiUrl.searchParams.append('code', voicenterApiKey);
