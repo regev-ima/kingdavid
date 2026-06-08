@@ -31,6 +31,11 @@ async function fetchDashboard2Snapshot({ start, end }) {
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const nowIso = new Date().toISOString();
+  // "לידים שטרם טופלו" — entry-status leads (new_lead) that arrived over 24h
+  // ago and still haven't been triaged. A live "right now" backlog metric,
+  // deliberately NOT bounded by the dashboard's selected date range (mirrors
+  // openLeadsTotal / noAnswerLeads, which are also current-state counts).
+  const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const ticketOpenStatuses = ['open', 'in_progress', 'waiting_customer'];
   const ticketClosedStatuses = ['resolved', 'closed'];
@@ -40,6 +45,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
     newLeadsCount,
     openLeadsTotal,
     noAnswerLeads,
+    untouchedLeads,
     ordersCount,
     unpaidOrders,
     paidOrders,
@@ -60,6 +66,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
     base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }),
     base44.entities.Lead.count({ status: { $nin: CLOSED_STATUSES } }),
     base44.entities.Lead.count({ status: { $in: NO_ANSWER_STATUSES } }),
+    base44.entities.Lead.count({ status: 'new_lead', created_date: { $lt: dayAgoIso } }),
     base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }),
     base44.entities.Order.count({ payment_status: { $in: ['unpaid', 'deposit_paid'] } }),
     base44.entities.Order.count({ payment_status: 'paid', created_date: { $gte: startIso, $lte: endIso } }),
@@ -157,6 +164,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
     newLeadsCount,
     openLeadsTotal,
     noAnswerLeads,
+    untouchedLeads,
     conversion: Number(summary?.conversion?.value || 0),
     revenue,
     ordersCount,

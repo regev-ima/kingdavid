@@ -208,7 +208,7 @@ export default function SalesTasks() {
     return c.toISOString();
   }, []);
 
-  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 } } = useQuery({
+  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0, untouchedLeads: 0 } } = useQuery({
     queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
@@ -269,6 +269,24 @@ export default function SalesTasks() {
         assignmentHead(),
         staleAssignmentHiddenHead(),
       ]);
+
+      // "לידים שטרם טופלו" — leads still sitting in the entry status
+      // (new_lead) that arrived over 24h ago and nobody has triaged yet.
+      // This is a lead-level metric (a different table from sales_tasks),
+      // scoped to the same rep as the rest of this page's counts. "Handled"
+      // is defined by status moving off new_lead — the moment a rep acts on
+      // a lead they change its status, so a lead still on new_lead = untouched.
+      const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      let untouchedQ = base44.supabase
+        .from('leads')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'new_lead')
+        .lt('created_date', dayAgoIso);
+      if (!isAdmin && userEmail) {
+        untouchedQ = untouchedQ.or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+      }
+      const { count: untouchedLeads } = await untouchedQ;
+
       return {
         total: total - staleOpenHidden,
         open: open - staleOpenHidden,
@@ -280,6 +298,7 @@ export default function SalesTasks() {
         completedToday,
         assignmentOpen,
         staleAssignmentHidden,
+        untouchedLeads: untouchedLeads || 0,
       };
     },
   });
@@ -631,6 +650,7 @@ export default function SalesTasks() {
   const upcomingCount = counts.upcoming;
   const undatedCount = counts.undated;
   const completedTodayCount = counts.completedToday;
+  const untouchedLeadsCount = counts.untouchedLeads;
   // Compare the auth-side cached counters against the server-side counts.
   // The 5th-arg shape matches what scopedTaskMetrics.counts used to expose.
   const counterMismatches = useMemo(
@@ -1063,12 +1083,13 @@ export default function SalesTasks() {
           tone is muted (subtle gray surface, low-contrast value) and a
           tile lights up to its full accent colour only when active or
           on hover, so the rep can see at a glance which filter is on. */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
           { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
           { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
           { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2 },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
+          { id: 'untouched_leads', label: 'לידים שטרם טופלו', value: untouchedLeadsCount, tone: 'rose', icon: Users, readOnly: true },
         ].map((tile) => {
           const target = tile.asTab || tile.id;
           const isActive = !tile.readOnly && activeTab === target;

@@ -51,6 +51,7 @@ export default function OverviewTab({ current = {}, previous = {}, dateRange, on
           <MiniKPI label="חדשים בטווח" value={current.newLeadsCount} color="blue" onClick={() => goTo('Leads', { tab: 'all' })} />
           <MiniKPI label="פתוחים סה״כ" value={current.openLeadsTotal} color="indigo" onClick={() => goTo('Leads', { tab: 'open' })} />
           <MiniKPI label="ללא מענה" value={current.noAnswerLeads} color="amber" onClick={() => goTo('Leads', { tab: 'open' })} />
+          <MiniKPI label="טרם טופלו" value={current.untouchedLeads} color="red" onClick={() => goTo('Leads', { status: 'new_lead' })} />
           <MiniKPI label="המרה" value={`${Number(current.conversion || 0).toFixed(0)}%`} color="emerald" />
         </div>
         <MiniSparkline data={current.leadsTrend || []} color="#3b82f6" valueLabel="לידים" />
