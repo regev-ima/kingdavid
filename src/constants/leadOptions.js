@@ -45,6 +45,15 @@ export const CLOSED_STATUSES = [
   'not_relevant_wrong_number', 'closed_by_manager_to_mailing'
 ];
 
+// ==================== Go-Live Cutoff ====================
+
+// Backlog counters (e.g. "לידים שטרם טופלו") ignore anything created before
+// this date, so the historical/imported pile that was never meant to be
+// worked live doesn't drown the real, post-go-live numbers. Records created
+// on or after this date are counted normally. Bump this to re-baseline —
+// nothing in the data is mutated, so it's fully reversible.
+export const GO_LIVE_DATE = '2026-06-07';
+
 // ==================== Lead Sources ====================
 
 export const LEAD_SOURCE_OPTIONS = [
