@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -114,6 +116,7 @@ const CATEGORY_ICON = {
 const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
 
 export default function SalesTasks() {
+  const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
@@ -1089,7 +1092,7 @@ export default function SalesTasks() {
           { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
           { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2 },
           { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
-          { id: 'untouched_leads', label: 'לידים שטרם טופלו', value: untouchedLeadsCount, tone: 'rose', icon: Users, readOnly: true },
+          { id: 'untouched_leads', label: 'לידים שטרם טופלו', value: untouchedLeadsCount, tone: 'rose', icon: Users, onClick: () => navigate(`${createPageUrl('Leads')}?status=new_lead`), title: 'הצג לידים שטרם טופלו' },
         ].map((tile) => {
           const target = tile.asTab || tile.id;
           const isActive = !tile.readOnly && activeTab === target;
@@ -1102,8 +1105,8 @@ export default function SalesTasks() {
               tone={tile.tone}
               active={isActive}
               disabled={tile.readOnly}
-              onClick={tile.readOnly ? undefined : () => setActiveTab(isActive ? 'all' : target)}
-              title={tile.readOnly ? undefined : (isActive ? 'בטל סינון' : `הצג ${tile.label}`)}
+              onClick={tile.onClick || (tile.readOnly ? undefined : () => setActiveTab(isActive ? 'all' : target))}
+              title={tile.title || (tile.readOnly ? undefined : (isActive ? 'בטל סינון' : `הצג ${tile.label}`))}
             />
           );
         })}
