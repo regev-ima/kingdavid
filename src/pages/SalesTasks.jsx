@@ -63,7 +63,7 @@ import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdm
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
 import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
-import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { SOURCE_LABELS, SLA_THRESHOLDS, GO_LIVE_DATE } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
 // Sales-return categories, per the rep workflow brief. Each category is
@@ -279,11 +279,14 @@ export default function SalesTasks() {
       // scoped to the same rep as the rest of this page's counts. "Handled"
       // is defined by status moving off new_lead — the moment a rep acts on
       // a lead they change its status, so a lead still on new_lead = untouched.
+      // Floored at GO_LIVE_DATE so the historical/imported pile of never-triaged
+      // leads doesn't drown the real, post-go-live backlog.
       const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       let untouchedQ = base44.supabase
         .from('leads')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'new_lead')
+        .gte('created_date', GO_LIVE_DATE)
         .lt('created_date', dayAgoIso);
       if (!isAdmin && userEmail) {
         untouchedQ = untouchedQ.or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);

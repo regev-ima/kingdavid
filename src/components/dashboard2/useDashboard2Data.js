@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { CLOSED_STATUSES } from '@/constants/leadOptions';
+import { CLOSED_STATUSES, GO_LIVE_DATE } from '@/constants/leadOptions';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 // Lead statuses that mean "open / not yet decided". Used for the
@@ -35,6 +35,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
   // ago and still haven't been triaged. A live "right now" backlog metric,
   // deliberately NOT bounded by the dashboard's selected date range (mirrors
   // openLeadsTotal / noAnswerLeads, which are also current-state counts).
+  // Floored at GO_LIVE_DATE so the historical/imported pile is excluded.
   const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const ticketOpenStatuses = ['open', 'in_progress', 'waiting_customer'];
@@ -66,7 +67,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
     base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }),
     base44.entities.Lead.count({ status: { $nin: CLOSED_STATUSES } }),
     base44.entities.Lead.count({ status: { $in: NO_ANSWER_STATUSES } }),
-    base44.entities.Lead.count({ status: 'new_lead', created_date: { $lt: dayAgoIso } }),
+    base44.entities.Lead.count({ status: 'new_lead', created_date: { $gte: GO_LIVE_DATE, $lt: dayAgoIso } }),
     base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }),
     base44.entities.Order.count({ payment_status: { $in: ['unpaid', 'deposit_paid'] } }),
     base44.entities.Order.count({ payment_status: 'paid', created_date: { $gte: startIso, $lte: endIso } }),
