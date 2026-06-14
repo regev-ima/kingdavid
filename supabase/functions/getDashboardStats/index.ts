@@ -42,6 +42,24 @@ function parseDateLoose(value: unknown) {
 
 function isLeadWon(status: unknown) { return normalizeLower(status) === 'deal_closed'; }
 
+const CLOSED_LEAD_STATUS_SET = new Set(CLOSED_LEAD_STATUSES);
+// "Lost" = any terminal status that isn't a win, so a source/campaign can
+// report real סגירה/בטיפול/אבד instead of lumping everything not-won as lost.
+function isLeadClosed(status: unknown) { return CLOSED_LEAD_STATUS_SET.has(normalizeLower(status)); }
+
+// Where did the lead come from? Prefer explicit utm_source/source, but
+// Facebook lead-form leads frequently arrive with no utm_source while
+// carrying facebook_* metadata — attribute those by platform so they don't
+// all collapse into "אחר". Returns '' when nothing is known (→ normalizeSource → other).
+function deriveSource(lead: any) {
+  const explicit = normalizeString(lead?.utm_source) || normalizeString(lead?.source);
+  if (explicit) return explicit;
+  const platform = normalizeLower(lead?.facebook_platform);
+  if (platform) return platform; // 'facebook' / 'instagram'
+  if (lead?.facebook_lead_id || lead?.facebook_form_id || lead?.facebook_ad_id || lead?.facebook_campaign_id) return 'facebook';
+  return '';
+}
+
 function normalizeSource(source: unknown) {
   const v = normalizeLower(source);
   if (!v) return 'other';
@@ -244,37 +262,43 @@ Deno.serve(async (req) => {
     const landingPageMap = new Map();
 
     const getSourceRow = (source: string) => {
-      if (!sourceMap.has(source)) sourceMap.set(source, { source, leads: 0, won: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
+      if (!sourceMap.has(source)) sourceMap.set(source, { source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
       return sourceMap.get(source);
     };
     const getCampaignRow = (campaign: string, source = 'other') => {
-      if (!campaignMap.has(campaign)) campaignMap.set(campaign, { campaign, source, leads: 0, won: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
+      if (!campaignMap.has(campaign)) campaignMap.set(campaign, { campaign, source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
       const row = campaignMap.get(campaign);
       if (row.source === 'other' && source !== 'other') row.source = source;
       return row;
     };
     const getLandingPageRow = (lp: string, source = 'other') => {
-      if (!landingPageMap.has(lp)) landingPageMap.set(lp, { landing_page: lp, source, leads: 0, won: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0 });
+      if (!landingPageMap.has(lp)) landingPageMap.set(lp, { landing_page: lp, source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0 });
       const row = landingPageMap.get(lp);
       if (row.source === 'other' && source !== 'other') row.source = source;
       return row;
     };
 
     rangeLeads.forEach((lead: any) => {
-      const source = normalizeSource(lead.utm_source || lead.source);
-      const campaign = normalizeCampaign(lead.utm_campaign);
+      const source = normalizeSource(deriveSource(lead));
+      const campaign = normalizeCampaign(lead.utm_campaign || lead.facebook_campaign_name);
       const lp = normalizeString(lead.landing_page) || 'ללא דף נחיתה';
-      getSourceRow(source).leads += 1;
-      getCampaignRow(campaign, source).leads += 1;
-      getLandingPageRow(lp, source).leads += 1;
-      if (isLeadWon(lead.status)) { getSourceRow(source).won += 1; getCampaignRow(campaign, source).won += 1; getLandingPageRow(lp, source).won += 1; }
-      if (leadsWithQuoteRange.has(lead.id)) { getSourceRow(source).quote_sent += 1; getCampaignRow(campaign, source).quote_sent += 1; getLandingPageRow(lp, source).quote_sent += 1; }
+      const sRow = getSourceRow(source);
+      const cRow = getCampaignRow(campaign, source);
+      const lRow = getLandingPageRow(lp, source);
+      sRow.leads += 1; cRow.leads += 1; lRow.leads += 1;
+      // Classify won / lost / still-in-handling so each row exposes real
+      // סגירה/בטיפול/אבד rates (won = deal_closed, lost = any other closed
+      // status, open = everything still live in the pipeline).
+      if (isLeadWon(lead.status)) { sRow.won += 1; cRow.won += 1; lRow.won += 1; }
+      else if (isLeadClosed(lead.status)) { sRow.lost += 1; cRow.lost += 1; lRow.lost += 1; }
+      else { sRow.open += 1; cRow.open += 1; lRow.open += 1; }
+      if (leadsWithQuoteRange.has(lead.id)) { sRow.quote_sent += 1; cRow.quote_sent += 1; lRow.quote_sent += 1; }
     });
 
     rangeOrders.forEach((order: any) => {
       const lead = order.lead_id ? rangeLeadsById.get(order.lead_id) : null;
-      const source = normalizeSource(lead?.utm_source || lead?.source || order.source);
-      const campaign = normalizeCampaign(lead?.utm_campaign);
+      const source = normalizeSource((lead && deriveSource(lead)) || order.source);
+      const campaign = normalizeCampaign(lead?.utm_campaign || lead?.facebook_campaign_name);
       const lp = normalizeString(lead?.landing_page) || 'ללא דף נחיתה';
       const total = safeNumber(order.total);
       getSourceRow(source).attributed_revenue += total;
