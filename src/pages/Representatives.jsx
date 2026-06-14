@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw } from "lucide-react";
+import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, KeyRound } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
@@ -39,6 +39,7 @@ export default function Representatives() {
   const [inviteRole, setInviteRole] = useState('sales_user');
   const [selectedRep, setSelectedRep] = useState(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [resettingEmail, setResettingEmail] = useState(null);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [repToDeactivate, setRepToDeactivate] = useState(null);
   const [transferToRep, setTransferToRep] = useState('');
@@ -334,6 +335,25 @@ export default function Representatives() {
     setColumnMapping({});
     setAvailableColumns([]);
     setStep(1);
+  };
+
+  // Admin-triggered password reset: we don't set a password for the rep
+  // (that needs service-role server access). Instead we send them the same
+  // reset-password email the login screen uses, and they pick a new one.
+  const handleResetPassword = async (rep) => {
+    if (!rep?.email) return;
+    setResettingEmail(rep.email);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(rep.email, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) throw error;
+      toast.success(`נשלח מייל לאיפוס סיסמה ל-${rep.email}`);
+    } catch (err) {
+      toast.error(`שליחת מייל האיפוס נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+    } finally {
+      setResettingEmail(null);
+    }
   };
 
   const handleImpersonate = (rep) => {
@@ -992,7 +1012,7 @@ export default function Representatives() {
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נציג</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">תפקיד</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">מספר שלוחה</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון</th>
+                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון נייד</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">עמלה (%)</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">סה"כ לידים</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעילים</th>
@@ -1010,8 +1030,21 @@ export default function Representatives() {
                       <div className="flex items-center gap-3">
                         <UserAvatar user={rep} size="sm" />
                         <div>
-                          <div className="font-medium text-sm text-foreground">{rep.full_name}</div>
-                          <div className="text-xs text-muted-foreground">{rep.email}</div>
+                          {/* Name is editable; saves on blur (not per keystroke)
+                              so we don't fire an update + toast for every letter. */}
+                          <Input
+                            defaultValue={rep.full_name || ''}
+                            key={`name-${rep.id}-${rep.full_name || ''}`}
+                            onBlur={(e) => {
+                              const v = e.target.value.trim();
+                              if (v && v !== (rep.full_name || '')) {
+                                updateRepMutation.mutate({ repId: rep.id, data: { full_name: v } });
+                              }
+                            }}
+                            placeholder="שם הנציג"
+                            className="h-7 text-sm font-medium w-44 px-2"
+                          />
+                          <div className="text-xs text-muted-foreground mt-0.5 px-2">{rep.email}</div>
                         </div>
                       </div>
                     </td>
@@ -1119,6 +1152,20 @@ export default function Representatives() {
                         >
                           <Eye className="h-3.5 w-3.5 me-1" />
                           התחזה
+                        </Button>
+                        <Button
+                          onClick={() => handleResetPassword(rep)}
+                          variant="outline"
+                          size="sm"
+                          disabled={resettingEmail === rep.email}
+                          className="text-amber-700 border-amber-200 hover:bg-amber-50 h-8 px-3"
+                          title="שלח לנציג מייל לאיפוס סיסמה"
+                        >
+                          {resettingEmail === rep.email ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <KeyRound className="h-3.5 w-3.5" />
+                          )}
                         </Button>
                         {rep.email !== user?.email && (
                           <Button
