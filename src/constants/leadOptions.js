@@ -73,6 +73,20 @@ export const TASK_TYPE_LABELS = Object.fromEntries(
   TASK_TYPE_OPTIONS.map(t => [t.value, t.label])
 );
 
+// Display labels for EVERY task type the system may produce — including
+// ones that aren't offered in the "new task" dropdown (TASK_TYPE_OPTIONS):
+// system-generated `assignment` tasks, follow-ups, and legacy/imported
+// types (whatsapp / email / other). Use this for rendering a task type;
+// use TASK_TYPE_OPTIONS only for the manual-create picker.
+export const ALL_TASK_TYPE_LABELS = {
+  ...TASK_TYPE_LABELS,
+  assignment: 'שיוך',
+  followup: 'מעקב',
+  whatsapp: 'וואטסאפ',
+  email: 'מייל',
+  other: 'אחר',
+};
+
 // ==================== Task Statuses ====================
 
 export const TASK_STATUS_OPTIONS = [
