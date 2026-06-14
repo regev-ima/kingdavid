@@ -76,7 +76,7 @@ function rangeKeyFromDates(startIso, endIso, now = new Date()) {
     return Math.abs(r.start.getTime() - start.getTime()) < 1000
       && Math.abs(r.end.getTime() - end.getTime()) < 1000;
   };
-  return ['today', 'yesterday', 'week', 'month', '90days', 'year'].find(matches) || 'custom';
+  return ['today', 'yesterday', 'week', 'month', '7days', '30days', '60days', '90days', 'year'].find(matches) || 'custom';
 }
 
 export default function Orders() {

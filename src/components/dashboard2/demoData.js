@@ -44,9 +44,13 @@ function periodDaysFor(rangeKey, customRange) {
     case 'yesterday':
       return 1;
     case 'week':
+    case '7days':
       return 7;
     case 'month':
+    case '30days':
       return 30;
+    case '60days':
+      return 60;
     case '90days':
       return 90;
     case 'year':
