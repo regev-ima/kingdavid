@@ -88,6 +88,26 @@ const LIFECYCLE_SCOPES = {
   lc_lost: { status: { $in: LOST_STATUSES } },
 };
 
+// The individual statuses that make up "בטיפול" — the working pipeline a
+// manager wants to see broken down when they drill into handling (hot lead,
+// follow-ups, the no-answer ladder, …). Derived from the canonical option list
+// minus new_lead and the closed statuses, so it stays in lifecycle order and
+// in sync if the option list changes.
+const HANDLING_STATUSES = LEAD_STATUS_OPTIONS.filter(
+  (o) => o.value !== 'new_lead' && !CLOSED_STATUSES.includes(o.value),
+);
+
+// Colour grouping for the handling status cubes, so the manager reads the
+// pipeline at a glance: hot = rose, follow-ups = amber, branch visit = emerald,
+// changed direction = violet, the whole no-answer ladder = slate.
+function handlingStatusTone(value) {
+  if (value === 'hot_lead') return { box: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-400 border-rose-500' };
+  if (value.startsWith('followup')) return { box: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-400 border-amber-500' };
+  if (value === 'coming_to_branch') return { box: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-400 border-emerald-500' };
+  if (value === 'changed_direction') return { box: 'bg-violet-50', text: 'text-violet-700', ring: 'ring-violet-400 border-violet-500' };
+  return { box: 'bg-slate-50', text: 'text-slate-700', ring: 'ring-slate-400 border-slate-500' };
+}
+
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
@@ -397,6 +417,35 @@ export default function LeadManagement() {
   });
 
   // ───────────────────────────────────────────────────────────────
+  // "בטיפול" status breakdown. When a handling scope is active, count each
+  // working status (hot / follow-ups / no-answer ladder / …) within the SAME
+  // rep + date + source + search context as the list, so a manager sees where
+  // the in-handling pipeline actually sits. Each cube reuses buildLeadsQuery
+  // with a single status, so clicking it (which sets filters.status) opens a
+  // list whose count equals the cube. `__total` lets us surface an "אחר"
+  // remainder for non-standard / custom statuses so the cubes reconcile.
+  // ───────────────────────────────────────────────────────────────
+  const handlingBreakdownActive = scope === 'handling' || scope === 'lc_handling';
+  const { data: statusBreakdown = {} } = useQuery({
+    queryKey: ['leadMgmt-handling-breakdown', isAdmin, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso],
+    enabled: !!effectiveUser && handlingBreakdownActive,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: async () => {
+      const ctx = (status, forcedScope) => buildLeadsQuery({
+        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, isAdmin, windows,
+      });
+      const [total, ...perStatus] = await Promise.all([
+        base44.entities.Lead.count(ctx('all', 'handling')),
+        ...HANDLING_STATUSES.map((s) => base44.entities.Lead.count(ctx(s.value, 'all'))),
+      ]);
+      const out = { __total: total };
+      HANDLING_STATUSES.forEach((s, i) => { out[s.value] = perStatus[i]; });
+      return out;
+    },
+  });
+
+  // ───────────────────────────────────────────────────────────────
   // Infinite-scroll sentinel. Append rows in place without scroll jump.
   // ───────────────────────────────────────────────────────────────
   const hasMore = leads.length >= limit && (filteredCount == null || leads.length < filteredCount);
@@ -497,18 +546,27 @@ export default function LeadManagement() {
 
   const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== 'all' || scope !== 'all';
 
+  // Switch the active scope (toggling off if it's already active). Scopes are
+  // status/assignment-defined, so a lingering status filter (e.g. one picked
+  // from the handling breakdown) would contradict them — clear it on change.
+  const toggleScope = (id) => {
+    setScope((curr) => (curr === id ? 'all' : id));
+    setFilters((f) => (f.status === 'all' ? f : { ...f, status: 'all' }));
+  };
+
   // Drill into a rep workload card. `bucketScope` is null for the header (just
   // filter the list to this rep) or a lifecycle scope id for a specific bucket
   // (rep + that status bucket). Re-clicking the active target clears it. Both
   // the rep filter and the scope respect the selected date range, so the list
-  // that opens always matches the number shown on the card.
+  // that opens always matches the number shown on the card. The status filter
+  // is cleared so a leftover pick doesn't contradict the bucket's status set.
   const selectRepBucket = (repEmail, bucketScope) => {
     const isActive = filters.rep === repEmail && scope === (bucketScope || 'all');
     if (isActive) {
-      setFilters((f) => ({ ...f, rep: 'all' }));
+      setFilters((f) => ({ ...f, rep: 'all', status: 'all' }));
       setScope('all');
     } else {
-      setFilters((f) => ({ ...f, rep: repEmail }));
+      setFilters((f) => ({ ...f, rep: repEmail, status: 'all' }));
       setScope(bucketScope || 'all');
     }
   };
@@ -596,14 +654,14 @@ export default function LeadManagement() {
             icon={tile.icon}
             desc={tile.desc}
             isActive={scope === tile.id}
-            onClick={() => setScope((curr) => (curr === tile.id ? 'all' : tile.id))}
+            onClick={() => toggleScope(tile.id)}
           />
         ))}
         <NewLeadsCube
           nightCount={kpiCounts.newNightCount}
           dayCount={kpiCounts.newDayCount}
           scope={scope}
-          onSelect={(id) => setScope((curr) => (curr === id ? 'all' : id))}
+          onSelect={toggleScope}
         />
       </div>
 
@@ -689,6 +747,16 @@ export default function LeadManagement() {
             setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
             setScope('all');
           }}
+        />
+      ) : null}
+
+      {/* "בטיפול" status breakdown — a manager's-eye view of where the
+          in-handling pipeline sits, each status clickable to narrow the list. */}
+      {handlingBreakdownActive ? (
+        <HandlingStatusBreakdown
+          counts={statusBreakdown}
+          activeStatus={filters.status}
+          onSelect={(st) => setFilters((f) => ({ ...f, status: f.status === st ? 'all' : st }))}
         />
       ) : null}
 
@@ -896,6 +964,63 @@ function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── "בטיפול" status breakdown ──────────────────────────────────
+// Renders in the purple summary area when a handling scope is active. One cube
+// per working status, colour-grouped for a quick read, each clickable to narrow
+// the list to that status. An "אחר" cube absorbs any non-standard / custom
+// handling statuses so the cubes reconcile with the בטיפול total.
+function HandlingStatusBreakdown({ counts, activeStatus, onSelect }) {
+  const total = counts.__total;
+  const knownSum = HANDLING_STATUSES.reduce((acc, s) => acc + (counts[s.value] || 0), 0);
+  const other = total != null ? Math.max(0, total - knownSum) : 0;
+  return (
+    <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-l from-primary/10 to-primary/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
+            <Hourglass className="h-3.5 w-3.5" />
+          </span>
+          <span className="text-sm font-semibold text-foreground">פילוח &quot;בטיפול&quot; לפי סטטוס</span>
+          {total != null ? (
+            <span className="text-xs text-muted-foreground">({fmt(total)} בטיפול)</span>
+          ) : null}
+        </div>
+        <span className="text-[11px] text-muted-foreground">לחץ סטטוס לצמצום הרשימה</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+        {HANDLING_STATUSES.map((s) => {
+          const tone = handlingStatusTone(s.value);
+          const active = activeStatus === s.value;
+          const value = counts[s.value];
+          return (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => onSelect(s.value)}
+              title={s.label}
+              className={`${tone.box} text-right rounded-lg border p-2 transition-all ${active ? `ring-2 ${tone.ring}` : 'border-transparent hover:brightness-95'}`}
+            >
+              <p className="text-[10px] leading-tight text-muted-foreground">{s.label}</p>
+              <p className={`text-lg font-bold tabular-nums leading-tight ${tone.text}`}>
+                {value == null ? '…' : fmt(value)}
+              </p>
+            </button>
+          );
+        })}
+        {other > 0 ? (
+          <div
+            className="bg-slate-50 text-right rounded-lg border border-transparent p-2"
+            title="סטטוסים אחרים בטיפול (כולל מותאמים אישית)"
+          >
+            <p className="text-[10px] leading-tight text-muted-foreground">אחר</p>
+            <p className="text-lg font-bold tabular-nums leading-tight text-slate-700">{fmt(other)}</p>
+          </div>
+        ) : null}
       </div>
     </div>
   );
