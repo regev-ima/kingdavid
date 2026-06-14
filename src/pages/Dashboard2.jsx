@@ -164,6 +164,18 @@ export default function Dashboard2() {
   const isLoading = !demoMode && currentQuery.isLoading && !currentQuery.data;
   const isFetching = !demoMode && (currentQuery.isFetching || previousQuery.isFetching);
 
+  // Surface partial-load failures honestly. The snapshot now catches each
+  // sub-query, so instead of the whole dashboard silently blanking to 0 when
+  // (say) the stats Edge Function 500s, the parts that loaded show real data
+  // and a banner names what failed. `currentQuery.error` covers the rare case
+  // where the query rejects entirely (something outside the per-call guards).
+  const dataErrors = demoMode
+    ? []
+    : [
+        ...(currentQuery.data?._errors || []),
+        ...(currentQuery.error ? [{ source: 'dashboard', message: currentQuery.error.message || String(currentQuery.error) }] : []),
+      ];
+
   return (
     <div className="space-y-4" dir="rtl">
       {isFetching && !isLoading ? (
@@ -190,6 +202,27 @@ export default function Dashboard2() {
         <LoadingState />
       ) : (
         <>
+          {dataErrors.length > 0 ? (
+            <div
+              className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-4 py-3 flex items-start justify-between gap-3"
+              title={dataErrors.map((e) => `${e.source}: ${e.message}`).join('\n')}
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">חלק מהנתונים לא נטענו — ייתכן שחלק מהמספרים חסרים או חלקיים.</p>
+                <p className="text-xs text-amber-800/80 mt-0.5 truncate">
+                  מקורות שנכשלו: {dataErrors.map((e) => e.source).join(' · ')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRefresh}
+                className="shrink-0 text-xs font-semibold rounded-lg border border-amber-400 bg-white/70 px-3 py-1.5 hover:bg-white transition-colors"
+              >
+                נסה שוב
+              </button>
+            </div>
+          ) : null}
+
           <HeroStrip current={current} previous={previous} dateRange={dateRange} rangeKey={rangeKey} />
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4" dir="rtl">
