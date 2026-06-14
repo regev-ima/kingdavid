@@ -38,10 +38,12 @@ const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
-// "New leads" are triaged in two operational shifts, anchored to Israel
-// wall-clock time regardless of the viewer's device timezone:
+// "New leads" are triaged over a 20:00→20:00 cycle, split into two
+// operational shifts, all anchored to Israel wall-clock time regardless of
+// the viewer's device timezone:
 //   • night → previous day 20:00 until today 08:00
 //   • day   → today 08:00 until today 20:00
+//   • cycle → previous day 20:00 until today 20:00 (night + day)
 // Boundaries are constructed in Asia/Jerusalem and returned as UTC ISO
 // strings so they can be handed straight to an effective_sort_date range
 // filter. Negative/overflowing day numbers (e.g. the 0th of a month) are
@@ -55,7 +57,15 @@ function israelShiftWindows(now = new Date()) {
   return {
     night: { from: at(d - 1, 20), to: at(d, 8) },
     day: { from: at(d, 8), to: at(d, 20) },
+    cycle: { from: at(d - 1, 20), to: at(d, 20) },
   };
+}
+
+// effective_sort_date condition for a half-open [from, to) window. Half-open
+// so the night and day shifts partition the cycle with no double-counting at
+// the shared 08:00 / 20:00 boundaries (cycle total === night + day exactly).
+function windowCond(w) {
+  return { effective_sort_date: { $gte: w.from, $lt: w.to } };
 }
 
 // Statuses that mean a lead has moved past the "new_lead" stage but isn't
@@ -70,10 +80,10 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
   const hasRange = startDate && endDate && !Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime());
-  // The night/day shift scopes carry their OWN fixed time window, so they
+  // The "new leads" shift scopes carry their OWN fixed time window, so they
   // ignore the page-level date-range picker (intersecting the two would be
   // confusing and usually empty). Every other scope honors the picker.
-  const isShiftScope = scope === 'new_night' || scope === 'new_day';
+  const isShiftScope = scope === 'new_night' || scope === 'new_day' || scope === 'new_cycle';
 
   if (!isAdmin) {
     conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
@@ -90,10 +100,12 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
     // בטיפול — past the new_lead stage and not yet closed.
     conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
   } else if (isShiftScope) {
-    // לידים חדשים (לילה/יום) — new_lead leads that arrived inside the shift.
-    const w = scope === 'new_night' ? windows?.night : windows?.day;
+    // לידים חדשים (לילה/יום/מחזור) — new_lead leads that arrived in the window.
+    const w = scope === 'new_night' ? windows?.night
+      : scope === 'new_day' ? windows?.day
+        : windows?.cycle;
     conditions.push({ status: 'new_lead' });
-    if (w) conditions.push({ effective_sort_date: { $gte: w.from, $lte: w.to } });
+    if (w) conditions.push(windowCond(w));
   }
   if (hasRange && !isShiftScope) {
     conditions.push({ effective_sort_date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } });
@@ -258,8 +270,8 @@ export default function LeadManagement() {
         base44.entities.Lead.count(base([{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }])),
         base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
         base44.entities.Lead.count(base({ status: { $nin: HANDLING_EXCLUDED_STATUSES } })),
-        base44.entities.Lead.count(base([{ status: 'new_lead' }, { effective_sort_date: { $gte: windows.night.from, $lte: windows.night.to } }], { range: false })),
-        base44.entities.Lead.count(base([{ status: 'new_lead' }, { effective_sort_date: { $gte: windows.day.from, $lte: windows.day.to } }], { range: false })),
+        base44.entities.Lead.count(base([{ status: 'new_lead' }, windowCond(windows.night)], { range: false })),
+        base44.entities.Lead.count(base([{ status: 'new_lead' }, windowCond(windows.day)], { range: false })),
         base44.entities.Lead.count(base()),
       ]);
       return {
@@ -534,44 +546,32 @@ export default function LeadManagement() {
         ) : null}
       </div>
 
-      {/* Category tiles — clickable to filter the list. The three
-          assignment/status buckets follow the date range above; the two
-          "new leads" shift buckets use their own fixed night/day windows. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Category tiles — clickable to filter the list. The three status
+          buckets follow the date range above; the "new leads" cube uses its
+          own fixed 20:00→20:00 cycle (total) split into night / day shifts. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { id: 'assigned_unhandled', label: 'משויך ולא טופל',    value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck,     desc: 'שויך לנציג אך נשאר "ליד חדש"' },
-          { id: 'unassigned',         label: 'לא משויכים',         value: kpiCounts.unassignedCount,        tone: 'amber',  icon: UserPlus,      desc: 'לידים בלי נציג ראשי' },
-          { id: 'handling',           label: 'בטיפול',             value: kpiCounts.handlingCount,          tone: 'indigo', icon: Hourglass,     desc: 'אחרי שלב "ליד חדש", טרם נסגר' },
-          { id: 'new_night',          label: 'לידים חדשים לילה',   value: kpiCounts.newNightCount,          tone: 'violet', icon: Moon,          desc: '20:00 אתמול – 08:00 היום' },
-          { id: 'new_day',            label: 'לידים חדשים יום',    value: kpiCounts.newDayCount,            tone: 'sky',    icon: Sun,           desc: '08:00 – 20:00 היום' },
-        ].map((tile) => {
-          const isActive = scope === tile.id;
-          const tones = {
-            rose:   { active: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',       value: 'text-rose-700' },
-            amber:  { active: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',    value: 'text-amber-700' },
-            indigo: { active: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', value: 'text-indigo-700' },
-            violet: { active: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', value: 'text-violet-700' },
-            sky:    { active: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',          value: 'text-sky-700' },
-          }[tile.tone];
-          const cardCls = isActive ? tones.active : 'border-border bg-muted/30 hover:bg-muted/50';
-          const valueCls = isActive ? tones.value : 'text-muted-foreground';
-          const Icon = tile.icon;
-          return (
-            <button
-              key={tile.id}
-              type="button"
-              onClick={() => setScope((curr) => (curr === tile.id ? 'all' : tile.id))}
-              className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls}`}
-            >
-              <div className="flex items-center justify-between mb-1.5">
-                <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{tile.label}</p>
-                <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
-              </div>
-              <p className={`text-3xl font-bold tabular-nums ${valueCls}`}>{fmt(tile.value)}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">{tile.desc}</p>
-            </button>
-          );
-        })}
+          { id: 'assigned_unhandled', label: 'משויך ולא טופל', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
+          { id: 'unassigned',         label: 'לא משויכים',      value: kpiCounts.unassignedCount,        tone: 'amber',  icon: UserPlus,  desc: 'לידים בלי נציג ראשי' },
+          { id: 'handling',           label: 'בטיפול',          value: kpiCounts.handlingCount,          tone: 'indigo', icon: Hourglass, desc: 'אחרי שלב "ליד חדש", טרם נסגר' },
+        ].map((tile) => (
+          <CategoryTile
+            key={tile.id}
+            label={tile.label}
+            value={tile.value}
+            tone={tile.tone}
+            icon={tile.icon}
+            desc={tile.desc}
+            isActive={scope === tile.id}
+            onClick={() => setScope((curr) => (curr === tile.id ? 'all' : tile.id))}
+          />
+        ))}
+        <NewLeadsCube
+          nightCount={kpiCounts.newNightCount}
+          dayCount={kpiCounts.newDayCount}
+          scope={scope}
+          onSelect={(id) => setScope((curr) => (curr === id ? 'all' : id))}
+        />
       </div>
 
       {/* Rep workload panel — admin only. Click a card to filter list to
@@ -774,6 +774,94 @@ export default function LeadManagement() {
   );
 }
 
+// ─── Category tiles ─────────────────────────────────────────────
+const TILE_TONES = {
+  rose:   { active: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',       value: 'text-rose-700' },
+  amber:  { active: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',    value: 'text-amber-700' },
+  indigo: { active: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', value: 'text-indigo-700' },
+  violet: { active: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', value: 'text-violet-700' },
+  sky:    { active: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',          value: 'text-sky-700' },
+};
+
+function CategoryTile({ label, value, tone, icon: Icon, desc, isActive, onClick }) {
+  const tones = TILE_TONES[tone];
+  const cardCls = isActive ? tones.active : 'border-border bg-muted/30 hover:bg-muted/50';
+  const valueCls = isActive ? tones.value : 'text-muted-foreground';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls}`}
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{label}</p>
+        <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
+      </div>
+      <p className={`text-3xl font-bold tabular-nums ${valueCls}`}>{fmt(value)}</p>
+      <p className="text-[11px] text-muted-foreground mt-1">{desc}</p>
+    </button>
+  );
+}
+
+// "New leads" cube — one tile holding the full 20:00→20:00 cycle total on top,
+// split below into the night and day shifts. The cube is a plain container (not
+// a button) so its three click targets — total / night / day — don't nest
+// buttons; each toggles its own scope on the list.
+function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
+  // Night and day are a half-open partition of the cycle, so the total is
+  // exactly their sum — no extra count query needed.
+  const total = (nightCount || 0) + (dayCount || 0);
+  const cycleActive = scope === 'new_cycle';
+  const cardCls = cycleActive ? TILE_TONES.violet.active : 'border-border bg-muted/30';
+  const sub = [
+    { id: 'new_night', label: 'לילה', range: '20:00–08:00', value: nightCount, icon: Moon, tone: 'violet' },
+    { id: 'new_day',   label: 'יום',  range: '08:00–20:00', value: dayCount,   icon: Sun,  tone: 'sky' },
+  ];
+  return (
+    <div className={`rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}>
+      {/* Total — click to filter the whole 20:00→20:00 cycle */}
+      <button
+        type="button"
+        onClick={() => onSelect('new_cycle')}
+        className="w-full text-right rounded-lg px-1 py-0.5 transition-colors hover:bg-muted/40"
+      >
+        <div className="flex items-center justify-between mb-0.5">
+          <p className={`text-xs font-medium ${cycleActive ? 'text-foreground' : 'text-muted-foreground'}`}>
+            לידים חדשים <span className="text-[10px] opacity-70">(20:00–20:00)</span>
+          </p>
+          <Sparkles className={`h-4 w-4 ${cycleActive ? 'text-violet-700 opacity-100' : 'text-muted-foreground opacity-50'}`} />
+        </div>
+        <p className={`text-3xl font-bold tabular-nums ${cycleActive ? 'text-violet-700' : 'text-muted-foreground'}`}>{fmt(total)}</p>
+      </button>
+      {/* Night / day split */}
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        {sub.map((s) => {
+          const active = scope === s.id;
+          const tones = TILE_TONES[s.tone];
+          const Icon = s.icon;
+          const cls = active ? tones.active : 'border-border bg-card hover:bg-muted/50';
+          const valueCls = active ? tones.value : 'text-foreground';
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSelect(s.id)}
+              className={`text-right rounded-lg border p-2 transition-all ${cls}`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[11px] font-medium ${active ? 'text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
+                <Icon className={`h-3.5 w-3.5 ${valueCls} ${active ? 'opacity-100' : 'opacity-60'}`} />
+              </div>
+              <p className={`text-xl font-bold tabular-nums leading-tight ${valueCls}`}>{fmt(s.value)}</p>
+              <p className="text-[9px] text-muted-foreground" dir="ltr">{s.range}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Rep workload card ──────────────────────────────────────────
 function RepWorkloadCard({ label, avatar, newCount, handlingCount, wonCount, lostCount, isActive, accent, onClick }) {
   const total = newCount + handlingCount + wonCount + lostCount;
@@ -926,6 +1014,7 @@ function ActiveFilterSummary({
     assigned_unhandled: 'משויך ולא טופל',
     unassigned: 'לא משויכים',
     handling: 'בטיפול',
+    new_cycle: 'לידים חדשים (20:00–20:00)',
     new_night: 'לידים חדשים לילה',
     new_day: 'לידים חדשים יום',
   };
@@ -936,9 +1025,9 @@ function ActiveFilterSummary({
     : null;
   const sourceLabel = filters.source !== 'all' ? (SOURCE_LABELS[filters.source] || filters.source) : null;
   const repLabel = filters.rep !== 'all' ? (repNameByEmail.get(filters.rep) || filters.rep) : null;
-  // The night/day shift scopes use their own fixed window and ignore the
+  // The "new leads" shift scopes use their own fixed window and ignore the
   // date-range picker, so don't advertise a date chip that has no effect.
-  const isShiftScope = scope === 'new_night' || scope === 'new_day';
+  const isShiftScope = scope === 'new_night' || scope === 'new_day' || scope === 'new_cycle';
   const chips = [
     scope !== 'all' && { key: 'scope', label: SCOPE_LABELS[scope] || scope, onClear: onClearScope },
     statusLabel && { key: 'status', label: `סטטוס: ${statusLabel}`, onClear: () => onClearFilter('status') },
