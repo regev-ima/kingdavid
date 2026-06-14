@@ -871,13 +871,13 @@ function RepWorkloadCard({ label, avatar, newCount, handlingCount, wonCount, los
   }[accent];
   const cardCls = isActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
   // Four buckets that partition all of the rep's leads (sum to the total, which
-  // matches what filtering the list by this rep shows): open work (new +
-  // handling) and closed outcomes (won + lost).
+  // matches what filtering the list by this rep shows): open work (new but
+  // untouched + in handling) and closed outcomes (won + lost/not-interested).
   const stats = [
-    { label: 'לידים חדשים',    value: newCount,      box: 'bg-sky-50',     text: 'text-sky-700',     sub: 'text-sky-700/80' },
-    { label: 'בטיפול',         value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80' },
-    { label: 'נסגר בהצלחה',    value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80' },
-    { label: 'נסגר ללא עסקה',  value: lostCount,     box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80' },
+    { label: 'חדשים שטרם טופלו', title: 'לידים חדשים שטרם טופלו', value: newCount,      box: 'bg-sky-50',     text: 'text-sky-700',     sub: 'text-sky-700/80' },
+    { label: 'בטיפול',           title: 'לידים בטיפול',           value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80' },
+    { label: 'נסגרו',            title: 'לידים שנסגרו בעסקה',     value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80' },
+    { label: 'נאבדו',            title: 'לידים שנאבדו – לא מעוניינים', value: lostCount, box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80' },
   ];
   return (
     <button
@@ -891,7 +891,7 @@ function RepWorkloadCard({ label, avatar, newCount, handlingCount, wonCount, los
       </div>
       <div className="grid grid-cols-2 gap-1.5 text-xs">
         {stats.map((s) => (
-          <div key={s.label} className={`${s.box} rounded p-1.5 text-center`}>
+          <div key={s.label} className={`${s.box} rounded p-1.5 text-center`} title={s.title}>
             <p className={`text-[10px] leading-tight ${s.sub}`}>{s.label}</p>
             <p className={`text-base font-bold tabular-nums leading-tight ${s.text}`}>{fmt(s.value)}</p>
           </div>
