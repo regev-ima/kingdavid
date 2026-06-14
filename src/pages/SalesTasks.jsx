@@ -57,7 +57,7 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import QuickActions from '@/components/shared/QuickActions';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
-import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
+import { canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
 import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -101,17 +101,20 @@ const isTaskDueNow = (task, now) => {
 // `matchesLeadCube` over the SAME open-task set, so a cube's number always
 // equals the rows you see when you click it. The buckets overlap (a fresh
 // lead is both "new today" and "unhandled"), so this is a per-cube test
-// rather than a partition. Each test keys off the task's denormalised
-// lead-status mirror (falling back to the lead) plus, for "today", the
-// related lead's created_date.
+// rather than a partition. Everything keys off fields already on the task —
+// the denormalised lead-status mirror and the task's own created_date — so the
+// page never has to pre-load lead rows just to count/filter these.
 const LEAD_CUBES = ['leads_new_today', 'leads_unhandled', 'leads_in_handling'];
-const matchesLeadCube = (task, cube, leadsById, todayStart, todayEnd) => {
-  const lead = task.lead_id ? leadsById[task.lead_id] : null;
-  const status = task.status || lead?.status;
+// Stable empty map: task scoping/sorting reads the task's own status mirror,
+// so we no longer hydrate a full leads-by-id map (see leadsById below).
+const EMPTY_LEADS_BY_ID = {};
+const matchesLeadCube = (task, cube, todayStart, todayEnd) => {
+  const status = task.status;
   if (cube === 'leads_new_today') {
-    const created = parseDbTimestamp(lead?.created_date);
-    return !!created && created >= todayStart && created <= todayEnd
-      && (!status || !CLOSED_STATUSES.includes(status));
+    // A brand-new lead gets its call task at assignment, so an open new_lead
+    // task created today == a new lead that came in today — no lead row needed.
+    const created = parseSalesTaskDate(task.created_date);
+    return status === 'new_lead' && !!created && created >= todayStart && created <= todayEnd;
   }
   if (cube === 'leads_unhandled') return status === 'new_lead';
   if (cube === 'leads_in_handling') {
@@ -388,29 +391,12 @@ export default function SalesTasks() {
     refetchInterval: 60_000,
     queryFn: async () => {
       const { data, error } = await applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        base44.supabase.from('sales_tasks').select('lead_id, status, created_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
         { includeAssignment: includeAssignmentInCounts },
       ).limit(10_000);
       if (error) throw error;
       return data || [];
     },
-  });
-
-  const { data: allLeads = [] } = useQuery({
-    queryKey: ['sales-task-ownership-leads'],
-    queryFn: async () => {
-      let skip = 0;
-      const leads = [];
-      while (true) {
-        const batch = await base44.entities.Lead.list('-created_date', 500, skip);
-        leads.push(...batch);
-        if (batch.length < 500) break;
-        skip += 500;
-      }
-      return leads;
-    },
-    enabled: canAccessSales,
-    staleTime: 60000,
   });
 
   // Fetch users for rep name display
@@ -429,7 +415,13 @@ export default function SalesTasks() {
   const now = useMemo(() => new Date(nowTick), [nowTick]);
   const todayStart = useMemo(() => startOfDay(now), [now]);
   const todayEnd = useMemo(() => endOfDay(now), [now]);
-  const leadsById = useMemo(() => buildLeadsById(allLeads), [allLeads]);
+  // We no longer pre-load every lead in the system just to scope, sort and
+  // count tasks — that was the page's slowest query by far. The task already
+  // carries a denormalised lead-status mirror (and its own created_date),
+  // which covers the cubes, the priority sort and ownership; visible rows
+  // fetch their own lead below. This stays an (empty, stable) map so the rare
+  // fallback lookups degrade gracefully without extra deps churn.
+  const leadsById = EMPTY_LEADS_BY_ID;
   // Non-admin reps never see assignment tasks anywhere on this page —
   // those belong to the manager workflow. Stripping them at the
   // ownedTasks layer makes counts, toggles, and empty-state CTAs all
@@ -455,7 +447,7 @@ export default function SalesTasks() {
     // state, using the exact same predicate as the cube counts so the number
     // on a cube equals the rows shown here.
     if (LEAD_CUBES.includes(activeTab)) {
-      return filtered.filter((t) => matchesLeadCube(t, activeTab, leadsById, todayStart, todayEnd));
+      return filtered.filter((t) => matchesLeadCube(t, activeTab, todayStart, todayEnd));
     }
     return filtered;
   }, [effectiveUser, allSalesTasks, leadsById, activeTab, todayStart, todayEnd]);
@@ -470,7 +462,7 @@ export default function SalesTasks() {
       const lid = row?.lead_id;
       if (!lid) continue;
       for (const cube of LEAD_CUBES) {
-        if (matchesLeadCube(row, cube, leadsById, todayStart, todayEnd)) sets[cube].add(lid);
+        if (matchesLeadCube(row, cube, todayStart, todayEnd)) sets[cube].add(lid);
       }
     }
     return {
@@ -478,7 +470,7 @@ export default function SalesTasks() {
       unhandled: sets.leads_unhandled.size,
       inHandling: sets.leads_in_handling.size,
     };
-  }, [openTaskRows, leadsById, todayStart, todayEnd]);
+  }, [openTaskRows, todayStart, todayEnd]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -599,16 +591,18 @@ export default function SalesTasks() {
     placeholderData: (previousData) => previousData,
     queryFn: async () => {
       if (paginatedTaskLeadIds.length === 0) return [];
-      const allLeads = [];
-      const batchSize = 20;
-      for (let i = 0; i < paginatedTaskLeadIds.length; i += batchSize) {
-        const batch = paginatedTaskLeadIds.slice(i, i + batchSize);
-        const results = await Promise.all(
-          batch.map(id => base44.entities.Lead.filter({ id }).then(res => res[0] || null).catch(() => null))
-        );
-        allLeads.push(...results.filter(Boolean));
+      // One batched `id IN (...)` query per ~200 ids instead of a separate
+      // round trip per lead. For a 100-row page that's a single request rather
+      // than 100 — the difference between a snappy table and a visible stall.
+      const out = [];
+      const chunk = 200;
+      for (let i = 0; i < paginatedTaskLeadIds.length; i += chunk) {
+        const ids = paginatedTaskLeadIds.slice(i, i + chunk);
+        const { data, error } = await base44.supabase.from('leads').select('*').in('id', ids);
+        if (error) throw error;
+        out.push(...(data || []));
       }
-      return allLeads;
+      return out;
     },
     enabled: canAccessSales && paginatedTaskLeadIds.length > 0,
   });
