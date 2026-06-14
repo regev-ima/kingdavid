@@ -375,8 +375,17 @@ export default function LeadManagement() {
       // which a "status not in (...)" filter then excluded → mismatch).
       const countsFor = async (repEmail) => {
         const base = repEmail ? [{ $or: [{ rep1: repEmail }, { rep2: repEmail }] }] : [];
+        // "חדשים שטרם טופלו" = assigned-but-untouched. For a rep this is implicit
+        // (the card is filtered to them). For the TEAM card (repEmail null) we
+        // must add "has a rep", otherwise unassigned new leads — which belong to
+        // the separate "לא משויכים" pool, not to anyone's workload — would inflate
+        // it and clash with the "משויך ולא טופל" tile. Mirrors LIFECYCLE_SCOPES +
+        // the assigned_unhandled scope so card === tile === filtered list.
+        const newCond = repEmail
+          ? [LIFECYCLE_SCOPES.lc_new]
+          : [{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }];
         const [newCount, handlingCount, wonCount, lostCount] = await Promise.all([
-          base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_new])),
+          base44.entities.Lead.count(build([...base, ...newCond])),
           base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_handling])),
           base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_won])),
           base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_lost])),
@@ -1031,12 +1040,17 @@ function RepWorkloadCard({ repEmail, label, avatar, newCount, handlingCount, won
   const repActive = activeRep === repEmail;
   const headerActive = repActive && activeScope === 'all';
   const cardCls = repActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
-  // Four buckets that partition all of the rep's leads (sum to the total, which
-  // matches what filtering the list by this rep shows): open work (new but
-  // untouched + in handling) and closed outcomes (won + lost/not-interested).
-  // Each carries the lifecycle scope it drills into (see LIFECYCLE_SCOPES).
+  // The team card counts only ASSIGNED new leads (unassigned ones live in the
+  // separate "לא משויכים" tile), so its "new" bucket drills into the
+  // assigned_unhandled scope rather than the plain status filter — keeping the
+  // number, the tile and the list it opens all in agreement.
+  const isTeam = repEmail === 'all';
+  // Four buckets that partition the rep's leads (sum to the total, which matches
+  // what filtering the list by this rep shows): open work (new but untouched +
+  // in handling) and closed outcomes (won + lost/not-interested). Each carries
+  // the scope it drills into (see LIFECYCLE_SCOPES / buildLeadsQuery).
   const stats = [
-    { scope: 'lc_new',      label: 'חדשים שטרם טופלו', title: 'לידים חדשים שטרם טופלו',        value: newCount,      box: 'bg-sky-50',     text: 'text-sky-700',     sub: 'text-sky-700/80',     ring: 'ring-sky-400 border-sky-500' },
+    { scope: isTeam ? 'assigned_unhandled' : 'lc_new', label: 'חדשים שטרם טופלו', title: isTeam ? 'לידים משויכים שטרם טופלו (ללא "לא משויכים")' : 'לידים חדשים שטרם טופלו', value: newCount, box: 'bg-sky-50', text: 'text-sky-700', sub: 'text-sky-700/80', ring: 'ring-sky-400 border-sky-500' },
     { scope: 'lc_handling', label: 'בטיפול',           title: 'לידים בטיפול',                  value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80',   ring: 'ring-amber-400 border-amber-500' },
     { scope: 'lc_won',      label: 'נסגרו',            title: 'לידים שנסגרו בעסקה',            value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80', ring: 'ring-emerald-400 border-emerald-500' },
     { scope: 'lc_lost',     label: 'נאבדו',            title: 'לידים שנאבדו – לא מעוניינים',   value: lostCount,     box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80',    ring: 'ring-rose-400 border-rose-500' },
