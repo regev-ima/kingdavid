@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
+import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
 import StatCube from "@/components/shared/StatCube";
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
@@ -61,7 +61,7 @@ import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdm
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
 import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
-import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { SOURCE_LABELS, SLA_THRESHOLDS, CLOSED_STATUSES } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
 // Sales-return categories, per the rep workflow brief. Each category is
@@ -83,41 +83,26 @@ const CATEGORY_BY_LEAD_STATUS = (() => {
   return map;
 })();
 
-// Each category gets a distinct tone keyed to where the lead sits in
-// the funnel — so the rep can read the colour grid like a heatmap of
-// "what stage everything is in" without reading the labels:
-//   sky    = brand-new, never been contacted
-//   rose   = urgent retry — we tried, they didn't answer
-//   amber  = warming up, ball's in our court (build the quote)
-//   violet = ball's in their court (waiting on the customer to decide)
-//   emerald = closing — committed meeting on the books
-const CATEGORY_META = {
-  cat_new_lead:     { label: 'חזרה לליד חדש',        accent: 'sky',     desc: 'לידים חדשים שלא נוצרה איתם שיחה' },
-  cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'rose',    desc: 'לידים שניסיתי להחזיר ולא ענו' },
-  cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
-  cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
-  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
-};
-
-// Funnel-stage icon per category, for the StatCube chips. Phone (new lead),
-// missed retry, quote/build, sent-quote follow-up, booked meeting.
-const CATEGORY_ICON = {
-  cat_new_lead: Phone,
-  cat_no_answer: RefreshCw,
-  cat_before_quote: FileText,
-  cat_after_quote: MessageCircle,
-  cat_meeting: Calendar,
-};
-
 // "Due now" window — a task whose due_date is within ±60min of the
 // current clock is highlighted as actionable-now (the brief's "מהבהב").
 const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
+
+// A task scheduled for a specific time is "due now" once the clock lands
+// within that ±60-min window. The today queue floats these to the very top
+// so the rep sees a 16:00 callback the moment 16:00 arrives.
+const isTaskDueNow = (task, now) => {
+  if (normalizeTaskStatus(task.task_status) !== 'not_completed') return false;
+  const due = parseSalesTaskDate(task.due_date);
+  if (!due) return false;
+  return Math.abs(due.getTime() - now.getTime()) <= DUE_NOW_WINDOW_MS;
+};
 
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
   const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'completed_today', 'not_done', 'cancelled', 'all',
+    'leads_new_today', 'leads_unhandled', 'leads_in_handling',
     'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
@@ -131,6 +116,15 @@ export default function SalesTasks() {
   const [editingTask, setEditingTask] = useState(null);
   const [completingTask, setCompletingTask] = useState(null);
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
+
+  // Live clock: re-render every 30s so the today queue re-sorts and the
+  // due-now highlight advances on their own. A task scheduled for 16:00
+  // floats to the top the moment 16:00 arrives — no page refresh needed.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const initialTaskId = urlParams.get('id');
 
@@ -293,6 +287,10 @@ export default function SalesTasks() {
     queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
+    // Keep today's queue live without a manual refresh — newly scheduled or
+    // reassigned tasks surface on their own within a minute.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'), { includeAssignment: includeAssignmentInList });
       if (activeTab === 'today') {
@@ -315,11 +313,12 @@ export default function SalesTasks() {
         q = q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
-      } else if (activeTab.startsWith('cat_')) {
-        // Category tabs are partition-of-open-tasks driven by the related
-        // lead's status. Server-side we just narrow to open tasks; the
-        // lead-status check happens client-side using `leadsById` so we
-        // don't have to .in() over a list of thousands of lead ids.
+      } else if (activeTab.startsWith('cat_') || activeTab.startsWith('leads_')) {
+        // Category + header lead-cube tabs are partitions of the open queue
+        // driven by the related lead's state. Server-side we just narrow to
+        // open tasks; the lead-level check (status / first_action_at /
+        // created_date) happens client-side using `leadsById` so we don't
+        // have to .in() over a list of thousands of lead ids.
         q = q.eq('task_status', 'not_completed');
       }
       // 'all' falls through with no filter.
@@ -349,26 +348,36 @@ export default function SalesTasks() {
     },
   });
 
-  // Deals closed today — counts leads that flipped to status='deal_closed'
-  // within today's window. Drives the "סגירות עסקה" KPI tile in the new
-  // rep cockpit header.
-  const { data: dealsClosedToday = 0 } = useQuery({
-    queryKey: ['leads-deals-closed-today', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+  // The three lead-cubes in the header read straight off the leads table
+  // (server-side, exact counts — never capped by whatever task rows are
+  // loaded for the active tab). Scoped to the rep's own leads (rep1/rep2);
+  // for admins it's the whole funnel, matching how the task cubes behave.
+  //   newToday   – leads that arrived today (the day's fresh intake)
+  //   unhandled  – open leads still waiting for first contact
+  //   inHandling – open leads the rep has already started working
+  const { data: leadCubeCounts = { newToday: 0, unhandled: 0, inHandling: 0 } } = useQuery({
+    queryKey: ['salesTasks-lead-cubes', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
     enabled: canAccessSales,
     staleTime: 60_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
-      let q = base44.supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'deal_closed')
-        .gte('updated_date', todayStartIso)
-        .lte('updated_date', todayEndIso);
-      if (!isAdmin && userEmail) {
-        q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail}`);
-      }
-      const { count, error } = await q;
-      if (error) throw error;
-      return count || 0;
+      const scope = (q) => (!isAdmin && userEmail ? q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail}`) : q);
+      const headLeads = async (build) => {
+        const { count, error } = await build(
+          scope(base44.supabase.from('leads').select('*', { count: 'exact', head: true })),
+        );
+        if (error) throw error;
+        return count || 0;
+      };
+      // "Open" = lead not parked in any closed/lost bucket (deal won OR
+      // every not-interested / not-relevant reason). NOT IN that set.
+      const closedList = `(${CLOSED_STATUSES.join(',')})`;
+      const [newToday, unhandled, inHandling] = await Promise.all([
+        headLeads((q) => q.gte('created_date', todayStartIso).lte('created_date', todayEndIso)),
+        headLeads((q) => q.is('first_action_at', null).not('status', 'in', closedList)),
+        headLeads((q) => q.not('first_action_at', 'is', null).not('status', 'in', closedList)),
+      ]);
+      return { newToday, unhandled, inHandling };
     },
   });
 
@@ -399,9 +408,12 @@ export default function SalesTasks() {
 
   const getRepName = (email) => getRepDisplayName(email, allUsers);
 
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  // Derived from the live tick (above) so every now-based memo — sort order,
+  // due-now highlight, today's day boundaries — recomputes on the timer
+  // rather than only on user interaction.
+  const now = useMemo(() => new Date(nowTick), [nowTick]);
+  const todayStart = useMemo(() => startOfDay(now), [now]);
+  const todayEnd = useMemo(() => endOfDay(now), [now]);
   const leadsById = useMemo(() => buildLeadsById(allLeads), [allLeads]);
   // Non-admin reps never see assignment tasks anywhere on this page —
   // those belong to the manager workflow. Stripping them at the
@@ -424,53 +436,26 @@ export default function SalesTasks() {
         return CATEGORY_BY_LEAD_STATUS[status] === activeTab;
       });
     }
-    return filtered;
-  }, [effectiveUser, allSalesTasks, leadsById, activeTab]);
-
-  // Lead IDs of every open task the current user owns — independent of
-  // the active tab so the category counters always reflect the full
-  // queue, not just "today's slice" or "what fit in the 1000-row page".
-  // Crucially, scoped by TASK ownership (rep1/rep2/pending_rep_email on
-  // the task), not by lead ownership: a rep often holds a task on a
-  // lead they don't own, and those tasks need to be counted in the
-  // category cards above. We also pull the task's own `status` mirror
-  // so we can categorise without a lookup hop through `leadsById` —
-  // that map is paginated from the leads table and may not have the
-  // row yet on first paint (the symptom: cards say 0 while rows for
-  // those exact leads sit in the table below).
-  const { data: openTaskRows = [] } = useQuery({
-    queryKey: ['salesTasks-open-lead-ids', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
-    enabled: canAccessSales,
-    staleTime: 60_000,
-    queryFn: async () => {
-      let q = applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
-        { includeAssignment: includeAssignmentInCounts },
-      ).limit(10_000);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  // Category counts: prefer the task's own denormalised `status` mirror
-  // (it matches what the row in the table is showing), and fall back to
-  // the lead's current status from leadsById when the task didn't carry
-  // a mirror. Distinct by lead_id so a lead with three open tasks
-  // counts once.
-  const categoryCounts = useMemo(() => {
-    const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
-    const seen = new Set();
-    for (const row of openTaskRows) {
-      const lid = row?.lead_id;
-      if (!lid || seen.has(lid)) continue;
-      seen.add(lid);
-      const status = row.status || leadsById[lid]?.status;
-      const cat = CATEGORY_BY_LEAD_STATUS[status];
-      if (cat) counts[cat] += 1;
+    // The three header lead-cubes filter the task queue by the related
+    // lead's state (mirroring how the cube counts are derived):
+    //   leads_new_today   – lead landed today (fresh intake)
+    //   leads_unhandled   – open lead still waiting for first contact
+    //   leads_in_handling – open lead the rep has already started working
+    if (activeTab === 'leads_new_today' || activeTab === 'leads_unhandled' || activeTab === 'leads_in_handling') {
+      return filtered.filter((t) => {
+        const lead = t.lead_id ? leadsById[t.lead_id] : null;
+        if (!lead) return false;
+        if (activeTab === 'leads_new_today') {
+          const created = parseDbTimestamp(lead.created_date);
+          return !!created && created >= todayStart && created <= todayEnd;
+        }
+        const status = t.status || lead.status;
+        if (CLOSED_STATUSES.includes(status)) return false;
+        return activeTab === 'leads_unhandled' ? !isLeadHandled(lead) : isLeadHandled(lead);
+      });
     }
-    return counts;
-  }, [openTaskRows, leadsById]);
+    return filtered;
+  }, [effectiveUser, allSalesTasks, leadsById, activeTab, todayStart, todayEnd]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -499,13 +484,12 @@ export default function SalesTasks() {
   const scopedTasks = useMemo(() => {
     let tasks = ownedTasks;
     // Stale (>30d overdue) tasks are migration noise on the time buckets, so
-    // they're hidden there by default. But the funnel-category queues
-    // (cat_*) are an explicit "work these leads now" request — a new-lead
-    // callback must show up there regardless of age, or the card says 3
-    // while the list shows 0. So skip stale-hiding for category tabs; their
-    // counts (categoryCounts) don't apply it either, keeping the two equal.
-    const isCategoryTab = activeTab.startsWith('cat_');
-    if (!showStale && !isCategoryTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
+    // they're hidden there by default. But the lead-driven queues (cat_* and
+    // the header lead-cubes leads_*) are an explicit "work these leads now"
+    // request — a lead's task must show up there regardless of age, or the
+    // cube says 3 while the list shows 0. So skip stale-hiding for those tabs.
+    const isLeadDrivenTab = activeTab.startsWith('cat_') || activeTab.startsWith('leads_');
+    if (!showStale && !isLeadDrivenTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
     if (activeTab === 'assignment') {
       tasks = tasks.filter(isAssignmentTask);
     } else if (!showAssignmentTasks) {
@@ -563,10 +547,20 @@ export default function SalesTasks() {
       return compareSalesTasks(a, b, activeTab, now);
     });
 
+    // Scheduled-time tasks float to the top of the today queue the moment
+    // they come due (within the ±60-min due-now window). The sort is stable,
+    // so it only lifts the due-now rows and preserves the order below them;
+    // the live `now` tick re-runs this, so a 16:00 callback rises on its own.
+    if (activeTab === 'today') {
+      tasks = [...tasks].sort(
+        (a, b) => (isTaskDueNow(a, now) ? 0 : 1) - (isTaskDueNow(b, now) ? 0 : 1),
+      );
+    }
+
     const total = tasks.length;
     const paginated = tasks.slice(0, (tasksPage + 1) * TASKS_PER_PAGE);
     return { totalFilteredCount: total, paginatedTasks: paginated };
-  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now]);
+  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now, leadsById]);
 
   // 3. Fetch leads ONLY for the paginated (visible) tasks
   const paginatedTaskLeadIds = useMemo(() => 
@@ -1057,80 +1051,48 @@ export default function SalesTasks() {
       ) : (
       <>
       {/* ===== TOP KPI STRIP =====
-          Per the customer brief: a four-tile header summarising the rep's
-          day. Each tile is clickable and sets the active filter on the
-          list below — tiles ARE the navigation, not decoration. Default
-          tone is muted (subtle gray surface, low-contrast value) and a
-          tile lights up to its full accent colour only when active or
-          on hover, so the rep can see at a glance which filter is on. */}
+          Per the customer brief: exactly four tiles summarising the rep's
+          day — today's task queue plus three lead snapshots (fresh intake,
+          waiting-for-first-contact, and actively in handling). Each tile is
+          clickable and filters the task table below it — tiles ARE the
+          navigation, not decoration. Default tone is muted and a tile lights
+          up to its accent colour when active, so the rep can see at a glance
+          which filter is on. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
-          { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
-          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2 },
-          { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
+          { id: 'today',             label: 'משימות להיום',          value: todayCount,                tone: 'amber',  icon: Calendar,    sub: 'כל המשימות להיום' },
+          { id: 'leads_new_today',   label: 'לידים חדשים',           value: leadCubeCounts.newToday,   tone: 'sky',    icon: UserPlus,    sub: 'שויכו אליי היום' },
+          { id: 'leads_unhandled',   label: 'לידים חדשים ללא טיפול', value: leadCubeCounts.unhandled,  tone: 'rose',   icon: AlertCircle, sub: 'טרם טופלו' },
+          { id: 'leads_in_handling', label: 'בטיפול',                value: leadCubeCounts.inHandling, tone: 'violet', icon: RefreshCw,   sub: 'פתוחים בטיפול' },
         ].map((tile) => {
-          const target = tile.asTab || tile.id;
-          const isActive = !tile.readOnly && activeTab === target;
+          const target = tile.id;
+          const isActive = activeTab === target;
           return (
             <StatCube
               key={tile.id}
               label={tile.label}
               value={Number(tile.value || 0).toLocaleString()}
+              sub={tile.sub}
               icon={tile.icon}
               tone={tile.tone}
               active={isActive}
-              disabled={tile.readOnly}
-              onClick={tile.readOnly ? undefined : () => setActiveTab(isActive ? 'all' : target)}
-              title={tile.readOnly ? undefined : (isActive ? 'בטל סינון' : `הצג ${tile.label}`)}
+              onClick={() => setActiveTab(isActive ? 'all' : target)}
+              title={isActive ? 'בטל סינון' : `הצג ${tile.label}`}
             />
           );
         })}
       </div>
 
-      {/* ===== SALES-RETURN CATEGORIES =====
-          Five queues, one per stage of the rep's funnel. Default state
-          is muted gray; clicking a card lights it up to its accent
-          colour with a matching ring so the rep can read at a glance
-          which filter is currently on. Colours follow the funnel
-          temperature: sky (new) → rose (urgent retry) → amber (our
-          turn — build the quote) → violet (their turn — waiting on
-          them) → emerald (closing zone, meeting booked). */}
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">סוגי משימות לטיפול</p>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {Object.entries(LEAD_STATUSES_BY_CATEGORY).map(([catId]) => {
-            const meta = CATEGORY_META[catId];
-            const value = categoryCounts[catId] || 0;
-            const isActive = activeTab === catId;
-            return (
-              <StatCube
-                key={catId}
-                label={meta.label}
-                value={value.toLocaleString()}
-                sub={meta.desc}
-                icon={CATEGORY_ICON[catId] || List}
-                tone={meta.accent}
-                active={isActive}
-                onClick={() => setActiveTab(isActive ? 'all' : catId)}
-                title={isActive ? 'בטל סינון' : `הצג ${meta.label}`}
-              />
-            );
-          })}
-        </div>
-      </div>
-
       {/* ===== SECONDARY FILTERS =====
-          The four daily-driver buckets (today / overdue / completed-today
-          / deals-closed) and the five funnel categories already live in
-          the KPI tiles above — duplicating them as a tab strip was pure
-          redundancy. What's left are the secondary states a rep rarely
-          touches (עתידי / ללא יעד / לא בוצע / בוטל / הכל) plus admin-
-          only assignment workflow. They sit in a small dropdown so they
-          stay accessible without competing for visual weight with the
-          primary tile grid. */}
+          The header tiles cover the rep's daily drivers (today + the three
+          lead snapshots). Everything else — overdue, completed-today, and
+          the rarely-touched states (עתידי / ללא יעד / לא בוצע / בוטל / הכל)
+          plus the admin-only assignment queue — sits in this small dropdown
+          so it stays reachable without competing with the primary tiles. */}
       {(() => {
         const SECONDARY = [
+          { id: 'overdue',        label: 'משימות באיחור', count: overdueCount,        Icon: AlertCircle },
+          { id: 'completed_today', label: 'הושלמו היום',   count: completedTodayCount, Icon: CheckCircle2 },
           { id: 'upcoming',  label: 'עתידי',    count: upcomingCount,  Icon: ArrowUpRight },
           { id: 'undated',   label: 'ללא יעד',  count: undatedCount,   Icon: List },
           { id: 'not_done',  label: 'לא בוצע',  count: null,           Icon: XCircle },
