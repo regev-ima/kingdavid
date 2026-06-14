@@ -36,6 +36,12 @@ import ImportFromSheets from '@/components/lead/ImportFromSheets';
 // positions independently.
 const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
 
+// Only the columns the management table actually renders (+ id for keys /
+// selection / opening the lead). The leads row is wide (notes, addresses,
+// marketing fields, …); fetching just these keeps each page light so clicking
+// between categories feels instant. The lead modal refetches the full row by id.
+const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,effective_sort_date,created_date';
+
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
 // "New leads" are triaged over a 20:00→20:00 cycle, split into two
@@ -410,12 +416,24 @@ export default function LeadManagement() {
     () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }),
     [filters, dateRange, scope, userEmail, isAdmin, windows],
   );
+  // Reset paging to the first page whenever the query itself changes (scope /
+  // filter / rep / status / date / search) — without this, switching views
+  // re-pulls however many rows the user had scrolled to (e.g. 400). Each click
+  // then fetches a single light page; infinite-scroll grows it again on demand.
+  const leadsQueryKey = useMemo(() => JSON.stringify(leadsQuery), [leadsQuery]);
+  const prevLeadsQueryKey = useRef(leadsQueryKey);
+  useEffect(() => {
+    if (prevLeadsQueryKey.current !== leadsQueryKey) {
+      prevLeadsQueryKey.current = leadsQueryKey;
+      setLimit((cur) => (cur > 100 ? 100 : cur));
+    }
+  }, [leadsQueryKey]);
   const { data: leads = [], isLoading, isFetching } = useQuery({
     queryKey: ['leadMgmt-leads', leadsQuery, limit],
     enabled: !!effectiveUser,
     staleTime: 60_000,
     placeholderData: (prev) => prev, // ← key: don't drop rows on loadMore so the scroll stays put
-    queryFn: () => base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', limit),
+    queryFn: () => base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', limit, undefined, LEAD_LIST_COLUMNS),
   });
   const { data: filteredCount = null } = useQuery({
     queryKey: ['leadMgmt-count', leadsQuery],

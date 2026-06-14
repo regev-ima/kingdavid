@@ -87,9 +87,12 @@ function createEntityAPI(tableName) {
      * @param {string} [sort]
      * @param {number} [limit]
      * @param {number} [skip]
+     * @param {string} [columns] - comma-separated column list to fetch (e.g.
+     *   'id,full_name,phone'). Defaults to '*'. Use a narrow list on big
+     *   tables to cut payload/latency when only a few fields are displayed.
      */
-    async filter(filters, sort, limit, skip) {
-      let query = supabase.from(tableName).select('*');
+    async filter(filters, sort, limit, skip, columns) {
+      let query = supabase.from(tableName).select(columns || '*');
 
       // Translate one {field: value} or {field: {$op: …}} pair into a
       // PostgREST filter fragment ("field.op.value"). Supports the operator
