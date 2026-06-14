@@ -90,24 +90,37 @@ export default function Representatives() {
     return map;
   }, [repStatsRows]);
 
-  const { data: leads = [], isLoading: leadsLoading } = useQuery({
+  // The per-rep numbers in the table come from the server-side rep_stats view
+  // (one small row per rep). These four full-table loads are ONLY needed by the
+  // "deactivate rep" dialog (assignment counts + the reassignment), so they're
+  // deferred until that dialog opens — otherwise every visit pulled the entire
+  // leads/quotes/customers/orders tables and the page crawled.
+  const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
     queryFn: () => base44.entities.Lead.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const { data: quotes = [] } = useQuery({
     queryKey: ['quotes'],
     queryFn: () => base44.entities.Quote.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
     queryFn: () => base44.entities.Customer.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: () => base44.entities.Order.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const inviteUserMutation = useMutation({
