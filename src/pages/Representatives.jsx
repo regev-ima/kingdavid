@@ -24,13 +24,65 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, KeyRound } from "lucide-react";
+import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, KeyRound, Check } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { supabase } from '@/api/supabaseClient';
+
+// Inline-editable table cell: holds a local draft and only commits when the
+// user explicitly clicks the save button (or presses Enter). The save button
+// shows only while the draft differs from the stored value, so typing no
+// longer fires an update on every keystroke. Esc reverts the draft.
+function InlineEditField({ value, onSave, placeholder, className = '', type = 'text', inputProps = {}, parse }) {
+  const stored = value ?? '';
+  const [draft, setDraft] = useState(stored);
+
+  // Re-sync when the stored value actually changes (after a save / refetch).
+  // For primitive strings React skips this when the value is unchanged, so an
+  // in-progress edit isn't clobbered by background refetches.
+  useEffect(() => {
+    setDraft(value ?? '');
+  }, [value]);
+
+  const dirty = String(draft) !== String(stored);
+
+  const commit = () => {
+    if (!dirty) return;
+    onSave(parse ? parse(draft) : draft);
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur(); }
+          if (e.key === 'Escape') { setDraft(stored); }
+        }}
+        placeholder={placeholder}
+        type={type}
+        className={className}
+        {...inputProps}
+      />
+      {dirty && (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          onClick={commit}
+          className="h-7 w-7 shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+          title="שמור שינוי"
+        >
+          <Check className="h-4 w-4" />
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export default function Representatives() {
   const [user, setUser] = useState(null);
@@ -1030,16 +1082,11 @@ export default function Representatives() {
                       <div className="flex items-center gap-3">
                         <UserAvatar user={rep} size="sm" />
                         <div>
-                          {/* Name is editable; saves on blur (not per keystroke)
-                              so we don't fire an update + toast for every letter. */}
-                          <Input
-                            defaultValue={rep.full_name || ''}
-                            key={`name-${rep.id}-${rep.full_name || ''}`}
-                            onBlur={(e) => {
-                              const v = e.target.value.trim();
-                              if (v && v !== (rep.full_name || '')) {
-                                updateRepMutation.mutate({ repId: rep.id, data: { full_name: v } });
-                              }
+                          <InlineEditField
+                            value={rep.full_name || ''}
+                            onSave={(v) => {
+                              const name = String(v).trim();
+                              if (name) updateRepMutation.mutate({ repId: rep.id, data: { full_name: name } });
                             }}
                             placeholder="שם הנציג"
                             className="h-7 text-sm font-medium w-44 px-2"
@@ -1070,45 +1117,29 @@ export default function Representatives() {
                       </Select>
                     </td>
                     <td className="py-3 px-4">
-                      <Input
+                      <InlineEditField
                         value={rep.voicenter_extension || ''}
-                        onChange={(e) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { voicenter_extension: e.target.value }
-                          });
-                        }}
+                        onSave={(v) => updateRepMutation.mutate({ repId: rep.id, data: { voicenter_extension: v } })}
                         placeholder="שלוחה"
                         className="text-sm w-24"
                       />
                     </td>
                     <td className="py-3 px-4">
-                      <Input
+                      <InlineEditField
                         value={rep.phone || ''}
-                        onChange={(e) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { phone: e.target.value }
-                          });
-                        }}
-                        placeholder="טלפון"
+                        onSave={(v) => updateRepMutation.mutate({ repId: rep.id, data: { phone: v } })}
+                        placeholder="טלפון נייד"
                         className="text-sm w-32"
                       />
                     </td>
                     <td className="py-3 px-4">
-                      <Input
-                        value={rep.commission_rate || ''}
-                        onChange={(e) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { commission_rate: parseFloat(e.target.value) || 0 }
-                          });
-                        }}
+                      <InlineEditField
+                        value={rep.commission_rate ?? ''}
+                        onSave={(v) => updateRepMutation.mutate({ repId: rep.id, data: { commission_rate: parseFloat(v) || 0 } })}
                         placeholder="%"
                         type="number"
-                        min="0"
-                        max="100"
                         className="text-sm w-20"
+                        inputProps={{ min: "0", max: "100" }}
                       />
                     </td>
                     <td className="py-3 px-4 text-center">
