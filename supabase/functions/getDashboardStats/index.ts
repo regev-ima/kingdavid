@@ -120,27 +120,41 @@ Deno.serve(async (req) => {
     const stuckCutoffIso = new Date(now.getTime() - STUCK_LEAD_DAYS * 86400000).toISOString();
     const closedStatusesList = `(${CLOSED_LEAD_STATUSES.join(',')})`;
 
+    // Resilience: a single missing table/column (or a transient query error)
+    // must NOT 500 the entire dashboard — that turns every tile into a zero on
+    // the client and hides which source actually broke. Each source degrades to
+    // a neutral fallback and is recorded in `failures`, so the client still
+    // receives every section that could be computed.
+    const failures: string[] = [];
+    const safe = async <T>(name: string, p: PromiseLike<T>, fallback: T): Promise<T> => {
+      try { return await p; } catch (e) {
+        console.error(`[getDashboardStats] ${name} failed:`, e);
+        failures.push(name);
+        return fallback;
+      }
+    };
+
     const [rangeLeads, rangeOrders, rangeQuotes, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes, unassignedLeadsCountRes, stuckLeadsCountRes] = await Promise.all([
-      fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }),
-      fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }),
-      fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }),
-      fetchAll(supabase, 'marketing_costs', { gte: { date: startIso }, lte: { date: endIso }, order: 'date' }),
-      supabase.from('users').select('*').then((r: any) => r.data || []),
-      fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, lt: { due_date: todayStart.toISOString() }, order: 'due_date' }),
-      fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, gte: { due_date: todayStart.toISOString() }, lte: { due_date: todayEnd.toISOString() }, order: 'due_date' }),
-      fetchAll(supabase, 'quotes', { eq: { status: 'sent' }, order: 'created_date' }),
-      supabase
+      safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }), [] as any[]),
+      safe('orders', fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
+      safe('quotes', fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
+      safe('marketing_costs', fetchAll(supabase, 'marketing_costs', { gte: { date: startIso }, lte: { date: endIso }, order: 'date' }), [] as any[]),
+      safe('users', supabase.from('users').select('*').then((r: any) => { if (r.error) throw r.error; return r.data || []; }), [] as any[]),
+      safe('overdueTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, lt: { due_date: todayStart.toISOString() }, order: 'due_date' }), [] as any[]),
+      safe('todayTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, gte: { due_date: todayStart.toISOString() }, lte: { due_date: todayEnd.toISOString() }, order: 'due_date' }), [] as any[]),
+      safe('sentQuotes', fetchAll(supabase, 'quotes', { eq: { status: 'sent' }, order: 'created_date' }), [] as any[]),
+      safe('unassignedLeads', supabase
         .from('leads')
         .select('*', { count: 'exact', head: true })
         .or('rep1.is.null,rep1.eq.""')
-        .not('status', 'in', closedStatusesList),
-      supabase
+        .not('status', 'in', closedStatusesList), { count: 0 } as any),
+      safe('stuckLeads', supabase
         .from('leads')
         .select('*', { count: 'exact', head: true })
         .not('rep1', 'is', null)
         .neq('rep1', '')
         .lt('effective_sort_date', stuckCutoffIso)
-        .not('status', 'in', closedStatusesList),
+        .not('status', 'in', closedStatusesList), { count: 0 } as any),
     ]);
 
     const unassignedLeadsCount = unassignedLeadsCountRes?.count || 0;
@@ -305,7 +319,7 @@ Deno.serve(async (req) => {
     smart_alerts.sort((a, b) => getSeverityWeight(b.severity) - getSeverityWeight(a.severity));
 
     return Response.json({
-      meta: { generated_at: now.toISOString(), range: { start: startIso, end: endIso } },
+      meta: { generated_at: now.toISOString(), range: { start: startIso, end: endIso }, partial: failures.length > 0, failures },
       summary_kpis,
       live_pipeline,
       sales_performance: { reps: repRows },
