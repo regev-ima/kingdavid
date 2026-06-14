@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/select";
 import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
 import StatCube from "@/components/shared/StatCube";
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -1058,6 +1060,17 @@ export default function SalesTasks() {
               <Calendar className="h-3.5 w-3.5" /> שבוע
             </button>
           </div>
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="h-9 border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground gap-1.5"
+          >
+            <Link to={createPageUrl('LeadLookup')}>
+              <Search className="h-4 w-4" />
+              <span className="hidden sm:inline">איתור ליד</span>
+            </Link>
+          </Button>
           <Button
             onClick={() => setShowImportDialog(true)}
             variant="outline"
