@@ -731,7 +731,8 @@ export default function LeadManagement() {
         searchPlaceholder="חפש לפי שם, טלפון או אימייל..."
       />
 
-      {/* Active filter summary card */}
+      {/* Active filter summary card — the "בטיפול" status breakdown rides
+          inside it (as `extra`) so it doesn't add a second purple bar. */}
       {hasActiveFilter || dateRange ? (
         <ActiveFilterSummary
           scope={scope}
@@ -747,16 +748,13 @@ export default function LeadManagement() {
             setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
             setScope('all');
           }}
-        />
-      ) : null}
-
-      {/* "בטיפול" status breakdown — a manager's-eye view of where the
-          in-handling pipeline sits, each status clickable to narrow the list. */}
-      {handlingBreakdownActive ? (
-        <HandlingStatusBreakdown
-          counts={statusBreakdown}
-          activeStatus={filters.status}
-          onSelect={(st) => setFilters((f) => ({ ...f, status: f.status === st ? 'all' : st }))}
+          extra={handlingBreakdownActive ? (
+            <HandlingStatusBreakdown
+              counts={statusBreakdown}
+              activeStatus={filters.status}
+              onSelect={(st) => setFilters((f) => ({ ...f, status: f.status === st ? 'all' : st }))}
+            />
+          ) : null}
         />
       ) : null}
 
@@ -969,13 +967,12 @@ function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
   );
 }
 
-// ─── "בטיפול" status breakdown ──────────────────────────────────
-// Compact one-row, manager's-eye view of where the in-handling pipeline sits.
-// Shown in the purple summary area when a handling scope is active: a wrapping
-// row of status pills, only the ones that actually have leads, sorted biggest
-// first, colour-grouped, each clickable to narrow the list to that status. An
-// "אחר" pill absorbs non-standard / custom handling statuses so it reconciles
-// with the בטיפול total.
+// ─── "בטיפול" status breakdown row ──────────────────────────────
+// A card-less, single wrapping row of status pills, rendered INSIDE the filter
+// summary card (so it doesn't add a second purple bar). Only statuses that
+// actually have leads, sorted biggest first, colour-grouped, each clickable to
+// narrow the list. An "אחר" pill absorbs non-standard / custom handling
+// statuses so it reconciles with the בטיפול total.
 function HandlingStatusBreakdown({ counts, activeStatus, onSelect }) {
   const total = counts.__total ?? null;
   const loading = total == null;
@@ -986,42 +983,35 @@ function HandlingStatusBreakdown({ counts, activeStatus, onSelect }) {
     .filter((s) => loading || (s.count || 0) > 0)
     .sort((a, b) => (b.count || 0) - (a.count || 0));
   return (
-    <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-l from-primary/10 to-primary/5 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="flex items-center gap-2 shrink-0">
-          <Hourglass className="h-4 w-4 text-primary" />
-          <span className="text-base font-bold text-foreground">פילוח בטיפול לפי סטטוס</span>
-          {!loading ? (
-            <span className="text-xs font-medium text-muted-foreground">· {fmt(total)} לידים · לחץ לצמצום</span>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {chips.map((s) => {
-            const active = activeStatus === s.value;
-            return (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => onSelect(s.value)}
-                title={s.label}
-                className={`inline-flex items-center gap-1.5 rounded-full border ${s.tone.box} px-2.5 py-1 text-xs transition-all ${active ? `ring-2 ${s.tone.ring}` : 'border-transparent hover:brightness-95'}`}
-              >
-                <span className="text-muted-foreground">{s.label}</span>
-                <span className={`font-bold tabular-nums ${s.tone.text}`}>{s.count == null ? '…' : fmt(s.count)}</span>
-              </button>
-            );
-          })}
-          {other > 0 ? (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-slate-100 px-2.5 py-1 text-xs"
-              title="סטטוסים אחרים בטיפול (כולל מותאמים אישית)"
-            >
-              <span className="text-muted-foreground">אחר</span>
-              <span className="font-bold tabular-nums text-slate-700">{fmt(other)}</span>
-            </span>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <span className="text-xs font-bold text-foreground shrink-0 flex items-center gap-1.5">
+        <Hourglass className="h-3.5 w-3.5 text-primary" />
+        פילוח בטיפול לפי סטטוס
+      </span>
+      {chips.map((s) => {
+        const active = activeStatus === s.value;
+        return (
+          <button
+            key={s.value}
+            type="button"
+            onClick={() => onSelect(s.value)}
+            title={s.label}
+            className={`inline-flex items-center gap-1.5 rounded-full border ${s.tone.box} px-2.5 py-0.5 text-xs transition-all ${active ? `ring-2 ${s.tone.ring}` : 'border-transparent hover:brightness-95'}`}
+          >
+            <span className="text-muted-foreground">{s.label}</span>
+            <span className={`font-bold tabular-nums ${s.tone.text}`}>{s.count == null ? '…' : fmt(s.count)}</span>
+          </button>
+        );
+      })}
+      {other > 0 ? (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-slate-100 px-2.5 py-0.5 text-xs"
+          title="סטטוסים אחרים בטיפול (כולל מותאמים אישית)"
+        >
+          <span className="text-muted-foreground">אחר</span>
+          <span className="font-bold tabular-nums text-slate-700">{fmt(other)}</span>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1190,7 +1180,7 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
 // ─── Active filter summary ──────────────────────────────────────
 function ActiveFilterSummary({
   scope, filters, dateRange, repNameByEmail, customStatusesForFilter,
-  filteredCount, totalCount, onClearScope, onClearFilter, onClearAll,
+  filteredCount, totalCount, onClearScope, onClearFilter, onClearAll, extra,
 }) {
   const SCOPE_LABELS = {
     assigned_unhandled: 'משויך ולא טופל',
@@ -1271,6 +1261,9 @@ function ActiveFilterSummary({
           </span>
         ))}
       </div>
+      {extra ? (
+        <div className="border-t border-primary/20 pt-3">{extra}</div>
+      ) : null}
     </div>
   );
 }
