@@ -19,6 +19,9 @@ function normalizePhoneForLeadLookup(raw) {
   return digits;
 }
 // import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { useCustomStatuses } from '@/hooks/useCustomStatuses';
+import NewQuote from '@/pages/NewQuote';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/components/shared/rbac';
 
@@ -41,6 +44,12 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
   const effectiveUser = effectiveUserProp || effectiveUserFromHook;
   const isAdmin = isAdminUser(effectiveUser);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
+  // Lead-status snapshot + quote shortcut — brought over from the task EDIT
+  // dialog so creating a task from a lead has the same reach (set the lead's
+  // status, open a quote) without the heavier tabbed layout.
+  const { customStatuses = [] } = useCustomStatuses();
+  const statusOptions = useMemo(() => [...LEAD_STATUS_OPTIONS, ...customStatuses], [customStatuses]);
+  const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   const [formData, setFormData] = useState({
     lead_id: preSelectedLead?.id || '',
     status: '',
@@ -145,16 +154,25 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
   }, [isOpen, effectiveUser, isAdmin, formData.rep1]);
 
   const createTaskMutation = useMutation({
-    mutationFn: (data) => base44.entities.SalesTask.create(data),
+    mutationFn: async ({ taskData, leadId, newStatus, originalStatus }) => {
+      // If the rep changed the lead's status on this form, persist it to the
+      // Lead before creating the task (mirrors the EDIT dialog's behaviour).
+      if (leadId && newStatus && newStatus !== originalStatus) {
+        await base44.entities.Lead.update(leadId, { status: newStatus });
+      }
+      return base44.entities.SalesTask.create(taskData);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
       queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
       // Also refresh the lead-detail-scoped queries so the popup's
-      // "מה עושים עכשיו" / tasks history / activity log update the
+      // "מה עושים עכשיו" / tasks history / activity log / status update the
       // instant the new task is created, instead of showing stale
       // data until the next page navigation.
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['leadActivityLogs'] });
+      queryClient.invalidateQueries({ queryKey: ['lead'] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
       handleClose();
     },
   });
@@ -171,6 +189,7 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
       summary: '',
     });
     setValidationError('');
+    setShowQuoteDialog(false);
     onClose();
   };
 
@@ -193,21 +212,27 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
       ? new Date(new Date(scheduledISO).getTime() + Number(formData.duration_minutes) * 60_000).toISOString()
       : scheduledISO;
     createTaskMutation.mutate({
-      lead_id: formData.lead_id,
-      task_type: formData.task_type,
-      summary: formData.summary,
-      rep1: formData.rep1 || effectiveUser?.email || '',
-      rep2: isAdmin ? formData.rep2 : '',
-      task_status: 'not_completed',
-      work_start_date: scheduledISO,
-      due_date: dueISO,
-      manual_created_date: new Date().toISOString(),
+      taskData: {
+        lead_id: formData.lead_id,
+        task_type: formData.task_type,
+        summary: formData.summary,
+        rep1: formData.rep1 || effectiveUser?.email || '',
+        rep2: isAdmin ? formData.rep2 : '',
+        task_status: 'not_completed',
+        work_start_date: scheduledISO,
+        due_date: dueISO,
+        manual_created_date: new Date().toISOString(),
+      },
+      leadId: formData.lead_id,
+      newStatus: formData.status,
+      originalStatus: pickedLead?.status || '',
     });
   };
 
   const salesUsers = users.filter(u => u.role === 'user' || u.role === 'admin');
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
@@ -278,6 +303,27 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
               )}
             </div>
           )}
+
+          {/* סטטוס ליד — only once a lead is chosen; saving the task also
+              writes this back to the lead (same reach as the EDIT dialog). */}
+          {pickedLead ? (
+            <div className="space-y-1.5 bg-primary/5 border border-primary/10 rounded-xl p-3">
+              <Label className="text-xs font-semibold text-primary uppercase tracking-wider">סטטוס ליד</Label>
+              <Select
+                value={formData.status || ''}
+                onValueChange={(val) => setFormData({ ...formData, status: val })}
+              >
+                <SelectTrigger className="bg-white border-primary/20">
+                  <SelectValue placeholder="בחר סטטוס ליד..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           {/* סוג משימה */}
           <div className="space-y-2">
@@ -372,6 +418,19 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
             </div>
           ) : null}
 
+          {/* צור הצעת מחיר — surfaced for quote-prep tasks, like the EDIT
+              dialog. Opens a NewQuote dialog tied to this lead. */}
+          {formData.task_type === 'quote_preparation' && pickedLead ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full text-primary border-primary/20 hover:bg-primary/5 gap-2"
+              onClick={() => setShowQuoteDialog(true)}
+            >
+              <FileText className="h-4 w-4" /> צור הצעת מחיר ל{pickedLead.full_name || 'ליד'}
+            </Button>
+          ) : null}
+
           {/* נציגים */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -434,5 +493,28 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Quote creation dialog — opened from the "צור הצעת מחיר" button. Once a
+        quote is created, snapshot the lead status to "פולואפ אחרי הצעה" so the
+        status dropdown above reflects the new reality before the task is saved. */}
+    <Dialog open={showQuoteDialog} onOpenChange={setShowQuoteDialog}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" dir="rtl" onPointerDownOutside={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle className="text-xl font-bold">הצעת מחיר חדשה - {pickedLead?.full_name || ''}</DialogTitle>
+        </DialogHeader>
+        <NewQuote
+          asDialog
+          dialogLeadId={pickedLead?.id}
+          onDialogClose={() => {
+            queryClient.invalidateQueries({ queryKey: ['lead'] });
+            queryClient.invalidateQueries({ queryKey: ['leads'] });
+            queryClient.invalidateQueries({ queryKey: ['quotes'] });
+            setFormData((prev) => ({ ...prev, status: 'followup_after_quote' }));
+            setShowQuoteDialog(false);
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
