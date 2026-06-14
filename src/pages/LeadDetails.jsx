@@ -79,6 +79,7 @@ import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
+import NewOrder from '@/pages/NewOrder';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
@@ -103,6 +104,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  // Create an order inline (as a dialog over the lead) instead of navigating
+  // away — lets a rep close a walk-in sale without leaving the lead screen.
+  const [showOrderDialog, setShowOrderDialog] = useState(false);
   // Gating dialog for "משימה חדשה" on unassigned leads — instead of
   // letting the rep open a task on a lead that has no owner (and then
   // wondering who's supposed to do it), we intercept and require an
@@ -631,6 +635,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             הצעה חדשה
           </Button>
         </Link>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowOrderDialog(true)}
+          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
+        >
+          <ShoppingBag className="h-3.5 w-3.5 me-1.5" />
+          הזמנה חדשה
+        </Button>
       </div>
 
       {/* Action bar — חייג / משימה / הצעה. Always one click away
@@ -665,6 +678,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               הצעה חדשה
             </Button>
           </Link>
+          <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)} className="h-8 text-xs">
+            <ShoppingBag className="h-3.5 w-3.5 me-1" />
+            הזמנה חדשה
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" className="h-8 w-8">
@@ -1518,6 +1535,37 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         preSelectedLead={lead}
         effectiveUser={effectiveUser}
       />
+
+      {/* Inline order creation — opens over the lead, no navigation away.
+          On success we just close + refresh the lead's linked orders, so the
+          rep stays on the lead they were working. */}
+      <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
+        <DialogContent
+          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          dir="rtl"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">הזמנה חדשה - {lead?.full_name || ''}</DialogTitle>
+          </DialogHeader>
+          <NewOrder
+            asDialog
+            dialogLeadId={leadId}
+            onDialogClose={(order) => {
+              setShowOrderDialog(false);
+              // order is truthy only on a successful create (null = cancel),
+              // so we refresh the lead's linked orders and confirm only then.
+              if (order?.id) {
+                queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+                queryClient.invalidateQueries({ queryKey: ['leads'] });
+                queryClient.invalidateQueries({ queryKey: ['orders'] });
+                toast({ title: 'ההזמנה נוצרה' });
+              }
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Task Dialog */}
       <EditSalesTaskDialog
