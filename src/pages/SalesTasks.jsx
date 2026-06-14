@@ -97,6 +97,29 @@ const isTaskDueNow = (task, now) => {
   return Math.abs(due.getTime() - now.getTime()) <= DUE_NOW_WINDOW_MS;
 };
 
+// The three header lead-cubes. Both the cube COUNTS and the table FILTER run
+// `matchesLeadCube` over the SAME open-task set, so a cube's number always
+// equals the rows you see when you click it. The buckets overlap (a fresh
+// lead is both "new today" and "unhandled"), so this is a per-cube test
+// rather than a partition. Each test keys off the task's denormalised
+// lead-status mirror (falling back to the lead) plus, for "today", the
+// related lead's created_date.
+const LEAD_CUBES = ['leads_new_today', 'leads_unhandled', 'leads_in_handling'];
+const matchesLeadCube = (task, cube, leadsById, todayStart, todayEnd) => {
+  const lead = task.lead_id ? leadsById[task.lead_id] : null;
+  const status = task.status || lead?.status;
+  if (cube === 'leads_new_today') {
+    const created = parseDbTimestamp(lead?.created_date);
+    return !!created && created >= todayStart && created <= todayEnd
+      && (!status || !CLOSED_STATUSES.includes(status));
+  }
+  if (cube === 'leads_unhandled') return status === 'new_lead';
+  if (cube === 'leads_in_handling') {
+    return !!status && status !== 'new_lead' && !CLOSED_STATUSES.includes(status);
+  }
+  return false;
+};
+
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
@@ -348,36 +371,25 @@ export default function SalesTasks() {
     },
   });
 
-  // The three lead-cubes in the header read straight off the leads table
-  // (server-side, exact counts — never capped by whatever task rows are
-  // loaded for the active tab). Scoped to the rep's own leads (rep1/rep2);
-  // for admins it's the whole funnel, matching how the task cubes behave.
-  //   newToday   – leads that arrived today (the day's fresh intake)
-  //   unhandled  – open leads still waiting for first contact
-  //   inHandling – open leads the rep has already started working
-  const { data: leadCubeCounts = { newToday: 0, unhandled: 0, inHandling: 0 } } = useQuery({
-    queryKey: ['salesTasks-lead-cubes', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+  // Lead-cube source rows: lead_id + the denormalised lead-status mirror for
+  // every OPEN task the rep owns (uncapped scan; distinct-by-lead happens in
+  // leadCubeCounts below). We derive the header cube counts from THIS — the
+  // same task set the table renders — rather than from the leads table, so a
+  // cube's number always equals the rows you see when you click it: a lead
+  // with no open task lands in neither the count nor the list. Scoped to the
+  // rep via applyUserScope, exactly like the list query.
+  const { data: openTaskRows = [] } = useQuery({
+    queryKey: ['salesTasks-open-cube-rows', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
     enabled: canAccessSales,
     staleTime: 60_000,
     refetchInterval: 60_000,
     queryFn: async () => {
-      const scope = (q) => (!isAdmin && userEmail ? q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail}`) : q);
-      const headLeads = async (build) => {
-        const { count, error } = await build(
-          scope(base44.supabase.from('leads').select('*', { count: 'exact', head: true })),
-        );
-        if (error) throw error;
-        return count || 0;
-      };
-      // "Open" = lead not parked in any closed/lost bucket (deal won OR
-      // every not-interested / not-relevant reason). NOT IN that set.
-      const closedList = `(${CLOSED_STATUSES.join(',')})`;
-      const [newToday, unhandled, inHandling] = await Promise.all([
-        headLeads((q) => q.gte('created_date', todayStartIso).lte('created_date', todayEndIso)),
-        headLeads((q) => q.is('first_action_at', null).not('status', 'in', closedList)),
-        headLeads((q) => q.not('first_action_at', 'is', null).not('status', 'in', closedList)),
-      ]);
-      return { newToday, unhandled, inHandling };
+      const { data, error } = await applyUserScope(
+        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        { includeAssignment: includeAssignmentInCounts },
+      ).limit(10_000);
+      if (error) throw error;
+      return data || [];
     },
   });
 
@@ -436,26 +448,34 @@ export default function SalesTasks() {
         return CATEGORY_BY_LEAD_STATUS[status] === activeTab;
       });
     }
-    // The three header lead-cubes filter the task queue by the related
-    // lead's state (mirroring how the cube counts are derived):
-    //   leads_new_today   – lead landed today (fresh intake)
-    //   leads_unhandled   – open lead still waiting for first contact
-    //   leads_in_handling – open lead the rep has already started working
-    if (activeTab === 'leads_new_today' || activeTab === 'leads_unhandled' || activeTab === 'leads_in_handling') {
-      return filtered.filter((t) => {
-        const lead = t.lead_id ? leadsById[t.lead_id] : null;
-        if (!lead) return false;
-        if (activeTab === 'leads_new_today') {
-          const created = parseDbTimestamp(lead.created_date);
-          return !!created && created >= todayStart && created <= todayEnd;
-        }
-        const status = t.status || lead.status;
-        if (CLOSED_STATUSES.includes(status)) return false;
-        return activeTab === 'leads_unhandled' ? !isLeadHandled(lead) : isLeadHandled(lead);
-      });
+    // The three header lead-cubes filter the task queue by the related lead's
+    // state, using the exact same predicate as the cube counts so the number
+    // on a cube equals the rows shown here.
+    if (LEAD_CUBES.includes(activeTab)) {
+      return filtered.filter((t) => matchesLeadCube(t, activeTab, leadsById, todayStart, todayEnd));
     }
     return filtered;
   }, [effectiveUser, allSalesTasks, leadsById, activeTab, todayStart, todayEnd]);
+
+  // Distinct leads per header cube, computed from the rep's open-task rows
+  // with the SAME predicate the table filter uses (matchesLeadCube) — so each
+  // cube number equals the rows you see when you click it. A lead with three
+  // open tasks counts once; a lead with no open task counts in neither.
+  const leadCubeCounts = useMemo(() => {
+    const sets = { leads_new_today: new Set(), leads_unhandled: new Set(), leads_in_handling: new Set() };
+    for (const row of openTaskRows) {
+      const lid = row?.lead_id;
+      if (!lid) continue;
+      for (const cube of LEAD_CUBES) {
+        if (matchesLeadCube(row, cube, leadsById, todayStart, todayEnd)) sets[cube].add(lid);
+      }
+    }
+    return {
+      newToday: sets.leads_new_today.size,
+      unhandled: sets.leads_unhandled.size,
+      inHandling: sets.leads_in_handling.size,
+    };
+  }, [openTaskRows, leadsById, todayStart, todayEnd]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
