@@ -970,57 +970,57 @@ function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
 }
 
 // ─── "בטיפול" status breakdown ──────────────────────────────────
-// Renders in the purple summary area when a handling scope is active. One cube
-// per working status, colour-grouped for a quick read, each clickable to narrow
-// the list to that status. An "אחר" cube absorbs any non-standard / custom
-// handling statuses so the cubes reconcile with the בטיפול total.
+// Compact one-row, manager's-eye view of where the in-handling pipeline sits.
+// Shown in the purple summary area when a handling scope is active: a wrapping
+// row of status pills, only the ones that actually have leads, sorted biggest
+// first, colour-grouped, each clickable to narrow the list to that status. An
+// "אחר" pill absorbs non-standard / custom handling statuses so it reconciles
+// with the בטיפול total.
 function HandlingStatusBreakdown({ counts, activeStatus, onSelect }) {
-  const total = counts.__total;
+  const total = counts.__total ?? null;
+  const loading = total == null;
   const knownSum = HANDLING_STATUSES.reduce((acc, s) => acc + (counts[s.value] || 0), 0);
-  const other = total != null ? Math.max(0, total - knownSum) : 0;
+  const other = loading ? 0 : Math.max(0, total - knownSum);
+  const chips = HANDLING_STATUSES
+    .map((s) => ({ value: s.value, label: s.label, count: counts[s.value], tone: handlingStatusTone(s.value) }))
+    .filter((s) => loading || (s.count || 0) > 0)
+    .sort((a, b) => (b.count || 0) - (a.count || 0));
   return (
-    <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-l from-primary/10 to-primary/5 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
-            <Hourglass className="h-3.5 w-3.5" />
-          </span>
-          <span className="text-sm font-semibold text-foreground">פילוח &quot;בטיפול&quot; לפי סטטוס</span>
-          {total != null ? (
-            <span className="text-xs text-muted-foreground">({fmt(total)} בטיפול)</span>
+    <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-l from-primary/10 to-primary/5 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex items-center gap-2 shrink-0">
+          <Hourglass className="h-4 w-4 text-primary" />
+          <span className="text-base font-bold text-foreground">פילוח בטיפול לפי סטטוס</span>
+          {!loading ? (
+            <span className="text-xs font-medium text-muted-foreground">· {fmt(total)} לידים · לחץ לצמצום</span>
           ) : null}
         </div>
-        <span className="text-[11px] text-muted-foreground">לחץ סטטוס לצמצום הרשימה</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-        {HANDLING_STATUSES.map((s) => {
-          const tone = handlingStatusTone(s.value);
-          const active = activeStatus === s.value;
-          const value = counts[s.value];
-          return (
-            <button
-              key={s.value}
-              type="button"
-              onClick={() => onSelect(s.value)}
-              title={s.label}
-              className={`${tone.box} text-right rounded-lg border p-2 transition-all ${active ? `ring-2 ${tone.ring}` : 'border-transparent hover:brightness-95'}`}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chips.map((s) => {
+            const active = activeStatus === s.value;
+            return (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => onSelect(s.value)}
+                title={s.label}
+                className={`inline-flex items-center gap-1.5 rounded-full border ${s.tone.box} px-2.5 py-1 text-xs transition-all ${active ? `ring-2 ${s.tone.ring}` : 'border-transparent hover:brightness-95'}`}
+              >
+                <span className="text-muted-foreground">{s.label}</span>
+                <span className={`font-bold tabular-nums ${s.tone.text}`}>{s.count == null ? '…' : fmt(s.count)}</span>
+              </button>
+            );
+          })}
+          {other > 0 ? (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border border-transparent bg-slate-100 px-2.5 py-1 text-xs"
+              title="סטטוסים אחרים בטיפול (כולל מותאמים אישית)"
             >
-              <p className="text-[10px] leading-tight text-muted-foreground">{s.label}</p>
-              <p className={`text-lg font-bold tabular-nums leading-tight ${tone.text}`}>
-                {value == null ? '…' : fmt(value)}
-              </p>
-            </button>
-          );
-        })}
-        {other > 0 ? (
-          <div
-            className="bg-slate-50 text-right rounded-lg border border-transparent p-2"
-            title="סטטוסים אחרים בטיפול (כולל מותאמים אישית)"
-          >
-            <p className="text-[10px] leading-tight text-muted-foreground">אחר</p>
-            <p className="text-lg font-bold tabular-nums leading-tight text-slate-700">{fmt(other)}</p>
-          </div>
-        ) : null}
+              <span className="text-muted-foreground">אחר</span>
+              <span className="font-bold tabular-nums text-slate-700">{fmt(other)}</span>
+            </span>
+          ) : null}
+        </div>
       </div>
     </div>
   );
