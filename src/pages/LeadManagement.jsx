@@ -19,12 +19,14 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import {
   Users, UserPlus, UserCheck, Calendar as CalendarIcon,
   Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
+  Moon, Sun, Hourglass,
 } from 'lucide-react';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, format } from '@/lib/safe-date-fns';
+import { toZonedTime, fromZonedTime } from '@/lib/safe-date-fns-tz';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
-import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 
 // State for this page lives mostly in the URL so navigation back from a
@@ -36,28 +38,64 @@ const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
+// "New leads" are triaged in two operational shifts, anchored to Israel
+// wall-clock time regardless of the viewer's device timezone:
+//   • night → previous day 20:00 until today 08:00
+//   • day   → today 08:00 until today 20:00
+// Boundaries are constructed in Asia/Jerusalem and returned as UTC ISO
+// strings so they can be handed straight to an effective_sort_date range
+// filter. Negative/overflowing day numbers (e.g. the 0th of a month) are
+// normalised by the Date constructor, so month/year rollover is automatic.
+function israelShiftWindows(now = new Date()) {
+  const zoned = toZonedTime(now, TIMEZONE);
+  const y = zoned.getFullYear();
+  const mo = zoned.getMonth();
+  const d = zoned.getDate();
+  const at = (day, hour) => fromZonedTime(new Date(y, mo, day, hour, 0, 0, 0), TIMEZONE).toISOString();
+  return {
+    night: { from: at(d - 1, 20), to: at(d, 8) },
+    day: { from: at(d, 8), to: at(d, 20) },
+  };
+}
+
+// Statuses that mean a lead has moved past the "new_lead" stage but isn't
+// closed yet — i.e. a rep is actively working it ("בטיפול").
+const HANDLING_EXCLUDED_STATUSES = [...CLOSED_STATUSES, 'new_lead'];
+
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
-function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin }) {
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }) {
   const conditions = [];
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
   const hasRange = startDate && endDate && !Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime());
+  // The night/day shift scopes carry their OWN fixed time window, so they
+  // ignore the page-level date-range picker (intersecting the two would be
+  // confusing and usually empty). Every other scope honors the picker.
+  const isShiftScope = scope === 'new_night' || scope === 'new_day';
 
   if (!isAdmin) {
     conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
   }
   if (scope === 'unassigned') {
     conditions.push({ $or: [{ rep1: null }, { rep1: '' }] });
-  } else if (scope === 'new') {
-    // "חדש" = status is still new_lead — covers the rep's brief of
-    // "leads that arrived and haven't been engaged".
+  } else if (scope === 'assigned_unhandled') {
+    // משויך ולא טופל — has an owning rep but is still sitting at new_lead,
+    // i.e. nothing happened beyond the assignment itself.
     conditions.push({ status: 'new_lead' });
-  } else if (scope === 'open') {
-    conditions.push({ status: { $nin: CLOSED_STATUSES } });
+    conditions.push({ rep1: { $ne: null } });
+    conditions.push({ rep1: { $ne: '' } });
+  } else if (scope === 'handling') {
+    // בטיפול — past the new_lead stage and not yet closed.
+    conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
+  } else if (isShiftScope) {
+    // לידים חדשים (לילה/יום) — new_lead leads that arrived inside the shift.
+    const w = scope === 'new_night' ? windows?.night : windows?.day;
+    conditions.push({ status: 'new_lead' });
+    if (w) conditions.push({ effective_sort_date: { $gte: w.from, $lte: w.to } });
   }
-  if (hasRange) {
+  if (hasRange && !isShiftScope) {
     conditions.push({ effective_sort_date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } });
   }
   if (filters.rep && filters.rep !== 'all') {
@@ -180,31 +218,54 @@ export default function LeadManagement() {
   const dateRange = useMemo(() => resolveDatePreset(datePresetId, customRange), [datePresetId, customRange]);
   const fromIso = dateRange?.from ? dateRange.from.toISOString() : '';
   const toIso = dateRange?.to ? dateRange.to.toISOString() : '';
+  // Fixed night/day shift windows, anchored to today's Israel date. Computed
+  // once per mount — the boundaries (20:00 / 08:00) don't move during a
+  // session, so the ISO strings stay stable and keep the query keys steady.
+  const windows = useMemo(() => israelShiftWindows(), []);
 
   // ───────────────────────────────────────────────────────────────
-  // KPI tiles: 3 prominent counts that ALL respect the date range.
+  // Category KPI tiles. The three assignment/status buckets respect the
+  // date range; the two "new leads" shift buckets use their own fixed
+  // night/day windows (see israelShiftWindows).
   // ───────────────────────────────────────────────────────────────
-  const { data: kpiCounts = { newCount: 0, unassignedCount: 0, totalCount: 0 } } = useQuery({
-    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso],
+  const EMPTY_KPI = {
+    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0,
+    newNightCount: 0, newDayCount: 0, totalCount: 0,
+  };
+  const { data: kpiCounts = EMPTY_KPI } = useQuery({
+    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso, windows.night.from, windows.day.from],
     enabled: !!effectiveUser && !!userEmail,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      const base = (extra) => {
+      // base(extra, { range }) builds a count filter. `extra` may be a single
+      // condition or an array of them. `range` defaults to true (honor the
+      // page date range); pass false for the shift windows that bring their own.
+      const base = (extra, { range = true } = {}) => {
         const conditions = [];
         if (!isAdmin) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
-        if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
-        if (extra) conditions.push(extra);
+        if (range && fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (Array.isArray(extra)) conditions.push(...extra);
+        else if (extra) conditions.push(extra);
         if (conditions.length === 0) return {};
         if (conditions.length === 1) return conditions[0];
         return { $and: conditions };
       };
-      const [newCount, unassignedCount, totalCount] = await Promise.all([
-        base44.entities.Lead.count(base({ status: 'new_lead' })),
+      const [
+        assignedUnhandledCount, unassignedCount, handlingCount,
+        newNightCount, newDayCount, totalCount,
+      ] = await Promise.all([
+        base44.entities.Lead.count(base([{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }])),
         base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
+        base44.entities.Lead.count(base({ status: { $nin: HANDLING_EXCLUDED_STATUSES } })),
+        base44.entities.Lead.count(base([{ status: 'new_lead' }, { effective_sort_date: { $gte: windows.night.from, $lte: windows.night.to } }], { range: false })),
+        base44.entities.Lead.count(base([{ status: 'new_lead' }, { effective_sort_date: { $gte: windows.day.from, $lte: windows.day.to } }], { range: false })),
         base44.entities.Lead.count(base()),
       ]);
-      return { newCount, unassignedCount, totalCount };
+      return {
+        assignedUnhandledCount, unassignedCount, handlingCount,
+        newNightCount, newDayCount, totalCount,
+      };
     },
   });
 
@@ -288,8 +349,8 @@ export default function LeadManagement() {
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin }),
-    [filters, dateRange, scope, userEmail, isAdmin],
+    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }),
+    [filters, dateRange, scope, userEmail, isAdmin, windows],
   );
   const { data: leads = [], isLoading, isFetching } = useQuery({
     queryKey: ['leadMgmt-leads', leadsQuery, limit],
@@ -473,18 +534,24 @@ export default function LeadManagement() {
         ) : null}
       </div>
 
-      {/* 3 KPI tiles — synced to date range, clickable to filter */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Category tiles — clickable to filter the list. The three
+          assignment/status buckets follow the date range above; the two
+          "new leads" shift buckets use their own fixed night/day windows. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { id: 'new',        label: 'לידים חדשים',     value: kpiCounts.newCount,        tone: 'sky',   icon: Sparkles, desc: 'סטטוס "ליד חדש" בטווח' },
-          { id: 'unassigned', label: 'לא משויכים',       value: kpiCounts.unassignedCount, tone: 'amber', icon: UserPlus, desc: 'לידים בלי נציג ראשי' },
-          { id: 'all',        label: 'כל הלידים בטווח', value: kpiCounts.totalCount,      tone: 'indigo',icon: Users,    desc: 'נכנסו בתקופה שנבחרה' },
+          { id: 'assigned_unhandled', label: 'משויך ולא טופל',    value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck,     desc: 'שויך לנציג אך נשאר "ליד חדש"' },
+          { id: 'unassigned',         label: 'לא משויכים',         value: kpiCounts.unassignedCount,        tone: 'amber',  icon: UserPlus,      desc: 'לידים בלי נציג ראשי' },
+          { id: 'handling',           label: 'בטיפול',             value: kpiCounts.handlingCount,          tone: 'indigo', icon: Hourglass,     desc: 'אחרי שלב "ליד חדש", טרם נסגר' },
+          { id: 'new_night',          label: 'לידים חדשים לילה',   value: kpiCounts.newNightCount,          tone: 'violet', icon: Moon,          desc: '20:00 אתמול – 08:00 היום' },
+          { id: 'new_day',            label: 'לידים חדשים יום',    value: kpiCounts.newDayCount,            tone: 'sky',    icon: Sun,           desc: '08:00 – 20:00 היום' },
         ].map((tile) => {
           const isActive = scope === tile.id;
           const tones = {
-            sky:    { active: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',       value: 'text-sky-700' },
-            amber:  { active: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400', value: 'text-amber-700' },
+            rose:   { active: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',       value: 'text-rose-700' },
+            amber:  { active: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',    value: 'text-amber-700' },
             indigo: { active: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', value: 'text-indigo-700' },
+            violet: { active: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', value: 'text-violet-700' },
+            sky:    { active: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',          value: 'text-sky-700' },
           }[tile.tone];
           const cardCls = isActive ? tones.active : 'border-border bg-muted/30 hover:bg-muted/50';
           const valueCls = isActive ? tones.value : 'text-muted-foreground';
@@ -855,7 +922,13 @@ function ActiveFilterSummary({
   scope, filters, dateRange, repNameByEmail, customStatusesForFilter,
   filteredCount, totalCount, onClearScope, onClearFilter, onClearAll,
 }) {
-  const SCOPE_LABELS = { new: 'לידים חדשים', unassigned: 'לא משויכים', open: 'פתוחים' };
+  const SCOPE_LABELS = {
+    assigned_unhandled: 'משויך ולא טופל',
+    unassigned: 'לא משויכים',
+    handling: 'בטיפול',
+    new_night: 'לידים חדשים לילה',
+    new_day: 'לידים חדשים יום',
+  };
   const statusLabel = filters.status !== 'all'
     ? (LEAD_STATUS_OPTIONS.find((s) => s.value === filters.status)?.label
        || customStatusesForFilter.find((s) => s.value === filters.status)?.label
@@ -863,13 +936,16 @@ function ActiveFilterSummary({
     : null;
   const sourceLabel = filters.source !== 'all' ? (SOURCE_LABELS[filters.source] || filters.source) : null;
   const repLabel = filters.rep !== 'all' ? (repNameByEmail.get(filters.rep) || filters.rep) : null;
+  // The night/day shift scopes use their own fixed window and ignore the
+  // date-range picker, so don't advertise a date chip that has no effect.
+  const isShiftScope = scope === 'new_night' || scope === 'new_day';
   const chips = [
     scope !== 'all' && { key: 'scope', label: SCOPE_LABELS[scope] || scope, onClear: onClearScope },
     statusLabel && { key: 'status', label: `סטטוס: ${statusLabel}`, onClear: () => onClearFilter('status') },
     sourceLabel && { key: 'source', label: `מקור: ${sourceLabel}`,   onClear: () => onClearFilter('source') },
     repLabel    && { key: 'rep',    label: `נציג: ${repLabel}`,      onClear: () => onClearFilter('rep') },
     filters.search && { key: 'search', label: `חיפוש: "${filters.search}"`, onClear: () => onClearFilter('search') },
-    dateRange && {
+    dateRange && !isShiftScope && {
       key: 'date',
       label: `תאריך: ${format(dateRange.from, 'dd.MM.yy')}–${format(dateRange.to, 'dd.MM.yy')}`,
       onClear: null, // date is cleared via the preset bar above

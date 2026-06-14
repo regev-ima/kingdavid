@@ -143,7 +143,7 @@ function createEntityAPI(tableName) {
                   if (v.$lte) query = query.lte(k, v.$lte);
                   if (v.$lt) query = query.lt(k, v.$lt);
                   if (v.$gt) query = query.gt(k, v.$gt);
-                  if (v.$ne) query = query.neq(k, v.$ne);
+                  if ('$ne' in v) query = v.$ne === null ? query.not(k, 'is', null) : query.neq(k, v.$ne);
                   if (v.$nin) query = query.not(k, 'in', `(${v.$nin.join(',')})`);
                   if (v.$in) query = query.in(k, v.$in);
                   if (v.$regex != null) query = query.ilike(k, `%${v.$regex}%`);
@@ -160,7 +160,7 @@ function createEntityAPI(tableName) {
             if (value.$lte) query = query.lte(key, value.$lte);
             if (value.$lt) query = query.lt(key, value.$lt);
             if (value.$gt) query = query.gt(key, value.$gt);
-            if (value.$ne) query = query.neq(key, value.$ne);
+            if ('$ne' in value) query = value.$ne === null ? query.not(key, 'is', null) : query.neq(key, value.$ne);
             if (value.$nin) query = query.not(key, 'in', `(${value.$nin.join(',')})`);
             if (value.$in) query = query.in(key, value.$in);
             if (value.$regex) query = query.ilike(key, `%${value.$regex}%`);
@@ -237,7 +237,7 @@ function createEntityAPI(tableName) {
                   if (v.$lte) query = query.lte(k, v.$lte);
                   if (v.$lt) query = query.lt(k, v.$lt);
                   if (v.$gt) query = query.gt(k, v.$gt);
-                  if (v.$ne) query = query.neq(k, v.$ne);
+                  if ('$ne' in v) query = v.$ne === null ? query.not(k, 'is', null) : query.neq(k, v.$ne);
                   if (v.$nin) query = query.not(k, 'in', `(${v.$nin.join(',')})`);
                   if (v.$in) query = query.in(k, v.$in);
                   if (v.$regex != null) query = query.ilike(k, `%${v.$regex}%`);
@@ -253,7 +253,7 @@ function createEntityAPI(tableName) {
             if (value.$lte) query = query.lte(key, value.$lte);
             if (value.$lt) query = query.lt(key, value.$lt);
             if (value.$gt) query = query.gt(key, value.$gt);
-            if (value.$ne) query = query.neq(key, value.$ne);
+            if ('$ne' in value) query = value.$ne === null ? query.not(key, 'is', null) : query.neq(key, value.$ne);
             if (value.$nin) query = query.not(key, 'in', `(${value.$nin.join(',')})`);
             if (value.$in) query = query.in(key, value.$in);
             if (value.$regex) query = query.ilike(key, `%${value.$regex}%`);
