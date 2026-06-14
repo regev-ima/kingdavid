@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -173,7 +173,10 @@ export default function SalesTasks() {
   }, [initialTask]);
 
   const [tasksPage, setTasksPage] = useState(0);
-  const TASKS_PER_PAGE = 50;
+  const TASKS_PER_PAGE = 100;
+  // Sentinel at the foot of the list — when it scrolls into view we append the
+  // next page in place (see effect below), so the page never jumps to the top.
+  const loadMoreRef = useRef(null);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
   const isAdmin = isAdminUser(effectiveUser);
   const userEmail = effectiveUser?.email;
@@ -590,6 +593,10 @@ export default function SalesTasks() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ['leads-for-paginated-tasks', paginatedTaskLeadIds.join(',')],
+    // The key grows each time we append a page, so without this the already
+    // visible rows would flash their lead data away while the larger set
+    // refetches. Keep the previous leads on screen until the new set lands.
+    placeholderData: (previousData) => previousData,
     queryFn: async () => {
       if (paginatedTaskLeadIds.length === 0) return [];
       const allLeads = [];
@@ -632,6 +639,27 @@ export default function SalesTasks() {
     });
 
   const hasMoreTasks = paginatedTasks.length < totalFilteredCount;
+
+  // Infinite scroll: reveal the next page of rows the moment the sentinel at
+  // the foot of the list comes into view (with a 400px head-start so it feels
+  // instant). Because we only grow the already-rendered slice — same list,
+  // more rows appended below — the scroll position is untouched and the page
+  // never jumps back to the top. Re-running on tasksPage re-checks the
+  // intersection after each append, so a tall viewport keeps filling until the
+  // sentinel is pushed off-screen or every row is loaded.
+  useEffect(() => {
+    if (!hasMoreTasks) return undefined;
+    const el = loadMoreRef.current;
+    if (!el) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setTasksPage((prev) => prev + 1);
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreTasks, tasksPage]);
 
   // KPI numbers come straight from the server-side count query — no longer
   // capped by which rows happen to be loaded for the current tab. The
@@ -1359,9 +1387,14 @@ export default function SalesTasks() {
         )}
 
         {hasMoreTasks && (
-          <div className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card">
+          // Auto-load sentinel — scrolling near it appends the next 100 rows.
+          // The button is a manual fallback (keyboard / observer unavailable).
+          <div
+            ref={loadMoreRef}
+            className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card"
+          >
             <span className="text-xs text-muted-foreground/70">
-              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות
+              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות · טוען עוד…
             </span>
             <Button
               variant="outline"
