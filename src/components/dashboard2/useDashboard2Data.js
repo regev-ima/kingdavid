@@ -40,6 +40,28 @@ async function fetchInventoryThresholds() {
   return all;
 }
 
+// Sum of order revenue for a date range — used only as a fallback when the
+// stats Edge Function is down. Fetches just the `total` column (paged) so it
+// stays light even on wide ranges.
+async function fetchOrderTotalsInRange(startIso, endIso) {
+  const pageSize = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await base44.supabase
+      .from('orders')
+      .select('total')
+      .gte('created_date', startIso)
+      .lte('created_date', endIso)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 // One query, one round-trip per period. Fans out to:
 //   - getDashboardStats Edge Function (KPIs, sales reps, trends)
 //   - direct entity counts for things the Edge Function doesn't expose
@@ -181,7 +203,36 @@ async function fetchDashboard2Snapshot({ start, end, label = 'current' }) {
     };
   });
 
-  const revenue = Number(summary?.revenue?.value || 0);
+  // KPIs that normally come from the Edge Function. When it failed
+  // (stats === null) we backfill them with direct queries so the dashboard
+  // shows correct core numbers instead of zeros. This extra round-trip only
+  // happens on the degraded path — the healthy path stays a single fan-out.
+  let conversion = Number(summary?.conversion?.value || 0);
+  let revenue = Number(summary?.revenue?.value || 0);
+  let tasksToday = live?.tasks_today?.count || 0;
+  let tasksOverdue = live?.tasks_overdue?.count || 0;
+  let pendingQuotes = live?.pending_quotes?.count || 0;
+
+  if (!stats) {
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(); dayEnd.setHours(23, 59, 59, 999);
+    const dayStartIso = dayStart.toISOString();
+    const dayEndIso = dayEnd.toISOString();
+    const [wonLeads, overdueCount, todayCount, pendingCount, orderTotals] = await Promise.all([
+      guard('fallback.wonLeads', base44.entities.Lead.count({ status: 'deal_closed', effective_sort_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+      guard('fallback.tasksOverdue', base44.entities.SalesTask.count({ task_status: 'not_completed', due_date: { $lt: dayStartIso } }), 0, { silent: true }),
+      guard('fallback.tasksToday', base44.entities.SalesTask.count({ task_status: 'not_completed', due_date: { $gte: dayStartIso, $lte: dayEndIso } }), 0, { silent: true }),
+      guard('fallback.pendingQuotes', base44.entities.Quote.count({ status: 'sent' }), 0, { silent: true }),
+      guard('fallback.revenue', fetchOrderTotalsInRange(startIso, endIso), [], { silent: true }),
+    ]);
+    conversion = newLeadsCount > 0 ? Math.round((wonLeads / newLeadsCount) * 1000) / 10 : 0;
+    tasksOverdue = overdueCount;
+    tasksToday = todayCount;
+    pendingQuotes = pendingCount;
+    revenue = orderTotals.reduce((acc, o) => acc + Number(o?.total || 0), 0);
+  }
+
+  const tasksOpen = tasksToday + tasksOverdue;
   const avgOrder = ordersCount > 0 ? Math.round(revenue / ordersCount) : 0;
 
   const factoryOverdueAlert = (stats?.smart_alerts || []).find((a) => a.type === 'factory_overdue');
@@ -222,7 +273,7 @@ async function fetchDashboard2Snapshot({ start, end, label = 'current' }) {
     newLeadsCount,
     openLeadsTotal,
     noAnswerLeads,
-    conversion: Number(summary?.conversion?.value || 0),
+    conversion,
     revenue,
     ordersCount,
     avgOrder,
@@ -237,12 +288,10 @@ async function fetchDashboard2Snapshot({ start, end, label = 'current' }) {
     urgentTickets,
     slaBreachedTickets,
     ticketsOpenedToday,
-    tasksOpen: live?.tasks_today?.count != null && live?.tasks_overdue?.count != null
-      ? (live.tasks_today.count + live.tasks_overdue.count)
-      : (summary?.open_workload?.value || 0),
-    tasksToday: live?.tasks_today?.count || 0,
-    tasksOverdue: live?.tasks_overdue?.count || 0,
-    pendingQuotes: live?.pending_quotes?.count || 0,
+    tasksOpen,
+    tasksToday,
+    tasksOverdue,
+    pendingQuotes,
     marketingCost,
     marketingLeads,
     topSource,
