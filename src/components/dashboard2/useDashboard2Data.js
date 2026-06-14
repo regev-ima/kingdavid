@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { CLOSED_STATUSES } from '@/constants/leadOptions';
-import { fetchAllList } from '@/lib/base44Pagination';
 
 // Lead statuses that mean "open / not yet decided". Used for the
 // פתוחים סה״כ KPI and the no-answer carve-out. NOTE: the previous
@@ -19,6 +18,50 @@ const NO_ANSWER_STATUSES = [
 // own tile — both excluded here so totals don't double-count.)
 const IN_PRODUCTION_STATUSES = ['materials_check', 'in_production', 'qc'];
 
+// Low-stock count needs to compare two columns (qty_on_hand ≤ min_threshold),
+// which PostgREST can't filter server-side — so we fetch the rows. But we only
+// need those two columns, not `SELECT *`, and we page in 1000-row chunks with
+// no artificial delay (the old fetchAllList added 150ms between 500-row pages,
+// which dominated dashboard load on large inventories).
+async function fetchInventoryThresholds() {
+  const pageSize = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await base44.supabase
+      .from('inventory_items')
+      .select('qty_on_hand,min_threshold')
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
+// Sum of order revenue for a date range — used only as a fallback when the
+// stats Edge Function is down. Fetches just the `total` column (paged) so it
+// stays light even on wide ranges.
+async function fetchOrderTotalsInRange(startIso, endIso) {
+  const pageSize = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await base44.supabase
+      .from('orders')
+      .select('total')
+      .gte('created_date', startIso)
+      .lte('created_date', endIso)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 // One query, one round-trip per period. Fans out to:
 //   - getDashboardStats Edge Function (KPIs, sales reps, trends)
 //   - direct entity counts for things the Edge Function doesn't expose
@@ -27,13 +70,55 @@ const IN_PRODUCTION_STATUSES = ['materials_check', 'in_production', 'qc'];
 // Returned shape feeds HeroStrip + all OverviewTab sections via a single
 // `current` object (and an equivalent `previous` from a second invocation
 // for period-over-period deltas).
-async function fetchDashboard2Snapshot({ start, end }) {
+//
+// CRITICAL: every call is wrapped in `guard()` so a single failure (e.g. the
+// Edge Function 500-ing, or one table being absent) NO LONGER rejects the whole
+// Promise.all and blanks every tile to 0. Each failure falls back to a neutral
+// value and is recorded in `_errors`, which the page surfaces as a banner — so
+// "the data didn't load" is shown honestly instead of masquerading as real
+// zeros, and everything that DID load still renders.
+async function fetchDashboard2Snapshot({ start, end, label = 'current' }) {
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const nowIso = new Date().toISOString();
+  // The previous period only feeds HeroStrip's six deltas, so it skips the
+  // ~14 counts + inventory scan the current snapshot needs — roughly halving
+  // the dashboard's total work.
+  const lite = label === 'previous';
 
   const ticketOpenStatuses = ['open', 'in_progress', 'waiting_customer'];
   const ticketClosedStatuses = ['resolved', 'closed'];
+
+  const errors = [];
+  const guard = (source, promise, fallback, { silent = false } = {}) =>
+    promise.catch((e) => {
+      if (!silent) errors.push({ source, message: e?.message || String(e) });
+      return fallback;
+    });
+
+  const invokeStats = () =>
+    base44.functions.invoke('getDashboardStats', { startDate: startIso, endDate: endIso });
+
+  if (lite) {
+    // Everything stays in one Promise.all so the Edge Function runs in
+    // parallel with the counts (not serialized after it).
+    const [stats, newLeadsCount, ordersCount, openTickets, inProduction] = await Promise.all([
+      guard('getDashboardStats', invokeStats(), null, { silent: true }),
+      guard('leads.new', base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+      guard('orders.count', base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+      guard('tickets.open', base44.entities.SupportTicket.count({ status: { $in: ticketOpenStatuses } }), 0, { silent: true }),
+      guard('orders.inProduction', base44.entities.Order.count({ production_status: { $in: IN_PRODUCTION_STATUSES } }), 0, { silent: true }),
+    ]);
+    return {
+      newLeadsCount,
+      ordersCount,
+      openTickets,
+      inProduction,
+      revenue: Number(stats?.summary_kpis?.revenue?.value || 0),
+      tasksOverdue: stats?.live_pipeline?.tasks_overdue?.count || 0,
+      _errors: errors,
+    };
+  }
 
   const [
     stats,
@@ -56,25 +141,27 @@ async function fetchDashboard2Snapshot({ start, end }) {
     deliveriesShipped,
     inventory,
   ] = await Promise.all([
-    base44.functions.invoke('getDashboardStats', { startDate: startIso, endDate: endIso }),
-    base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.Lead.count({ status: { $nin: CLOSED_STATUSES } }),
-    base44.entities.Lead.count({ status: { $in: NO_ANSWER_STATUSES } }),
-    base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.Order.count({ payment_status: { $in: ['unpaid', 'deposit_paid'] } }),
-    base44.entities.Order.count({ payment_status: 'paid', created_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.Order.count({ production_status: { $in: IN_PRODUCTION_STATUSES } }),
-    base44.entities.Order.count({ production_status: 'ready' }),
-    base44.entities.Order.count({ production_status: 'not_started' }),
-    base44.entities.Order.count({ delivery_status: 'delivered', created_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.SupportTicket.count({ status: { $in: ticketOpenStatuses } }),
-    base44.entities.SupportTicket.count({ priority: 'urgent', status: { $nin: ticketClosedStatuses } }),
-    base44.entities.SupportTicket.count({ sla_due_date: { $lt: nowIso }, status: { $nin: ticketClosedStatuses } }),
-    base44.entities.SupportTicket.count({ created_date: { $gte: startIso, $lte: endIso } }),
-    base44.entities.DeliveryShipment.count({ scheduled_date: { $gte: startIso, $lte: endIso } }).catch(() => 0),
-    base44.entities.DeliveryShipment.count({ status: 'need_scheduling' }).catch(() => 0),
-    base44.entities.DeliveryShipment.count({ status: 'delivered', scheduled_date: { $gte: startIso, $lte: endIso } }).catch(() => 0),
-    fetchAllList(base44.entities.InventoryItem).catch(() => []),
+    guard('getDashboardStats', invokeStats(), null),
+    guard('leads.new', base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }), 0),
+    guard('leads.open', base44.entities.Lead.count({ status: { $nin: CLOSED_STATUSES } }), 0),
+    guard('leads.noAnswer', base44.entities.Lead.count({ status: { $in: NO_ANSWER_STATUSES } }), 0),
+    guard('orders.count', base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }), 0),
+    guard('orders.unpaid', base44.entities.Order.count({ payment_status: { $in: ['unpaid', 'deposit_paid'] } }), 0),
+    guard('orders.paid', base44.entities.Order.count({ payment_status: 'paid', created_date: { $gte: startIso, $lte: endIso } }), 0),
+    guard('orders.inProduction', base44.entities.Order.count({ production_status: { $in: IN_PRODUCTION_STATUSES } }), 0),
+    guard('orders.ready', base44.entities.Order.count({ production_status: 'ready' }), 0),
+    guard('orders.notStarted', base44.entities.Order.count({ production_status: 'not_started' }), 0),
+    guard('orders.delivered', base44.entities.Order.count({ delivery_status: 'delivered', created_date: { $gte: startIso, $lte: endIso } }), 0),
+    guard('tickets.open', base44.entities.SupportTicket.count({ status: { $in: ticketOpenStatuses } }), 0),
+    guard('tickets.urgent', base44.entities.SupportTicket.count({ priority: 'urgent', status: { $nin: ticketClosedStatuses } }), 0),
+    guard('tickets.slaBreached', base44.entities.SupportTicket.count({ sla_due_date: { $lt: nowIso }, status: { $nin: ticketClosedStatuses } }), 0),
+    guard('tickets.today', base44.entities.SupportTicket.count({ created_date: { $gte: startIso, $lte: endIso } }), 0),
+    // Deliveries + inventory fail silently (some deployments don't have these
+    // tables yet) — a missing optional module shouldn't raise an alarm banner.
+    guard('deliveries.today', base44.entities.DeliveryShipment.count({ scheduled_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+    guard('deliveries.needScheduling', base44.entities.DeliveryShipment.count({ status: 'need_scheduling' }), 0, { silent: true }),
+    guard('deliveries.shipped', base44.entities.DeliveryShipment.count({ status: 'delivered', scheduled_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+    guard('inventory', fetchInventoryThresholds(), [], { silent: true }),
   ]);
 
   // qty_on_hand ≤ min_threshold = "פריטים מתחת לסף" (matches the
@@ -116,7 +203,36 @@ async function fetchDashboard2Snapshot({ start, end }) {
     };
   });
 
-  const revenue = Number(summary?.revenue?.value || 0);
+  // KPIs that normally come from the Edge Function. When it failed
+  // (stats === null) we backfill them with direct queries so the dashboard
+  // shows correct core numbers instead of zeros. This extra round-trip only
+  // happens on the degraded path — the healthy path stays a single fan-out.
+  let conversion = Number(summary?.conversion?.value || 0);
+  let revenue = Number(summary?.revenue?.value || 0);
+  let tasksToday = live?.tasks_today?.count || 0;
+  let tasksOverdue = live?.tasks_overdue?.count || 0;
+  let pendingQuotes = live?.pending_quotes?.count || 0;
+
+  if (!stats) {
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(); dayEnd.setHours(23, 59, 59, 999);
+    const dayStartIso = dayStart.toISOString();
+    const dayEndIso = dayEnd.toISOString();
+    const [wonLeads, overdueCount, todayCount, pendingCount, orderTotals] = await Promise.all([
+      guard('fallback.wonLeads', base44.entities.Lead.count({ status: 'deal_closed', effective_sort_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+      guard('fallback.tasksOverdue', base44.entities.SalesTask.count({ task_status: 'not_completed', due_date: { $lt: dayStartIso } }), 0, { silent: true }),
+      guard('fallback.tasksToday', base44.entities.SalesTask.count({ task_status: 'not_completed', due_date: { $gte: dayStartIso, $lte: dayEndIso } }), 0, { silent: true }),
+      guard('fallback.pendingQuotes', base44.entities.Quote.count({ status: 'sent' }), 0, { silent: true }),
+      guard('fallback.revenue', fetchOrderTotalsInRange(startIso, endIso), [], { silent: true }),
+    ]);
+    conversion = newLeadsCount > 0 ? Math.round((wonLeads / newLeadsCount) * 1000) / 10 : 0;
+    tasksOverdue = overdueCount;
+    tasksToday = todayCount;
+    pendingQuotes = pendingCount;
+    revenue = orderTotals.reduce((acc, o) => acc + Number(o?.total || 0), 0);
+  }
+
+  const tasksOpen = tasksToday + tasksOverdue;
   const avgOrder = ordersCount > 0 ? Math.round(revenue / ordersCount) : 0;
 
   const factoryOverdueAlert = (stats?.smart_alerts || []).find((a) => a.type === 'factory_overdue');
@@ -157,7 +273,7 @@ async function fetchDashboard2Snapshot({ start, end }) {
     newLeadsCount,
     openLeadsTotal,
     noAnswerLeads,
-    conversion: Number(summary?.conversion?.value || 0),
+    conversion,
     revenue,
     ordersCount,
     avgOrder,
@@ -172,12 +288,10 @@ async function fetchDashboard2Snapshot({ start, end }) {
     urgentTickets,
     slaBreachedTickets,
     ticketsOpenedToday,
-    tasksOpen: live?.tasks_today?.count != null && live?.tasks_overdue?.count != null
-      ? (live.tasks_today.count + live.tasks_overdue.count)
-      : (summary?.open_workload?.value || 0),
-    tasksToday: live?.tasks_today?.count || 0,
-    tasksOverdue: live?.tasks_overdue?.count || 0,
-    pendingQuotes: live?.pending_quotes?.count || 0,
+    tasksOpen,
+    tasksToday,
+    tasksOverdue,
+    pendingQuotes,
     marketingCost,
     marketingLeads,
     topSource,
@@ -223,13 +337,14 @@ async function fetchDashboard2Snapshot({ start, end }) {
     })),
     reps,
     rawStats: stats,
+    _errors: errors,
   };
 }
 
 export default function useDashboard2Data({ start, end, enabled = true, label = 'current' }) {
   return useQuery({
     queryKey: ['dashboard2', label, start?.toISOString(), end?.toISOString()],
-    queryFn: () => fetchDashboard2Snapshot({ start, end }),
+    queryFn: () => fetchDashboard2Snapshot({ start, end, label }),
     enabled: enabled && !!start && !!end,
     staleTime: 45 * 1000,
     gcTime: 30 * 60 * 1000,
