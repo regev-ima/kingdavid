@@ -72,6 +72,22 @@ function windowCond(w) {
 // closed yet — i.e. a rep is actively working it ("בטיפול").
 const HANDLING_EXCLUDED_STATUSES = [...CLOSED_STATUSES, 'new_lead'];
 
+// "Lost" = every closed status except the winning one. Mirrors the rep-card
+// math (lost = closed − won), so the bucket and its drill-down agree.
+const LOST_STATUSES = CLOSED_STATUSES.filter((s) => s !== 'deal_closed');
+
+// Lifecycle buckets used to drill into a single rep's workload card. Each id
+// maps to the status condition that DEFINES that bucket — identical to how the
+// per-rep counts are computed below — so clicking a bucket produces a list
+// whose count matches the number on the card. These honor the date range (they
+// are not shift scopes), exactly like the counts on the cards.
+const LIFECYCLE_SCOPES = {
+  lc_new: { status: 'new_lead' },
+  lc_handling: { status: { $nin: HANDLING_EXCLUDED_STATUSES } },
+  lc_won: { status: 'deal_closed' },
+  lc_lost: { status: { $in: LOST_STATUSES } },
+};
+
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
@@ -106,6 +122,10 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
         : windows?.cycle;
     conditions.push({ status: 'new_lead' });
     if (w) conditions.push(windowCond(w));
+  } else if (LIFECYCLE_SCOPES[scope]) {
+    // Per-rep workload drill-down (חדשים/בטיפול/נסגרו/נאבדו). Combined with the
+    // rep filter below it reproduces the count shown on that rep's card.
+    conditions.push(LIFECYCLE_SCOPES[scope]);
   }
   if (hasRange && !isShiftScope) {
     conditions.push({ effective_sort_date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } });
@@ -295,15 +315,15 @@ export default function LeadManagement() {
   );
 
   // Per-rep workload via exact COUNT queries. For each rep (and team-wide) we
-  // count four buckets that PARTITION every lead assigned to the rep, so they
-  // sum to exactly what filtering the list by that rep shows:
-  //   • new      – status new_lead
+  // count four lifecycle buckets, each defined by the SAME condition its
+  // drill-down click applies (LIFECYCLE_SCOPES):
+  //   • new      – status new_lead (assigned but untouched)
   //   • handling – open but no longer new: hot lead, follow-up before/after
   //                quote, coming to branch, no-answer 1-5, changed direction, …
   //   • won      – deal_closed
   //   • lost     – every other closed status (not-relevant / disqualified / …)
-  // Rep match is rep1 OR rep2, mirroring the list filter, so each card's total
-  // reconciles with the filter count. COUNTs are exact, indexed, cached and run
+  // Rep match is rep1 OR rep2, mirroring the list filter, so each bucket equals
+  // the list it opens when clicked. COUNTs are exact, indexed, cached and run
   // in parallel; the team is small so the fan-out stays modest, and every count
   // honors the selected date range like the KPI tiles above. (The previous
   // version pulled all open leads and bucketed client-side, but capped at 50k
@@ -327,24 +347,21 @@ export default function LeadManagement() {
         if (all.length === 1) return all[0];
         return { $and: all };
       };
-      // Four COUNTs per scope: total, new, won, closed. "handling" and "lost"
-      // are derived, so any open status that is neither new nor closed (e.g. a
-      // follow-up) still lands in "handling", and the buckets always sum to the
-      // total.
+      // One COUNT per bucket, each using the SAME condition the card's
+      // drill-down click applies (LIFECYCLE_SCOPES). Counting the buckets
+      // directly — rather than deriving handling/lost by subtraction — means
+      // every number on the card equals the list it opens when clicked (the
+      // old subtraction folded null/unknown-status leads into "handling",
+      // which a "status not in (...)" filter then excluded → mismatch).
       const countsFor = async (repEmail) => {
         const base = repEmail ? [{ $or: [{ rep1: repEmail }, { rep2: repEmail }] }] : [];
-        const [total, newCount, wonCount, closedCount] = await Promise.all([
-          base44.entities.Lead.count(build(base)),
-          base44.entities.Lead.count(build([...base, { status: 'new_lead' }])),
-          base44.entities.Lead.count(build([...base, { status: 'deal_closed' }])),
-          base44.entities.Lead.count(build([...base, { status: { $in: CLOSED_STATUSES } }])),
+        const [newCount, handlingCount, wonCount, lostCount] = await Promise.all([
+          base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_new])),
+          base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_handling])),
+          base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_won])),
+          base44.entities.Lead.count(build([...base, LIFECYCLE_SCOPES.lc_lost])),
         ]);
-        return {
-          newCount,
-          handlingCount: Math.max(0, total - newCount - closedCount),
-          wonCount,
-          lostCount: Math.max(0, closedCount - wonCount),
-        };
+        return { newCount, handlingCount, wonCount, lostCount };
       };
       const emails = repsForPanel.map((r) => r.email);
       const [team, ...repResults] = await Promise.all([
@@ -480,6 +497,22 @@ export default function LeadManagement() {
 
   const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== 'all' || scope !== 'all';
 
+  // Drill into a rep workload card. `bucketScope` is null for the header (just
+  // filter the list to this rep) or a lifecycle scope id for a specific bucket
+  // (rep + that status bucket). Re-clicking the active target clears it. Both
+  // the rep filter and the scope respect the selected date range, so the list
+  // that opens always matches the number shown on the card.
+  const selectRepBucket = (repEmail, bucketScope) => {
+    const isActive = filters.rep === repEmail && scope === (bucketScope || 'all');
+    if (isActive) {
+      setFilters((f) => ({ ...f, rep: 'all' }));
+      setScope('all');
+    } else {
+      setFilters((f) => ({ ...f, rep: repEmail }));
+      setScope(bucketScope || 'all');
+    }
+  };
+
   return (
     <div className="space-y-4" dir="rtl">
       {/* Page header */}
@@ -574,8 +607,10 @@ export default function LeadManagement() {
         />
       </div>
 
-      {/* Rep workload panel — admin only. Click a card to filter list to
-          that rep's leads. */}
+      {/* Rep workload panel — admin only. Click the card header to filter the
+          list to that rep, or click a single bucket to drill into that rep's
+          new / handling / won / lost leads. Counts and the list it opens both
+          follow the selected date range. */}
       {isAdmin ? (
         <div>
           <p className="text-xs font-semibold text-muted-foreground mb-2 px-1 flex items-center gap-2">
@@ -585,30 +620,34 @@ export default function LeadManagement() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
             {/* "All team" card first */}
             <RepWorkloadCard
+              repEmail="all"
               label="כל הצוות"
               avatar={<span className="h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">כל</span>}
               newCount={workloadByRep.team.newCount}
               handlingCount={workloadByRep.team.handlingCount}
               wonCount={workloadByRep.team.wonCount}
               lostCount={workloadByRep.team.lostCount}
-              isActive={filters.rep === 'all'}
+              activeRep={filters.rep}
+              activeScope={scope}
               accent="indigo"
-              onClick={() => setFilters((f) => ({ ...f, rep: 'all' }))}
+              onSelect={selectRepBucket}
             />
             {sortedReps.map((rep) => {
               const wl = workloadByRep.byRep.get(rep.email) || EMPTY_WL;
               return (
                 <RepWorkloadCard
                   key={rep.email}
+                  repEmail={rep.email}
                   label={rep.full_name || rep.email}
                   avatar={<UserAvatar user={rep} size="sm" />}
                   newCount={wl.newCount}
                   handlingCount={wl.handlingCount}
                   wonCount={wl.wonCount}
                   lostCount={wl.lostCount}
-                  isActive={filters.rep === rep.email}
+                  activeRep={filters.rep}
+                  activeScope={scope}
                   accent="emerald"
-                  onClick={() => setFilters((f) => ({ ...f, rep: f.rep === rep.email ? 'all' : rep.email }))}
+                  onSelect={selectRepBucket}
                 />
               );
             })}
@@ -863,48 +902,66 @@ function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
 }
 
 // ─── Rep workload card ──────────────────────────────────────────
-function RepWorkloadCard({ label, avatar, newCount, handlingCount, wonCount, lostCount, isActive, accent, onClick }) {
+// A plain container (not a button) so its click targets — the header and each
+// of the four buckets — don't nest buttons. The header filters the list to the
+// rep; each bucket drills into that rep's new / handling / won / lost leads.
+// `activeRep`/`activeScope` reflect the live list filter so the matching target
+// highlights, and every count + the list it opens follow the date range.
+function RepWorkloadCard({ repEmail, label, avatar, newCount, handlingCount, wonCount, lostCount, activeRep, activeScope, accent, onSelect }) {
   const total = newCount + handlingCount + wonCount + lostCount;
   const tones = {
     indigo:  { active: 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-400',   total: 'text-indigo-700' },
     emerald: { active: 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400', total: 'text-emerald-700' },
   }[accent];
-  const cardCls = isActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
+  const repActive = activeRep === repEmail;
+  const headerActive = repActive && activeScope === 'all';
+  const cardCls = repActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
   // Four buckets that partition all of the rep's leads (sum to the total, which
   // matches what filtering the list by this rep shows): open work (new but
   // untouched + in handling) and closed outcomes (won + lost/not-interested).
+  // Each carries the lifecycle scope it drills into (see LIFECYCLE_SCOPES).
   const stats = [
-    { label: 'חדשים שטרם טופלו', title: 'לידים חדשים שטרם טופלו', value: newCount,      box: 'bg-sky-50',     text: 'text-sky-700',     sub: 'text-sky-700/80' },
-    { label: 'בטיפול',           title: 'לידים בטיפול',           value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80' },
-    { label: 'נסגרו',            title: 'לידים שנסגרו בעסקה',     value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80' },
-    { label: 'נאבדו',            title: 'לידים שנאבדו – לא מעוניינים', value: lostCount, box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80' },
+    { scope: 'lc_new',      label: 'חדשים שטרם טופלו', title: 'לידים חדשים שטרם טופלו',        value: newCount,      box: 'bg-sky-50',     text: 'text-sky-700',     sub: 'text-sky-700/80',     ring: 'ring-sky-400 border-sky-500' },
+    { scope: 'lc_handling', label: 'בטיפול',           title: 'לידים בטיפול',                  value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80',   ring: 'ring-amber-400 border-amber-500' },
+    { scope: 'lc_won',      label: 'נסגרו',            title: 'לידים שנסגרו בעסקה',            value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80', ring: 'ring-emerald-400 border-emerald-500' },
+    { scope: 'lc_lost',     label: 'נאבדו',            title: 'לידים שנאבדו – לא מעוניינים',   value: lostCount,     box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80',    ring: 'ring-rose-400 border-rose-500' },
   ];
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`text-right rounded-xl border-2 p-2.5 shadow-card transition-all ${cardCls}`}
-    >
-      <div className="flex items-center gap-2 mb-2 min-w-0">
+    <div className={`rounded-xl border-2 p-2.5 shadow-card transition-all ${cardCls}`}>
+      <button
+        type="button"
+        onClick={() => onSelect(repEmail, null)}
+        className={`w-full text-right flex items-center gap-2 mb-2 min-w-0 rounded-lg px-1 py-0.5 transition-colors hover:bg-muted/40 ${headerActive ? 'bg-muted/40' : ''}`}
+        title={`סנן לפי ${label}`}
+      >
         {avatar}
         <span className="text-xs font-semibold truncate flex-1" title={label}>{label}</span>
-      </div>
+      </button>
       <div className="grid grid-cols-2 gap-1.5 text-xs">
-        {stats.map((s) => (
-          <div key={s.label} className={`${s.box} rounded p-1.5 text-center`} title={s.title}>
-            <p className={`text-[10px] leading-tight ${s.sub}`}>{s.label}</p>
-            <p className={`text-base font-bold tabular-nums leading-tight ${s.text}`}>{fmt(s.value)}</p>
-          </div>
-        ))}
+        {stats.map((s) => {
+          const active = repActive && activeScope === s.scope;
+          return (
+            <button
+              key={s.scope}
+              type="button"
+              onClick={() => onSelect(repEmail, s.scope)}
+              title={s.title}
+              className={`${s.box} rounded p-1.5 text-center border transition-all ${active ? `ring-2 ${s.ring}` : 'border-transparent hover:brightness-95'}`}
+            >
+              <p className={`text-[10px] leading-tight ${s.sub}`}>{s.label}</p>
+              <p className={`text-base font-bold tabular-nums leading-tight ${s.text}`}>{fmt(s.value)}</p>
+            </button>
+          );
+        })}
       </div>
       {total > 0 ? (
-        <p className={`text-[10px] mt-1.5 font-semibold ${isActive ? tones.total : 'text-muted-foreground'}`}>
+        <p className={`text-[10px] mt-1.5 font-semibold ${repActive ? tones.total : 'text-muted-foreground'}`}>
           סה״כ {fmt(total)}
         </p>
       ) : (
         <p className="text-[10px] mt-1.5 text-muted-foreground">פנוי</p>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -1017,6 +1074,10 @@ function ActiveFilterSummary({
     new_cycle: 'לידים חדשים (20:00–20:00)',
     new_night: 'לידים חדשים לילה',
     new_day: 'לידים חדשים יום',
+    lc_new: 'חדשים שטרם טופלו',
+    lc_handling: 'בטיפול',
+    lc_won: 'נסגרו',
+    lc_lost: 'נאבדו',
   };
   const statusLabel = filters.status !== 'all'
     ? (LEAD_STATUS_OPTIONS.find((s) => s.value === filters.status)?.label
