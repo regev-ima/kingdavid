@@ -69,7 +69,7 @@ import RepCard from '@/components/lead/RepCard';
 import DetailField from '@/components/lead/DetailField';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
-import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceInDays, differenceInWeeks, differenceInMonths } from '@/lib/safe-date-fns';
+import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
@@ -95,23 +95,34 @@ function hebrewCount(n, one, two, many) {
   return `${n} ${many}`;
 }
 
-// Lead age expressed simultaneously in days, weeks and months —
-// e.g. "385 ימים · 55 שבועות · 12 חודשים". Days are always shown;
-// weeks and months are added only once they reach a full unit so a
-// brand-new lead doesn't read "5 ימים · 0 שבועות · 0 חודשים".
+// Join Hebrew list parts with commas and a final "ו" conjunction:
+// ["3 חודשים","2 שבועות","5 ימים"] → "3 חודשים, 2 שבועות ו-5 ימים".
+function joinHebrewParts(parts) {
+  if (parts.length === 0) return 'פחות מיום';
+  if (parts.length === 1) return parts[0];
+  const last = parts[parts.length - 1];
+  const conj = /^\d/.test(last) ? 'ו-' : 'ו'; // "ו-5 ימים" vs "ויומיים"
+  return `${parts.slice(0, -1).join(', ')} ${conj}${last}`;
+}
+
+// Lead age as a single cascading breakdown that adds back up to the total
+// day count — e.g. a 109-day-old lead reads "3 חודשים, 2 שבועות ו-5 ימים",
+// NOT three independent totals. Uses round 30-day months / 7-day weeks so
+// the parts always sum to the days; zero-valued units are dropped.
 function formatLeadAge(createdDate) {
   const created = createdDate instanceof Date ? createdDate : new Date(createdDate);
   if (isNaN(created.getTime())) return '-';
 
-  const now = new Date();
-  const days = Math.max(0, differenceInDays(now, created));
-  const weeks = Math.max(0, differenceInWeeks(now, created));
-  const months = Math.max(0, differenceInMonths(now, created));
+  let remaining = Math.max(0, differenceInDays(new Date(), created));
+  const months = Math.floor(remaining / 30); remaining -= months * 30;
+  const weeks = Math.floor(remaining / 7); remaining -= weeks * 7;
+  const days = remaining;
 
-  const parts = [hebrewCount(days, 'יום', 'יומיים', 'ימים')];
-  if (weeks >= 1) parts.push(hebrewCount(weeks, 'שבוע', 'שבועיים', 'שבועות'));
-  if (months >= 1) parts.push(hebrewCount(months, 'חודש', 'חודשיים', 'חודשים'));
-  return parts.join(' · ');
+  const parts = [];
+  if (months > 0) parts.push(hebrewCount(months, 'חודש', 'חודשיים', 'חודשים'));
+  if (weeks > 0) parts.push(hebrewCount(weeks, 'שבוע', 'שבועיים', 'שבועות'));
+  if (days > 0) parts.push(hebrewCount(days, 'יום', 'יומיים', 'ימים'));
+  return joinHebrewParts(parts);
 }
 
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
