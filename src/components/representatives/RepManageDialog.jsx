@@ -265,7 +265,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
           </div>
         </DialogHeader>
 
-        <Tabs defaultValue="details" className="flex-1 min-h-0 flex flex-col">
+        <Tabs defaultValue="details" dir="rtl" className="flex-1 min-h-0 flex flex-col">
           <TabsList className="mx-6 mt-3 grid grid-cols-5 shrink-0">
             <TabsTrigger value="details" className="gap-1 text-xs"><UserIcon className="h-3.5 w-3.5" />פרטים</TabsTrigger>
             <TabsTrigger value="schedule" className="gap-1 text-xs"><Clock className="h-3.5 w-3.5" />לו״ז</TabsTrigger>
@@ -297,7 +297,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                 </div>
                 <div className="space-y-1.5">
                   <Label>תפקיד</Label>
-                  <Select value={role} onValueChange={setRole}>
+                  <Select value={role} onValueChange={setRole} dir="rtl">
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {ROLE_OPTIONS.map((o) => (
@@ -466,7 +466,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">סוג</Label>
-                      <Select value={v.type || 'vacation'} onValueChange={(val) => updateVacation(v.id, { type: val })}>
+                      <Select value={v.type || 'vacation'} onValueChange={(val) => updateVacation(v.id, { type: val })} dir="rtl">
                         <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {VACATION_TYPES.map((t) => (
@@ -552,7 +552,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
               <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">סוג מסמך</Label>
-                  <Select value={docCategory} onValueChange={setDocCategory}>
+                  <Select value={docCategory} onValueChange={setDocCategory} dir="rtl">
                     <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {DOC_CATEGORIES.map((c) => (
