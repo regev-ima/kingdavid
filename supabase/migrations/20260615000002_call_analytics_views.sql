@@ -64,7 +64,6 @@ SELECT
   cl.call_started_at,
   cl.call_duration_seconds,
   cl.call_result,
-  cl.call_notes,
   cl.recording_url,
   cl.rep_id,
   cl.lead_id,

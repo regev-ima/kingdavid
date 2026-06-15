@@ -40,7 +40,7 @@ function applyCallFilters(query, { search, result, rep }) {
   if (rep && rep !== 'all') query = query.eq('rep_id', rep);
   if (search && search.trim()) {
     const term = search.trim().replace(/[",()]/g, '');
-    query = query.or(`call_notes.ilike.%${term}%,lead_full_name.ilike.%${term}%,phone_number.ilike.%${term}%`);
+    query = query.or(`lead_full_name.ilike.%${term}%,phone_number.ilike.%${term}%`);
   }
   return query;
 }
@@ -281,13 +281,6 @@ export default function CallAnalytics() {
       render: (log) => <StatusBadge status={log.call_result} />,
     },
     {
-      header: 'הערות',
-      accessor: 'call_notes',
-      render: (log) => (
-        <div className="max-w-xs truncate text-sm text-muted-foreground">{log.call_notes || '-'}</div>
-      ),
-    },
-    {
       header: 'הקלטה',
       accessor: 'recording_url',
       render: (log) => <RecordingPlayer recordingUrl={log.recording_url} hasRecording={!!log.recording_url} />,
@@ -396,7 +389,7 @@ export default function CallAnalytics() {
         values={filters}
         onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
         onClear={() => setFilters({ search: '', result: 'all', rep: 'all' })}
-        searchPlaceholder="חפש בהערות, שם ליד או טלפון..."
+        searchPlaceholder="חפש לפי שם ליד או טלפון..."
       />
 
       {matchCount !== null && (
