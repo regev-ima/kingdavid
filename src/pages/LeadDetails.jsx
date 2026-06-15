@@ -85,6 +85,21 @@ import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
+// Glanceable chip metadata for a task's *type* (the verb: call / meeting
+// / quote…). Used in the task-history rows so the rep reads "what kind of
+// action was this?" at a glance, with a colour that matches the app's
+// type palette. Mirrors the queue card's TYPE_META so the two read alike.
+const TASK_TYPE_CHIP = {
+  call:              { icon: Phone,        tone: 'bg-blue-100 text-blue-700' },
+  meeting:           { icon: CalendarDays, tone: 'bg-amber-100 text-amber-700' },
+  quote_preparation: { icon: FileText,     tone: 'bg-indigo-100 text-indigo-700' },
+  close_order:       { icon: ShoppingBag,  tone: 'bg-emerald-100 text-emerald-700' },
+  assignment:        { icon: User,         tone: 'bg-slate-100 text-slate-700' },
+  followup:          { icon: Clock,        tone: 'bg-violet-100 text-violet-700' },
+};
+const FALLBACK_TASK_TYPE_CHIP = { icon: Tag, tone: 'bg-muted text-foreground/70' };
+
+
 // Hebrew counter with proper singular / dual / plural forms
 // (e.g. 1 → "יום", 2 → "יומיים", 3 → "3 ימים").
 function hebrewCount(n, one, two, many) {
@@ -988,7 +1003,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
                               const dueDate = task.due_date ? new Date(task.due_date) : null;
                               const isDone = task.task_status === 'completed';
-                              
+
                               const taskStatusStyle = {
                                 not_completed: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
                                 completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
@@ -1011,88 +1026,80 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                                 cancelled: 'bg-muted/50 hover:bg-muted border-border',
                               }[task.task_status] || 'bg-card hover:bg-muted/50 border-border';
 
+                              const typeChip = TASK_TYPE_CHIP[task.task_type] || FALLBACK_TASK_TYPE_CHIP;
+                              const TypeIcon = typeChip.icon;
+                              const StatusIcon = { completed: CheckCircle2, not_done: XCircle, cancelled: Ban }[task.task_status] || Clock;
+                              const createdDisplay = formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM HH:mm');
+                              const closedDisplay = task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : null;
+                              const isPending = task.task_status !== 'completed' && task.task_status !== 'cancelled';
+
                               return (
                                 <div
                                   key={task.id}
                                   onClick={() => { setEditingTask(task); setShowEditTaskDialog(true); }}
-                                  className={`relative p-4 border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md ${cardBgClass} ${isDone ? 'opacity-70' : ''}`}
+                                  className={`relative p-3.5 border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md ${cardBgClass} ${isDone ? 'opacity-80' : ''}`}
                                 >
-                                  {/* Delete button removed - tasks can only be deleted from detail view */}
-
-                                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center pe-6">
-                                    
-                                    {/* רבע 1: הסטטוס שעודכן בעקבות המשימה + הנציג.
-                                        שם הלקוח הוסר מכאן — הוא כבר מוצג בראש
-                                        החלון, וחזרה עליו בכל שורה רק הסתירה את
-                                        המידע שבאמת מעניין: לאיזה סטטוס הליד עבר
-                                        בעקבות המשימה הזו. */}
-                                    <div className="flex flex-col gap-1.5 text-start overflow-hidden">
-                                      {task.status ? (
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <span className="text-xs text-muted-foreground flex-shrink-0">סטטוס שעודכן:</span>
-                                          <StatusBadge status={task.status} className="truncate" />
-                                        </div>
-                                      ) : (
-                                        <span className="text-sm text-muted-foreground/50">ללא עדכון סטטוס</span>
-                                      )}
-                                      <div className="text-sm text-muted-foreground truncate">
-                                        נציג מטפל: {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
-                                      </div>
-                                    </div>
-
-                                    {/* רבע 2: סוג וסטטוס */}
-                                    <div className="flex flex-col items-start gap-2">
-                                      <span className="font-bold text-sm text-foreground">
-                                        {taskTypeLabel}
-                                      </span>
-                                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
-                                        {taskStatusLabel}
-                                      </span>
-                                    </div>
-
-                                    {/* רבע 3: תאריכים */}
-                                    <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-muted-foreground">תאריך יצירה:</span>
-                                        <span dir="ltr" className="tabular-nums font-medium">
-                                          {formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-muted-foreground">תאריך יעד:</span>
-                                        <span dir="ltr" className="tabular-nums font-medium">
-                                          {dueDateDisplay || 'ללא יעד'}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    {/* רבע 4: זמן נותר/עבר */}
-                                    <div className="flex flex-col items-end justify-center gap-2 h-full">
-                                      <div className="flex-1 flex items-center">
-                                        {dueDate && task.task_status !== 'completed' && task.task_status !== 'cancelled' && (
-                                          <span className="font-bold text-sm text-blue-800">
-                                            בעוד
-                                            {formatDistanceToNow(dueDate, { locale: he })}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {(statusKey === 'completed' || statusKey === 'not_done') && task.updated_date && (
-                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1 tabular-nums ${
-                                          statusKey === 'completed' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'
-                                        }`}>
-                                          {statusKey === 'completed' ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                          <span dir="ltr">
-                                            {task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : '-'}
-                                          </span>
-                                        </span>
-                                      )}
-                                    </div>
-
+                                  {/* Top line: the verb (task type) on the start,
+                                      the outcome badge (בוצע / לא בוצע / בוטל) on
+                                      the end. One glance answers "what was it, and
+                                      how did it end?". */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${typeChip.tone}`}>
+                                      <TypeIcon className="h-3.5 w-3.5" />
+                                      {taskTypeLabel}
+                                    </span>
+                                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
+                                      <StatusIcon className="h-3 w-3" />
+                                      {taskStatusLabel}
+                                    </span>
                                   </div>
-                                  
+
+                                  {/* Result line: the lead status this task moved
+                                      the lead into (the thing the rep actually cares
+                                      about) + who handled it. No truncation — the
+                                      full status label always shows. */}
+                                  <div className="mt-2.5 flex items-center gap-x-2 gap-y-1.5 flex-wrap text-xs">
+                                    {task.status ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <span className="text-muted-foreground">סטטוס שעודכן:</span>
+                                        <StatusBadge status={task.status} />
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground/60">ללא עדכון סטטוס</span>
+                                    )}
+                                    <span className="text-border" aria-hidden>·</span>
+                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                      <User className="h-3 w-3 flex-shrink-0" />
+                                      {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
+                                    </span>
+                                  </div>
+
+                                  {/* Timeline line: created → due → (remaining or
+                                      closed-at), all inline and compact so the dates
+                                      never wrap into a tall cramped column. */}
+                                  <div className="mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-muted-foreground tabular-nums">
+                                    <span>נוצר <span dir="ltr" className="font-medium">{createdDisplay}</span></span>
+                                    <span className="text-border" aria-hidden>·</span>
+                                    <span>יעד <span dir="ltr" className="font-medium">{dueDateDisplay || 'ללא'}</span></span>
+                                    {isPending && dueDate && (
+                                      <>
+                                        <span className="text-border" aria-hidden>·</span>
+                                        <span className="font-semibold text-blue-700">בעוד {formatDistanceToNow(dueDate, { locale: he })}</span>
+                                      </>
+                                    )}
+                                    {(task.task_status === 'completed' || task.task_status === 'not_done') && closedDisplay && (
+                                      <>
+                                        <span className="text-border" aria-hidden>·</span>
+                                        <span className={`inline-flex items-center gap-1 font-semibold ${task.task_status === 'completed' ? 'text-emerald-700' : 'text-red-600'}`}>
+                                          {task.task_status === 'completed' ? 'נסגר' : 'סומן'} <span dir="ltr">{closedDisplay}</span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+
                                   {/* Summary Row */}
                                   {task.summary && (
-                                    <div className="mt-3 pt-3 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
+                                    <div className="mt-2.5 pt-2.5 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
                                       {task.summary}
                                     </div>
                                   )}
