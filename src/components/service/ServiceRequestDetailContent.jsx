@@ -6,7 +6,6 @@ import { createPageUrl } from '@/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
@@ -47,10 +46,11 @@ function Field({ icon: Icon, label, children, ltr }) {
 }
 
 // The full service-ticket detail view, shared by the standalone page
-// (ServiceRequestDetails) and the in-list popup (ServiceRequestModal). Laid out
-// in tabs (פרטים / תמונות / ציר זמן) so there's no long scroll. When `onClose`
-// is set we're in a popup — the Dialog supplies its own close button, so we
-// only show the back arrow on the standalone page.
+// (ServiceRequestDetails) and the in-list popup (ServiceRequestModal). Everything
+// is shown on a single screen — details + photos in the main column, the handling
+// timeline (ציר זמן) alongside it. When `onClose` is set we're in a popup — the
+// Dialog supplies its own close button, so we only show the back arrow on the
+// standalone page.
 export default function ServiceRequestDetailContent({ ticketId, onClose }) {
   const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
@@ -207,20 +207,10 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
       </div>
 
-      {/* ── Tabs ───────────────────────────────────────────────── */}
-      <Tabs defaultValue="details">
-        <TabsList className="bg-white border">
-          <TabsTrigger value="details">פרטים</TabsTrigger>
-          <TabsTrigger value="photos">
-            <ImageIcon className="h-3.5 w-3.5 me-1" /> תמונות{photos.length ? ` (${photos.length})` : ''}
-          </TabsTrigger>
-          <TabsTrigger value="timeline">
-            <Clock className="h-3.5 w-3.5 me-1" /> ציר זמן
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Details */}
-        <TabsContent value="details" className="mt-5 space-y-5">
+      {/* ── Single-screen layout: details + photos beside the timeline ─ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        {/* Main column: details + photos */}
+        <div className="lg:col-span-2 space-y-5">
           <div className="rounded-xl border border-border p-5">
             <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
             <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
@@ -277,27 +267,33 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
               <Link to={createPageUrl('OrderDetails') + `?id=${order.id}`}><Button variant="outline" size="sm">צפה בהזמנה</Button></Link>
             </div>
           )}
-        </TabsContent>
 
-        {/* Photos */}
-        <TabsContent value="photos" className="mt-5 space-y-4">
-          <p className="text-sm text-muted-foreground">תמונות של התלונה / הבעיה במוצר. ניתן לצרף תמונות נוספות.</p>
-          {photos.length > 0 && (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-              {photos.map((url, i) => (
-                <button key={i} type="button" onClick={() => setLightbox(url)} className="aspect-square rounded-xl overflow-hidden border border-border hover:ring-2 hover:ring-primary/40 transition">
-                  <img src={url} alt={`תמונה ${i + 1}`} className="h-full w-full object-cover" />
-                </button>
-              ))}
+          {/* Photos */}
+          <div className="rounded-xl border border-border p-5 space-y-4">
+            <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
+              <ImageIcon className="h-3.5 w-3.5" /> תמונות{photos.length ? ` (${photos.length})` : ''}
+            </p>
+            <p className="text-sm text-muted-foreground">תמונות של התלונה / הבעיה במוצר. ניתן לצרף תמונות נוספות.</p>
+            {photos.length > 0 && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                {photos.map((url, i) => (
+                  <button key={i} type="button" onClick={() => setLightbox(url)} className="aspect-square rounded-xl overflow-hidden border border-border hover:ring-2 hover:ring-primary/40 transition">
+                    <img src={url} alt={`תמונה ${i + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="rounded-xl border border-dashed border-border p-4">
+              <ServicePhotoUploader value={photos} onChange={savePhotos} />
             </div>
-          )}
-          <div className="rounded-xl border border-dashed border-border p-4">
-            <ServicePhotoUploader value={photos} onChange={savePhotos} />
           </div>
-        </TabsContent>
+        </div>
 
-        {/* Timeline */}
-        <TabsContent value="timeline" className="mt-5 space-y-5">
+        {/* Side column: timeline */}
+        <div className="lg:col-span-1 rounded-xl border border-border p-5 space-y-5">
+          <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" /> ציר זמן
+          </p>
           <div className="flex gap-2">
             <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="הוסף הערה / עדכון טיפול..." className="resize-none" />
             <Button onClick={addNote} disabled={!note.trim() || updateMutation.isPending}>הוסף</Button>
@@ -328,8 +324,8 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
               })}
             </div>
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
 
       <AssignServiceTaskDialog open={showAssign} onOpenChange={setShowAssign} ticket={ticket} currentUser={effectiveUser} />
       <SendServiceSmsDialog open={showSms} onOpenChange={setShowSms} currentUser={effectiveUser} order={order} />
