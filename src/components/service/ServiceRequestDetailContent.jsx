@@ -6,22 +6,34 @@ import { createPageUrl } from '@/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, PhoneCall, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot } from 'lucide-react';
+import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, PhoneCall, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot, MapPin, Repeat, MessageCircle, AlertCircle, Flag } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessServiceWorkspace, canManageService } from '@/lib/rbac';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import {
-  REQUEST_TYPE_LABELS, SERVICE_STATUS_OPTIONS, SERVICE_STATUS_LABELS,
+  REQUEST_TYPE_OPTIONS, REQUEST_TYPE_LABELS, SERVICE_STATUS_OPTIONS, SERVICE_STATUS_LABELS,
   SOURCE_LABELS, SOURCE_CHIP, PRIORITY_LABELS, DIAGNOSTIC_QUESTIONS,
-  CONTACT_PREFERENCE_LABELS,
+  CONTACT_PREFERENCE_LABELS, toInternationalPhone,
 } from '@/constants/serviceOptions';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import AssignServiceTaskDialog from '@/components/service/AssignServiceTaskDialog';
 import SendServiceSmsDialog from '@/components/service/SendServiceSmsDialog';
 
 const QUESTION_LABELS = Object.fromEntries(DIAGNOSTIC_QUESTIONS.map((q) => [q.key, q.label]));
+const REQUEST_TYPE_BY_VALUE = Object.fromEntries(REQUEST_TYPE_OPTIONS.map((o) => [o.value, o]));
+
+// Diagnostic keys surfaced specially in the problem brief, so we don't repeat
+// them in the generic "extra answers" list below.
+const HANDLED_ANSWER_KEYS = new Set(['product', 'problem_summary', 'problem_area', 'when_started', 'usage', 'notes']);
+
+const PRIORITY_DOT = {
+  urgent: 'bg-red-500',
+  high: 'bg-orange-500',
+  medium: 'bg-amber-400',
+  low: 'bg-slate-400',
+};
 
 // Per-event-type styling for the handling timeline.
 const TIMELINE_META = {
@@ -33,7 +45,19 @@ const TIMELINE_META = {
   note:       { Icon: MessageSquarePlus,  color: 'text-slate-500',   ring: 'bg-slate-100' },
 };
 
-// Small labelled field used across the details tab.
+// Short Hebrew "time ago" for the ticket-age tile.
+function timeAgoHe(date) {
+  const ms = Date.now() - new Date(date).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `לפני ${Math.max(1, mins)} דק׳`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `לפני ${hrs} שע׳`;
+  const days = Math.floor(hrs / 24);
+  return `לפני ${days} ימים`;
+}
+
+// Small labelled field used in the customer card.
 function Field({ icon: Icon, label, children, ltr }) {
   return (
     <div className="flex items-start gap-2">
@@ -46,12 +70,43 @@ function Field({ icon: Icon, label, children, ltr }) {
   );
 }
 
+// One tile in the at-a-glance summary strip.
+function StatTile({ icon: Icon, label, tone = 'default', children, sub }) {
+  const toneCls = {
+    default: 'border-border bg-muted/30',
+    red: 'border-red-200 bg-red-50',
+    amber: 'border-amber-200 bg-amber-50',
+    emerald: 'border-emerald-200 bg-emerald-50',
+    blue: 'border-blue-200 bg-blue-50',
+    violet: 'border-violet-200 bg-violet-50',
+  }[tone] || 'border-border bg-muted/30';
+  return (
+    <div className={`rounded-xl border p-3 ${toneCls}`}>
+      <p className="text-[11px] text-muted-foreground flex items-center gap-1">{Icon && <Icon className="h-3 w-3" />}{label}</p>
+      <div className="text-sm font-semibold mt-1 flex items-center gap-1.5">{children}</div>
+      {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+// Highlighted diagnostic fact (location / when / usage) — scannable at a glance.
+function DiagChip({ icon: Icon, label, value }) {
+  if (!value) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-lg bg-muted/50 border border-border px-2.5 py-1.5 text-sm">
+      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="font-medium">{value}</span>
+    </span>
+  );
+}
+
 // The full service-ticket detail view, shared by the standalone page
-// (ServiceRequestDetails) and the in-list popup (ServiceRequestModal). Everything
-// is shown on a single screen — details + photos in the main column, the handling
-// timeline (ציר זמן) alongside it. When `onClose` is set we're in a popup — the
-// Dialog supplies its own close button, so we only show the back arrow on the
-// standalone page.
+// (ServiceRequestDetails) and the in-list popup (ServiceRequestModal). Built as
+// a "smart ticket": an at-a-glance summary strip, a prominent problem brief with
+// scannable diagnostics, warranty insight, photos, and the handling timeline —
+// so a service manager understands the issue fast. When `onClose` is set we're
+// in a popup; the Dialog supplies its own close button.
 export default function ServiceRequestDetailContent({ ticketId, onClose }) {
   const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
@@ -152,6 +207,31 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
   const photos = Array.isArray(ticket.photo_urls) ? ticket.photo_urls : [];
   const isOverdueSla = ticket.sla_due_date && new Date(ticket.sla_due_date) < new Date() && !['resolved', 'closed'].includes(ticket.status);
 
+  // ── Derived "smart" bits for the summary strip + warranty insight ──────────
+  const rtOpt = REQUEST_TYPE_BY_VALUE[ticket.request_type];
+  const RtIcon = rtOpt?.Icon || MessageSquare;
+  const rtTone = ticket.request_type === 'warranty' ? 'emerald' : ticket.request_type === 'trial_30d' ? 'amber' : 'default';
+
+  let slaTone = 'default';
+  let slaText = '—';
+  let slaSub = null;
+  if (ticket.sla_due_date) {
+    const due = new Date(ticket.sla_due_date);
+    const hrsLeft = (due - new Date()) / 3600000;
+    slaText = format(due, 'dd/MM HH:mm');
+    if (isOverdueSla) { slaTone = 'red'; slaSub = 'באיחור!'; }
+    else if (hrsLeft < 6) { slaTone = 'amber'; slaSub = 'מתקרב ליעד'; }
+  }
+
+  const warrantyMonths = ticket.warranty_years ? ticket.warranty_years * 12 : null;
+  const withinWarranty = warrantyMonths != null && ticket.complaint_age_months != null
+    ? ticket.complaint_age_months <= warrantyMonths
+    : null;
+
+  // Diagnostic answers not already surfaced as chips/strip.
+  const extraAnswers = Object.entries(answers).filter(([k, v]) => v && !HANDLED_ANSWER_KEYS.has(k));
+  const intlPhone = toInternationalPhone(ticket.customer_phone);
+
   return (
     <div className="space-y-5 text-right" dir="rtl">
       {/* ── Header ─────────────────────────────────────────────── */}
@@ -172,31 +252,22 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
       </div>
 
-      {/* ── Toolbar: status + meta, then actions — all right-aligned ─ */}
-      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 space-y-3.5">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">סטטוס</span>
-            <Select value={ticket.status} onValueChange={changeStatus}>
-              <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {SERVICE_STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {updateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-          </div>
-          <span className="h-5 w-px bg-border hidden sm:block" />
-          <span className="text-xs px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">עדיפות: {PRIORITY_LABELS[ticket.priority] || ticket.priority}</span>
-          {ticket.sla_due_date && (
-            <span className={`text-xs inline-flex items-center gap-1 ${isOverdueSla ? 'text-red-600 font-medium' : 'text-muted-foreground'}`}>
-              <Clock className="h-3 w-3" />SLA {format(new Date(ticket.sla_due_date), 'dd/MM HH:mm')}
-            </span>
-          )}
-          <span className="h-5 w-px bg-border hidden sm:block" />
-          <span className="text-xs text-muted-foreground">נציג: {ticket.assigned_to ? getRepDisplayName(ticket.assigned_to, users) : '—'}</span>
-          {ticket.service_task_id && <span className="text-xs text-emerald-600">✓ שויכה משימה</span>}
+      {/* ── Toolbar: status + owner + actions ──────────────────── */}
+      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">סטטוס</span>
+          <Select value={ticket.status} onValueChange={changeStatus}>
+            <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {SERVICE_STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {updateMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3.5">
+        <span className="h-5 w-px bg-border hidden sm:block" />
+        <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><User className="h-3.5 w-3.5" />נציג: {ticket.assigned_to ? getRepDisplayName(ticket.assigned_to, users) : '—'}</span>
+        {ticket.service_task_id && <span className="text-xs text-emerald-600">✓ שויכה משימה</span>}
+        <div className="flex flex-wrap items-center gap-2 ms-auto">
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowSms(true)}>
             <MessageSquare className="h-4 w-4" /> שלח SMS ללקוח
           </Button>
@@ -208,10 +279,105 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
       </div>
 
-      {/* ── Single-screen layout: details + photos beside the timeline ─ */}
+      {/* ── At-a-glance summary strip ──────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <StatTile icon={Flag} label="סוג פנייה" tone={rtTone}>
+          <RtIcon className="h-4 w-4" />{REQUEST_TYPE_LABELS[ticket.request_type] || ticket.request_type || '—'}
+        </StatTile>
+        <StatTile icon={AlertCircle} label="עדיפות" tone={ticket.priority === 'urgent' ? 'red' : ticket.priority === 'high' ? 'amber' : 'default'}>
+          <span className={`h-2 w-2 rounded-full ${PRIORITY_DOT[ticket.priority] || 'bg-slate-400'}`} />
+          {PRIORITY_LABELS[ticket.priority] || ticket.priority || '—'}
+        </StatTile>
+        <StatTile icon={Clock} label="יעד טיפול (SLA)" tone={slaTone} sub={slaSub}>{slaText}</StatTile>
+        <StatTile icon={User} label="מקור" tone={ticket.opened_by_customer ? 'violet' : 'default'}>{SOURCE_LABELS[srcKey] || srcKey}</StatTile>
+        <StatTile icon={Calendar} label="נפתחה" sub={ticket.created_date ? format(new Date(ticket.created_date), 'dd/MM/yyyy') : null}>
+          {ticket.created_date ? timeAgoHe(ticket.created_date) : '—'}
+        </StatTile>
+      </div>
+
+      {/* ── Body: problem + evidence beside the timeline ───────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        {/* Main column: details + photos */}
         <div className="lg:col-span-2 space-y-5">
+          {/* Problem brief — the first thing a manager reads */}
+          <div className="rounded-xl border border-border p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"><AlertCircle className="h-4 w-4" /></span>
+              <h3 className="font-semibold text-foreground">הבעיה</h3>
+            </div>
+            {answers.problem_summary && <p className="text-sm font-medium text-foreground">{answers.problem_summary}</p>}
+            {ticket.description
+              ? <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
+              : (!answers.problem_summary && <p className="text-sm text-muted-foreground">לא צוין תיאור.</p>)}
+            {(answers.problem_area || answers.when_started || answers.usage) && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <DiagChip icon={MapPin} label="מיקום" value={answers.problem_area} />
+                <DiagChip icon={Clock} label="התחיל" value={answers.when_started} />
+                <DiagChip icon={Repeat} label="תדירות" value={answers.usage} />
+              </div>
+            )}
+            {answers.notes && (
+              <div className="rounded-lg bg-muted/40 p-3 text-sm">
+                <span className="text-xs text-muted-foreground">פרטים נוספים: </span>{answers.notes}
+              </div>
+            )}
+            {extraAnswers.length > 0 && (
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 pt-1">
+                {extraAnswers.map(([k, v]) => (
+                  <div key={k} className="text-sm">
+                    <span className="text-muted-foreground">{QUESTION_LABELS[k] || k}: </span>
+                    <span className="font-medium">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Warranty insight — in/out of warranty at a glance */}
+          {ticket.request_type === 'warranty' && (ticket.warranty_years || ticket.complaint_age_months) && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 flex items-start gap-3">
+              <ShieldCheck className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-semibold text-emerald-900 text-sm">אחריות יצרן</p>
+                  {withinWarranty === true && <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">בתוך תקופת האחריות</span>}
+                  {withinWarranty === false && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200">מחוץ לתקופת האחריות</span>}
+                </div>
+                <p className="text-sm text-emerald-800 mt-0.5">
+                  {ticket.warranty_years ? `${ticket.warranty_years} שנות אחריות` : 'אחריות'}
+                  {ticket.complaint_age_months ? ` · התלונה התקבלה ${ticket.complaint_age_months} חודשים לאחר הרכישה` : ''}
+                </p>
+              </div>
+            </div>
+          )}
+          {ticket.request_type === 'trial_30d' && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 flex items-center gap-3">
+              <Clock className="h-5 w-5 text-amber-600 shrink-0" />
+              <p className="text-sm text-amber-800 font-medium">פנייה במסגרת 30 ימי ניסיון</p>
+            </div>
+          )}
+
+          {/* Photos — visual evidence */}
+          <div className="rounded-xl border border-border p-5 space-y-4">
+            <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
+              <ImageIcon className="h-3.5 w-3.5" /> תמונות{photos.length ? ` (${photos.length})` : ''}
+            </p>
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                {photos.map((url, i) => (
+                  <button key={i} type="button" onClick={() => setLightbox(url)} className="aspect-square rounded-xl overflow-hidden border border-border hover:ring-2 hover:ring-primary/40 transition">
+                    <img src={url} alt={`תמונה ${i + 1}`} className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">לא צורפו תמונות.</p>
+            )}
+            <div className="rounded-xl border border-dashed border-border p-4">
+              <ServicePhotoUploader value={photos} onChange={savePhotos} />
+            </div>
+          </div>
+
+          {/* Customer + quick contact actions */}
           <div className="rounded-xl border border-border p-5">
             <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
             <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
@@ -221,47 +387,33 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
               {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
               {ticket.contact_preference && <Field icon={PhoneCall} label="העדפת יצירת קשר">{CONTACT_PREFERENCE_LABELS[ticket.contact_preference] || ticket.contact_preference}</Field>}
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {ticket.request_type && <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-medium">{REQUEST_TYPE_LABELS[ticket.request_type]}</span>}
-            {ticket.request_type === 'warranty' && (ticket.warranty_years || ticket.complaint_age_months) && (
-              <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 inline-flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3" />
-                {ticket.warranty_years ? `${ticket.warranty_years} שנות אחריות` : ''}
-                {ticket.complaint_age_months ? ` · תלונה אחרי ${ticket.complaint_age_months} חודשים` : ''}
-              </span>
-            )}
-            {ticket.order_date && <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 inline-flex items-center gap-1"><Calendar className="h-3 w-3" />הוזמן {ticket.order_date}</span>}
-          </div>
-
-          {ticket.description && (
-            <div className="rounded-xl border border-border p-5">
-              <p className="text-xs font-semibold text-muted-foreground mb-1.5">תיאור הבעיה</p>
-              <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
-            </div>
-          )}
-
-          {Object.keys(answers).length > 0 && (
-            <div className="rounded-xl border border-border p-5">
-              <p className="text-xs font-semibold text-muted-foreground mb-2">שאלות אבחון</p>
-              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
-                {Object.entries(answers).map(([k, v]) => v ? (
-                  <div key={k} className="text-sm">
-                    <span className="text-muted-foreground">{QUESTION_LABELS[k] || k}: </span>
-                    <span className="font-medium">{String(v)}</span>
-                  </div>
-                ) : null)}
+            {ticket.customer_phone && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                <a href={`tel:${ticket.customer_phone}`}>
+                  <Button variant="outline" size="sm" className="gap-1.5"><Phone className="h-4 w-4" /> חיוג</Button>
+                </a>
+                {intlPhone && (
+                  <a href={`https://wa.me/${intlPhone}`} target="_blank" rel="noreferrer">
+                    <Button variant="outline" size="sm" className="gap-1.5"><MessageCircle className="h-4 w-4" /> וואטסאפ</Button>
+                  </a>
+                )}
+                {ticket.customer_email && (
+                  <a href={`mailto:${ticket.customer_email}`}>
+                    <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" /> אימייל</Button>
+                  </a>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
+          {/* Linked order */}
           {order && (
             <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex items-center gap-2 font-medium text-sm"><ShoppingCart className="h-4 w-4" /> הזמנה מקושרת #{order.order_number}</p>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   {order.total != null && <span className="text-xs text-muted-foreground">₪{Number(order.total).toLocaleString()}</span>}
+                  {ticket.order_date && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Calendar className="h-3 w-3" />הוזמן {ticket.order_date}</span>}
                   {Array.isArray(order.tags) && order.tags.map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{t}</span>)}
                 </div>
                 <p className="text-[11px] text-muted-foreground/70 mt-1">פניית שירות אינה עורכת את ההזמנה.</p>
@@ -269,29 +421,9 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
               <Link to={createPageUrl('OrderDetails') + `?id=${order.id}`}><Button variant="outline" size="sm">צפה בהזמנה</Button></Link>
             </div>
           )}
-
-          {/* Photos */}
-          <div className="rounded-xl border border-border p-5 space-y-4">
-            <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
-              <ImageIcon className="h-3.5 w-3.5" /> תמונות{photos.length ? ` (${photos.length})` : ''}
-            </p>
-            <p className="text-sm text-muted-foreground">תמונות של התלונה / הבעיה במוצר. ניתן לצרף תמונות נוספות.</p>
-            {photos.length > 0 && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                {photos.map((url, i) => (
-                  <button key={i} type="button" onClick={() => setLightbox(url)} className="aspect-square rounded-xl overflow-hidden border border-border hover:ring-2 hover:ring-primary/40 transition">
-                    <img src={url} alt={`תמונה ${i + 1}`} className="h-full w-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="rounded-xl border border-dashed border-border p-4">
-              <ServicePhotoUploader value={photos} onChange={savePhotos} />
-            </div>
-          </div>
         </div>
 
-        {/* Side column: timeline */}
+        {/* Side column: handling timeline */}
         <div className="lg:col-span-1 rounded-xl border border-border p-5 space-y-5">
           <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5" /> ציר זמן
