@@ -69,9 +69,9 @@ export const PRIORITY_LABELS = Object.fromEntries(PRIORITY_OPTIONS.map((o) => [o
 
 // ── Source (who opened the ticket) ────────────────────────────────────────
 export const SOURCE_OPTIONS = [
-  { value: 'agent_manual', label: 'נפתחה ע״י נציג', emoji: '🧑‍💼', chip: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' },
-  { value: 'customer_self', label: 'נפתחה ע״י הלקוח', emoji: '🙋', chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200' },
-  { value: 'imported', label: 'מיובאת', emoji: '📦', chip: 'bg-stone-100 text-stone-600 ring-1 ring-stone-200' },
+  { value: 'agent_manual', label: 'נפתחה ע״י נציג', chip: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' },
+  { value: 'customer_self', label: 'נפתחה ע״י הלקוח', chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200' },
+  { value: 'imported', label: 'מיובאת', chip: 'bg-stone-100 text-stone-600 ring-1 ring-stone-200' },
 ];
 
 export const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.label]));

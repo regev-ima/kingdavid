@@ -6,7 +6,7 @@ import { createPageUrl } from '@/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, PhoneCall, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot, MapPin, Repeat, MessageCircle, AlertCircle, Flag } from 'lucide-react';
+import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, PhoneCall, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot, MapPin, Repeat, MessageCircle, AlertCircle, Flag, Pencil, CheckCircle2 } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -20,6 +20,7 @@ import {
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import AssignServiceTaskDialog from '@/components/service/AssignServiceTaskDialog';
 import SendServiceSmsDialog from '@/components/service/SendServiceSmsDialog';
+import EditServiceTicketDialog from '@/components/service/EditServiceTicketDialog';
 
 const QUESTION_LABELS = Object.fromEntries(DIAGNOSTIC_QUESTIONS.map((q) => [q.key, q.label]));
 const REQUEST_TYPE_BY_VALUE = Object.fromEntries(REQUEST_TYPE_OPTIONS.map((o) => [o.value, o]));
@@ -116,6 +117,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
   const [note, setNote] = useState('');
   const [showAssign, setShowAssign] = useState(false);
   const [showSms, setShowSms] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [lightbox, setLightbox] = useState(null);
 
   const { data: ticket, isLoading } = useQuery({
@@ -266,8 +268,11 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
         <span className="h-5 w-px bg-border hidden sm:block" />
         <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><User className="h-3.5 w-3.5" />נציג: {ticket.assigned_to ? getRepDisplayName(ticket.assigned_to, users) : '—'}</span>
-        {ticket.service_task_id && <span className="text-xs text-emerald-600">✓ שויכה משימה</span>}
+        {ticket.service_task_id && <span className="text-xs text-emerald-600 inline-flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />שויכה משימה</span>}
         <div className="flex flex-wrap items-center gap-2 ms-auto">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowEdit(true)}>
+            <Pencil className="h-4 w-4" /> ערוך פנייה
+          </Button>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowSms(true)}>
             <MessageSquare className="h-4 w-4" /> שלח SMS ללקוח
           </Button>
@@ -298,6 +303,35 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
       {/* ── Body: problem + evidence beside the timeline ───────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         <div className="lg:col-span-2 space-y-5">
+          {/* Customer + quick contact actions — who we're dealing with, up front */}
+          <div className="rounded-xl border border-border p-5">
+            <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
+            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
+              <Field icon={User} label="שם">{ticket.customer_name}</Field>
+              <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
+              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
+              {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
+              {ticket.contact_preference && <Field icon={PhoneCall} label="העדפת יצירת קשר">{CONTACT_PREFERENCE_LABELS[ticket.contact_preference] || ticket.contact_preference}</Field>}
+            </div>
+            {ticket.customer_phone && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                <a href={`tel:${ticket.customer_phone}`}>
+                  <Button variant="outline" size="sm" className="gap-1.5"><Phone className="h-4 w-4" /> חיוג</Button>
+                </a>
+                {intlPhone && (
+                  <a href={`https://wa.me/${intlPhone}`} target="_blank" rel="noreferrer">
+                    <Button variant="outline" size="sm" className="gap-1.5"><MessageCircle className="h-4 w-4" /> וואטסאפ</Button>
+                  </a>
+                )}
+                {ticket.customer_email && (
+                  <a href={`mailto:${ticket.customer_email}`}>
+                    <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" /> אימייל</Button>
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Problem brief — the first thing a manager reads */}
           <div className="rounded-xl border border-border p-5 space-y-3">
             <div className="flex items-center gap-2">
@@ -377,35 +411,6 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
             </div>
           </div>
 
-          {/* Customer + quick contact actions */}
-          <div className="rounded-xl border border-border p-5">
-            <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
-            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
-              <Field icon={User} label="שם">{ticket.customer_name}</Field>
-              <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
-              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
-              {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
-              {ticket.contact_preference && <Field icon={PhoneCall} label="העדפת יצירת קשר">{CONTACT_PREFERENCE_LABELS[ticket.contact_preference] || ticket.contact_preference}</Field>}
-            </div>
-            {ticket.customer_phone && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                <a href={`tel:${ticket.customer_phone}`}>
-                  <Button variant="outline" size="sm" className="gap-1.5"><Phone className="h-4 w-4" /> חיוג</Button>
-                </a>
-                {intlPhone && (
-                  <a href={`https://wa.me/${intlPhone}`} target="_blank" rel="noreferrer">
-                    <Button variant="outline" size="sm" className="gap-1.5"><MessageCircle className="h-4 w-4" /> וואטסאפ</Button>
-                  </a>
-                )}
-                {ticket.customer_email && (
-                  <a href={`mailto:${ticket.customer_email}`}>
-                    <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" /> אימייל</Button>
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Linked order */}
           {order && (
             <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-3">
@@ -461,6 +466,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
       </div>
 
+      <EditServiceTicketDialog open={showEdit} onOpenChange={setShowEdit} ticket={ticket} currentUser={effectiveUser} />
       <AssignServiceTaskDialog open={showAssign} onOpenChange={setShowAssign} ticket={ticket} currentUser={effectiveUser} />
       <SendServiceSmsDialog open={showSms} onOpenChange={setShowSms} currentUser={effectiveUser} order={order} />
 

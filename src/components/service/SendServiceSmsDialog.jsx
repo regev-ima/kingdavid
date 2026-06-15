@@ -138,7 +138,7 @@ export default function SendServiceSmsDialog({ open, onOpenChange, currentUser, 
           <div className="space-y-4">
             <div className={`rounded-lg border p-3 text-sm ${result.smsSent ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
               {result.smsSent
-                ? '✓ נשלח SMS ללקוח עם הקישור לפתיחת הפנייה.'
+                ? 'נשלח SMS ללקוח עם הקישור לפתיחת הפנייה.'
                 : 'ה-SMS לא נשלח אוטומטית (האינטגרציה אינה מוגדרת). שלח את הקישור ללקוח ידנית:'}
             </div>
 
