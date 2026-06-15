@@ -239,26 +239,39 @@ async function fetchDashboard2Snapshot({ start, end, label = 'current' }) {
 
   const sources = marketing?.sources || [];
   // Normalize each source into the same shape the Marketing leaderboard
-  // expects (leads_count + closing/handling/lost % + cost + ROI). Falls
-  // back to derived values when the Edge Function only sent partial data.
+  // expects (leads_count + closing/handling/lost % + cost + ROI).
+  // CRITICAL: getDashboardStats emits each source as
+  // { source, leads, won, open, lost, conversion_rate, spend,
+  //   attributed_revenue, roas } — NOT leads_count/won_count/cost/revenue.
+  // The old mapping read those nonexistent keys, so every source row
+  // collapsed to 0 leads / 0% / — even though the leads carry full source
+  // data (same bug the reps leaderboard had). We read the Edge Function's
+  // real field names first, with the *_count aliases kept as fallbacks for
+  // any future shape. `??` (not `||`) so a legit 0 isn't skipped.
   const marketingBreakdown = sources.map((s) => {
-    const leads = Number(s.leads_count || s.value || 0);
-    const won = Number(s.won_count || 0);
-    const inHandling = Number(s.in_handling_count || s.open_count || 0);
-    const lost = Number(s.lost_count ?? Math.max(0, leads - won - inHandling));
+    const leads = Number(s.leads_count ?? s.leads ?? s.value ?? 0);
+    const won = Number(s.won_count ?? s.won ?? 0);
+    const inHandling = Number(s.in_handling_count ?? s.open_count ?? s.open ?? 0);
+    const lost = Number(s.lost_count ?? s.lost ?? Math.max(0, leads - won - inHandling));
     const pct = (n) => (leads > 0 ? +((n / leads) * 100).toFixed(1) : 0);
-    const cost = Number(s.cost || 0);
-    const sourceRevenue = Number(s.revenue || 0);
+    const cost = Number(s.cost ?? s.spend ?? 0);
+    const sourceRevenue = Number(s.revenue ?? s.attributed_revenue ?? 0);
+    const conversion = s.conversion != null
+      ? Number(s.conversion)
+      : (s.conversion_rate != null ? Number(s.conversion_rate) : pct(won));
+    const roi = s.roas != null
+      ? Number(s.roas)
+      : (cost > 0 ? +((sourceRevenue / cost).toFixed(1)) : null);
     return {
       name: s.source || s.name || 'אחר',
       leads_count: leads,
       won_count: won,
-      conversion: s.conversion != null ? Number(s.conversion) : pct(won),
+      conversion,
       in_handling_rate: s.in_handling_rate != null ? Number(s.in_handling_rate) : pct(inHandling),
       lost_rate: s.lost_rate != null ? Number(s.lost_rate) : pct(lost),
       cost,
       revenue: sourceRevenue,
-      roi: cost > 0 ? +((sourceRevenue / cost).toFixed(1)) : null,
+      roi,
     };
   });
   const topSource = marketingBreakdown.length > 0

@@ -1,4 +1,4 @@
-import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 const SLA_RED_MINUTES = 15;
 const EXPIRING_QUOTES_DAYS = 3;
@@ -42,6 +42,26 @@ function parseDateLoose(value: unknown) {
 
 function isLeadWon(status: unknown) { return normalizeLower(status) === 'deal_closed'; }
 
+const CLOSED_LEAD_STATUS_SET = new Set(CLOSED_LEAD_STATUSES);
+// "Lost" = any terminal status that isn't a win, so a source/campaign can
+// report real סגירה/בטיפול/אבד instead of lumping everything not-won as lost.
+function isLeadClosed(status: unknown) { return CLOSED_LEAD_STATUS_SET.has(normalizeLower(status)); }
+
+// Where did the lead come from? Prefer explicit utm_source/source, but
+// Facebook lead-form leads frequently arrive with no utm_source while
+// carrying facebook_* metadata — attribute those by platform so they don't
+// all collapse into "אחר". Returns '' when nothing is known (→ normalizeSource → other).
+function deriveSource(lead: any) {
+  const explicit = normalizeString(lead?.utm_source) || normalizeString(lead?.source);
+  if (explicit) return explicit;
+  const platform = normalizeLower(lead?.facebook_platform);
+  if (platform) return platform; // 'facebook' / 'instagram' (present only on SELECT * fallback)
+  // Confirmed facebook_* lead-form columns — their presence means Facebook.
+  if (lead?.facebook_campaign_name || lead?.facebook_ad_name || lead?.facebook_adset_name
+      || lead?.facebook_lead_id || lead?.facebook_form_id) return 'facebook';
+  return '';
+}
+
 function normalizeSource(source: unknown) {
   const v = normalizeLower(source);
   if (!v) return 'other';
@@ -71,32 +91,56 @@ function aggregateTrend(items: any[], dateField: string, valueField?: string) {
 
 function getSeverityWeight(s: string) { if (s === 'critical') return 4; if (s === 'high') return 3; if (s === 'medium') return 2; return 1; }
 
-async function fetchAll(supabase: any, table: string, query: any) {
-  let allData: any[] = [];
-  let from = 0;
-  const batchSize = 1000;
-  while (true) {
-    let q = supabase.from(table).select('*').range(from, from + batchSize - 1);
-    if (query.gte) for (const [col, val] of Object.entries(query.gte)) q = q.gte(col, val);
-    if (query.lte) for (const [col, val] of Object.entries(query.lte)) q = q.lte(col, val);
-    if (query.lt) for (const [col, val] of Object.entries(query.lt)) q = q.lt(col, val);
-    if (query.eq) for (const [col, val] of Object.entries(query.eq)) q = q.eq(col, val);
-    if (query.order) q = q.order(query.order, { ascending: query.ascending ?? false });
-    const { data, error } = await q;
-    if (error) throw error;
-    allData = allData.concat(data || []);
-    if (!data || data.length < batchSize) break;
-    from += batchSize;
+// Page through a table. `columns` lets callers fetch only what they use —
+// critical for `leads`, which has ~40 columns (every utm_*/facebook_* field)
+// and dominates this function's payload + CPU on wide date ranges. If a
+// projected column doesn't exist in this deployment's schema the projected
+// query errors; rather than sink the whole table (and the dashboard) we retry
+// once with SELECT * — i.e. degrade to "slower but correct", never empty.
+async function fetchAll(supabase: any, table: string, query: any, columns = '*') {
+  const runWith = async (cols: string) => {
+    let allData: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    while (true) {
+      let q = supabase.from(table).select(cols).range(from, from + batchSize - 1);
+      if (query.gte) for (const [col, val] of Object.entries(query.gte)) q = q.gte(col, val);
+      if (query.lte) for (const [col, val] of Object.entries(query.lte)) q = q.lte(col, val);
+      if (query.lt) for (const [col, val] of Object.entries(query.lt)) q = q.lt(col, val);
+      if (query.eq) for (const [col, val] of Object.entries(query.eq)) q = q.eq(col, val);
+      if (query.order) q = q.order(query.order, { ascending: query.ascending ?? false });
+      const { data, error } = await q;
+      if (error) throw error;
+      allData = allData.concat(data || []);
+      if (!data || data.length < batchSize) break;
+      from += batchSize;
+    }
+    return allData;
+  };
+  if (columns === '*') return runWith('*');
+  try {
+    return await runWith(columns);
+  } catch (e) {
+    console.warn(`[getDashboardStats] column projection on "${table}" failed, retrying with *:`, e);
+    return runWith('*');
   }
-  return allData;
 }
 
+// Only the lead columns this function reads — keeps the heaviest query lean so
+// wide ranges (30/60/90 days) don't time out. `deriveSource`/campaign use the
+// confirmed facebook_* name columns; the SELECT * fallback in fetchAll covers
+// any column that's absent in a given deployment.
+const LEAD_COLUMNS = 'id,status,rep1,created_date,effective_sort_date,first_action_at,utm_source,source,utm_campaign,landing_page,facebook_campaign_name,facebook_ad_name,facebook_adset_name';
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // Reflect the caller's origin (canonical site + Vercel previews) so the
+  // dashboard works during PR review, not only on production.
+  const cors = getCorsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
     const user = await getUser(req);
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: cors });
 
     const supabase = createServiceClient();
     let body: any = {};
@@ -135,7 +179,7 @@ Deno.serve(async (req) => {
     };
 
     const [rangeLeads, rangeOrders, rangeQuotes, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes, unassignedLeadsCountRes, stuckLeadsCountRes] = await Promise.all([
-      safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }), [] as any[]),
+      safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }, LEAD_COLUMNS), [] as any[]),
       safe('orders', fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
       safe('quotes', fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
       safe('marketing_costs', fetchAll(supabase, 'marketing_costs', { gte: { date: startIso }, lte: { date: endIso }, order: 'date' }), [] as any[]),
@@ -244,37 +288,43 @@ Deno.serve(async (req) => {
     const landingPageMap = new Map();
 
     const getSourceRow = (source: string) => {
-      if (!sourceMap.has(source)) sourceMap.set(source, { source, leads: 0, won: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
+      if (!sourceMap.has(source)) sourceMap.set(source, { source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
       return sourceMap.get(source);
     };
     const getCampaignRow = (campaign: string, source = 'other') => {
-      if (!campaignMap.has(campaign)) campaignMap.set(campaign, { campaign, source, leads: 0, won: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
+      if (!campaignMap.has(campaign)) campaignMap.set(campaign, { campaign, source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
       const row = campaignMap.get(campaign);
       if (row.source === 'other' && source !== 'other') row.source = source;
       return row;
     };
     const getLandingPageRow = (lp: string, source = 'other') => {
-      if (!landingPageMap.has(lp)) landingPageMap.set(lp, { landing_page: lp, source, leads: 0, won: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0 });
+      if (!landingPageMap.has(lp)) landingPageMap.set(lp, { landing_page: lp, source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0 });
       const row = landingPageMap.get(lp);
       if (row.source === 'other' && source !== 'other') row.source = source;
       return row;
     };
 
     rangeLeads.forEach((lead: any) => {
-      const source = normalizeSource(lead.utm_source || lead.source);
-      const campaign = normalizeCampaign(lead.utm_campaign);
+      const source = normalizeSource(deriveSource(lead));
+      const campaign = normalizeCampaign(lead.utm_campaign || lead.facebook_campaign_name);
       const lp = normalizeString(lead.landing_page) || 'ללא דף נחיתה';
-      getSourceRow(source).leads += 1;
-      getCampaignRow(campaign, source).leads += 1;
-      getLandingPageRow(lp, source).leads += 1;
-      if (isLeadWon(lead.status)) { getSourceRow(source).won += 1; getCampaignRow(campaign, source).won += 1; getLandingPageRow(lp, source).won += 1; }
-      if (leadsWithQuoteRange.has(lead.id)) { getSourceRow(source).quote_sent += 1; getCampaignRow(campaign, source).quote_sent += 1; getLandingPageRow(lp, source).quote_sent += 1; }
+      const sRow = getSourceRow(source);
+      const cRow = getCampaignRow(campaign, source);
+      const lRow = getLandingPageRow(lp, source);
+      sRow.leads += 1; cRow.leads += 1; lRow.leads += 1;
+      // Classify won / lost / still-in-handling so each row exposes real
+      // סגירה/בטיפול/אבד rates (won = deal_closed, lost = any other closed
+      // status, open = everything still live in the pipeline).
+      if (isLeadWon(lead.status)) { sRow.won += 1; cRow.won += 1; lRow.won += 1; }
+      else if (isLeadClosed(lead.status)) { sRow.lost += 1; cRow.lost += 1; lRow.lost += 1; }
+      else { sRow.open += 1; cRow.open += 1; lRow.open += 1; }
+      if (leadsWithQuoteRange.has(lead.id)) { sRow.quote_sent += 1; cRow.quote_sent += 1; lRow.quote_sent += 1; }
     });
 
     rangeOrders.forEach((order: any) => {
       const lead = order.lead_id ? rangeLeadsById.get(order.lead_id) : null;
-      const source = normalizeSource(lead?.utm_source || lead?.source || order.source);
-      const campaign = normalizeCampaign(lead?.utm_campaign);
+      const source = normalizeSource((lead && deriveSource(lead)) || order.source);
+      const campaign = normalizeCampaign(lead?.utm_campaign || lead?.facebook_campaign_name);
       const lp = normalizeString(lead?.landing_page) || 'ללא דף נחיתה';
       const total = safeNumber(order.total);
       getSourceRow(source).attributed_revenue += total;
@@ -327,9 +377,12 @@ Deno.serve(async (req) => {
       smart_alerts,
       trends: { leads_daily: aggregateTrend(rangeLeads, 'effective_sort_date'), revenue_daily: aggregateTrend(rangeOrders, 'created_date', 'total') },
       tasks: { pending_total: openTaskCount, today: todayTasks.length, overdue: overdueTasks.length },
-    }, { headers: corsHeaders });
+    }, { headers: cors });
   } catch (error) {
+    // Surface the real reason (the client extracts body.error into the failure
+    // banner) instead of a generic 500 that hides what actually broke.
     console.error('Function error:', error);
-    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: `getDashboardStats failed: ${message}` }, { status: 500, headers: cors });
   }
 });
