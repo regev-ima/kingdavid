@@ -149,6 +149,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [isAssigningBeforeTask, setIsAssigningBeforeTask] = useState(false);
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
+  // In-flight guard for the no-answer / followup "אישור" buttons. These
+  // handlers fire raw base44 writes (status update + task create) rather
+  // than a react-query mutation, so there was no `isPending` flag to lean
+  // on — the dialog stayed open and clickable through the whole network
+  // round-trip, and every extra click minted another duplicate follow-up
+  // task. This flag disables the button and short-circuits re-entry until
+  // the write settles and the dialog closes.
+  const [isSavingStatusFlow, setIsSavingStatusFlow] = useState(false);
   // The old `workMode` state (sales vs service) was removed when we
   // collapsed the two modes into a single unified lead screen. Sales
   // and service info now live side-by-side, the service section is a
@@ -1627,59 +1635,66 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1"
-                  disabled={!noAnswerFlow.selectedHours || updateLeadMutation.isPending}
+                  disabled={!noAnswerFlow.selectedHours || isSavingStatusFlow}
                   onClick={async () => {
-                    if (!noAnswerFlow.selectedHours) return;
+                    if (!noAnswerFlow.selectedHours || isSavingStatusFlow) return;
+                    setIsSavingStatusFlow(true);
+                    try {
+                      // 1. Update lead status
+                      createAuditLog({
+                        leadId,
+                        actionType: 'status_changed',
+                        description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${noAnswerFlow.status}"`,
+                        user,
+                        fieldName: 'status',
+                        oldValue: lead.status,
+                        newValue: noAnswerFlow.status,
+                      });
+                      const noAnswerNow = new Date().toISOString();
+                      await base44.entities.Lead.update(leadId, { status: noAnswerFlow.status });
 
-                    // 1. Update lead status
-                    createAuditLog({
-                      leadId,
-                      actionType: 'status_changed',
-                      description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${noAnswerFlow.status}"`,
-                      user,
-                      fieldName: 'status',
-                      oldValue: lead.status,
-                      newValue: noAnswerFlow.status,
-                    });
-                    const noAnswerNow = new Date().toISOString();
-                    await base44.entities.Lead.update(leadId, { status: noAnswerFlow.status });
+                      // 2. Mark current open tasks as completed with timestamp
+                      const openTasks = tasks.filter(t => t.task_status === 'not_completed');
+                      if (openTasks.length > 0) {
+                        await Promise.all(openTasks.map(t =>
+                          base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+                        ));
+                      }
 
-                    // 2. Mark current open tasks as completed with timestamp
-                    const openTasks = tasks.filter(t => t.task_status === 'not_completed');
-                    if (openTasks.length > 0) {
-                      await Promise.all(openTasks.map(t =>
-                        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                      ));
+                      // 3. Create new call task
+                      const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
+                      await base44.entities.SalesTask.create({
+                        lead_id: leadId,
+                        rep1: lead.rep1 || user?.email,
+                        rep2: lead.rep2 || '',
+                        task_type: 'call',
+                        task_status: 'not_completed',
+                        status: noAnswerFlow.status,
+                        due_date: dueDate.toISOString(),
+                        work_start_date: noAnswerNow,
+                        created_date: noAnswerNow,
+                        summary: `חזור ללקוח ${lead.full_name || ''} - ${noAnswerFlow.label}`,
+                      });
+
+                      // 4. Refresh
+                      queryClient.invalidateQueries(['lead', leadId]);
+                      queryClient.invalidateQueries(['tasks', leadId]);
+                      queryClient.invalidateQueries(['leadActivityLogs', leadId]);
+                      queryClient.invalidateQueries(['salesTasks']);
+                      queryClient.invalidateQueries(['taskCounters']);
+                      setNoAnswerFlow(null);
+                    } catch (err) {
+                      toast({ title: 'שמירת הסטטוס נכשלה', description: err?.message || 'נסה שוב', variant: 'destructive' });
+                    } finally {
+                      setIsSavingStatusFlow(false);
                     }
-
-                    // 3. Create new call task
-                    const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
-                    await base44.entities.SalesTask.create({
-                      lead_id: leadId,
-                      rep1: lead.rep1 || user?.email,
-                      rep2: lead.rep2 || '',
-                      task_type: 'call',
-                      task_status: 'not_completed',
-                      status: noAnswerFlow.status,
-                      due_date: dueDate.toISOString(),
-                      work_start_date: noAnswerNow,
-                      created_date: noAnswerNow,
-                      summary: `חזור ללקוח ${lead.full_name || ''} - ${noAnswerFlow.label}`,
-                    });
-
-                    // 4. Refresh
-                    queryClient.invalidateQueries(['lead', leadId]);
-                    queryClient.invalidateQueries(['tasks', leadId]);
-                    queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                    queryClient.invalidateQueries(['salesTasks']);
-                    queryClient.invalidateQueries(['taskCounters']);
-                    setNoAnswerFlow(null);
                   }}
                 >
-                  אישור
+                  {isSavingStatusFlow ? 'שומר…' : 'אישור'}
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={isSavingStatusFlow}
                   onClick={() => {
                     setNoAnswerFlow(null);
                     setFormData(prev => ({ ...prev, status: lead.status }));
@@ -1779,62 +1794,71 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || updateLeadMutation.isPending}
+                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingStatusFlow}
                   onClick={async () => {
-                    const dueDate = new Date(followupFlow.selectedDate);
-                    dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
-                    const now = new Date().toISOString();
-                    const fStatus = followupFlow.status;
-                    const statusLabel = fStatus === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
-                    const statusHebrew = fStatus === 'followup_after_quote' ? 'פולאפ - אחרי הצעת מחיר' : 'פולאפ - לפני הצעה';
+                    if (!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingStatusFlow) return;
+                    setIsSavingStatusFlow(true);
+                    try {
+                      const dueDate = new Date(followupFlow.selectedDate);
+                      dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
+                      const now = new Date().toISOString();
+                      const fStatus = followupFlow.status;
+                      const statusLabel = fStatus === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
+                      const statusHebrew = fStatus === 'followup_after_quote' ? 'פולאפ - אחרי הצעת מחיר' : 'פולאפ - לפני הצעה';
 
-                    // 1. Update lead status
-                    createAuditLog({
-                      leadId,
-                      actionType: 'status_changed',
-                      description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${statusHebrew}"`,
-                      user,
-                      fieldName: 'status',
-                      oldValue: lead.status,
-                      newValue: fStatus,
-                    });
-                    await base44.entities.Lead.update(leadId, { status: fStatus });
+                      // 1. Update lead status
+                      createAuditLog({
+                        leadId,
+                        actionType: 'status_changed',
+                        description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${statusHebrew}"`,
+                        user,
+                        fieldName: 'status',
+                        oldValue: lead.status,
+                        newValue: fStatus,
+                      });
+                      await base44.entities.Lead.update(leadId, { status: fStatus });
 
-                    // 2. Mark current open tasks as completed with timestamp
-                    const openTasks = tasks.filter(t => t.task_status === 'not_completed');
-                    if (openTasks.length > 0) {
-                      await Promise.all(openTasks.map(t =>
-                        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                      ));
+                      // 2. Mark current open tasks as completed with timestamp
+                      const openTasks = tasks.filter(t => t.task_status === 'not_completed');
+                      if (openTasks.length > 0) {
+                        await Promise.all(openTasks.map(t =>
+                          base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+                        ));
+                      }
+
+                      // 3. Create followup call task
+                      await base44.entities.SalesTask.create({
+                        lead_id: leadId,
+                        rep1: lead.rep1 || user?.email,
+                        rep2: lead.rep2 || '',
+                        task_type: 'call',
+                        task_status: 'not_completed',
+                        status: fStatus,
+                        due_date: dueDate.toISOString(),
+                        work_start_date: now,
+                        created_date: now,
+                        summary: `פולואפ - חזור ללקוח ${lead.full_name || ''} ${statusLabel}`,
+                      });
+
+                      // 4. Refresh
+                      queryClient.invalidateQueries(['lead', leadId]);
+                      queryClient.invalidateQueries(['tasks', leadId]);
+                      queryClient.invalidateQueries(['leadActivityLogs', leadId]);
+                      queryClient.invalidateQueries(['salesTasks']);
+                      queryClient.invalidateQueries(['taskCounters']);
+                      setFollowupFlow(null);
+                    } catch (err) {
+                      toast({ title: 'שמירת הסטטוס נכשלה', description: err?.message || 'נסה שוב', variant: 'destructive' });
+                    } finally {
+                      setIsSavingStatusFlow(false);
                     }
-
-                    // 3. Create followup call task
-                    await base44.entities.SalesTask.create({
-                      lead_id: leadId,
-                      rep1: lead.rep1 || user?.email,
-                      rep2: lead.rep2 || '',
-                      task_type: 'call',
-                      task_status: 'not_completed',
-                      status: fStatus,
-                      due_date: dueDate.toISOString(),
-                      work_start_date: now,
-                      created_date: now,
-                      summary: `פולואפ - חזור ללקוח ${lead.full_name || ''} ${statusLabel}`,
-                    });
-
-                    // 4. Refresh
-                    queryClient.invalidateQueries(['lead', leadId]);
-                    queryClient.invalidateQueries(['tasks', leadId]);
-                    queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                    queryClient.invalidateQueries(['salesTasks']);
-                    queryClient.invalidateQueries(['taskCounters']);
-                    setFollowupFlow(null);
                   }}
                 >
-                  אישור
+                  {isSavingStatusFlow ? 'שומר…' : 'אישור'}
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={isSavingStatusFlow}
                   onClick={() => {
                     setFollowupFlow(null);
                     setFormData(prev => ({ ...prev, status: lead.status }));
