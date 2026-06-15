@@ -139,7 +139,7 @@ const statusConfig = {
   urgent: { label: 'דחוף', color: 'bg-red-100 text-red-700 ring-1 ring-red-200' },
   
   // Call Results
-  answered_positive: { label: 'חיובי', color: 'bg-green-100 text-green-700 ring-1 ring-green-200' },
+  answered_positive: { label: 'מעוניין', color: 'bg-green-100 text-green-700 ring-1 ring-green-200' },
   answered_neutral: { label: 'נייטרלי', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
   answered_negative: { label: 'שלילי', color: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' },
   no_answer: { label: 'לא ענה', color: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200' },

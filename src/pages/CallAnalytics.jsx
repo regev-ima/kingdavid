@@ -7,9 +7,10 @@ import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
+import UserAvatar from '@/components/shared/UserAvatar';
 import { getDateRange } from '@/utils/dateRange';
 import { getRepDisplayName } from '@/lib/repDisplay';
-import { Phone, PhoneIncoming, Clock, Target, AlertCircle } from "lucide-react";
+import { Phone, PhoneIncoming, Clock, Target, AlertCircle, Users } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
@@ -30,9 +31,12 @@ const RESULT_COLORS = {
   not_interested: '#ef4444',
 };
 
+// Format seconds as m:ss.
+const fmtDuration = (secs) => `${Math.floor((secs || 0) / 60)}:${((secs || 0) % 60).toString().padStart(2, '0')}`;
+
 // Hebrew labels for the call-result codes (used by the pie chart + tooltip).
 const RESULT_LABELS = {
-  answered_positive: 'חיובי',
+  answered_positive: 'מעוניין',
   answered_neutral: 'נייטרלי',
   answered_negative: 'שלילי',
   no_answer: 'לא ענה',
@@ -166,6 +170,20 @@ export default function CallAnalytics() {
     },
   });
 
+  // ── Per-rep breakdown for the window (drives the "ניתוח לפי נציג" cards) ──
+  const { data: byRep = [] } = useQuery({
+    queryKey: ['callByRep', startISO, endISO],
+    enabled: isAdmin,
+    staleTime: 60000,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const { data, error } = await base44.supabase
+        .rpc('call_analytics_by_rep', { p_start: startISO, p_end: endISO });
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   // ── Distinct reps for the filter dropdown (all-time) ──
   const { data: repRows = [] } = useQuery({
     queryKey: ['callReps'],
@@ -242,6 +260,37 @@ export default function CallAnalytics() {
     }
   });
   const activeHours = hourlyData.filter((h) => h.calls > 0);
+
+  // Per-rep cards (sorted by name) + a "כל הצוות" aggregate, all window-scoped.
+  const usersByEmail = useMemo(() => {
+    const m = new Map();
+    users.forEach((u) => { if (u.email) m.set(u.email, u); });
+    return m;
+  }, [users]);
+
+  const repCards = useMemo(() => {
+    return byRep
+      .map((r) => ({
+        rep_id: r.rep_id,
+        name: getRepDisplayName(r.rep_id, users) || r.rep_id,
+        user: usersByEmail.get(r.rep_id) || { full_name: getRepDisplayName(r.rep_id, users) || r.rep_id, email: r.rep_id },
+        total: Number(r.total) || 0,
+        answered: Number(r.answered) || 0,
+        positive: Number(r.positive) || 0,
+        totalDuration: Number(r.total_duration) || 0,
+      }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+  }, [byRep, users, usersByEmail]);
+
+  const teamTotals = useMemo(() => repCards.reduce(
+    (acc, r) => ({
+      total: acc.total + r.total,
+      answered: acc.answered + r.answered,
+      positive: acc.positive + r.positive,
+      totalDuration: acc.totalDuration + r.totalDuration,
+    }),
+    { total: 0, answered: 0, positive: 0, totalDuration: 0 },
+  ), [repCards]);
 
   const filterOptions = [
     {
@@ -346,29 +395,69 @@ export default function CallAnalytics() {
 
       {/* KPIs */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="סה״כ שיחות" value={totalCalls.toLocaleString()} icon={Phone} color="indigo" />
+        <KPICard title="סה״כ שיחות" value={totalCalls} icon={Phone} color="indigo" />
         <KPICard
           title="אחוז מענה"
           value={`${answerRate}%`}
+          formatValue={false}
           subtitle={`${answeredCalls.toLocaleString()} נענו`}
           icon={PhoneIncoming}
           color="emerald"
         />
         <KPICard
           title="משך ממוצע"
-          value={`${Math.floor(avgDuration / 60)}:${(avgDuration % 60).toString().padStart(2, '0')}`}
+          value={fmtDuration(avgDuration)}
+          formatValue={false}
           subtitle="דקות"
           icon={Clock}
           color="blue"
         />
         <KPICard
-          title="המרה לחיובי"
+          title="המרה למעוניין"
           value={`${conversionRate}%`}
+          formatValue={false}
           subtitle={`${positiveCalls.toLocaleString()} שיחות`}
           icon={Target}
           color="purple"
         />
       </div>
+
+      {/* Per-rep analysis cards (window-scoped; click to filter the table) */}
+      {repCards.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-2 px-1 flex items-center gap-2">
+            <Users className="h-3.5 w-3.5" />
+            ניתוח לפי נציג ({repCards.length})
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+            <RepCallCard
+              label="כל הצוות"
+              avatar={<span className="h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">כל</span>}
+              total={teamTotals.total}
+              answered={teamTotals.answered}
+              positive={teamTotals.positive}
+              totalDuration={teamTotals.totalDuration}
+              isActive={filters.rep === 'all'}
+              accent="indigo"
+              onClick={() => setFilters((f) => ({ ...f, rep: 'all' }))}
+            />
+            {repCards.map((r) => (
+              <RepCallCard
+                key={r.rep_id}
+                label={r.name}
+                avatar={<UserAvatar user={r.user} size="sm" />}
+                total={r.total}
+                answered={r.answered}
+                positive={r.positive}
+                totalDuration={r.totalDuration}
+                isActive={filters.rep === r.rep_id}
+                accent="emerald"
+                onClick={() => setFilters((f) => ({ ...f, rep: f.rep === r.rep_id ? 'all' : r.rep_id }))}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Charts (compact) */}
       <div className="grid lg:grid-cols-2 gap-4">
@@ -406,10 +495,10 @@ export default function CallAnalytics() {
           </CardHeader>
           <CardContent className="pt-0">
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={activeHours}>
+              <BarChart data={activeHours} barCategoryGap="20%">
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
+                <XAxis dataKey="hour" reversed tick={{ fontSize: 11 }} />
+                <YAxis orientation="right" tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name]} />
                 <Legend wrapperStyle={{ fontSize: '12px' }} />
                 <Bar dataKey="calls" fill="#6366f1" name="סה״כ שיחות" />
@@ -438,5 +527,46 @@ export default function CallAnalytics() {
 
       <DataTable columns={columns} data={logs} isLoading={isLoading} emptyMessage="אין שיחות להצגה" />
     </div>
+  );
+}
+
+// Per-rep call card — mirrors LeadManagement's RepWorkloadCard design. Clicking
+// it filters the table to that rep (toggle).
+function RepCallCard({ label, avatar, total, answered, positive, totalDuration, isActive, accent = 'emerald', onClick }) {
+  const answerRate = total > 0 ? Math.round((answered / total) * 100) : 0;
+  const avgSeconds = total > 0 ? Math.round(totalDuration / total) : 0;
+  const tones = {
+    indigo: { active: 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-400', total: 'text-indigo-700' },
+    emerald: { active: 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-400', total: 'text-emerald-700' },
+  }[accent];
+  const cardCls = isActive ? tones.active : 'border-border bg-card hover:border-foreground/30';
+  const stats = [
+    { label: 'נענו', value: answered.toLocaleString(), box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80' },
+    { label: 'אחוז מענה', value: `${answerRate}%`, box: 'bg-sky-50', text: 'text-sky-700', sub: 'text-sky-700/80' },
+    { label: 'מעוניין', value: positive.toLocaleString(), box: 'bg-green-50', text: 'text-green-700', sub: 'text-green-700/80' },
+    { label: 'משך ממוצע', value: fmtDuration(avgSeconds), box: 'bg-violet-50', text: 'text-violet-700', sub: 'text-violet-700/80' },
+  ];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-right rounded-xl border-2 p-2.5 shadow-card transition-all ${cardCls}`}
+    >
+      <div className="flex items-center gap-2 mb-2 min-w-0">
+        {avatar}
+        <span className="text-xs font-semibold truncate flex-1" title={label}>{label}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 text-xs">
+        {stats.map((s) => (
+          <div key={s.label} className={`${s.box} rounded p-1.5 text-center`}>
+            <p className={`text-[10px] leading-tight ${s.sub}`}>{s.label}</p>
+            <p className={`text-base font-bold tabular-nums leading-tight ${s.text}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+      <p className={`text-[10px] mt-1.5 font-semibold ${isActive ? tones.total : 'text-muted-foreground'}`}>
+        סה״כ {total.toLocaleString()} שיחות
+      </p>
+    </button>
   );
 }
