@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Clock, User, UserCheck, X, ShieldCheck, Info, AlertCircle } from 'lucide-react';
+import { Loader2, Clock, User, UserCheck, X, ShieldCheck, Info, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { addHours, differenceInDays } from '@/lib/safe-date-fns';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import {
@@ -28,7 +26,6 @@ import {
 // the diagnostic questions. Opening a ticket NEVER edits the order — the order
 // block here is read-only.
 export default function OpenServiceTicketDialog({ open, onOpenChange, order, customer, currentUser, onCreated }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const trialInfo = useMemo(() => {
@@ -64,6 +61,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
   const [error, setError] = useState('');
   const [photosUploading, setPhotosUploading] = useState(false);
   const [confirmNoPhotos, setConfirmNoPhotos] = useState(false);
+  const [createdTicket, setCreatedTicket] = useState(null);
   const set = (key, value) => setFormData((prev) => ({ ...prev, [key]: value }));
   const setAnswer = (key, value) =>
     setFormData((prev) => ({ ...prev, issue_answers: { ...prev.issue_answers, [key]: value } }));
@@ -73,8 +71,19 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     if (open) {
       setFormData(emptyForm);
       setError('');
+      setCreatedTicket(null);
+      setConfirmNoPhotos(false);
+      setPhotosUploading(false);
     }
   }, [open, order?.id, customer?.id]);
+
+  // After a successful create, show the success screen for a moment, then close
+  // the popup so the rep lands back on the list (no navigation away).
+  useEffect(() => {
+    if (!createdTicket) return undefined;
+    const t = setTimeout(() => onOpenChange(false), 3500);
+    return () => clearTimeout(t);
+  }, [createdTicket]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Standalone phone lookup (only when there's no order/customer context yet).
   const [debouncedPhone, setDebouncedPhone] = useState('');
@@ -151,9 +160,10 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     onSuccess: (ticket) => {
       queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
-      onOpenChange(false);
-      if (onCreated) onCreated(ticket);
-      else navigate(createPageUrl('ServiceRequestDetails') + `?id=${ticket.id}`);
+      // Embedded callers can take over (and close); the default flow shows an
+      // in-popup success screen that auto-closes, leaving the rep on the list.
+      if (onCreated) { onOpenChange(false); onCreated(ticket); return; }
+      setCreatedTicket(ticket);
     },
     onError: (err) => {
       console.error('[OpenServiceTicketDialog] create failed', err);
@@ -182,9 +192,21 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle>פתיחת פניית שירות</DialogTitle>
+          <DialogTitle>{createdTicket ? 'הפנייה נפתחה' : 'פתיחת פניית שירות'}</DialogTitle>
         </DialogHeader>
 
+        {createdTicket ? (
+          <div className="py-8 text-center space-y-3">
+            <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
+            <h3 className="text-lg font-bold text-foreground">הפנייה נפתחה בהצלחה!</h3>
+            <p className="text-sm text-muted-foreground">פנייה #{createdTicket.ticket_number} נוספה למרכז השירות.</p>
+            <p className="text-xs text-muted-foreground">החלון ייסגר אוטומטית…</p>
+            <div className="flex justify-center pt-1">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>סגירה וחזרה לרשימה</Button>
+            </div>
+          </div>
+        ) : (
+        <>
         {trialInfo.isInTrial && (
           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
             <Clock className="h-4 w-4 text-amber-600 shrink-0" />
@@ -380,6 +402,8 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
             </Button>
           </div>
         </form>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );
