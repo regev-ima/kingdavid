@@ -80,13 +80,13 @@ export default function OverviewTab({ current = {}, previous = {}, dateRange, on
         icon={Headphones}
         iconColor="text-amber-600"
         iconBg="bg-amber-100"
-        drillToPage="Support"
+        drillToPage="ServiceCenter"
       >
         <div className="grid grid-cols-2 gap-2">
-          <MiniKPI label="פתוחים" value={current.openTickets} color="amber" onClick={() => goTo('Support', { status: 'open' })} />
-          <MiniKPI label="דחופים" value={current.urgentTickets} color="red" onClick={() => goTo('Support', { priority: 'urgent' })} />
-          <MiniKPI label="SLA פג" value={current.slaBreachedTickets} color="red" onClick={() => goTo('Support')} />
-          <MiniKPI label="נפתחו היום" value={current.ticketsOpenedToday} color="cyan" onClick={() => goTo('Support')} />
+          <MiniKPI label="פתוחים" value={current.openTickets} color="amber" onClick={() => goTo('ServiceCenter')} />
+          <MiniKPI label="דחופים" value={current.urgentTickets} color="red" onClick={() => goTo('ServiceCenter')} />
+          <MiniKPI label="SLA פג" value={current.slaBreachedTickets} color="red" onClick={() => goTo('ServiceCenter')} />
+          <MiniKPI label="נפתחו היום" value={current.ticketsOpenedToday} color="cyan" onClick={() => goTo('ServiceCenter')} />
         </div>
       </SectionCard>
 

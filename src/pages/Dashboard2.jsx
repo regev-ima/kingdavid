@@ -256,7 +256,7 @@ export default function Dashboard2() {
               <PlaceholderTab
                 title="שירות לקוחות"
                 description="בקרוב: פירוט מלא של כרטיסים פתוחים לפי קטגוריה, דחיפות וזמן טיפול ממוצע."
-                drillToPage="Support"
+                drillToPage="ServiceCenter"
               />
             </TabsContent>
 
