@@ -24,74 +24,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, KeyRound, Check } from "lucide-react";
+import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
 import UserAvatar from '@/components/shared/UserAvatar';
+import RepManageDialog from '@/components/representatives/RepManageDialog';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { supabase } from '@/api/supabaseClient';
 
-// Inline-editable table cell: holds a local draft and only commits when the
-// user explicitly clicks the save button (or presses Enter). The save button
-// shows only while the draft differs from the stored value, so typing no
-// longer fires an update on every keystroke. Esc reverts the draft.
-function InlineEditField({ value, onSave, placeholder, className = '', type = 'text', inputProps = {}, parse }) {
-  const stored = value ?? '';
-  const [draft, setDraft] = useState(stored);
-
-  // Re-sync when the stored value actually changes (after a save / refetch).
-  // For primitive strings React skips this when the value is unchanged, so an
-  // in-progress edit isn't clobbered by background refetches.
-  useEffect(() => {
-    setDraft(value ?? '');
-  }, [value]);
-
-  const dirty = String(draft) !== String(stored);
-
-  const commit = () => {
-    if (!dirty) return;
-    onSave(parse ? parse(draft) : draft);
-  };
-
-  return (
-    <div className="flex items-center gap-1">
-      <Input
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur(); }
-          if (e.key === 'Escape') { setDraft(stored); }
-        }}
-        placeholder={placeholder}
-        type={type}
-        className={className}
-        {...inputProps}
-      />
-      {dirty && (
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          onClick={commit}
-          className="h-7 w-7 shrink-0 text-green-600 hover:text-green-700 hover:bg-green-50"
-          title="שמור שינוי"
-        >
-          <Check className="h-4 w-4" />
-        </Button>
-      )}
-    </div>
-  );
-}
+const ROLE_LABELS = {
+  admin: 'מנהל',
+  user: 'נציג מכירות',
+  sales_user: 'נציג מכירות',
+  factory_user: 'נציג מפעל',
+  bookkeeper: 'מנהלת חשבונות',
+};
 
 export default function Representatives() {
   const [user, setUser] = useState(null);
+  const [manageRep, setManageRep] = useState(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('sales_user');
   const [selectedRep, setSelectedRep] = useState(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
-  const [resettingEmail, setResettingEmail] = useState(null);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [repToDeactivate, setRepToDeactivate] = useState(null);
   const [transferToRep, setTransferToRep] = useState('');
@@ -387,25 +344,6 @@ export default function Representatives() {
     setColumnMapping({});
     setAvailableColumns([]);
     setStep(1);
-  };
-
-  // Admin-triggered password reset: we don't set a password for the rep
-  // (that needs service-role server access). Instead we send them the same
-  // reset-password email the login screen uses, and they pick a new one.
-  const handleResetPassword = async (rep) => {
-    if (!rep?.email) return;
-    setResettingEmail(rep.email);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(rep.email, {
-        redirectTo: `${window.location.origin}/login`,
-      });
-      if (error) throw error;
-      toast.success(`נשלח מייל לאיפוס סיסמה ל-${rep.email}`);
-    } catch (err) {
-      toast.error(`שליחת מייל האיפוס נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
-    } finally {
-      setResettingEmail(null);
-    }
   };
 
   const handleImpersonate = (rep) => {
@@ -1077,70 +1015,29 @@ export default function Representatives() {
               {activeReps.map(rep => {
                 const stats = getRepStats(rep.email);
                 return (
-                  <tr key={rep.id} className="hover:bg-muted/50 transition-colors">
+                  <tr
+                    key={rep.id}
+                    onClick={() => setManageRep(rep)}
+                    className="hover:bg-muted/50 transition-colors cursor-pointer"
+                  >
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <UserAvatar user={rep} size="sm" />
-                        <div>
-                          <InlineEditField
-                            value={rep.full_name || ''}
-                            onSave={(v) => {
-                              const name = String(v).trim();
-                              if (name) updateRepMutation.mutate({ repId: rep.id, data: { full_name: name } });
-                            }}
-                            placeholder="שם הנציג"
-                            className="h-7 text-sm font-medium w-44 px-2"
-                          />
-                          <div className="text-xs text-muted-foreground mt-0.5 px-2">{rep.email}</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm text-foreground truncate">{rep.full_name || '—'}</div>
+                          <div className="text-xs text-muted-foreground truncate">{rep.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <Select 
-                        value={rep.role || 'user'} 
-                        onValueChange={(value) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { role: value }
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="w-32 h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">מנהל</SelectItem>
-                          <SelectItem value="user">נציג מכירות</SelectItem>
-                          <SelectItem value="factory_user">נציג מפעל</SelectItem>
-                          <SelectItem value="bookkeeper">מנהלת חשבונות</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 whitespace-nowrap">
+                        {ROLE_LABELS[rep.role] || 'נציג מכירות'}
+                      </span>
                     </td>
-                    <td className="py-3 px-4">
-                      <InlineEditField
-                        value={rep.voicenter_extension || ''}
-                        onSave={(v) => updateRepMutation.mutate({ repId: rep.id, data: { voicenter_extension: v } })}
-                        placeholder="שלוחה"
-                        className="text-sm w-24"
-                      />
-                    </td>
-                    <td className="py-3 px-4">
-                      <InlineEditField
-                        value={rep.phone || ''}
-                        onSave={(v) => updateRepMutation.mutate({ repId: rep.id, data: { phone: v } })}
-                        placeholder="טלפון נייד"
-                        className="text-sm w-32"
-                      />
-                    </td>
-                    <td className="py-3 px-4">
-                      <InlineEditField
-                        value={rep.commission_rate ?? ''}
-                        onSave={(v) => updateRepMutation.mutate({ repId: rep.id, data: { commission_rate: parseFloat(v) || 0 } })}
-                        placeholder="%"
-                        type="number"
-                        className="text-sm w-20"
-                        inputProps={{ min: "0", max: "100" }}
-                      />
+                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.voicenter_extension || '—'}</td>
+                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.phone || '—'}</td>
+                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
+                      {rep.commission_rate != null && rep.commission_rate !== '' ? `${rep.commission_rate}%` : '—'}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-foreground">
@@ -1173,7 +1070,17 @@ export default function Representatives() {
                       })()}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          onClick={() => setManageRep(rep)}
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 gap-1"
+                          title="נהל את פרטי הנציג, הלו״ז, ההרשאות והקבצים"
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          נהל
+                        </Button>
                         <Button
                           onClick={() => handleImpersonate(rep)}
                           size="sm"
@@ -1184,30 +1091,6 @@ export default function Representatives() {
                           <Eye className="h-3.5 w-3.5 me-1" />
                           התחזה
                         </Button>
-                        <Button
-                          onClick={() => handleResetPassword(rep)}
-                          variant="outline"
-                          size="sm"
-                          disabled={resettingEmail === rep.email}
-                          className="text-amber-700 border-amber-200 hover:bg-amber-50 h-8 px-3"
-                          title="שלח לנציג מייל לאיפוס סיסמה"
-                        >
-                          {resettingEmail === rep.email ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <KeyRound className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                        {rep.email !== user?.email && (
-                          <Button
-                            onClick={() => handleDeactivateClick(rep)}
-                            variant="outline"
-                            size="sm"
-                            className="text-red-600 border-red-200 hover:bg-red-50 h-8 px-3"
-                          >
-                            <UserX className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -1234,7 +1117,11 @@ export default function Representatives() {
                 </thead>
                 <tbody className="bg-white divide-y divide-border/50">
                   {inactiveReps.map(rep => (
-                    <tr key={rep.id} className="hover:bg-muted/50">
+                    <tr
+                      key={rep.id}
+                      onClick={() => setManageRep(rep)}
+                      className="hover:bg-muted/50 cursor-pointer"
+                    >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <UserAvatar user={rep} size="sm" />
@@ -1247,7 +1134,7 @@ export default function Representatives() {
                       <td className="py-3 px-4">
                         <StatusBadge status="closed" customLabel="מושבת" className="text-xs" />
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <Button
                           onClick={() => updateRepMutation.mutate({ repId: rep.id, data: { is_active: true } })}
                           variant="outline"
@@ -1264,6 +1151,16 @@ export default function Representatives() {
             </div>
           </Card>
         </div>
+      )}
+
+      {manageRep && (
+        <RepManageDialog
+          key={manageRep.id}
+          rep={manageRep}
+          currentUserEmail={user?.email}
+          onClose={() => setManageRep(null)}
+          onRequestDeactivate={handleDeactivateClick}
+        />
       )}
     </div>
   );

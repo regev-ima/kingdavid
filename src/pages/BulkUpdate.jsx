@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { BULK_UPDATE_ENTITIES, EMPTY_FIELD_VALUE } from '@/constants/bulkUpdateConfig';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canAccessAdminOnly } from '@/lib/rbac';
+import { canUseBulkUpdate } from '@/lib/rbac';
 
 const ICONS = { Users, CheckSquare, ShoppingCart, FileText, Crown, Headphones };
 
@@ -64,7 +64,7 @@ export default function BulkUpdate() {
   const [showAllFilters, setShowAllFilters] = useState(false);
   const cancelledRef = useRef(false);
   const taskNameRef = useRef(null);
-  const isAdmin = canAccessAdminOnly(effectiveUser);
+  const isAdmin = canUseBulkUpdate(effectiveUser);
 
   useEffect(() => {
     if (!isAdmin) return;
