@@ -88,6 +88,9 @@ export default function CallAnalytics() {
   }, [filters.search]);
 
   const queryFilters = { search: debouncedSearch, result: filters.result, rep: filters.rep };
+  // When a rep is selected, the KPIs + charts scope to that rep too (not just
+  // the table). null = all reps.
+  const repFilter = filters.rep === 'all' ? null : filters.rep;
 
   // Resolve the date window to ISO bounds. "all" → null bounds (whole table).
   const { startISO, endISO } = useMemo(() => {
@@ -129,13 +132,13 @@ export default function CallAnalytics() {
 
   // ── KPIs for the window (one row) ──
   const { data: kpis = { total_calls: 0, answered_calls: 0, positive_calls: 0, avg_duration: 0 } } = useQuery({
-    queryKey: ['callKpis', startISO, endISO],
+    queryKey: ['callKpis', startISO, endISO, repFilter],
     enabled: isAdmin,
     staleTime: 60000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const { data, error } = await base44.supabase
-        .rpc('call_analytics_kpis', { p_start: startISO, p_end: endISO })
+        .rpc('call_analytics_kpis', { p_start: startISO, p_end: endISO, p_rep: repFilter })
         .maybeSingle();
       if (error) throw error;
       return data || { total_calls: 0, answered_calls: 0, positive_calls: 0, avg_duration: 0 };
@@ -144,13 +147,13 @@ export default function CallAnalytics() {
 
   // ── Result distribution (pie) ──
   const { data: byResult = [] } = useQuery({
-    queryKey: ['callByResult', startISO, endISO],
+    queryKey: ['callByResult', startISO, endISO, repFilter],
     enabled: isAdmin,
     staleTime: 60000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const { data, error } = await base44.supabase
-        .rpc('call_analytics_by_result', { p_start: startISO, p_end: endISO });
+        .rpc('call_analytics_by_result', { p_start: startISO, p_end: endISO, p_rep: repFilter });
       if (error) throw error;
       return data || [];
     },
@@ -158,13 +161,13 @@ export default function CallAnalytics() {
 
   // ── Hourly distribution (bar) ──
   const { data: byHour = [] } = useQuery({
-    queryKey: ['callByHour', startISO, endISO],
+    queryKey: ['callByHour', startISO, endISO, repFilter],
     enabled: isAdmin,
     staleTime: 60000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const { data, error } = await base44.supabase
-        .rpc('call_analytics_by_hour', { p_start: startISO, p_end: endISO });
+        .rpc('call_analytics_by_hour', { p_start: startISO, p_end: endISO, p_rep: repFilter });
       if (error) throw error;
       return data || [];
     },
