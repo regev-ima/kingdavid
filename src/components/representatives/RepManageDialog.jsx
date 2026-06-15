@@ -243,20 +243,25 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent dir="rtl" className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+      <DialogContent
+        dir="rtl"
+        className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 [&>button]:left-4 [&>button]:right-auto"
+      >
+        <DialogHeader className="px-6 pt-5 pb-4 border-b pe-14 space-y-0">
           <div className="flex items-center gap-3">
             <UserAvatar user={rep} size="md" />
-            <div className="min-w-0">
-              <DialogTitle className="truncate">{rep?.full_name || rep?.email}</DialogTitle>
+            <div className="min-w-0 flex-1 text-right">
+              <div className="flex items-center gap-2">
+                <DialogTitle className="truncate">{rep?.full_name || rep?.email}</DialogTitle>
+                <Badge
+                  variant={isActive ? 'default' : 'secondary'}
+                  className={`shrink-0 ${isActive ? 'bg-green-100 text-green-800 hover:bg-green-100' : 'bg-muted text-muted-foreground'}`}
+                >
+                  {isActive ? 'פעיל' : 'לא פעיל'}
+                </Badge>
+              </div>
               <DialogDescription className="truncate">{rep?.email}</DialogDescription>
             </div>
-            <Badge
-              variant={isActive ? 'default' : 'secondary'}
-              className={isActive ? 'bg-green-100 text-green-800 hover:bg-green-100' : 'bg-muted text-muted-foreground'}
-            >
-              {isActive ? 'פעיל' : 'לא פעיל'}
-            </Badge>
           </div>
         </DialogHeader>
 
