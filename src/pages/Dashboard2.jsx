@@ -16,7 +16,7 @@ import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
 import TeamTab from '@/components/dashboard2/tabs/TeamTab';
 import MarketingTab from '@/components/dashboard2/tabs/MarketingTab';
 import PlaceholderTab from '@/components/dashboard2/tabs/PlaceholderTab';
-import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
+import useDashboard2Data, { useDashboard2Live, useDashboard2LowStock, useDashboard2Previous } from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData, getDemoPrevious } from '@/components/dashboard2/demoData';
 
 const DEMO_MODE_STORAGE_KEY = 'dashboard2.demoMode';
@@ -114,18 +114,14 @@ export default function Dashboard2() {
 
   const dateRange = useMemo(() => ({ from: start, to: end }), [start, end]);
 
-  const currentQuery = useDashboard2Data({
-    start,
-    end,
-    enabled: !!user && !isCheckingAuth && !demoMode,
-    label: 'current',
-  });
-  const previousQuery = useDashboard2Data({
-    start: prevStart,
-    end: prevEnd,
-    enabled: !!user && !isCheckingAuth && !demoMode,
-    label: 'previous',
-  });
+  // Range-INDEPENDENT live counts + the slow inventory scan are cached on their
+  // own keys, so switching the date range only refetches the range-dependent
+  // query below — not the whole dashboard.
+  const liveEnabled = !!user && !isCheckingAuth && !demoMode;
+  const liveQuery = useDashboard2Live({ enabled: liveEnabled });
+  const lowStockQuery = useDashboard2LowStock({ enabled: liveEnabled });
+  const currentQuery = useDashboard2Data({ start, end, enabled: liveEnabled });
+  const previousQuery = useDashboard2Previous({ start: prevStart, end: prevEnd, enabled: liveEnabled });
 
   const demoCurrent = useMemo(
     () => (demoMode ? getDemoData(rangeKey, customRange, { start, end }) : null),
@@ -151,7 +147,12 @@ export default function Dashboard2() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([currentQuery.refetch(), previousQuery.refetch()]);
+    await Promise.all([
+      currentQuery.refetch(),
+      previousQuery.refetch(),
+      liveQuery.refetch(),
+      lowStockQuery.refetch(),
+    ]);
     setLastUpdated(new Date());
   };
 
@@ -159,10 +160,15 @@ export default function Dashboard2() {
     return <div className="text-center py-12 text-muted-foreground">טוען...</div>;
   }
 
-  const current = demoMode ? demoCurrent || {} : currentQuery.data || {};
+  const current = demoMode
+    ? (demoCurrent || {})
+    : { ...(liveQuery.data || {}), ...(currentQuery.data || {}), lowStockItems: lowStockQuery.data ?? 0 };
   const previous = demoMode ? demoPrevious || {} : previousQuery.data || {};
-  const isLoading = !demoMode && currentQuery.isLoading && !currentQuery.data;
-  const isFetching = !demoMode && (currentQuery.isFetching || previousQuery.isFetching);
+  // First paint waits only on the range query + the (fast) live counts — NOT on
+  // the inventory scan or the previous-period deltas, which fill in after.
+  const isLoading = !demoMode
+    && ((currentQuery.isLoading && !currentQuery.data) || (liveQuery.isLoading && !liveQuery.data));
+  const isFetching = !demoMode && (currentQuery.isFetching || previousQuery.isFetching || liveQuery.isFetching);
 
   // Surface partial-load failures honestly. The snapshot now catches each
   // sub-query, so instead of the whole dashboard silently blanking to 0 when
@@ -173,6 +179,7 @@ export default function Dashboard2() {
     ? []
     : [
         ...(currentQuery.data?._errors || []),
+        ...(liveQuery.data?._errors || []),
         ...(currentQuery.error ? [{ source: 'dashboard', message: currentQuery.error.message || String(currentQuery.error) }] : []),
       ];
 
@@ -256,7 +263,7 @@ export default function Dashboard2() {
               <PlaceholderTab
                 title="שירות לקוחות"
                 description="בקרוב: פירוט מלא של כרטיסים פתוחים לפי קטגוריה, דחיפות וזמן טיפול ממוצע."
-                drillToPage="Support"
+                drillToPage="ServiceCenter"
               />
             </TabsContent>
 

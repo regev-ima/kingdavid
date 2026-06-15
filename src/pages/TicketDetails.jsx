@@ -71,7 +71,7 @@ export default function TicketDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">אין לך הרשאה לצפות בקריאות שירות</p>
-        <Link to={createPageUrl('Support')}>
+        <Link to={createPageUrl('ServiceCenter')}>
           <Button className="mt-4">חזור לרשימת הקריאות</Button>
         </Link>
       </div>
@@ -82,7 +82,7 @@ export default function TicketDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">הקריאה לא נמצאה</p>
-        <Link to={createPageUrl('Support')}>
+        <Link to={createPageUrl('ServiceCenter')}>
           <Button className="mt-4">חזור לרשימת הקריאות</Button>
         </Link>
       </div>
@@ -93,7 +93,7 @@ export default function TicketDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">אין לך הרשאה לצפות בקריאה זו</p>
-        <Link to={createPageUrl('Support')}>
+        <Link to={createPageUrl('ServiceCenter')}>
           <Button className="mt-4">חזור לרשימת הקריאות</Button>
         </Link>
       </div>
@@ -120,7 +120,7 @@ export default function TicketDetails() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link to={createPageUrl('Support')}>
+          <Link to={createPageUrl('ServiceCenter')}>
             <Button variant="ghost" size="icon">
               <ArrowRight className="h-5 w-5" />
             </Button>

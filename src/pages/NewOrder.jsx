@@ -29,7 +29,7 @@ import { productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canAccessSalesWorkspace, canViewLead, canViewQuote } from '@/lib/rbac';
+import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
@@ -47,12 +47,14 @@ function normalizePhoneForLookup(raw) {
   return digits;
 }
 
-export default function NewOrder() {
+export default function NewOrder({ asDialog = false, dialogLeadId = null, dialogQuoteId = null, onDialogClose = null }) {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
-  const quoteId = urlParams.get('quote_id');
-  const leadId = urlParams.get('leadId');
+  // In dialog mode (opened inline from a lead) the ids come as props instead
+  // of the URL, and on success we close the dialog rather than navigate away.
+  const quoteId = dialogQuoteId || urlParams.get('quote_id');
+  const leadId = dialogLeadId || urlParams.get('leadId');
   const customerId = urlParams.get('customerId');
 
   const [formData, setFormData] = useState({
@@ -287,7 +289,10 @@ export default function NewOrder() {
         buildPayload: (newNumber) => ({
           ...data,
           order_number: newNumber,
-          rep1: quote?.created_by_rep || lead?.rep1 || quoteLead?.rep1 || effectiveUser?.email,
+          // Credit the rep who closes the sale: a quote carries its creator;
+          // otherwise the acting rep (non-admin) gets it, so serving someone
+          // else's walk-in credits the server — admins keep the owner.
+          rep1: quote?.created_by_rep || (isAdmin(effectiveUser) ? (lead?.rep1 || quoteLead?.rep1) : null) || effectiveUser?.email,
         }),
       });
 
@@ -310,7 +315,7 @@ export default function NewOrder() {
       await base44.entities.Commission.create({
         order_id: order.id,
         order_number: order.order_number,
-        rep1: quote?.created_by_rep || lead?.rep1 || quoteLead?.rep1 || effectiveUser?.email,
+        rep1: quote?.created_by_rep || (isAdmin(effectiveUser) ? (lead?.rep1 || quoteLead?.rep1) : null) || effectiveUser?.email,
         rep1_percent: 100,
         rep2_percent: 0,
         base_amount: data.subtotal,
@@ -370,6 +375,7 @@ export default function NewOrder() {
       return order;
     },
     onSuccess: (order) => {
+      if (asDialog && onDialogClose) { onDialogClose(order); return; }
       navigate(createPageUrl('OrderDetails') + `?id=${order.id}`);
     },
   });
@@ -401,9 +407,6 @@ export default function NewOrder() {
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
 
-  const accessLead = lead || quoteLead;
-  const leadsById = buildLeadsById(accessLead ? [accessLead] : []);
-
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
   }
@@ -419,27 +422,10 @@ export default function NewOrder() {
     );
   }
 
-  if (leadId && lead && !canViewLead(effectiveUser, lead)) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה ליצור הזמנה לליד זה</p>
-        <Link to={createPageUrl('Orders')}>
-          <Button className="mt-4">חזור להזמנות</Button>
-        </Link>
-      </div>
-    );
-  }
-
-  if (quoteId && quote && !canViewQuote(effectiveUser, quote, leadsById)) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה ליצור הזמנה מהצעת מחיר זו</p>
-        <Link to={createPageUrl('Orders')}>
-          <Button className="mt-4">חזור להזמנות</Button>
-        </Link>
-      </div>
-    );
-  }
+  // Order creation is open to any sales rep, including for a lead/quote they
+  // don't own (closing a walk-in sale). Lead ownership is untouched; the
+  // order + commission are credited to the rep who actually closes the sale
+  // (see rep1 attribution above). Only non-sales users are turned away.
 
   const addExtra = (extraChargeId) => {
     const extraCharge = extraCharges.find(ec => ec.id === extraChargeId);
@@ -530,18 +516,20 @@ export default function NewOrder() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Link to={createPageUrl('Orders')}>
-          <Button variant="ghost" size="icon">
-            <ArrowRight className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">הזמנה חדשה</h1>
-          <p className="text-muted-foreground">צור הזמנה חדשה</p>
+    <div className={asDialog ? 'space-y-4' : 'max-w-4xl mx-auto space-y-6'}>
+      {!asDialog && (
+        <div className="flex items-center gap-4">
+          <Link to={createPageUrl('Orders')}>
+            <Button variant="ghost" size="icon">
+              <ArrowRight className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">הזמנה חדשה</h1>
+            <p className="text-muted-foreground">צור הזמנה חדשה</p>
+          </div>
         </div>
-      </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <Card>
@@ -1012,10 +1000,14 @@ export default function NewOrder() {
         </Card>
 
         <div className="flex justify-end gap-3 mt-6">
-          <Link to={createPageUrl('Orders')}>
-            <Button type="button" variant="outline">ביטול</Button>
-          </Link>
-          <Button 
+          {asDialog ? (
+            <Button type="button" variant="outline" onClick={() => onDialogClose?.(null)}>ביטול</Button>
+          ) : (
+            <Link to={createPageUrl('Orders')}>
+              <Button type="button" variant="outline">ביטול</Button>
+            </Link>
+          )}
+          <Button
             type="submit" 
             className="bg-primary hover:bg-primary/90"
             disabled={createOrderMutation.isPending}

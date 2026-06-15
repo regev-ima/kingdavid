@@ -24,16 +24,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw } from "lucide-react";
+import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
 import UserAvatar from '@/components/shared/UserAvatar';
+import RepManageDialog from '@/components/representatives/RepManageDialog';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { supabase } from '@/api/supabaseClient';
 
+const ROLE_LABELS = {
+  admin: 'מנהל',
+  user: 'נציג מכירות',
+  sales_user: 'נציג מכירות',
+  factory_user: 'נציג מפעל',
+  bookkeeper: 'מנהלת חשבונות',
+};
+
 export default function Representatives() {
   const [user, setUser] = useState(null);
+  const [manageRep, setManageRep] = useState(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('sales_user');
@@ -90,24 +100,37 @@ export default function Representatives() {
     return map;
   }, [repStatsRows]);
 
-  const { data: leads = [], isLoading: leadsLoading } = useQuery({
+  // The per-rep numbers in the table come from the server-side rep_stats view
+  // (one small row per rep). These four full-table loads are ONLY needed by the
+  // "deactivate rep" dialog (assignment counts + the reassignment), so they're
+  // deferred until that dialog opens — otherwise every visit pulled the entire
+  // leads/quotes/customers/orders tables and the page crawled.
+  const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
     queryFn: () => base44.entities.Lead.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const { data: quotes = [] } = useQuery({
     queryKey: ['quotes'],
     queryFn: () => base44.entities.Quote.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
     queryFn: () => base44.entities.Customer.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: () => base44.entities.Order.list(),
+    enabled: !!repToDeactivate,
+    staleTime: 60_000,
   });
 
   const inviteUserMutation = useMutation({
@@ -979,7 +1002,7 @@ export default function Representatives() {
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נציג</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">תפקיד</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">מספר שלוחה</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון</th>
+                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון נייד</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">עמלה (%)</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">סה"כ לידים</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעילים</th>
@@ -992,78 +1015,29 @@ export default function Representatives() {
               {activeReps.map(rep => {
                 const stats = getRepStats(rep.email);
                 return (
-                  <tr key={rep.id} className="hover:bg-muted/50 transition-colors">
+                  <tr
+                    key={rep.id}
+                    onClick={() => setManageRep(rep)}
+                    className="hover:bg-muted/50 transition-colors cursor-pointer"
+                  >
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <UserAvatar user={rep} size="sm" />
-                        <div>
-                          <div className="font-medium text-sm text-foreground">{rep.full_name}</div>
-                          <div className="text-xs text-muted-foreground">{rep.email}</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm text-foreground truncate">{rep.full_name || '—'}</div>
+                          <div className="text-xs text-muted-foreground truncate">{rep.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <Select 
-                        value={rep.role || 'user'} 
-                        onValueChange={(value) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { role: value }
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="w-32 h-8 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">מנהל</SelectItem>
-                          <SelectItem value="user">נציג מכירות</SelectItem>
-                          <SelectItem value="factory_user">נציג מפעל</SelectItem>
-                          <SelectItem value="bookkeeper">מנהלת חשבונות</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-slate-100 text-slate-700 whitespace-nowrap">
+                        {ROLE_LABELS[rep.role] || 'נציג מכירות'}
+                      </span>
                     </td>
-                    <td className="py-3 px-4">
-                      <Input
-                        value={rep.voicenter_extension || ''}
-                        onChange={(e) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { voicenter_extension: e.target.value }
-                          });
-                        }}
-                        placeholder="שלוחה"
-                        className="text-sm w-24"
-                      />
-                    </td>
-                    <td className="py-3 px-4">
-                      <Input
-                        value={rep.phone || ''}
-                        onChange={(e) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { phone: e.target.value }
-                          });
-                        }}
-                        placeholder="טלפון"
-                        className="text-sm w-32"
-                      />
-                    </td>
-                    <td className="py-3 px-4">
-                      <Input
-                        value={rep.commission_rate || ''}
-                        onChange={(e) => {
-                          updateRepMutation.mutate({
-                            repId: rep.id,
-                            data: { commission_rate: parseFloat(e.target.value) || 0 }
-                          });
-                        }}
-                        placeholder="%"
-                        type="number"
-                        min="0"
-                        max="100"
-                        className="text-sm w-20"
-                      />
+                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.voicenter_extension || '—'}</td>
+                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.phone || '—'}</td>
+                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
+                      {rep.commission_rate != null && rep.commission_rate !== '' ? `${rep.commission_rate}%` : '—'}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-foreground">
@@ -1096,7 +1070,17 @@ export default function Representatives() {
                       })()}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          onClick={() => setManageRep(rep)}
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-3 gap-1"
+                          title="נהל את פרטי הנציג, הלו״ז, ההרשאות והקבצים"
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          נהל
+                        </Button>
                         <Button
                           onClick={() => handleImpersonate(rep)}
                           size="sm"
@@ -1107,16 +1091,6 @@ export default function Representatives() {
                           <Eye className="h-3.5 w-3.5 me-1" />
                           התחזה
                         </Button>
-                        {rep.email !== user?.email && (
-                          <Button
-                            onClick={() => handleDeactivateClick(rep)}
-                            variant="outline"
-                            size="sm"
-                            className="text-red-600 border-red-200 hover:bg-red-50 h-8 px-3"
-                          >
-                            <UserX className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -1143,7 +1117,11 @@ export default function Representatives() {
                 </thead>
                 <tbody className="bg-white divide-y divide-border/50">
                   {inactiveReps.map(rep => (
-                    <tr key={rep.id} className="hover:bg-muted/50">
+                    <tr
+                      key={rep.id}
+                      onClick={() => setManageRep(rep)}
+                      className="hover:bg-muted/50 cursor-pointer"
+                    >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
                           <UserAvatar user={rep} size="sm" />
@@ -1156,7 +1134,7 @@ export default function Representatives() {
                       <td className="py-3 px-4">
                         <StatusBadge status="closed" customLabel="מושבת" className="text-xs" />
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <Button
                           onClick={() => updateRepMutation.mutate({ repId: rep.id, data: { is_active: true } })}
                           variant="outline"
@@ -1173,6 +1151,16 @@ export default function Representatives() {
             </div>
           </Card>
         </div>
+      )}
+
+      {manageRep && (
+        <RepManageDialog
+          key={manageRep.id}
+          rep={manageRep}
+          currentUserEmail={user?.email}
+          onClose={() => setManageRep(null)}
+          onRequestDeactivate={handleDeactivateClick}
+        />
       )}
     </div>
   );

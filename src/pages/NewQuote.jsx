@@ -34,7 +34,7 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import DiscountPopover from '@/components/quote/DiscountPopover';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canAccessSalesWorkspace, canViewLead } from '@/lib/rbac';
+import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
@@ -318,7 +318,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           ...data,
           lead_id: leadId,
           quote_number: newNumber,
-          created_by_rep: lead?.rep1 || effectiveUser?.email,
+          created_by_rep: isAdmin(effectiveUser) ? (lead?.rep1 || effectiveUser?.email) : (effectiveUser?.email || lead?.rep1),
           items: data.items.map((item) => ({
             product_id: item.product_id || '',
             variation_id: item.variation_id || '',
@@ -472,16 +472,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     );
   }
 
-  if (leadId && lead && !canViewLead(effectiveUser, lead)) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה ליצור הצעת מחיר לליד זה</p>
-        <Link to={createPageUrl('Quotes')}>
-          <Button className="mt-4">חזור להצעות המחיר</Button>
-        </Link>
-      </div>
-    );
-  }
+  // Quote creation is intentionally open to any sales rep, including for a
+  // lead they don't own (serving a walk-in). Ownership of the lead is
+  // untouched; credit for the quote goes to the rep who built it
+  // (created_by_rep above). Only non-sales users are turned away (canAccessSales).
 
   const addItem = () => {
     const emptyIdx = formData.items.findIndex(item => !item.product_id && !item.name);

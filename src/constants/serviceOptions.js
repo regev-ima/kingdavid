@@ -2,28 +2,31 @@
 // the rep dialogs, the public self-service form, the list/detail screens, and
 // the import all speak the same language and render the same colours.
 
+import { MessageCircle, BedDouble, ShieldCheck } from 'lucide-react';
+
 // ── Request type / warranty classification ────────────────────────────────
-// The three buckets the customer (or rep) picks during intake.
+// The three buckets the customer (or rep) picks during intake. Each carries a
+// lucide icon (the app's icon set) rendered in the intake dialogs — no emojis.
 export const REQUEST_TYPE_OPTIONS = [
   {
     value: 'general',
     label: 'פנייה כללית',
     description: 'שאלה או בקשה כללית — ללא היבט אחריות',
-    emoji: '💬',
+    Icon: MessageCircle,
     chip: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
   },
   {
     value: 'trial_30d',
     label: 'במסגרת 30 ימי ניסיון',
     description: 'הפנייה בתוך תקופת 30 ימי ההתנסות במוצר',
-    emoji: '🛏️',
+    Icon: BedDouble,
     chip: 'bg-amber-100 text-amber-800 ring-1 ring-amber-200',
   },
   {
     value: 'warranty',
     label: 'במסגרת אחריות מוצר',
     description: 'אחריות ארוכת-טווח (למשל מזרן עם 10 שנות אחריות)',
-    emoji: '🛡️',
+    Icon: ShieldCheck,
     chip: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
   },
 ];
@@ -66,22 +69,23 @@ export const PRIORITY_LABELS = Object.fromEntries(PRIORITY_OPTIONS.map((o) => [o
 
 // ── Source (who opened the ticket) ────────────────────────────────────────
 export const SOURCE_OPTIONS = [
-  { value: 'agent_manual', label: 'נפתחה ע״י נציג', emoji: '🧑‍💼', chip: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' },
-  { value: 'customer_self', label: 'נפתחה ע״י הלקוח', emoji: '🙋', chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200' },
-  { value: 'imported', label: 'מיובאת', emoji: '📦', chip: 'bg-stone-100 text-stone-600 ring-1 ring-stone-200' },
+  { value: 'agent_manual', label: 'נפתחה ע״י נציג', chip: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' },
+  { value: 'customer_self', label: 'נפתחה ע״י הלקוח', chip: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200' },
+  { value: 'imported', label: 'מיובאת', chip: 'bg-stone-100 text-stone-600 ring-1 ring-stone-200' },
 ];
 
 export const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.label]));
 export const SOURCE_CHIP = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.chip]));
 
 // ── Diagnostic questions ──────────────────────────────────────────────────
-// A small, ordered set of the questions the service team needs to understand a
-// fault. Answers are stored in support_tickets.issue_answers as
-// { [key]: value }. Generic enough for mattresses/beds/furniture; the team can
-// extend this list later.
+// A small, ordered set of structured questions the service team needs to triage
+// a fault fast. Answers are stored in support_tickets.issue_answers as
+// { [key]: value }. The free-text "what happened" lives in the ticket's
+// `description` field (a single place), so we deliberately keep NO overlapping
+// free-text questions here. Shown identically in the rep dialog and the public
+// link. Generic enough for mattresses/beds/furniture.
 export const DIAGNOSTIC_QUESTIONS = [
   { key: 'product', label: 'באיזה מוצר מדובר?', type: 'text', placeholder: 'למשל: מזרן קפיצים מבודדים 160/200' },
-  { key: 'problem_summary', label: 'מה הבעיה בקצרה?', type: 'text', placeholder: 'תארו את התקלה' },
   {
     key: 'problem_area',
     label: 'היכן ממוקמת הבעיה?',
@@ -100,8 +104,18 @@ export const DIAGNOSTIC_QUESTIONS = [
     type: 'select',
     options: ['שימוש יומיומי', 'שימוש מזדמן', 'חדר אורחים / לא בשימוש קבוע'],
   },
-  { key: 'notes', label: 'פרטים נוספים שיעזרו לנו', type: 'textarea', placeholder: 'כל מידע נוסף' },
 ];
+
+// ── Customer media upload limits ──────────────────────────────────────────
+// Client-side guards for the photos/short-videos a customer attaches. These are
+// UX guards, not a hard security boundary — the real gate is the storage RLS
+// policy (only image/* + reasonable size land in the 'uploads' bucket). Images
+// are compressed before upload; videos are accepted as-is up to these caps so a
+// customer can send a short clip without us swallowing multi-GB files.
+export const UPLOAD_ACCEPT = 'image/*,video/*';
+export const UPLOAD_MAX_IMAGE_MB = 12;     // pre-compression ceiling
+export const UPLOAD_MAX_VIDEO_MB = 40;
+export const UPLOAD_MAX_VIDEO_SECONDS = 60;
 
 // Standard contact-preference choices for the public form.
 export const CONTACT_PREFERENCE_OPTIONS = [
@@ -109,6 +123,10 @@ export const CONTACT_PREFERENCE_OPTIONS = [
   { value: 'whatsapp', label: 'וואטסאפ' },
   { value: 'email', label: 'אימייל' },
 ];
+
+export const CONTACT_PREFERENCE_LABELS = Object.fromEntries(
+  CONTACT_PREFERENCE_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

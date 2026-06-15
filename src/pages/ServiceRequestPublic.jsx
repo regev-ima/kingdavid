@@ -6,12 +6,32 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, CheckCircle2, Crown, ShieldCheck } from 'lucide-react';
+import { Loader2, CheckCircle2, Crown, ShieldCheck, Info, AlertCircle } from 'lucide-react';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
-import { compressImage } from '@/lib/imageCompression';
 import {
   REQUEST_TYPE_OPTIONS, DIAGNOSTIC_QUESTIONS, CONTACT_PREFERENCE_OPTIONS,
 } from '@/constants/serviceOptions';
+
+// App-shell chrome (logo header + footer) shared by every render state. Defined
+// at MODULE scope — not inside the component — so it keeps a stable identity
+// across re-renders. A nested definition made React remount the whole subtree
+// on every keystroke, which dropped input focus and dismissed the mobile
+// keyboard after a single character.
+function Shell({ children }) {
+  return (
+    <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
+        <div className="inline-flex items-center gap-2">
+          <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
+          <span className="text-xl font-bold">KING DAVID</span>
+        </div>
+        <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
+      </header>
+      <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
+      <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
+    </div>
+  );
+}
 
 // Public, unauthenticated self-service intake form. A customer reaches it from
 // the SMS link (/service-request?token=...). It talks to the DB only through
@@ -43,6 +63,9 @@ export default function ServiceRequestPublic() {
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const setAnswer = (k, v) => setForm((p) => ({ ...p, issue_answers: { ...p.issue_answers, [k]: v } }));
   const [error, setError] = useState('');
+  const [photosUploading, setPhotosUploading] = useState(false);
+  const [confirmNoPhotos, setConfirmNoPhotos] = useState(false);
+  const [showTips, setShowTips] = useState(false);
 
   // Anon upload straight into the 'uploads' bucket under the service-requests/
   // prefix the storage policy whitelists for anonymous inserts.
@@ -83,24 +106,14 @@ export default function ServiceRequestPublic() {
     e.preventDefault();
     if (!form.request_type) return setError('יש לבחור סוג פנייה');
     if (!form.description.trim()) return setError('יש לתאר את הבעיה');
+    if (photosUploading) return setError('יש להמתין לסיום העלאת הקבצים');
     setError('');
+    if ((form.photo_urls?.length || 0) === 0 && !confirmNoPhotos) {
+      setConfirmNoPhotos(true);
+      return;
+    }
     submitMutation.mutate();
   };
-
-  // ── Shell ────────────────────────────────────────────────────────────────
-  const Shell = ({ children }) => (
-    <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
-        <div className="inline-flex items-center gap-2">
-          <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
-          <span className="text-xl font-bold">KING DAVID</span>
-        </div>
-        <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
-      </header>
-      <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
-      <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
-    </div>
-  );
 
   if (!token) {
     return <Shell><div className="bg-white rounded-2xl border p-6 text-center text-muted-foreground mt-6">קישור לא תקין.</div></Shell>;
@@ -143,9 +156,9 @@ export default function ServiceRequestPublic() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} dir="rtl" className="space-y-4">
           {/* Request type */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label>סוג הפנייה *</Label>
             <div className="grid grid-cols-1 gap-2">
               {REQUEST_TYPE_OPTIONS.map((opt) => {
@@ -157,8 +170,11 @@ export default function ServiceRequestPublic() {
                     onClick={() => set('request_type', opt.value)}
                     className={`text-right rounded-xl border p-3 transition-all ${selected ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border hover:bg-muted/40'}`}
                   >
-                    <div className="font-medium text-sm">{opt.emoji} {opt.label}</div>
-                    <div className="text-xs text-muted-foreground">{opt.description}</div>
+                    <div className="font-medium text-sm flex items-center gap-2">
+                      <opt.Icon className={`h-4 w-4 shrink-0 ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
+                      {opt.label}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
                   </button>
                 );
               })}
@@ -168,7 +184,7 @@ export default function ServiceRequestPublic() {
           {/* Order date */}
           <div className="space-y-1.5">
             <Label>מתי ביצעת את ההזמנה?</Label>
-            <Input type="date" value={form.order_date} onChange={(e) => set('order_date', e.target.value)} />
+            <Input type="date" className="text-right" value={form.order_date} onChange={(e) => set('order_date', e.target.value)} />
           </div>
 
           {/* Warranty extra */}
@@ -176,19 +192,19 @@ export default function ServiceRequestPublic() {
             <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-emerald-50/60 border border-emerald-100">
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1 text-xs"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> שנות אחריות</Label>
-                <Input type="number" min="0" placeholder="למשל 10" value={form.warranty_years} onChange={(e) => set('warranty_years', e.target.value)} />
+                <Input type="number" min="0" className="text-right" placeholder="למשל 10" value={form.warranty_years} onChange={(e) => set('warranty_years', e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">לפני כמה חודשים התחילה הבעיה?</Label>
-                <Input type="number" min="0" placeholder="למשל 36" value={form.complaint_age_months} onChange={(e) => set('complaint_age_months', e.target.value)} />
+                <Input type="number" min="0" className="text-right" placeholder="למשל 36" value={form.complaint_age_months} onChange={(e) => set('complaint_age_months', e.target.value)} />
               </div>
             </div>
           )}
 
           {/* Diagnostic questions */}
-          <div className="space-y-3">
+          <div className="space-y-4">
             {DIAGNOSTIC_QUESTIONS.map((q) => (
-              <div key={q.key} className="space-y-1">
+              <div key={q.key} className="space-y-1.5">
                 <Label className="text-sm">{q.label}</Label>
                 {q.type === 'select' ? (
                   <Select value={form.issue_answers[q.key] || ''} onValueChange={(v) => setAnswer(q.key, v)}>
@@ -196,9 +212,9 @@ export default function ServiceRequestPublic() {
                     <SelectContent>{q.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
                   </Select>
                 ) : q.type === 'textarea' ? (
-                  <Textarea rows={2} value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                  <Textarea rows={2} className="text-right" value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
                 ) : (
-                  <Input value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                  <Input className="text-right" value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
                 )}
               </div>
             ))}
@@ -207,19 +223,34 @@ export default function ServiceRequestPublic() {
           {/* Description */}
           <div className="space-y-1.5">
             <Label>תיאור הבעיה *</Label>
-            <Textarea rows={3} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="ספרו לנו מה קרה..." required />
+            <Textarea rows={3} className="text-right" value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="ספרו לנו מה קרה..." required />
           </div>
 
-          {/* Photos */}
+          {/* Photos / short video */}
           <div className="space-y-1.5">
-            <Label>צירוף תמונות של הבעיה</Label>
+            <div className="flex items-center justify-between">
+              <Label>צירוף תמונות / סרטון של הבעיה</Label>
+              <button type="button" onClick={() => setShowTips((v) => !v)} className="text-xs text-primary inline-flex items-center gap-1">
+                <Info className="h-3.5 w-3.5" /> איך לצלם?
+              </button>
+            </div>
+            {showTips && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 space-y-1">
+                <p className="font-medium">טיפים לצילום שיעזרו לנו לטפל מהר יותר:</p>
+                <ul className="list-disc pe-4 space-y-0.5">
+                  <li>צלמו באור טוב, רצוי באור יום.</li>
+                  <li>תמונה כללית של המוצר ועוד תמונה מקרוב של הבעיה עצמה.</li>
+                  <li>אפשר להניח חפץ לגודל (מטבע / סרגל) ליד הפגם.</li>
+                  <li>סרטון קצר (עד דקה) אם הבעיה מורגשת בתנועה / בלחיצה.</li>
+                </ul>
+              </div>
+            )}
             <ServicePhotoUploader
               value={form.photo_urls}
-              onChange={(urls) => set('photo_urls', urls)}
-              uploadFn={async (file) => {
-                const compressed = await compressImage(file, { maxSizeMB: 0.6, maxWidthOrHeight: 1600 });
-                return publicUpload(compressed);
-              }}
+              onChange={(urls) => { set('photo_urls', urls); if (urls.length) setConfirmNoPhotos(false); }}
+              uploadFn={(file) => publicUpload(file)}
+              onUploadingChange={setPhotosUploading}
+              deleteFn={() => {}}
             />
           </div>
 
@@ -232,11 +263,21 @@ export default function ServiceRequestPublic() {
             </Select>
           </div>
 
+          {confirmNoPhotos && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
+              <p className="text-amber-800 flex items-start gap-1.5"><AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> לא צירפתם תמונות. תמונות או סרטון עוזרים לנו לטפל בבעיה מהר יותר — לשלוח בכל זאת?</p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>שלח בכל זאת</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setConfirmNoPhotos(false)}>הוסף תמונות</Button>
+              </div>
+            </div>
+          )}
+
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
 
-          <Button type="submit" className="w-full" disabled={submitMutation.isPending}>
+          <Button type="submit" className="w-full" disabled={submitMutation.isPending || photosUploading}>
             {submitMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
-            שליחת הפנייה
+            {photosUploading ? 'ממתין להעלאה…' : 'שליחת הפנייה'}
           </Button>
         </form>
       </div>

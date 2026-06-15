@@ -72,7 +72,6 @@ import NewLead from './pages/NewLead';
 import NewOrder from './pages/NewOrder';
 import NewQuote from './pages/NewQuote';
 import NewReturn from './pages/NewReturn';
-import NewTicket from './pages/NewTicket';
 import NotificationSettings from './pages/NotificationSettings';
 import OperationalReports from './pages/OperationalReports';
 import OrderDetails from './pages/OrderDetails';
@@ -89,7 +88,6 @@ import ServiceCenter from './pages/ServiceCenter';
 import ServiceRequestDetails from './pages/ServiceRequestDetails';
 import Settings from './pages/Settings';
 import ShipmentDetails from './pages/ShipmentDetails';
-import Support from './pages/Support';
 import TicketDetails from './pages/TicketDetails';
 import __Layout from './Layout.jsx';
 
@@ -123,7 +121,6 @@ export const PAGES = {
     "NewOrder": NewOrder,
     "NewQuote": NewQuote,
     "NewReturn": NewReturn,
-    "NewTicket": NewTicket,
     "NotificationSettings": NotificationSettings,
     "OperationalReports": OperationalReports,
     "OrderDetails": OrderDetails,
@@ -140,7 +137,6 @@ export const PAGES = {
     "ServiceRequestDetails": ServiceRequestDetails,
     "Settings": Settings,
     "ShipmentDetails": ShipmentDetails,
-    "Support": Support,
     "TicketDetails": TicketDetails,
 }
 

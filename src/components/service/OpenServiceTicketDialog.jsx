@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Clock, User, UserCheck, X, ShieldCheck } from 'lucide-react';
+import { Loader2, Clock, User, UserCheck, X, ShieldCheck, Info, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { addHours, differenceInDays } from '@/lib/safe-date-fns';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import {
@@ -28,7 +26,6 @@ import {
 // the diagnostic questions. Opening a ticket NEVER edits the order — the order
 // block here is read-only.
 export default function OpenServiceTicketDialog({ open, onOpenChange, order, customer, currentUser, onCreated }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const trialInfo = useMemo(() => {
@@ -62,6 +59,9 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
 
   const [formData, setFormData] = useState(emptyForm);
   const [error, setError] = useState('');
+  const [photosUploading, setPhotosUploading] = useState(false);
+  const [confirmNoPhotos, setConfirmNoPhotos] = useState(false);
+  const [createdTicket, setCreatedTicket] = useState(null);
   const set = (key, value) => setFormData((prev) => ({ ...prev, [key]: value }));
   const setAnswer = (key, value) =>
     setFormData((prev) => ({ ...prev, issue_answers: { ...prev.issue_answers, [key]: value } }));
@@ -71,8 +71,19 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     if (open) {
       setFormData(emptyForm);
       setError('');
+      setCreatedTicket(null);
+      setConfirmNoPhotos(false);
+      setPhotosUploading(false);
     }
   }, [open, order?.id, customer?.id]);
+
+  // After a successful create, show the success screen for a moment, then close
+  // the popup so the rep lands back on the list (no navigation away).
+  useEffect(() => {
+    if (!createdTicket) return undefined;
+    const t = setTimeout(() => onOpenChange(false), 3500);
+    return () => clearTimeout(t);
+  }, [createdTicket]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Standalone phone lookup (only when there's no order/customer context yet).
   const [debouncedPhone, setDebouncedPhone] = useState('');
@@ -136,7 +147,6 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
         complaint_age_months: data.complaint_age_months ? Number(data.complaint_age_months) : null,
         issue_answers: data.issue_answers || {},
         photo_urls: data.photo_urls || [],
-        is_within_trial: data.request_type === 'trial_30d',
         status: 'open',
         source: 'agent_manual',
         opened_by_customer: false,
@@ -150,9 +160,10 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     onSuccess: (ticket) => {
       queryClient.invalidateQueries({ queryKey: ['service-tickets'] });
       queryClient.invalidateQueries({ queryKey: ['tickets'] });
-      onOpenChange(false);
-      if (onCreated) onCreated(ticket);
-      else navigate(createPageUrl('ServiceRequestDetails') + `?id=${ticket.id}`);
+      // Embedded callers can take over (and close); the default flow shows an
+      // in-popup success screen that auto-closes, leaving the rep on the list.
+      if (onCreated) { onOpenChange(false); onCreated(ticket); return; }
+      setCreatedTicket(ticket);
     },
     onError: (err) => {
       console.error('[OpenServiceTicketDialog] create failed', err);
@@ -165,7 +176,13 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     if (!formData.customer_name?.trim()) return setError('יש למלא שם לקוח');
     if (!formData.customer_phone?.trim()) return setError('יש למלא טלפון');
     if (!formData.subject?.trim()) return setError('יש למלא נושא');
+    if (photosUploading) return setError('יש להמתין לסיום העלאת הקבצים');
     setError('');
+    // Nudge the rep to attach evidence — confirm once before opening empty-handed.
+    if ((formData.photo_urls?.length || 0) === 0 && !confirmNoPhotos) {
+      setConfirmNoPhotos(true);
+      return;
+    }
     createMutation.mutate(formData);
   };
 
@@ -175,9 +192,21 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle>פתיחת פניית שירות</DialogTitle>
+          <DialogTitle>{createdTicket ? 'הפנייה נפתחה' : 'פתיחת פניית שירות'}</DialogTitle>
         </DialogHeader>
 
+        {createdTicket ? (
+          <div className="py-8 text-center space-y-3">
+            <CheckCircle2 className="h-12 w-12 text-emerald-500 mx-auto" />
+            <h3 className="text-lg font-bold text-foreground">הפנייה נפתחה בהצלחה!</h3>
+            <p className="text-sm text-muted-foreground">פנייה #{createdTicket.ticket_number} נוספה למרכז השירות.</p>
+            <p className="text-xs text-muted-foreground">החלון ייסגר אוטומטית…</p>
+            <div className="flex justify-center pt-1">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>סגירה וחזרה לרשימה</Button>
+            </div>
+          </div>
+        ) : (
+        <>
         {trialInfo.isInTrial && (
           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
             <Clock className="h-4 w-4 text-amber-600 shrink-0" />
@@ -223,24 +252,35 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
               </div>
               {linked ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 flex items-center justify-between text-sm text-emerald-800">
-                  <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4" />{formData.customer_id ? 'מקושר ללקוח קיים' : 'מקושר לליד קיים'}</span>
-                  <button type="button" onClick={() => setFormData((p) => ({ ...p, customer_id: null, lead_id: null }))} className="text-emerald-700">
-                    <X className="h-3.5 w-3.5" />
+                  <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4" />{formData.customer_id ? 'הפנייה משויכת ללקוח קיים' : 'הפנייה משויכת לליד קיים'}</span>
+                  <button type="button" onClick={() => setFormData((p) => ({ ...p, customer_id: null, lead_id: null }))} className="text-emerald-700 inline-flex items-center gap-1 text-xs hover:underline">
+                    בטל שיוך <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ) : matches.length > 0 ? (
-                <div className="rounded-md border border-blue-200 bg-blue-50 p-2 space-y-1">
-                  <p className="text-xs text-blue-800 font-medium">נמצאו רשומות עם טלפון דומה — בחר לקישור:</p>
+                <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-2.5 space-y-2">
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-blue-900 font-semibold flex items-center gap-1.5">
+                      <Info className="h-3.5 w-3.5 shrink-0" />
+                      נמצאו אנשי קשר עם טלפון דומה
+                    </p>
+                    <p className="text-[11px] text-blue-700/90">זו הצעה בלבד. הפנייה לא תשויך עד שתבחר/י לשייך אותה.</p>
+                  </div>
                   {matches.map((m) => (
-                    <button
+                    <div
                       key={`${m.kind}-${m.id}`}
-                      type="button"
-                      onClick={() => applyMatch(m)}
-                      className="w-full text-right rounded bg-white border border-blue-100 px-2 py-1.5 hover:border-blue-300 flex items-center justify-between gap-2 text-sm"
+                      className="rounded-md bg-white border border-blue-100 px-2.5 py-2 flex items-center justify-between gap-2"
                     >
-                      <span className="flex items-center gap-1.5 min-w-0"><User className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{m.full_name || '(ללא שם)'} · {m.phone}</span></span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${m.kind === 'customer' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{m.kind === 'customer' ? 'לקוח' : 'ליד'}</span>
-                    </button>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate text-sm font-medium">{m.full_name || '(ללא שם)'}</span>
+                        <span className="text-xs text-muted-foreground" dir="ltr">{m.phone}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${m.kind === 'customer' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{m.kind === 'customer' ? 'לקוח' : 'ליד'}</span>
+                      </span>
+                      <Button type="button" size="sm" className="h-7 shrink-0 gap-1 px-2.5" onClick={() => applyMatch(m)}>
+                        <UserCheck className="h-3.5 w-3.5" /> שייך פנייה
+                      </Button>
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -260,8 +300,8 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
                     onClick={() => set('request_type', opt.value)}
                     className={`rounded-xl border p-2.5 text-center transition-all ${selected ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border bg-muted/30 hover:bg-muted'}`}
                   >
-                    <div className="text-lg leading-none">{opt.emoji}</div>
-                    <div className="text-xs font-medium mt-1">{opt.label}</div>
+                    <opt.Icon className={`h-5 w-5 mx-auto ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <div className="text-xs font-medium mt-1.5">{opt.label}</div>
                   </button>
                 );
               })}
@@ -306,50 +346,64 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
           </div>
 
           <div className="space-y-1.5">
-            <Label>תיאור מפורט</Label>
+            <Label>תיאור הבעיה</Label>
             <Textarea value={formData.description} onChange={(e) => set('description', e.target.value)} rows={2} placeholder="פרט את הבעיה" />
           </div>
 
-          {/* Diagnostic questions (collapsed into a compact grid) */}
-          <details className="rounded-lg border border-border bg-muted/20 p-3">
-            <summary className="text-sm font-medium cursor-pointer select-none">שאלות אבחון (אופציונלי)</summary>
-            <div className="space-y-2.5 pt-3">
-              {DIAGNOSTIC_QUESTIONS.filter((q) => q.key !== 'product').map((q) => (
-                <div key={q.key} className="space-y-1">
-                  <Label className="text-xs">{q.label}</Label>
-                  {q.type === 'select' ? (
-                    <Select value={formData.issue_answers[q.key] || ''} onValueChange={(v) => setAnswer(q.key, v)}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="בחר..." /></SelectTrigger>
-                      <SelectContent>
-                        {q.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ) : q.type === 'textarea' ? (
-                    <Textarea rows={2} value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
-                  ) : (
-                    <Input value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </details>
-
-          {/* Photos */}
-          <div className="space-y-1.5">
-            <Label>תמונות של הבעיה</Label>
-            <ServicePhotoUploader value={formData.photo_urls} onChange={(urls) => set('photo_urls', urls)} />
+          {/* Diagnostic questions — same set the customer sees in the public link */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
+            <p className="text-sm font-medium">שאלות אבחון</p>
+            {DIAGNOSTIC_QUESTIONS.filter((q) => q.key !== 'product').map((q) => (
+              <div key={q.key} className="space-y-1">
+                <Label className="text-xs">{q.label}</Label>
+                {q.type === 'select' ? (
+                  <Select value={formData.issue_answers[q.key] || ''} onValueChange={(v) => setAnswer(q.key, v)}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר..." /></SelectTrigger>
+                    <SelectContent>
+                      {q.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : q.type === 'textarea' ? (
+                  <Textarea rows={2} value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                ) : (
+                  <Input value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                )}
+              </div>
+            ))}
           </div>
+
+          {/* Photos / short videos */}
+          <div className="space-y-1.5">
+            <Label>תמונות / סרטון של הבעיה</Label>
+            <ServicePhotoUploader
+              value={formData.photo_urls}
+              onChange={(urls) => { set('photo_urls', urls); if (urls.length) setConfirmNoPhotos(false); }}
+              onUploadingChange={setPhotosUploading}
+            />
+          </div>
+
+          {confirmNoPhotos && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
+              <p className="text-amber-800 flex items-start gap-1.5"><AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> לא צורפו תמונות. תמונות/סרטון עוזרים להבין ולטפל בבעיה מהר יותר — לפתוח בכל זאת?</p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={() => createMutation.mutate(formData)} disabled={createMutation.isPending}>פתח בכל זאת</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setConfirmNoPhotos(false)}>הוסף תמונות</Button>
+              </div>
+            </div>
+          )}
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
 
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button type="submit" disabled={createMutation.isPending || photosUploading}>
               {createMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
-              פתח פנייה
+              {photosUploading ? 'ממתין להעלאה…' : 'פתח פנייה'}
             </Button>
           </div>
         </form>
+        </>
+        )}
       </DialogContent>
     </Dialog>
   );

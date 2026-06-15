@@ -1,261 +1,166 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAllList, fetchAllFiltered } from '@/lib/base44Pagination';
-import KPICard from '@/components/shared/KPICard';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { fetchAllFiltered } from '@/lib/base44Pagination';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { BarChart3, Users, Target, TrendingUp, DollarSign, Handshake, Megaphone } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from 'recharts';
-import { format, subDays, startOfDay } from '@/lib/safe-date-fns';
-import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
+  Megaphone, Users, Target, TrendingUp, DollarSign, RefreshCw, Trophy, AlertTriangle,
+} from 'lucide-react';
+import { getDateRange } from '@/utils/dateRange';
+import Dashboard2DateRange from '@/components/dashboard2/Dashboard2DateRange';
+import useMarketingStats from '@/components/marketing/useMarketingStats';
+import LeadListTable from '@/components/lead/LeadListTable';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessAdminOnly } from '@/lib/rbac';
 
-const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
-
-const normalizeSource = (source) => {
-  if (!source) return 'other';
-  const s = source.toLowerCase();
-  if (s.includes('facebook') || s.includes('fb')) return 'facebook';
-  if (s.includes('google') || s.includes('adwords')) return 'google';
-  if (s.includes('tiktok')) return 'tiktok';
-  if (s.includes('instagram') || s.includes('ig')) return 'instagram';
-  if (s.includes('taboola')) return 'taboola';
-  if (s.includes('outbrain')) return 'outbrain';
-  return s;
+// A stable accent colour per known source so the same channel always looks the
+// same across the cubes and table. Source NAMES are shown exactly as stored
+// (utm_source) — not translated — only the empty bucket gets a Hebrew label.
+const SOURCE_META = {
+  facebook: { dot: 'bg-blue-500', ring: 'border-blue-200 bg-blue-50/60' },
+  instant_form: { dot: 'bg-blue-500', ring: 'border-blue-200 bg-blue-50/60' },
+  instagram: { dot: 'bg-pink-500', ring: 'border-pink-200 bg-pink-50/60' },
+  google: { dot: 'bg-amber-500', ring: 'border-amber-200 bg-amber-50/60' },
+  tiktok: { dot: 'bg-gray-800', ring: 'border-gray-200 bg-gray-50' },
+  taboola: { dot: 'bg-cyan-500', ring: 'border-cyan-200 bg-cyan-50/60' },
+  outbrain: { dot: 'bg-orange-500', ring: 'border-orange-200 bg-orange-50/60' },
+  whatsapp: { dot: 'bg-emerald-500', ring: 'border-emerald-200 bg-emerald-50/60' },
+  other: { dot: 'bg-slate-400', ring: 'border-slate-200 bg-slate-50' },
 };
+const sourceLabel = (name) => (name === 'other' ? 'ללא מקור' : name);
+const sourceRing = (name) => SOURCE_META[name]?.ring || 'border-indigo-200 bg-indigo-50/60';
+const sourceDot = (name) => SOURCE_META[name]?.dot || 'bg-indigo-500';
+
+const fmtCurrency = (v) => `₪${Number(v || 0).toLocaleString()}`;
+const fmtCompact = (v) => {
+  const n = Number(v || 0);
+  if (n >= 1_000_000) return `₪${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `₪${Math.round(n / 1_000)}K`;
+  return `₪${n.toLocaleString()}`;
+};
+
+function RoiBadge({ value }) {
+  if (value == null) return <span className="text-xs text-muted-foreground">—</span>;
+  const n = Number(value);
+  const cls = n >= 2 ? 'bg-emerald-100 text-emerald-800' : n >= 1 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800';
+  return <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold ${cls}`}>{n.toFixed(2)}x</span>;
+}
+
+function ConvBar({ value }) {
+  const n = Math.max(0, Math.min(100, Number(value || 0)));
+  const tone = n >= 30 ? 'bg-emerald-500' : n >= 15 ? 'bg-amber-500' : 'bg-red-500';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="h-1.5 w-16 rounded-full bg-muted/40 overflow-hidden">
+        <div className={`h-full ${tone}`} style={{ width: `${n}%` }} />
+      </div>
+      <span className="text-xs tabular-nums font-semibold">{n.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+// Compact overall-KPI tile (kept small so the source cubes stay the star).
+function MiniKpi({ label, value, sub, icon: Icon, tone = 'indigo' }) {
+  const cls = {
+    indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
+    emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+    rose: 'bg-rose-50 border-rose-200 text-rose-700',
+  }[tone];
+  return (
+    <div className={`rounded-xl border ${cls} p-3`}>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <p className="text-[11px] font-medium opacity-80">{label}</p>
+        {Icon ? <Icon className="h-3.5 w-3.5 opacity-60" /> : null}
+      </div>
+      <p className="text-xl font-bold leading-none">{value}</p>
+      {sub ? <p className="text-[10px] mt-1.5 opacity-70">{sub}</p> : null}
+    </div>
+  );
+}
 
 export default function Marketing() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const [dateRange, setDateRange] = useState('30');
-  const [activeTab, setActiveTab] = useState('overview');
-  const [selectedLeadsForModal, setSelectedLeadsForModal] = useState(null);
-  const [leadsModalTitle, setLeadsModalTitle] = useState('');
-  const [filters, setFilters] = useState({
-    utm_source: 'all',
-    utm_medium: 'all',
-    utm_campaign: 'all',
-    utm_content: 'all',
-  });
   const isAdmin = canAccessAdminOnly(effectiveUser);
 
-  // Queries
-  const { data: leads = [] } = useQuery({
-    queryKey: ['leads'],
-    queryFn: () => fetchAllList(base44.entities.Lead, '-created_date'),
-    staleTime: 120000,
-    enabled: isAdmin,
+  const [rangeKey, setRangeKey] = useState('30days');
+  const [customRange, setCustomRange] = useState(null);
+  const [activeTab, setActiveTab] = useState('sources');
+  const [sourceFilter, setSourceFilter] = useState('all');
+
+  const { start, end } = useMemo(
+    () => getDateRange(rangeKey, customRange?.from, customRange?.to),
+    [rangeKey, customRange],
+  );
+  const dateRange = useMemo(() => ({ from: start, to: end }), [start, end]);
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+
+  const { data, isLoading, isFetching, error, refetch } = useMarketingStats({
+    start, end, enabled: isAdmin,
   });
 
-  const { data: orders = [] } = useQuery({
-    queryKey: ['orders'],
-    queryFn: () => fetchAllList(base44.entities.Order, '-created_date'),
-    staleTime: 120000,
+  // Open a lead in the same popup ניהול לידים uses, and resolve rep emails to
+  // names for the shared leads table.
+  const { openLead, lastOpenedLeadId } = useLeadModal();
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60 * 1000,
     enabled: isAdmin,
   });
+  const repNameByEmail = useMemo(() => new Map(users.map((u) => [u.email, u.full_name || u.email])), [users]);
 
-  const { data: costs = [] } = useQuery({
-    queryKey: ['marketingCosts'],
-    queryFn: () => fetchAllList(base44.entities.MarketingCost, '-date'),
-    staleTime: 120000,
-    enabled: isAdmin,
+  // Lead-level rows for the "לידים" tab + source drill-down. Fetched only for
+  // the selected range (not the whole table) and only when that tab is open.
+  const { data: rangeLeads = [], isFetching: leadsFetching } = useQuery({
+    queryKey: ['marketingLeads', startIso, endIso],
+    enabled: isAdmin && activeTab === 'leads',
+    staleTime: 60 * 1000,
+    queryFn: () => fetchAllFiltered(
+      base44.entities.Lead,
+      { created_date: { $gte: startIso, $lte: endIso } },
+      '-created_date',
+    ),
   });
 
-  const { data: meetings = [] } = useQuery({
-    queryKey: ['salesTasks', 'meetings'],
-    queryFn: () => fetchAllFiltered(base44.entities.SalesTask, { task_type: 'meeting' }, '-created_date'),
-    staleTime: 120000,
-    enabled: isAdmin,
-  });
+  const sources = data?.sources || [];
+  const campaigns = data?.campaigns || [];
+  const totals = data?.totals || {};
+  const failures = data?.failures || [];
 
-  // Filter Logic
-  const now = new Date();
-  let startDate = startOfDay(now);
-  let endDate = new Date(2100, 1, 1);
+  const visibleSources = sourceFilter === 'all' ? sources : sources.filter((s) => s.name === sourceFilter);
+  const visibleCampaigns = sourceFilter === 'all' ? campaigns : campaigns.filter((c) => c.source === sourceFilter);
 
-  if (dateRange === 'today') {
-    startDate = startOfDay(now);
-  } else if (dateRange === 'yesterday') {
-    startDate = startOfDay(subDays(now, 1));
-    endDate = startOfDay(now);
-  } else if (dateRange === 'all') {
-    startDate = new Date(0);
-  } else {
-    startDate = startOfDay(subDays(now, parseInt(dateRange) || 30));
-  }
-
-  // Postgres returns timestamptz as "2026-04-23 14:10:52+00" (space separator,
-  // no Z) which `new Date()` parses inconsistently across browsers — Safari
-  // returns Invalid Date and the lead silently drops out of the window. Use
-  // parseDbTimestamp so the comparison is robust regardless of format.
-  const isWithinRange = (dateStr) => {
-    if (!dateStr) return false;
-    const d = parseDbTimestamp(dateStr);
-    if (!d) return false;
-    return d >= startDate && d < endDate;
+  const normSource = (l) => {
+    const s = String(l?.utm_source || l?.source || '').toLowerCase();
+    if (!s) return 'other';
+    if (s.includes('facebook') || s === 'fb' || s.includes('meta')) return 'facebook';
+    if (s.includes('instagram') || s === 'ig') return 'instagram';
+    if (s.includes('google') || s.includes('adwords')) return 'google';
+    if (s.includes('tiktok')) return 'tiktok';
+    if (s.includes('taboola')) return 'taboola';
+    if (s.includes('outbrain')) return 'outbrain';
+    if (s.includes('whatsapp')) return 'whatsapp';
+    return s;
   };
+  const displayLeads = sourceFilter === 'all'
+    ? rangeLeads
+    : rangeLeads.filter((l) => normSource(l) === sourceFilter);
 
-  const filteredCosts = costs.filter(c => isWithinRange(c.date));
-  const filteredLeads = leads.filter(l => isWithinRange(l.created_date));
-  const filteredOrders = orders.filter(o => isWithinRange(o.created_date));
-  const filteredMeetings = meetings.filter(m => isWithinRange(m.due_date || m.created_date));
+  const drillToSource = (name) => { setSourceFilter(name); setActiveTab('leads'); };
 
-  // Field accessors with Facebook Lead Ads fallbacks. Leads coming in via the
-  // Facebook integration populate facebook_* columns, not utm_*. Without these
-  // fallbacks the page treats every Facebook lead as "Unknown".
-  const getCampaign = (l) => l?.utm_campaign || l?.facebook_campaign_name || null;
-  const getAdName  = (l) => l?.utm_content  || l?.facebook_ad_name      || null;
-
-  // Apply detailed filters to leads (match against the same fallback chain).
-  let displayLeads = filteredLeads;
-  if (filters.utm_source !== 'all') displayLeads = displayLeads.filter(l => l.utm_source === filters.utm_source);
-  if (filters.utm_medium !== 'all') displayLeads = displayLeads.filter(l => l.utm_medium === filters.utm_medium);
-  if (filters.utm_campaign !== 'all') displayLeads = displayLeads.filter(l => getCampaign(l) === filters.utm_campaign);
-  if (filters.utm_content !== 'all') displayLeads = displayLeads.filter(l => getAdName(l) === filters.utm_content);
-
-  // Aggregations
-  const totalCost = filteredCosts.reduce((sum, c) => sum + (c.amount || 0), 0);
-  const totalLeadsCount = displayLeads.length;
-  const wonLeads = displayLeads.filter(l => l.status === 'deal_closed');
-  const wonLeadsCount = wonLeads.length;
-  
-  // Revenue from WON leads (cross-reference leads with orders if needed, or use orders directly if UTMs are passed)
-  // Ideally orders should have source info. Assuming orders have matching lead_id or we track via leads.
-  // We'll approximate revenue by summing orders that are linked to the filtered leads
-  const wonLeadIds = new Set(wonLeads.map(l => l.id));
-  const attributedRevenue = orders
-    .filter(o => wonLeadIds.has(o.lead_id))
-    .reduce((sum, o) => sum + (o.total || 0), 0);
-
-  const cpl = totalLeadsCount > 0 ? Math.round(totalCost / totalLeadsCount) : 0;
-  const cac = wonLeadsCount > 0 ? Math.round(totalCost / wonLeadsCount) : 0;
-  const roi = totalCost > 0 ? ((attributedRevenue - totalCost) / totalCost * 100).toFixed(1) : 0;
-
-  // Meetings KPIs
-  const totalMeetings = filteredMeetings.length;
-  const completedMeetings = filteredMeetings.filter(m => m.task_status === 'completed').length;
-  // Check how many meetings resulted in a sale (lead status is deal_closed)
-  const meetingLeadIds = new Set(filteredMeetings.map(m => m.lead_id));
-  const meetingsWon = leads.filter(l => meetingLeadIds.has(l.id) && l.status === 'deal_closed').length;
-  
-  // Data for Charts
-  // 1. Source Performance (Cost vs Revenue vs Leads)
-  const processedSourceData = useMemo(() => {
-    const sourcePerformanceMap = displayLeads.reduce((acc, lead) => {
-      const source = normalizeSource(lead.utm_source || lead.source || 'other');
-      if (!acc[source]) acc[source] = { name: source, leads: [], cost: 0, revenue: 0, won: 0 };
-      acc[source].leads.push(lead);
-      if (lead.status === 'deal_closed') {
-        acc[source].won++;
-        const order = orders.find(o => o.lead_id === lead.id);
-        if (order) acc[source].revenue += order.total || 0;
-      }
-      return acc;
-    }, {});
-
-    filteredCosts.forEach(c => {
-      const source = normalizeSource(c.source);
-      if (!sourcePerformanceMap[source]) {
-        sourcePerformanceMap[source] = { name: source, leads: [], cost: 0, revenue: 0, won: 0 };
-      }
-      sourcePerformanceMap[source].cost += c.amount || 0;
-    });
-
-    return Object.values(sourcePerformanceMap).map(item => ({
-      ...item,
-      leadsCount: item.leads.length,
-      cpl: item.leads.length > 0 ? Math.round(item.cost / item.leads.length) : 0,
-      roi: item.cost > 0 ? ((item.revenue - item.cost) / item.cost * 100).toFixed(0) : 0
-    })).sort((a, b) => b.revenue - a.revenue);
-  }, [displayLeads, filteredCosts, orders]);
-
-  // 2. Ad Performance (Content)
-  const adPerformance = useMemo(() => {
-    return Object.values(displayLeads.reduce((acc, lead) => {
-      const ad = getAdName(lead) || 'Unknown Ad';
-      if (!acc[ad]) acc[ad] = { name: ad, leads: [], won: 0, revenue: 0 };
-      acc[ad].leads.push(lead);
-      if (lead.status === 'deal_closed') {
-        acc[ad].won++;
-        const order = orders.find(o => o.lead_id === lead.id);
-        if (order) acc[ad].revenue += order.total || 0;
-      }
-      return acc;
-    }, {})).map(item => ({
-      ...item,
-      leadsCount: item.leads.length
-    })).sort((a, b) => b.leadsCount - a.leadsCount).slice(0, 15);
-  }, [displayLeads, orders]);
-
-  // 3. Campaign Performance
-  const processedCampaignData = useMemo(() => {
-    const campaignPerformanceMap = displayLeads.reduce((acc, lead) => {
-      const campaign = getCampaign(lead) || 'Unknown Campaign';
-      if (!acc[campaign]) acc[campaign] = { name: campaign, leads: [], won: 0, revenue: 0, cost: 0 };
-      acc[campaign].leads.push(lead);
-      if (lead.status === 'deal_closed') {
-        acc[campaign].won++;
-        const order = orders.find(o => o.lead_id === lead.id);
-        if (order) acc[campaign].revenue += order.total || 0;
-      }
-      return acc;
-    }, {});
-
-    filteredCosts.forEach(c => {
-      const campaign = c.campaign_name || 'Unknown Campaign';
-      if (!campaignPerformanceMap[campaign]) {
-        campaignPerformanceMap[campaign] = { name: campaign, leads: [], cost: 0, revenue: 0, won: 0 };
-      }
-      campaignPerformanceMap[campaign].cost += c.amount || 0;
-    });
-
-    return Object.values(campaignPerformanceMap).map(item => ({
-      ...item,
-      leadsCount: item.leads.length,
-      cpl: item.leads.length > 0 ? Math.round(item.cost / item.leads.length) : 0,
-      roi: item.cost > 0 ? ((item.revenue - item.cost) / item.cost * 100).toFixed(0) : 0
-    })).sort((a, b) => b.revenue - a.revenue);
-  }, [displayLeads, filteredCosts, orders]);
-
-  // 3. Meetings Data
-  const meetingsData = [
-    { name: 'תואמו', value: totalMeetings },
-    { name: 'בוצעו', value: completedMeetings },
-    { name: 'נסגרו', value: meetingsWon }
-  ];
-
-  // Filters Options — pull campaign names from utm_campaign + facebook_campaign_name
-  // so the dropdown actually lists Facebook leads' campaigns alongside UTM ones.
-  const uniqueSources = [...new Set(filteredLeads.map(l => l.utm_source).filter(Boolean))];
-  const uniqueCampaigns = [...new Set(filteredLeads.map(getCampaign).filter(Boolean))].sort();
-
-  if (isLoadingUser) {
-    return <div className="text-center py-12">טוען...</div>;
-  }
-
+  if (isLoadingUser) return <div className="text-center py-12 text-muted-foreground">טוען...</div>;
   if (!isAdmin) {
     return (
       <div className="text-center py-12">
@@ -265,463 +170,236 @@ export default function Marketing() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">דשבורד שיווק</h1>
-          <p className="text-muted-foreground">ניתוח עלויות, החזר השקעה (ROI) וביצועי קמפיינים</p>
+    <div className="space-y-5" dir="rtl">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div className="p-2 rounded-lg bg-orange-100">
+            <Megaphone className="h-5 w-5 text-orange-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">דשבורד שיווק</h1>
+            <p className="text-sm text-muted-foreground">מקורות הלידים, עלויות, המרה והחזר השקעה (ROI)</p>
+          </div>
         </div>
-        <Select value={dateRange} onValueChange={setDateRange}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
+        <div className="flex items-center gap-2">
+          <Dashboard2DateRange
+            rangeKey={rangeKey}
+            dateRange={dateRange}
+            onPresetChange={(k) => { setRangeKey(k); if (k !== 'custom') setCustomRange(null); }}
+            onCustomChange={(r) => { setCustomRange(r || null); if (r?.from && r?.to) setRangeKey('custom'); }}
+          />
+          <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => refetch()} disabled={isFetching}>
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+            רענן
+          </Button>
+        </div>
+      </div>
+
+      {/* Source filter pill */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">סינון מקור:</span>
+        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger className="h-8 w-[200px] text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="today">היום</SelectItem>
-            <SelectItem value="yesterday">אתמול</SelectItem>
-            <SelectItem value="7">7 ימים אחרונים</SelectItem>
-            <SelectItem value="14">14 ימים אחרונים</SelectItem>
-            <SelectItem value="30">30 ימים אחרונים</SelectItem>
-            <SelectItem value="90">90 ימים אחרונים</SelectItem>
-            <SelectItem value="180">180 ימים אחרונים</SelectItem>
-            <SelectItem value="365">שנה אחרונה</SelectItem>
-            <SelectItem value="all">מאז ומעולם</SelectItem>
+            <SelectItem value="all">כל המקורות</SelectItem>
+            {sources.map((s) => (
+              <SelectItem key={s.name} value={s.name}>{sourceLabel(s.name)} ({s.leads})</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
-      {/* Main Financial KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <KPICard
-          title="סה״כ הוצאות שיווק"
-          value={`₪${totalCost.toLocaleString()}`}
-          icon={DollarSign}
-          color="red"
-        />
-        <KPICard
-          title="עלות לליד (CPL)"
-          value={`₪${cpl}`}
-          subtitle={`${totalLeadsCount} לידים`}
-          icon={Users}
-          color="blue"
-        />
-        <KPICard
-          title="עלות ללקוח (CAC)"
-          value={`₪${cac}`}
-          subtitle={`${wonLeadsCount} לקוחות`}
-          icon={Target}
-          color="emerald"
-        />
-        <KPICard
-          title="הכנסות (מיוחסות)"
-          value={`₪${attributedRevenue.toLocaleString()}`}
-          icon={BarChart3}
-          color="amber"
-        />
-        <KPICard
-          title="החזר השקעה (ROI)"
-          value={`${roi}%`}
-          subtitle={roi > 0 ? "חיובי" : "שלילי"}
-          icon={TrendingUp}
-          color={roi > 0 ? "green" : "red"}
-        />
+      {error ? (
+        <div className="rounded-xl border border-red-300 bg-red-50 text-red-900 px-4 py-3 flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold">לא הצלחנו לטעון את נתוני השיווק: {error.message || String(error)}</span>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>נסה שוב</Button>
+        </div>
+      ) : failures.length > 0 ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-4 py-2.5 flex items-center gap-2 text-xs">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          חלק מהמקורות לא נטענו ({failures.join(' · ')}) — ייתכן שחלק מהמספרים חלקיים.
+        </div>
+      ) : null}
+
+      {/* ── Source cubes (no graphs) ─────────────────────────────── */}
+      <div>
+        <h2 className="text-sm font-bold text-foreground mb-2">מקורות לידים</h2>
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)}
+          </div>
+        ) : visibleSources.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8 bg-muted/30 rounded-xl">
+            אין לידים בטווח שנבחר. נסה טווח רחב יותר (למשל "30 יום אחרון").
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {visibleSources.map((s, idx) => (
+              <button
+                key={s.name}
+                type="button"
+                onClick={() => drillToSource(s.name)}
+                className={`text-right rounded-xl border p-4 transition-all hover:shadow-card-hover hover:-translate-y-0.5 ${sourceRing(s.name)}`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <span className="flex items-center gap-1.5 font-semibold text-foreground truncate" title={sourceLabel(s.name)}>
+                    {idx === 0 ? <Trophy className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" /> : <span className={`h-2 w-2 rounded-full flex-shrink-0 ${sourceDot(s.name)}`} />}
+                    <span className="truncate">{sourceLabel(s.name)}</span>
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-foreground leading-none">{s.leads.toLocaleString()}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">לידים</div>
+                <div className="flex items-center justify-between mt-2 text-[11px]">
+                  <span className="text-emerald-700 font-semibold">סגירה {s.conversion.toFixed(0)}%</span>
+                  <span className="text-muted-foreground">{s.revenue > 0 ? fmtCompact(s.revenue) : '—'}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Meeting Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1 bg-white">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Handshake className="h-5 w-5 text-purple-600" />
-              ביצועי פגישות
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={meetingsData} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" />
-                  <YAxis dataKey="name" type="category" width={50} />
-                  <Tooltip cursor={{ fill: 'transparent' }} />
-                  <Bar dataKey="value" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={30}>
-                    <Cell fill="#a78bfa" />
-                    <Cell fill="#8b5cf6" />
-                    <Cell fill="#10b981" />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex justify-between text-sm text-muted-foreground mt-4 px-2">
-              <div className="text-center">
-                <span className="block font-bold text-foreground text-lg">{totalMeetings}</span>
-                תואמו
-              </div>
-              <div className="text-center">
-                <span className="block font-bold text-foreground text-lg">{completedMeetings}</span>
-                בוצעו
-              </div>
-              <div className="text-center">
-                <span className="block font-bold text-green-600 text-lg">{meetingsWon}</span>
-                נסגרו
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Source Performance Chart */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>ניתוח מקורות: עלות מול הכנסות</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={processedSourceData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
-                  <YAxis yAxisId="left" orientation="left" stroke="#ef4444" label={{ value: 'עלות (₪)', angle: -90, position: 'insideLeft' }} />
-                  <YAxis yAxisId="right" orientation="right" stroke="#10b981" label={{ value: 'הכנסות (₪)', angle: 90, position: 'insideRight' }} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar yAxisId="left" dataKey="cost" name="עלות" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                  <Bar yAxisId="right" dataKey="revenue" name="הכנסות" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Overall KPI strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <MiniKpi label="סה״כ לידים" value={(totals.leads || 0).toLocaleString()} sub={`${totals.won || 0} נסגרו`} icon={Users} tone="indigo" />
+        <MiniKpi label="הוצאות שיווק" value={fmtCurrency(totals.cost)} icon={DollarSign} tone="rose" />
+        <MiniKpi label="עלות לליד (CPL)" value={fmtCurrency(totals.cpl)} icon={Target} tone="amber" />
+        <MiniKpi label="עלות ללקוח (CAC)" value={fmtCurrency(totals.cac)} icon={Target} tone="emerald" />
+        <MiniKpi label="ROI כולל" value={totals.roi != null ? `${totals.roi}x` : '—'} sub={`המרה ${totals.conversion || 0}%`} icon={TrendingUp} tone={totals.roi != null && totals.roi >= 1 ? 'emerald' : 'rose'} />
       </div>
 
+      {/* Tabs: source table / campaigns / leads */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-white border w-full h-auto flex-wrap justify-start">
-          <TabsTrigger value="overview">סקירה כללית</TabsTrigger>
-          <TabsTrigger value="campaigns">קמפיינים (Campaigns)</TabsTrigger>
-          <TabsTrigger value="ads">מודעות (Ads)</TabsTrigger>
-          <TabsTrigger value="roi_table">טבלת ROI מפורטת</TabsTrigger>
-          <TabsTrigger value="leads_data">דוח לידים</TabsTrigger>
+        <TabsList className="bg-card border w-full h-auto flex-wrap justify-start">
+          <TabsTrigger value="sources">לפי מקור</TabsTrigger>
+          <TabsTrigger value="campaigns">קמפיינים</TabsTrigger>
+          <TabsTrigger value="leads">דוח לידים</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Detailed Source Breakdown */}
-          <Card>
-            <CardHeader>
-              <CardTitle>פירוט לפי מקור (CPL & ROI)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>מקור</TableHead>
-                      <TableHead>לידים</TableHead>
-                      <TableHead>עלות</TableHead>
-                      <TableHead>עלות לליד (CPL)</TableHead>
-                      <TableHead>לקוחות (סגירות)</TableHead>
-                      <TableHead>עלות ללקוח (CAC)</TableHead>
-                      <TableHead>הכנסות</TableHead>
-                      <TableHead>ROI</TableHead>
+      {activeTab === 'sources' && (
+        <Card>
+          <CardHeader className="pb-2 border-b border-border/50">
+            <CardTitle className="text-sm">מאיפה מגיעים הלידים — פירוט לפי מקור</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-right">מקור</TableHead>
+                    <TableHead className="text-center">לידים</TableHead>
+                    <TableHead className="text-right">סגירה</TableHead>
+                    <TableHead className="text-center">בטיפול</TableHead>
+                    <TableHead className="text-center">אבד</TableHead>
+                    <TableHead className="text-center">עלות</TableHead>
+                    <TableHead className="text-center">CPL</TableHead>
+                    <TableHead className="text-center">CAC</TableHead>
+                    <TableHead className="text-end">הכנסות</TableHead>
+                    <TableHead className="text-center">ROI</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">טוען…</TableCell></TableRow>
+                  ) : visibleSources.length === 0 ? (
+                    <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">אין נתוני מקור בטווח</TableCell></TableRow>
+                  ) : visibleSources.map((s) => (
+                    <TableRow key={s.name} className="hover:bg-muted/20">
+                      <TableCell>
+                        <button type="button" className="flex items-center gap-2 font-medium hover:underline" onClick={() => drillToSource(s.name)}>
+                          <span className={`h-2 w-2 rounded-full ${sourceDot(s.name)}`} />
+                          {sourceLabel(s.name)}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-center tabular-nums font-semibold">{s.leads.toLocaleString()}</TableCell>
+                      <TableCell><ConvBar value={s.conversion} /></TableCell>
+                      <TableCell className="text-center tabular-nums text-amber-700">{s.in_handling_rate.toFixed(0)}%</TableCell>
+                      <TableCell className="text-center tabular-nums text-red-700">{s.lost_rate.toFixed(0)}%</TableCell>
+                      <TableCell className="text-center text-xs tabular-nums">{fmtCurrency(s.cost)}</TableCell>
+                      <TableCell className="text-center text-xs tabular-nums">{fmtCurrency(s.cpl)}</TableCell>
+                      <TableCell className="text-center text-xs tabular-nums">{s.cac != null ? fmtCurrency(s.cac) : '—'}</TableCell>
+                      <TableCell className="text-end font-bold tabular-nums">{fmtCompact(s.revenue)}</TableCell>
+                      <TableCell className="text-center"><RoiBadge value={s.roi} /></TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {processedSourceData.map((row) => (
-                      <TableRow key={row.name}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell>
-                          <Button 
-                            variant="link" 
-                            className="p-0 h-auto font-bold text-primary"
-                            onClick={() => {
-                              setLeadsModalTitle(`לידים - מקור: ${row.name}`);
-                              setSelectedLeadsForModal(row.leads);
-                            }}
-                          >
-                            {row.leadsCount}
-                          </Button>
-                        </TableCell>
-                        <TableCell>₪{row.cost.toLocaleString()}</TableCell>
-                        <TableCell>₪{row.cpl}</TableCell>
-                        <TableCell>{row.won}</TableCell>
-                        <TableCell>₪{row.won > 0 ? Math.round(row.cost / row.won).toLocaleString() : '-'}</TableCell>
-                        <TableCell className="text-green-600 font-medium">₪{row.revenue.toLocaleString()}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${row.roi >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {row.roi}%
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {activeTab === 'campaigns' && (
         <Card>
-          <CardHeader>
-            <CardTitle>ביצועי קמפיינים (UTM Campaign)</CardTitle>
+          <CardHeader className="pb-2 border-b border-border/50">
+            <CardTitle className="text-sm">קמפיינים — מה מביא הכי הרבה</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>שם הקמפיין</TableHead>
-                    <TableHead>לידים</TableHead>
-                    <TableHead>עלות</TableHead>
-                    <TableHead>עלות לליד (CPL)</TableHead>
-                    <TableHead>סגירות</TableHead>
-                    <TableHead>הכנסות מיוחסות</TableHead>
-                    <TableHead>ROI</TableHead>
+                    <TableHead className="text-right">קמפיין</TableHead>
+                    <TableHead className="text-center">לידים</TableHead>
+                    <TableHead className="text-center">נסגרו</TableHead>
+                    <TableHead className="text-right">המרה</TableHead>
+                    <TableHead className="text-center">עלות</TableHead>
+                    <TableHead className="text-center">CPL</TableHead>
+                    <TableHead className="text-end">הכנסות</TableHead>
+                    <TableHead className="text-center">ROI</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {processedCampaignData.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">אין נתונים להצגה</TableCell>
-                    </TableRow>
-                  ) : (
-                    processedCampaignData.map((cmp, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <Megaphone className="h-4 w-4 text-purple-500" />
-                            {cmp.name === 'Unknown Campaign' ? 'לא ידוע (ללא UTM)' : cmp.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button 
-                            variant="link" 
-                            className="p-0 h-auto font-bold text-primary"
-                            onClick={() => {
-                              setLeadsModalTitle(`לידים - קמפיין: ${cmp.name === 'Unknown Campaign' ? 'ללא UTM' : cmp.name}`);
-                              setSelectedLeadsForModal(cmp.leads);
-                            }}
-                          >
-                            {cmp.leadsCount}
-                          </Button>
-                        </TableCell>
-                        <TableCell>₪{cmp.cost.toLocaleString()}</TableCell>
-                        <TableCell>₪{cmp.cpl}</TableCell>
-                        <TableCell>{cmp.won}</TableCell>
-                        <TableCell className="text-green-600 font-medium">₪{cmp.revenue.toLocaleString()}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${cmp.roi >= 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {cmp.roi}%
-                          </span>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === 'ads' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>ביצועי מודעות (UTM Content)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>שם המודעה</TableHead>
-                    <TableHead>לידים</TableHead>
-                    <TableHead>סגירות</TableHead>
-                    <TableHead>אחוז המרה</TableHead>
-                    <TableHead>הכנסות מיוחסות</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {adPerformance.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">אין נתונים להצגה</TableCell>
-                    </TableRow>
-                  ) : (
-                    adPerformance.map((ad, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <Megaphone className="h-4 w-4 text-primary" />
-                            {ad.name === 'Unknown Ad' ? 'לא ידוע (ללא UTM)' : ad.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Button 
-                            variant="link" 
-                            className="p-0 h-auto font-bold text-primary"
-                            onClick={() => {
-                              setLeadsModalTitle(`לידים - מודעה: ${ad.name === 'Unknown Ad' ? 'ללא UTM' : ad.name}`);
-                              setSelectedLeadsForModal(ad.leads);
-                            }}
-                          >
-                            {ad.leadsCount}
-                          </Button>
-                        </TableCell>
-                        <TableCell>{ad.won}</TableCell>
-                        <TableCell>{ad.leadsCount > 0 ? ((ad.won / ad.leadsCount) * 100).toFixed(1) : 0}%</TableCell>
-                        <TableCell className="text-green-600 font-medium">₪{ad.revenue.toLocaleString()}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === 'roi_table' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>ניתוח ROI מלא</CardTitle>
-          </CardHeader>
-          <CardContent>
-             <div className="text-sm text-muted-foreground mb-4">
-               * הנתונים מבוססים על הצלבת עלויות שיווק (MarketingCost) מול לידים (UTM Source) והזמנות שנסגרו.
-             </div>
-             <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ערוץ</TableHead>
-                      <TableHead>הוצאה</TableHead>
-                      <TableHead>הכנסה</TableHead>
-                      <TableHead>רווח/הפסד</TableHead>
-                      <TableHead>ROAS (החזר על הוצאה)</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {processedSourceData.map((row) => (
-                      <TableRow key={row.name}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-red-600">₪{row.cost.toLocaleString()}</TableCell>
-                        <TableCell className="text-green-600">₪{row.revenue.toLocaleString()}</TableCell>
-                        <TableCell className={`font-bold ${row.revenue - row.cost >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                          ₪{(row.revenue - row.cost).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          x{row.cost > 0 ? (row.revenue / row.cost).toFixed(2) : '0'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === 'leads_data' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>נתוני שיווק מפורטים ללידים</CardTitle>
-            <div className="flex gap-2 mt-2">
-               <Select value={filters.utm_source} onValueChange={(v) => setFilters(f => ({ ...f, utm_source: v }))}>
-                <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Source" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">Source: הכל</SelectItem>{uniqueSources.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-              </Select>
-              <Select value={filters.utm_campaign} onValueChange={(v) => setFilters(f => ({ ...f, utm_campaign: v }))}>
-                <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Campaign" /></SelectTrigger>
-                <SelectContent><SelectItem value="all">Campaign: הכל</SelectItem>{uniqueCampaigns.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>שם לקוח</TableHead>
-                    <TableHead>תאריך</TableHead>
-                    <TableHead>סטטוס</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Campaign</TableHead>
-                    <TableHead>Content (Ad)</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayLeads.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        לא נמצאו נתונים התואמים לחיפוש
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    displayLeads.map((lead) => (
-                      <TableRow key={lead.id}>
-                        <TableCell className="font-medium">{lead.full_name}</TableCell>
-                        <TableCell>{format(parseDbTimestamp(lead.created_date) ?? new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
-                        <TableCell>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${lead.status === 'deal_closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-foreground'}`}>
-                            {lead.status === 'deal_closed' ? 'סגור (המר)' : lead.status}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{lead.utm_source || '-'}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{getCampaign(lead) || '-'}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{getAdName(lead) || '-'}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Dialog open={!!selectedLeadsForModal} onOpenChange={(open) => !open && setSelectedLeadsForModal(null)}>
-        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>{leadsModalTitle}</DialogTitle>
-          </DialogHeader>
-          <div className="overflow-y-auto flex-1 mt-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>שם לקוח</TableHead>
-                  <TableHead>טלפון</TableHead>
-                  <TableHead>תאריך</TableHead>
-                  <TableHead>סטטוס</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Campaign</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {selectedLeadsForModal?.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4">אין לידים</TableCell>
-                  </TableRow>
-                ) : (
-                  selectedLeadsForModal?.map(lead => (
-                    <TableRow key={lead.id}>
-                      <TableCell className="font-medium">{lead.full_name}</TableCell>
-                      <TableCell dir="ltr" className="text-right">{lead.phone}</TableCell>
-                      <TableCell>{format(parseDbTimestamp(lead.created_date) ?? new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
+                  {isLoading ? (
+                    <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">טוען…</TableCell></TableRow>
+                  ) : visibleCampaigns.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">אין קמפיינים בטווח</TableCell></TableRow>
+                  ) : visibleCampaigns.slice(0, 30).map((c, idx) => (
+                    <TableRow key={`${c.name}-${idx}`} className="hover:bg-muted/20">
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${lead.status === 'deal_closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-foreground'}`}>
-                          {lead.status === 'deal_closed' ? 'סגור (המר)' : lead.status}
-                        </span>
+                        <div className="font-medium truncate max-w-[220px]" title={c.name}>{c.name}</div>
+                        {c.source ? <div className="text-[10px] text-muted-foreground">{sourceLabel(c.source)}</div> : null}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{lead.utm_source || lead.source || '-'}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{getCampaign(lead) || '-'}</TableCell>
+                      <TableCell className="text-center tabular-nums">{c.leads.toLocaleString()}</TableCell>
+                      <TableCell className="text-center tabular-nums text-emerald-700 font-semibold">{c.won.toLocaleString()}</TableCell>
+                      <TableCell><ConvBar value={c.conversion} /></TableCell>
+                      <TableCell className="text-center text-xs tabular-nums">{fmtCurrency(c.cost)}</TableCell>
+                      <TableCell className="text-center text-xs tabular-nums">{fmtCurrency(c.cpl)}</TableCell>
+                      <TableCell className="text-end font-bold tabular-nums">{fmtCompact(c.revenue)}</TableCell>
+                      <TableCell className="text-center"><RoiBadge value={c.roi} /></TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </DialogContent>
-      </Dialog>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'leads' && (
+        <Card>
+          <CardHeader className="pb-2 border-b border-border/50">
+            <CardTitle className="text-sm flex items-center justify-between gap-2">
+              <span>דוח לידים {sourceFilter !== 'all' ? `— ${sourceLabel(sourceFilter)}` : ''}</span>
+              <span className="text-xs font-normal text-muted-foreground">{leadsFetching ? 'טוען…' : `${displayLeads.length} לידים`}</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3">
+            {/* Same table as ניהול לידים — click a row to open the lead in the
+                same popup. */}
+            <LeadListTable
+              leads={displayLeads.slice(0, 500)}
+              isLoading={leadsFetching && displayLeads.length === 0}
+              repNameByEmail={repNameByEmail}
+              onRowClick={(lead) => openLead(lead.id)}
+              highlightId={lastOpenedLeadId}
+              emptyMessage="לא נמצאו לידים בטווח"
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
