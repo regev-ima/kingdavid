@@ -230,10 +230,19 @@ export default function ServicePhotoUploader({
               ? <video src={p.previewUrl} className="h-full w-full object-cover opacity-60" muted playsInline preload="metadata" />
               : <img src={p.previewUrl} alt="מעלה" className="h-full w-full object-cover opacity-60" />}
             {p.status === 'error' ? (
-              <div className="absolute inset-0 bg-red-900/55 flex flex-col items-center justify-center gap-1 text-white">
-                <AlertCircle className="h-4 w-4" />
-                <button type="button" onClick={() => dismissPending(p.id)} className="text-[10px] underline">הסר</button>
-              </div>
+              <>
+                <div className="absolute inset-0 bg-red-900/45 flex items-center justify-center" title="ההעלאה נכשלה">
+                  <AlertCircle className="h-5 w-5 text-white" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismissPending(p.id)}
+                  className="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-black/65 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                  aria-label="הסר קובץ"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </>
             ) : (
               <div className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center gap-1">
                 <Loader2 className="h-4 w-4 animate-spin text-white" />
