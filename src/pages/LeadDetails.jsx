@@ -66,20 +66,18 @@ import SLABadge from '@/components/sla/SLABadge';
 import CommunicationHistory from '@/components/lead/CommunicationHistory';
 import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
-import DetailField from '@/components/lead/DetailField';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
 import { formatDistanceToNow, addHours, addDays, startOfDay, format } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
-import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
+import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import LeadActivityTimeline from '@/components/lead/LeadActivityTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
-import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
@@ -1491,7 +1489,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         onClose={() => setShowAddCommunication(false)} />
 
       {/* Add Task Dialog */}
-      <AddSalesTaskDialog
+      <SalesTaskDialog
         isOpen={showAddTaskDialog}
         onClose={() => setShowAddTaskDialog(false)}
         preSelectedLead={lead}
@@ -1499,7 +1497,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       />
 
       {/* Edit Task Dialog */}
-      <EditSalesTaskDialog
+      <SalesTaskDialog
         isOpen={showEditTaskDialog}
         onClose={() => { setShowEditTaskDialog(false); setEditingTask(null); }}
         task={editingTask ? { ...editingTask, lead } : null}

@@ -25,8 +25,7 @@ import { he } from 'date-fns/locale';
 
 import UserAvatar from '@/components/shared/UserAvatar';
 import StatusBadge from '@/components/shared/StatusBadge';
-import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
-import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
+import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import {
   buildLeadsById,
@@ -541,13 +540,13 @@ export default function SalesDashboard() {
         <MyCommissionsCard effectiveUser={effectiveUser} />
       </div>
 
-      <AddSalesTaskDialog
+      <SalesTaskDialog
         isOpen={showTaskDialog}
         onClose={() => setShowTaskDialog(false)}
         effectiveUser={effectiveUser}
       />
 
-      <EditSalesTaskDialog
+      <SalesTaskDialog
         isOpen={!!editingTaskData}
         onClose={() => setEditingTaskData(null)}
         task={editingTaskData}

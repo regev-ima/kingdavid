@@ -47,8 +47,7 @@ const safeFormat = (dateStr, fmt) => {
 
 
 import ImportSalesTasks from '@/components/lead/ImportSalesTasks';
-import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
-import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
+import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import TaskDayView from '@/components/task/TaskDayView';
 import TaskWeekView from '@/components/task/TaskWeekView';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -1396,8 +1395,8 @@ export default function SalesTasks() {
       )}
 
       {/* New Task Dialog */}
-      <AddSalesTaskDialog
-        isOpen={showNewTaskDialog} 
+      <SalesTaskDialog
+        isOpen={showNewTaskDialog}
         onClose={() => setShowNewTaskDialog(false)}
         effectiveUser={effectiveUser}
       />
@@ -1406,7 +1405,7 @@ export default function SalesTasks() {
       <ImportSalesTasks isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} />
 
       {/* Edit Task Dialog */}
-      <EditSalesTaskDialog
+      <SalesTaskDialog
         isOpen={showEditTaskDialog}
         onClose={() => setShowEditTaskDialog(false)}
         task={editingTask}
