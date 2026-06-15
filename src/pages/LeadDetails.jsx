@@ -740,7 +740,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Main Info */}
         <div className="lg:col-span-2 space-y-4">
-          <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
               <CardTitle className="text-sm font-semibold">פרטי לקוח</CardTitle>
@@ -920,6 +919,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
+          {/* Upcoming sales task — sits between the customer details and
+              the task history: the rep reads who the lead is, then what
+              they need to do next, then what's already been done. */}
+          <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
+
           {/* Tasks */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
@@ -1017,11 +1021,20 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
                                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center pe-6">
                                     
-                                    {/* רבע 1: לקוח ונציג */}
+                                    {/* רבע 1: הסטטוס שעודכן בעקבות המשימה + הנציג.
+                                        שם הלקוח הוסר מכאן — הוא כבר מוצג בראש
+                                        החלון, וחזרה עליו בכל שורה רק הסתירה את
+                                        המידע שבאמת מעניין: לאיזה סטטוס הליד עבר
+                                        בעקבות המשימה הזו. */}
                                     <div className="flex flex-col gap-1.5 text-start overflow-hidden">
-                                      <span className="font-bold text-base text-foreground truncate">
-                                        {lead?.full_name || 'ליד לא ידוע'}
-                                      </span>
+                                      {task.status ? (
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="text-xs text-muted-foreground flex-shrink-0">סטטוס שעודכן:</span>
+                                          <StatusBadge status={task.status} className="truncate" />
+                                        </div>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground/50">ללא עדכון סטטוס</span>
+                                      )}
                                       <div className="text-sm text-muted-foreground truncate">
                                         נציג מטפל: {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
                                       </div>
