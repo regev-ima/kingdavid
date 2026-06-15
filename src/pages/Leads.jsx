@@ -697,12 +697,26 @@ export default function Leads() {
       header: 'תאריך',
       accessor: 'created_date',
       render: (row) => {
-        const d = parseDbTimestamp(row.created_date);
+        // For a returning lead (re-submitted >24h after creation) the
+        // meaningful date is when it came back — the bumped
+        // effective_sort_date — not the original created_date. Surface
+        // that date here (flagged with 🔁, matching the name column) and
+        // keep the original creation date in the tooltip so nothing is lost.
+        const returning = isReturningLead(row);
+        const createdAt = parseDbTimestamp(row.created_date);
+        const returnedAt = parseDbTimestamp(row.effective_sort_date);
+        const d = returning ? (returnedAt || createdAt) : createdAt;
         if (!d) return <span className="text-sm text-muted-foreground">-</span>;
         try {
+          const title = returning && createdAt && returnedAt
+            ? `חזר ${formatInTimeZone(returnedAt, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')} · נוצר ${formatInTimeZone(createdAt, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}`
+            : undefined;
           return (
-            <div className="text-sm text-muted-foreground whitespace-nowrap">
-              <div>{formatInTimeZone(d, 'Asia/Jerusalem', 'dd/MM/yyyy')}</div>
+            <div className="text-sm text-muted-foreground whitespace-nowrap" title={title}>
+              <div className="flex items-center gap-1">
+                {returning && <span className="text-[11px] leading-none" aria-label="פניה חוזרת">🔁</span>}
+                <span>{formatInTimeZone(d, 'Asia/Jerusalem', 'dd/MM/yyyy')}</span>
+              </div>
               <div className="text-xs">{formatInTimeZone(d, 'Asia/Jerusalem', 'HH:mm')}</div>
             </div>
           );

@@ -10,9 +10,12 @@ export const DEFAULT_PRESETS = [
   { key: 'yesterday', label: 'אתמול' },
   { key: 'week', label: 'השבוע' },
   { key: 'month', label: 'החודש' },
-  { key: '90days', label: '90 יום' },
+  { key: '7days', label: '7 ימים אחרונים' },
+  { key: '30days', label: '30 יום אחרון' },
+  { key: '60days', label: '60 יום אחרון' },
+  { key: '90days', label: '90 יום אחרון' },
   { key: 'year', label: 'השנה' },
-  { key: 'custom', label: 'מותאם' },
+  { key: 'custom', label: 'בין תאריכים' },
 ];
 
 function formatLabel(rangeKey, dateRange, presets) {

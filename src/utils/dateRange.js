@@ -15,7 +15,7 @@ import {
 // Extracted from the triple-duplicated switch that previously lived in
 // Finance.jsx so KPI/overview, commissions, and the report tab all compute
 // bounds the same way. `now` is overridable to make this testable.
-// Supports: today, yesterday, week, month, 90days, year, custom.
+// Supports: today, yesterday, week, month, 7days, 30days, 60days, 90days, year, custom.
 export function getDateRange(rangeKey, customStart, customEnd, now = new Date()) {
   switch (rangeKey) {
     case 'all':
@@ -32,6 +32,13 @@ export function getDateRange(rangeKey, customStart, customEnd, now = new Date())
       return { start: startOfWeek(now, { weekStartsOn: 0 }), end: endOfWeek(now, { weekStartsOn: 0 }) };
     case 'month':
       return { start: startOfMonth(now), end: endOfMonth(now) };
+    // Rolling windows that include today (e.g. 7days = today + 6 prior days).
+    case '7days':
+      return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
+    case '30days':
+      return { start: startOfDay(subDays(now, 29)), end: endOfDay(now) };
+    case '60days':
+      return { start: startOfDay(subDays(now, 59)), end: endOfDay(now) };
     case '90days':
       return { start: startOfDay(subDays(now, 89)), end: endOfDay(now) };
     case 'year':
@@ -48,8 +55,8 @@ export function getDateRange(rangeKey, customStart, customEnd, now = new Date())
 
 // Mirror the current period one step into the past so KPI cards can show a
 // like-for-like delta. today→yesterday, week→last week, month→last month,
-// year→year-to-date one year ago. Sliding ranges (90days, custom) shift
-// back by their own length.
+// year→year-to-date one year ago. Sliding ranges (7/30/60/90days, custom)
+// shift back by their own length.
 export function getPreviousDateRange(rangeKey, customStart, customEnd, now = new Date()) {
   switch (rangeKey) {
     case 'today': {
@@ -68,8 +75,11 @@ export function getPreviousDateRange(rangeKey, customStart, customEnd, now = new
       const lastMonth = subMonths(now, 1);
       return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) };
     }
+    case '7days':
+    case '30days':
+    case '60days':
     case '90days': {
-      const current = getDateRange('90days', null, null, now);
+      const current = getDateRange(rangeKey, null, null, now);
       const length = current.end.getTime() - current.start.getTime();
       const prevEnd = new Date(current.start.getTime() - 1);
       const prevStart = new Date(prevEnd.getTime() - length);
