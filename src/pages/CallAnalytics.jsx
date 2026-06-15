@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +6,8 @@ import KPICard from '@/components/shared/KPICard';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
+import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
+import { getDateRange } from '@/utils/dateRange';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { Phone, PhoneIncoming, Clock, Target, AlertCircle } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
@@ -28,13 +30,25 @@ const RESULT_COLORS = {
   not_interested: '#ef4444',
 };
 
-// Most recent N rows shown in the table (server-capped). The user filters /
-// searches server-side rather than scrolling a full-table dump.
+// Hebrew labels for the call-result codes (used by the pie chart + tooltip).
+const RESULT_LABELS = {
+  answered_positive: 'חיובי',
+  answered_neutral: 'נייטרלי',
+  answered_negative: 'שלילי',
+  no_answer: 'לא ענה',
+  busy: 'תפוס',
+  voicemail_left: 'הודעה',
+  callback_requested: 'התקשרות חוזרת',
+  not_interested: 'לא מעוניין',
+};
+const resultLabel = (code) => RESULT_LABELS[code] || code || 'אחר';
+
+// Date presets: "כל הזמן" first (the default), then the shared presets.
+const CALL_PRESETS = [{ key: 'all', label: 'כל הזמן' }, ...DEFAULT_PRESETS];
+
+// Most recent N rows shown in the table (server-capped).
 const PAGE_SIZE = 500;
 
-// Apply the active table filters to a Supabase query against
-// public.call_logs_detailed (the lead name/phone are joined in the view, so
-// search can match them server-side).
 function applyCallFilters(query, { search, result, rep }) {
   if (result && result !== 'all') query = query.eq('call_result', result);
   if (rep && rep !== 'all') query = query.eq('rep_id', rep);
@@ -45,6 +59,14 @@ function applyCallFilters(query, { search, result, rep }) {
   return query;
 }
 
+// Apply the active date window to a call_logs_detailed query (filters on
+// call_started_at; "all" leaves it unbounded).
+function applyDateRange(query, startISO, endISO) {
+  if (startISO) query = query.gte('call_started_at', startISO);
+  if (endISO) query = query.lt('call_started_at', endISO);
+  return query;
+}
+
 export default function CallAnalytics() {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
@@ -52,6 +74,8 @@ export default function CallAnalytics() {
   const [callingPhone, setCallingPhone] = useState(null);
   const [filters, setFilters] = useState({ search: '', result: 'all', rep: 'all' });
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [rangeKey, setRangeKey] = useState('all');
+  const [customRange, setCustomRange] = useState(undefined); // { from, to }
 
   // Debounce the free-text search so we don't fire an ilike scan per keystroke.
   useEffect(() => {
@@ -61,13 +85,19 @@ export default function CallAnalytics() {
 
   const queryFilters = { search: debouncedSearch, result: filters.result, rep: filters.rep };
 
+  // Resolve the date window to ISO bounds. "all" → null bounds (whole table).
+  const { startISO, endISO } = useMemo(() => {
+    if (rangeKey === 'all') return { startISO: null, endISO: null };
+    const { start, end } = getDateRange(rangeKey, customRange?.from, customRange?.to);
+    return { startISO: start.toISOString(), endISO: end.toISOString() };
+  }, [rangeKey, customRange]);
+
   useEffect(() => {
     const fetchUser = async () => {
       try {
         const userData = await base44.auth.me();
         setUser(userData);
         const effectiveUser = getEffectiveUser(userData);
-        // RBAC: Only ADMIN can access CallAnalytics
         if (!canAccessAdminOnly(effectiveUser)) {
           navigate(createPageUrl('Dashboard2'));
         }
@@ -93,13 +123,16 @@ export default function CallAnalytics() {
     }
   };
 
-  // ── Global KPIs (whole table, one row) ──
+  // ── KPIs for the window (one row) ──
   const { data: kpis = { total_calls: 0, answered_calls: 0, positive_calls: 0, avg_duration: 0 } } = useQuery({
-    queryKey: ['callKpis'],
+    queryKey: ['callKpis', startISO, endISO],
     enabled: isAdmin,
     staleTime: 60000,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
-      const { data, error } = await base44.supabase.from('call_analytics_kpis').select('*').maybeSingle();
+      const { data, error } = await base44.supabase
+        .rpc('call_analytics_kpis', { p_start: startISO, p_end: endISO })
+        .maybeSingle();
       if (error) throw error;
       return data || { total_calls: 0, answered_calls: 0, positive_calls: 0, avg_duration: 0 };
     },
@@ -107,11 +140,13 @@ export default function CallAnalytics() {
 
   // ── Result distribution (pie) ──
   const { data: byResult = [] } = useQuery({
-    queryKey: ['callByResult'],
+    queryKey: ['callByResult', startISO, endISO],
     enabled: isAdmin,
     staleTime: 60000,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
-      const { data, error } = await base44.supabase.from('call_analytics_by_result').select('*');
+      const { data, error } = await base44.supabase
+        .rpc('call_analytics_by_result', { p_start: startISO, p_end: endISO });
       if (error) throw error;
       return data || [];
     },
@@ -119,17 +154,19 @@ export default function CallAnalytics() {
 
   // ── Hourly distribution (bar) ──
   const { data: byHour = [] } = useQuery({
-    queryKey: ['callByHour'],
+    queryKey: ['callByHour', startISO, endISO],
     enabled: isAdmin,
     staleTime: 60000,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
-      const { data, error } = await base44.supabase.from('call_analytics_by_hour').select('*');
+      const { data, error } = await base44.supabase
+        .rpc('call_analytics_by_hour', { p_start: startISO, p_end: endISO });
       if (error) throw error;
       return data || [];
     },
   });
 
-  // ── Distinct reps for the filter dropdown ──
+  // ── Distinct reps for the filter dropdown (all-time) ──
   const { data: repRows = [] } = useQuery({
     queryKey: ['callReps'],
     enabled: isAdmin,
@@ -148,9 +185,9 @@ export default function CallAnalytics() {
     queryFn: () => base44.entities.User.list(),
   });
 
-  // ── Table: server-side filtered + capped to the most recent PAGE_SIZE ──
+  // ── Table: server-side filtered + windowed + capped to most recent PAGE_SIZE ──
   const { data: logs = [], isLoading, refetch: refetchLogs } = useQuery({
-    queryKey: ['callLogsDetailed', queryFilters, PAGE_SIZE],
+    queryKey: ['callLogsDetailed', queryFilters, startISO, endISO, PAGE_SIZE],
     enabled: isAdmin,
     staleTime: 30000,
     placeholderData: (prev) => prev,
@@ -160,6 +197,7 @@ export default function CallAnalytics() {
         .select('*')
         .order('created_date', { ascending: false })
         .limit(PAGE_SIZE);
+      q = applyDateRange(q, startISO, endISO);
       q = applyCallFilters(q, queryFilters);
       const { data, error } = await q;
       if (error) throw error;
@@ -167,14 +205,14 @@ export default function CallAnalytics() {
     },
   });
 
-  // Exact count for the active filter (cheap: head:true, no row transfer).
   const { data: matchCount = null } = useQuery({
-    queryKey: ['callLogsCount', queryFilters],
+    queryKey: ['callLogsCount', queryFilters, startISO, endISO],
     enabled: isAdmin,
     staleTime: 30000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       let q = base44.supabase.from('call_logs_detailed').select('*', { count: 'exact', head: true });
+      q = applyDateRange(q, startISO, endISO);
       q = applyCallFilters(q, queryFilters);
       const { count, error } = await q;
       if (error) throw error;
@@ -192,8 +230,8 @@ export default function CallAnalytics() {
 
   // ── Charts ──
   const pieData = byResult
-    .filter((r) => r.call_result)
-    .map((r) => ({ name: r.call_result, value: Number(r.count), color: RESULT_COLORS[r.call_result] || '#94a3b8' }));
+    .filter((r) => r.result_code)
+    .map((r) => ({ name: resultLabel(r.result_code), value: Number(r.cnt), color: RESULT_COLORS[r.result_code] || '#94a3b8' }));
 
   const hourlyData = Array.from({ length: 24 }, (_, i) => ({ hour: i, calls: 0, answered: 0 }));
   byHour.forEach((r) => {
@@ -209,16 +247,7 @@ export default function CallAnalytics() {
     {
       key: 'result',
       label: 'תוצאה',
-      options: [
-        { value: 'answered_positive', label: 'חיובי' },
-        { value: 'answered_neutral', label: 'נייטרלי' },
-        { value: 'answered_negative', label: 'שלילי' },
-        { value: 'no_answer', label: 'לא ענה' },
-        { value: 'busy', label: 'תפוס' },
-        { value: 'voicemail_left', label: 'הודעה' },
-        { value: 'callback_requested', label: 'התקשרות חוזרת' },
-        { value: 'not_interested', label: 'לא מעוניין' },
-      ],
+      options: Object.entries(RESULT_LABELS).map(([value, label]) => ({ value, label })),
     },
     {
       key: 'rep',
@@ -303,9 +332,16 @@ export default function CallAnalytics() {
   const shownCount = logs.length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-foreground">ניתוח שיחות</h1>
+        <Dashboard2DateRange
+          rangeKey={rangeKey}
+          dateRange={customRange}
+          presets={CALL_PRESETS}
+          onPresetChange={(k) => setRangeKey(k)}
+          onCustomChange={(range) => { setCustomRange(range); setRangeKey('custom'); }}
+        />
       </div>
 
       {/* KPIs */}
@@ -314,7 +350,7 @@ export default function CallAnalytics() {
         <KPICard
           title="אחוז מענה"
           value={`${answerRate}%`}
-          subtitle={`${answeredCalls.toLocaleString()} מענות`}
+          subtitle={`${answeredCalls.toLocaleString()} נענו`}
           icon={PhoneIncoming}
           color="emerald"
         />
@@ -334,14 +370,14 @@ export default function CallAnalytics() {
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      {/* Charts (compact) */}
+      <div className="grid lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader>
-            <CardTitle>התפלגות תוצאות</CardTitle>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">התפלגות שיחות יוצאות</CardTitle>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+          <CardContent className="pt-0">
+            <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie
                   data={pieData}
@@ -349,7 +385,7 @@ export default function CallAnalytics() {
                   cy="50%"
                   labelLine={false}
                   label={(entry) => (totalCalls > 0 ? `${((entry.value / totalCalls) * 100).toFixed(0)}%` : '')}
-                  outerRadius={100}
+                  outerRadius={75}
                   fill="#8884d8"
                   dataKey="value"
                 >
@@ -357,26 +393,27 @@ export default function CallAnalytics() {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name]} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>שעות אפקטיביות</CardTitle>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">שעות אפקטיביות</CardTitle>
           </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+          <CardContent className="pt-0">
+            <ResponsiveContainer width="100%" height={200}>
               <BarChart data={activeHours}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour" label={{ value: 'שעה', position: 'insideBottom', offset: -5 }} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="calls" fill="#6366f1" name="שיחות" />
-                <Bar dataKey="answered" fill="#10b981" name="מענות" />
+                <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name]} />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
+                <Bar dataKey="calls" fill="#6366f1" name="סה״כ שיחות" />
+                <Bar dataKey="answered" fill="#10b981" name="נענו" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
