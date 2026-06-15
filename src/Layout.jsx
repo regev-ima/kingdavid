@@ -53,7 +53,6 @@ import UserAvatar from "@/components/shared/UserAvatar";
 const navigationByRole = {
   admin: [
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
-    { name: 'לידים', href: 'Leads', icon: Users },
     { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לקוחות', href: 'Customers', icon: Crown },
@@ -83,7 +82,7 @@ const navigationByRole = {
     { name: 'דשבורד מכירות', href: 'SalesDashboard', icon: BarChart3 },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לידים', href: 'Leads', icon: Users },
+    { name: 'לידים', href: 'LeadManagement', icon: Users },
     { name: 'לקוחות', href: 'Customers', icon: Crown },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },

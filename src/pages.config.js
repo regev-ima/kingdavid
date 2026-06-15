@@ -67,7 +67,6 @@ import LandingPages from './pages/LandingPages';
 import LeadDetails from './pages/LeadDetails';
 import LeadLookup from './pages/LeadLookup';
 import LeadManagement from './pages/LeadManagement';
-import Leads from './pages/Leads';
 import Marketing from './pages/Marketing';
 import NewLead from './pages/NewLead';
 import NewOrder from './pages/NewOrder';
@@ -115,7 +114,10 @@ export const PAGES = {
     "LeadDetails": LeadDetails,
     "LeadLookup": LeadLookup,
     "LeadManagement": LeadManagement,
-    "Leads": Leads,
+    // "לידים" was merged into "ניהול לידים". Keep the /Leads route as an alias
+    // so existing deep-links (dashboards, NewLead/LeadDetails back-links) still
+    // resolve instead of 404-ing.
+    "Leads": LeadManagement,
     "Marketing": Marketing,
     "NewLead": NewLead,
     "NewOrder": NewOrder,

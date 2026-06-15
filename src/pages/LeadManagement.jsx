@@ -4,8 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
-import DataTable from '@/components/shared/DataTable';
-import { useLeadModal, LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
+import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { Checkbox } from '@/components/ui/checkbox';
 import FilterBar from '@/components/shared/FilterBar';
 import { Button } from '@/components/ui/button';
@@ -888,6 +888,7 @@ export default function LeadManagement() {
         selectedLeads={selectedLeads}
         onSelectionChange={setSelectedLeads}
         repNameByEmail={repNameByEmail}
+        users={salesReps}
         highlightId={lastOpenedLeadId}
         onRowClick={(lead) => openLead(lead.id)}
       />
@@ -1116,8 +1117,12 @@ function RepWorkloadCard({ repEmail, label, avatar, newCount, handlingCount, won
 }
 
 // ─── Lead table ─────────────────────────────────────────────────
-function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange, repNameByEmail, onRowClick, highlightId }) {
+function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange, repNameByEmail, users = [], onRowClick, highlightId }) {
   const queryClient = useQueryClient();
+  const handleClickToCall = async (phone) => {
+    if (!phone) return;
+    try { await base44.functions.invoke('clickToCall', { customerPhone: phone }); } catch {}
+  };
   const allSelected = selectedLeads.length > 0 && selectedLeads.length === leads.length;
   const someSelected = selectedLeads.length > 0 && !allSelected;
 
@@ -1341,14 +1346,19 @@ function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange
   ];
   return (
     <>
-    <DataTable
+    {/* Desktop table + mobile cards — same responsive component the Leads
+        page used, so reps on a phone get the card view instead of a
+        1400px-wide horizontal scroll. */}
+    <ResponsiveLeadsTable
       columns={columns}
       data={leads}
       isLoading={isLoading}
-      emptyMessage="לא נמצאו לידים תואמים"
-      onRowClick={onRowClick}
-      rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
-      tableClassName="w-full table-fixed min-w-[1400px]"
+      selectedIds={selectedLeads}
+      users={users}
+      onToggleSelect={(row, checked) => toggleOne(row.id, checked)}
+      onOpenLead={(row) => onRowClick(row)}
+      highlightId={highlightId}
+      onClickToCall={(phone) => handleClickToCall(phone)}
     />
     {/* Complete-task dialog opened by the "סיים משימה" button in the
         "משימה הבאה" column */}
