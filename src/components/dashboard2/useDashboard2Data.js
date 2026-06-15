@@ -90,8 +90,19 @@ async function fetchDashboard2Snapshot({ start, end, label = 'current' }) {
   const ticketClosedStatuses = ['resolved', 'closed'];
 
   const errors = [];
-  const guard = (source, promise, fallback, { silent = false } = {}) =>
-    promise.catch((e) => {
+  // Cap every call so one slow/hanging request (the stats Edge Function on a
+  // cold start, a large inventory scan, a stalled socket) can't freeze the whole
+  // dashboard on skeletons forever. On timeout we degrade to the fallback and
+  // record the error, exactly like a rejection — the page renders what loaded
+  // plus a banner instead of spinning indefinitely.
+  const CALL_TIMEOUT_MS = 20000;
+  const withTimeout = (promise, ms = CALL_TIMEOUT_MS) =>
+    Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`נתקע (timeout מעל ${Math.round(ms / 1000)} שניות)`)), ms)),
+    ]);
+  const guard = (source, promise, fallback, { silent = false, timeout = CALL_TIMEOUT_MS } = {}) =>
+    withTimeout(promise, timeout).catch((e) => {
       if (!silent) errors.push({ source, message: e?.message || String(e) });
       return fallback;
     });
