@@ -13,6 +13,27 @@ import {
   REQUEST_TYPE_OPTIONS, DIAGNOSTIC_QUESTIONS, CONTACT_PREFERENCE_OPTIONS,
 } from '@/constants/serviceOptions';
 
+// App-shell chrome (logo header + footer) shared by every render state. Defined
+// at MODULE scope — not inside the component — so it keeps a stable identity
+// across re-renders. A nested definition made React remount the whole subtree
+// on every keystroke, which dropped input focus and dismissed the mobile
+// keyboard after a single character.
+function Shell({ children }) {
+  return (
+    <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
+        <div className="inline-flex items-center gap-2">
+          <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
+          <span className="text-xl font-bold">KING DAVID</span>
+        </div>
+        <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
+      </header>
+      <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
+      <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
+    </div>
+  );
+}
+
 // Public, unauthenticated self-service intake form. A customer reaches it from
 // the SMS link (/service-request?token=...). It talks to the DB only through
 // two SECURITY DEFINER RPCs scoped to the single ticket the token points at —
@@ -87,21 +108,6 @@ export default function ServiceRequestPublic() {
     submitMutation.mutate();
   };
 
-  // ── Shell ────────────────────────────────────────────────────────────────
-  const Shell = ({ children }) => (
-    <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-gradient-to-l from-slate-900 to-slate-800 text-white py-6 px-4 text-center">
-        <div className="inline-flex items-center gap-2">
-          <div className="h-9 w-9 rounded-lg bg-amber-400/20 flex items-center justify-center"><Crown className="h-5 w-5 text-amber-400" /></div>
-          <span className="text-xl font-bold">KING DAVID</span>
-        </div>
-        <p className="text-amber-400 text-sm mt-1">שירות לקוחות</p>
-      </header>
-      <main className="flex-1 w-full max-w-xl mx-auto p-4">{children}</main>
-      <footer className="text-center text-xs text-muted-foreground py-4">מזרני קינג דוד · 1700-700-464</footer>
-    </div>
-  );
-
   if (!token) {
     return <Shell><div className="bg-white rounded-2xl border p-6 text-center text-muted-foreground mt-6">קישור לא תקין.</div></Shell>;
   }
@@ -143,9 +149,9 @@ export default function ServiceRequestPublic() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} dir="rtl" className="space-y-4">
           {/* Request type */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label>סוג הפנייה *</Label>
             <div className="grid grid-cols-1 gap-2">
               {REQUEST_TYPE_OPTIONS.map((opt) => {
@@ -171,7 +177,7 @@ export default function ServiceRequestPublic() {
           {/* Order date */}
           <div className="space-y-1.5">
             <Label>מתי ביצעת את ההזמנה?</Label>
-            <Input type="date" value={form.order_date} onChange={(e) => set('order_date', e.target.value)} />
+            <Input type="date" className="text-right" value={form.order_date} onChange={(e) => set('order_date', e.target.value)} />
           </div>
 
           {/* Warranty extra */}
@@ -179,19 +185,19 @@ export default function ServiceRequestPublic() {
             <div className="grid grid-cols-2 gap-3 p-3 rounded-lg bg-emerald-50/60 border border-emerald-100">
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1 text-xs"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> שנות אחריות</Label>
-                <Input type="number" min="0" placeholder="למשל 10" value={form.warranty_years} onChange={(e) => set('warranty_years', e.target.value)} />
+                <Input type="number" min="0" className="text-right" placeholder="למשל 10" value={form.warranty_years} onChange={(e) => set('warranty_years', e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">לפני כמה חודשים התחילה הבעיה?</Label>
-                <Input type="number" min="0" placeholder="למשל 36" value={form.complaint_age_months} onChange={(e) => set('complaint_age_months', e.target.value)} />
+                <Input type="number" min="0" className="text-right" placeholder="למשל 36" value={form.complaint_age_months} onChange={(e) => set('complaint_age_months', e.target.value)} />
               </div>
             </div>
           )}
 
           {/* Diagnostic questions */}
-          <div className="space-y-3">
+          <div className="space-y-4">
             {DIAGNOSTIC_QUESTIONS.map((q) => (
-              <div key={q.key} className="space-y-1">
+              <div key={q.key} className="space-y-1.5">
                 <Label className="text-sm">{q.label}</Label>
                 {q.type === 'select' ? (
                   <Select value={form.issue_answers[q.key] || ''} onValueChange={(v) => setAnswer(q.key, v)}>
@@ -199,9 +205,9 @@ export default function ServiceRequestPublic() {
                     <SelectContent>{q.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
                   </Select>
                 ) : q.type === 'textarea' ? (
-                  <Textarea rows={2} value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                  <Textarea rows={2} className="text-right" value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
                 ) : (
-                  <Input value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                  <Input className="text-right" value={form.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
                 )}
               </div>
             ))}
@@ -210,7 +216,7 @@ export default function ServiceRequestPublic() {
           {/* Description */}
           <div className="space-y-1.5">
             <Label>תיאור הבעיה *</Label>
-            <Textarea rows={3} value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="ספרו לנו מה קרה..." required />
+            <Textarea rows={3} className="text-right" value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="ספרו לנו מה קרה..." required />
           </div>
 
           {/* Photos */}
