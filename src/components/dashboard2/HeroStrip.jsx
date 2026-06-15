@@ -95,7 +95,7 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange, rang
       deltaPolarity: 'negative',
       icon: Headphones,
       color: 'amber',
-      onClick: () => goTo('Support', { status: 'open' }),
+      onClick: () => goTo('ServiceCenter'),
     },
     {
       title: 'מזרונים בייצור',

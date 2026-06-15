@@ -224,10 +224,10 @@ export default function FactoryDashboard() {
           </Card>
         </Link>
 
-        <Link to={createPageUrl('Support')}>
+        <Link to={createPageUrl('ServiceCenter')}>
           <Card className="hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-l-orange-500">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-base font-medium">שירות לקוחות</CardTitle>
+              <CardTitle className="text-base font-medium">מרכז שירות</CardTitle>
               <Headphones className="h-5 w-5 text-orange-600" />
             </CardHeader>
             <CardContent>
