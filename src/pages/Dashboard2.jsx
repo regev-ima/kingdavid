@@ -46,7 +46,7 @@ export default function Dashboard2() {
 
   const [user, setUser] = useState(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [rangeKey, setRangeKey] = useState('today');
+  const [rangeKey, setRangeKey] = useState('7days');
   const [customRange, setCustomRange] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [activeTab, setActiveTab] = useState('overview');
