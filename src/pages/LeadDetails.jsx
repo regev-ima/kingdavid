@@ -68,7 +68,7 @@ import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
-import { formatDistanceToNow, addHours, addDays, startOfDay, format } from '@/lib/safe-date-fns';
+import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
@@ -80,12 +80,50 @@ import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import NewOrder from '@/pages/NewOrder';
-import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
+
+// Hebrew counter with proper singular / dual / plural forms
+// (e.g. 1 → "יום", 2 → "יומיים", 3 → "3 ימים").
+function hebrewCount(n, one, two, many) {
+  if (n === 1) return one;
+  if (n === 2) return two;
+  return `${n} ${many}`;
+}
+
+// Join Hebrew list parts with commas and a final "ו" conjunction:
+// ["3 חודשים","2 שבועות","5 ימים"] → "3 חודשים, 2 שבועות ו-5 ימים".
+function joinHebrewParts(parts) {
+  if (parts.length === 0) return 'פחות מיום';
+  if (parts.length === 1) return parts[0];
+  const last = parts[parts.length - 1];
+  const conj = /^\d/.test(last) ? 'ו-' : 'ו'; // "ו-5 ימים" vs "ויומיים"
+  return `${parts.slice(0, -1).join(', ')} ${conj}${last}`;
+}
+
+// Lead age as a single cascading breakdown that adds back up to the total
+// day count — e.g. a 109-day-old lead reads "3 חודשים, 2 שבועות ו-5 ימים",
+// NOT three independent totals. Uses round 30-day months / 7-day weeks so
+// the parts always sum to the days; zero-valued units are dropped.
+function formatLeadAge(createdDate) {
+  const created = createdDate instanceof Date ? createdDate : new Date(createdDate);
+  if (isNaN(created.getTime())) return '-';
+
+  let remaining = Math.max(0, differenceInDays(new Date(), created));
+  const months = Math.floor(remaining / 30); remaining -= months * 30;
+  const weeks = Math.floor(remaining / 7); remaining -= weeks * 7;
+  const days = remaining;
+
+  const parts = [];
+  if (months > 0) parts.push(hebrewCount(months, 'חודש', 'חודשיים', 'חודשים'));
+  if (weeks > 0) parts.push(hebrewCount(weeks, 'שבוע', 'שבועיים', 'שבועות'));
+  if (days > 0) parts.push(hebrewCount(days, 'יום', 'יומיים', 'ימים'));
+  return joinHebrewParts(parts);
+}
 
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
@@ -974,10 +1012,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                         ) : (
                           <div className="space-y-3">
                             {filteredTasks.map((task) => {
-                              const taskTypeLabel = {
-                                call: 'שיחה', whatsapp: 'וואטסאפ', email: 'מייל', meeting: 'פגישה',
-                                quote_preparation: 'הצעת מחיר', followup: 'מעקב', assignment: 'שיוך', other: 'אחר',
-                              }[task.task_type] || 'אחר';
+                              const taskTypeLabel = ALL_TASK_TYPE_LABELS[task.task_type] || 'אחר';
 
                               const dueDate = task.due_date ? new Date(task.due_date) : null;
                               const isDone = task.task_status === 'completed';
@@ -1269,17 +1304,24 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">גיל הליד</span>
-                <span className="text-sm font-medium text-foreground">
-                  {lead.created_date ? formatDistanceToNow(lead.created_date, { locale: he }) : '-'}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground flex-shrink-0">תאריך ושעה יצירה</span>
+                <span dir="ltr" className="text-sm font-medium text-foreground tabular-nums text-end">
+                  {lead.created_date ? formatInTimeZone(new Date(lead.created_date), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">עדכון אחרון</span>
-                <span className="text-sm font-medium text-foreground">
-                  {lead.updated_date ? formatDistanceToNow(lead.updated_date, { addSuffix: true, locale: he }) : '-'}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground flex-shrink-0">תאריך עדכון אחרון</span>
+                <span dir="ltr" className="text-sm font-medium text-foreground tabular-nums text-end">
+                  {lead.updated_date ? formatInTimeZone(new Date(lead.updated_date), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '-'}
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs text-muted-foreground flex-shrink-0 mt-0.5">גיל הליד</span>
+                <span className="text-sm font-medium text-foreground text-end">
+                  {lead.created_date ? formatLeadAge(lead.created_date) : '-'}
                 </span>
               </div>
 
@@ -1305,11 +1347,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                       </div>
                     )}
                     {nextTask && (
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">משימה הבאה</span>
-                        <span className="text-xs font-medium text-foreground/80">
-                          {TASK_TYPE_LABELS[nextTask.task_type] || nextTask.task_type}
-                          {' - '}
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs text-muted-foreground flex-shrink-0 mt-0.5">משימה הבאה</span>
+                        <span className="text-xs font-medium text-foreground/80 text-end">
+                          <span className="font-semibold">
+                            {ALL_TASK_TYPE_LABELS[nextTask.task_type] || 'משימה'}
+                          </span>
+                          {nextTask.summary ? ` · ${nextTask.summary}` : ''}
+                          {' · '}
                           {formatInTimeZone(new Date(nextTask.due_date), 'Asia/Jerusalem', 'dd/MM HH:mm')}
                         </span>
                       </div>
