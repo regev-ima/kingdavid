@@ -28,6 +28,17 @@ function humanizeEmails(text, users) {
   return String(text).replace(EMAIL_REGEX, (email) => getRepDisplayName(email, users) || email);
 }
 
+// Activity-log descriptions are written as "old → new" with a left-to-right
+// arrow. Inside RTL Hebrew the run renders reversed — new lands on the left,
+// old on the right — yet "→" still points right (toward old), so a change like
+// "לא משויך → אלעד" reads backwards, as if it went assigned → unassigned. Flip
+// it to "←" (the same direction the structured diff badge already uses) so it
+// points old → new on screen.
+function formatDescription(text, users) {
+  if (text == null) return text;
+  return humanizeEmails(text, users).replace(/→/g, '←');
+}
+
 const actionIcons = {
   created: PlusCircle,
   status_changed: RefreshCw,
@@ -134,7 +145,7 @@ export default function LeadActivityTimeline({ leadId }) {
                 </span>
               </div>
 
-              <p className="text-sm text-foreground">{humanizeEmails(log.action_description, users)}</p>
+              <p className="text-sm text-foreground">{formatDescription(log.action_description, users)}</p>
 
               {log.field_name && log.old_value != null && log.new_value != null && (
                 <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
