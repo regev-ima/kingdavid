@@ -157,8 +157,11 @@ export default function ServiceRequestPublic() {
                     onClick={() => set('request_type', opt.value)}
                     className={`text-right rounded-xl border p-3 transition-all ${selected ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border hover:bg-muted/40'}`}
                   >
-                    <div className="font-medium text-sm">{opt.emoji} {opt.label}</div>
-                    <div className="text-xs text-muted-foreground">{opt.description}</div>
+                    <div className="font-medium text-sm flex items-center gap-2">
+                      <opt.Icon className={`h-4 w-4 shrink-0 ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
+                      {opt.label}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{opt.description}</div>
                   </button>
                 );
               })}

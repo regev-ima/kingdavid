@@ -2,28 +2,31 @@
 // the rep dialogs, the public self-service form, the list/detail screens, and
 // the import all speak the same language and render the same colours.
 
+import { MessageCircle, BedDouble, ShieldCheck } from 'lucide-react';
+
 // ── Request type / warranty classification ────────────────────────────────
-// The three buckets the customer (or rep) picks during intake.
+// The three buckets the customer (or rep) picks during intake. Each carries a
+// lucide icon (the app's icon set) rendered in the intake dialogs — no emojis.
 export const REQUEST_TYPE_OPTIONS = [
   {
     value: 'general',
     label: 'פנייה כללית',
     description: 'שאלה או בקשה כללית — ללא היבט אחריות',
-    emoji: '💬',
+    Icon: MessageCircle,
     chip: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
   },
   {
     value: 'trial_30d',
     label: 'במסגרת 30 ימי ניסיון',
     description: 'הפנייה בתוך תקופת 30 ימי ההתנסות במוצר',
-    emoji: '🛏️',
+    Icon: BedDouble,
     chip: 'bg-amber-100 text-amber-800 ring-1 ring-amber-200',
   },
   {
     value: 'warranty',
     label: 'במסגרת אחריות מוצר',
     description: 'אחריות ארוכת-טווח (למשל מזרן עם 10 שנות אחריות)',
-    emoji: '🛡️',
+    Icon: ShieldCheck,
     chip: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
   },
 ];
@@ -109,6 +112,10 @@ export const CONTACT_PREFERENCE_OPTIONS = [
   { value: 'whatsapp', label: 'וואטסאפ' },
   { value: 'email', label: 'אימייל' },
 ];
+
+export const CONTACT_PREFERENCE_LABELS = Object.fromEntries(
+  CONTACT_PREFERENCE_OPTIONS.map((o) => [o.value, o.label]),
+);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

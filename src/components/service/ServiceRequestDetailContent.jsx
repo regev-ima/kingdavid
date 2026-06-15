@@ -6,7 +6,7 @@ import { createPageUrl } from '@/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot } from 'lucide-react';
+import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, PhoneCall, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -15,6 +15,7 @@ import { getRepDisplayName } from '@/lib/repDisplay';
 import {
   REQUEST_TYPE_LABELS, SERVICE_STATUS_OPTIONS, SERVICE_STATUS_LABELS,
   SOURCE_LABELS, SOURCE_CHIP, PRIORITY_LABELS, DIAGNOSTIC_QUESTIONS,
+  CONTACT_PREFERENCE_LABELS,
 } from '@/constants/serviceOptions';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import AssignServiceTaskDialog from '@/components/service/AssignServiceTaskDialog';
@@ -218,6 +219,7 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
               <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
               {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
               {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
+              {ticket.contact_preference && <Field icon={PhoneCall} label="העדפת יצירת קשר">{CONTACT_PREFERENCE_LABELS[ticket.contact_preference] || ticket.contact_preference}</Field>}
             </div>
           </div>
 

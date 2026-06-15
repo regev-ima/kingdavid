@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Clock, User, UserCheck, X, ShieldCheck } from 'lucide-react';
+import { Loader2, Clock, User, UserCheck, X, ShieldCheck, Info } from 'lucide-react';
 import { addHours, differenceInDays } from '@/lib/safe-date-fns';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import {
@@ -136,7 +136,6 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
         complaint_age_months: data.complaint_age_months ? Number(data.complaint_age_months) : null,
         issue_answers: data.issue_answers || {},
         photo_urls: data.photo_urls || [],
-        is_within_trial: data.request_type === 'trial_30d',
         status: 'open',
         source: 'agent_manual',
         opened_by_customer: false,
@@ -223,24 +222,35 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
               </div>
               {linked ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 flex items-center justify-between text-sm text-emerald-800">
-                  <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4" />{formData.customer_id ? 'מקושר ללקוח קיים' : 'מקושר לליד קיים'}</span>
-                  <button type="button" onClick={() => setFormData((p) => ({ ...p, customer_id: null, lead_id: null }))} className="text-emerald-700">
-                    <X className="h-3.5 w-3.5" />
+                  <span className="flex items-center gap-1.5"><UserCheck className="h-4 w-4" />{formData.customer_id ? 'הפנייה משויכת ללקוח קיים' : 'הפנייה משויכת לליד קיים'}</span>
+                  <button type="button" onClick={() => setFormData((p) => ({ ...p, customer_id: null, lead_id: null }))} className="text-emerald-700 inline-flex items-center gap-1 text-xs hover:underline">
+                    בטל שיוך <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               ) : matches.length > 0 ? (
-                <div className="rounded-md border border-blue-200 bg-blue-50 p-2 space-y-1">
-                  <p className="text-xs text-blue-800 font-medium">נמצאו רשומות עם טלפון דומה — בחר לקישור:</p>
+                <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-2.5 space-y-2">
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-blue-900 font-semibold flex items-center gap-1.5">
+                      <Info className="h-3.5 w-3.5 shrink-0" />
+                      נמצאו אנשי קשר עם טלפון דומה
+                    </p>
+                    <p className="text-[11px] text-blue-700/90">זו הצעה בלבד. הפנייה לא תשויך עד שתבחר/י לשייך אותה.</p>
+                  </div>
                   {matches.map((m) => (
-                    <button
+                    <div
                       key={`${m.kind}-${m.id}`}
-                      type="button"
-                      onClick={() => applyMatch(m)}
-                      className="w-full text-right rounded bg-white border border-blue-100 px-2 py-1.5 hover:border-blue-300 flex items-center justify-between gap-2 text-sm"
+                      className="rounded-md bg-white border border-blue-100 px-2.5 py-2 flex items-center justify-between gap-2"
                     >
-                      <span className="flex items-center gap-1.5 min-w-0"><User className="h-3.5 w-3.5 text-muted-foreground" /><span className="truncate">{m.full_name || '(ללא שם)'} · {m.phone}</span></span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${m.kind === 'customer' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{m.kind === 'customer' ? 'לקוח' : 'ליד'}</span>
-                    </button>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate text-sm font-medium">{m.full_name || '(ללא שם)'}</span>
+                        <span className="text-xs text-muted-foreground" dir="ltr">{m.phone}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${m.kind === 'customer' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{m.kind === 'customer' ? 'לקוח' : 'ליד'}</span>
+                      </span>
+                      <Button type="button" size="sm" className="h-7 shrink-0 gap-1 px-2.5" onClick={() => applyMatch(m)}>
+                        <UserCheck className="h-3.5 w-3.5" /> שייך פנייה
+                      </Button>
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -260,8 +270,8 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
                     onClick={() => set('request_type', opt.value)}
                     className={`rounded-xl border p-2.5 text-center transition-all ${selected ? 'border-primary bg-primary/5 ring-2 ring-primary/30' : 'border-border bg-muted/30 hover:bg-muted'}`}
                   >
-                    <div className="text-lg leading-none">{opt.emoji}</div>
-                    <div className="text-xs font-medium mt-1">{opt.label}</div>
+                    <opt.Icon className={`h-5 w-5 mx-auto ${selected ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <div className="text-xs font-medium mt-1.5">{opt.label}</div>
                   </button>
                 );
               })}
