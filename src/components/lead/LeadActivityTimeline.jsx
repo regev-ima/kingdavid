@@ -14,6 +14,19 @@ import {
   Clock,
 } from "lucide-react";
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import { getRepDisplayName } from '@/lib/repDisplay';
+
+// Activity logs store the rep's *email* as the canonical value (a stable id),
+// while only some descriptions were built with the name. So the log surfaced
+// raw emails ("...→ eladkingdavid@gmail.com"). Map any email token — in the
+// description, the old/new diff, and the "performed by" line — to the rep's
+// display name at render time, which also fixes every historical entry without
+// a data migration.
+const EMAIL_REGEX = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+function humanizeEmails(text, users) {
+  if (text == null) return text;
+  return String(text).replace(EMAIL_REGEX, (email) => getRepDisplayName(email, users) || email);
+}
 
 const actionIcons = {
   created: PlusCircle,
@@ -60,6 +73,13 @@ export default function LeadActivityTimeline({ leadId }) {
     queryFn: () => base44.entities.LeadActivityLog.filter({ lead_id: leadId }),
     enabled: !!leadId,
     staleTime: 60000,
+  });
+
+  // Used only to translate rep emails → names in the log text.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 300000,
   });
 
   const sortedLogs = [...logs].sort(
@@ -114,22 +134,22 @@ export default function LeadActivityTimeline({ leadId }) {
                 </span>
               </div>
 
-              <p className="text-sm text-foreground">{log.action_description}</p>
+              <p className="text-sm text-foreground">{humanizeEmails(log.action_description, users)}</p>
 
               {log.field_name && log.old_value != null && log.new_value != null && (
                 <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
                   <span className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded line-through">
-                    {log.old_value || '(ריק)'}
+                    {humanizeEmails(log.old_value, users) || '(ריק)'}
                   </span>
                   <span className="text-muted-foreground/70">&larr;</span>
                   <span className="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">
-                    {log.new_value || '(ריק)'}
+                    {humanizeEmails(log.new_value, users) || '(ריק)'}
                   </span>
                 </div>
               )}
 
               <p className="text-[11px] text-muted-foreground/70 mt-0.5">
-                {log.performed_by_name}
+                {humanizeEmails(log.performed_by_name, users)}
               </p>
             </div>
           </div>
