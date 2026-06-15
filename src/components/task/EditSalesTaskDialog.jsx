@@ -5,7 +5,6 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
@@ -16,7 +15,7 @@ import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
-import { LEAD_STATUS_OPTIONS, TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
+import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import SLABadge from '@/components/sla/SLABadge';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
@@ -259,6 +258,78 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
   const repName = users.find(u => u.email === editingTask.rep1)?.full_name || editingTask.rep1;
   const rep2Name = users.find(u => u.email === editingTask.rep2)?.full_name || editingTask.rep2;
 
+  // Compact lead summary — name, phone, entry time + SLA, ad + source. Shown
+  // at the top of both the task tab (above the status) and the lead tab, so the
+  // rep always sees who they're working before touching anything.
+  const leadSummaryCard = (
+    <div className="rounded-xl border border-border overflow-hidden">
+      {/* Header עם שם + טלפון + לינק */}
+      <div className="bg-gradient-to-l from-blue-50/80 to-primary/5 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
+            {(editingTask.lead?.full_name || '?')[0]}
+          </div>
+          <div>
+            <p className="font-bold text-foreground text-base leading-tight">
+              {editingTask.lead?.full_name || editingTask.lead_id}
+            </p>
+            {leadPhone && (
+              <button
+                onClick={() => handleCall(leadPhone)}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium mt-0.5"
+              >
+                <Phone className="h-3 w-3" /> {leadPhone}
+              </button>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => { onClose(); openLead(editingTask.lead_id); }}
+          className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap focus:outline-none focus:underline"
+        >
+          עבור לליד ←
+        </button>
+      </div>
+
+      {/* SLA + שעת הליד - שורה בולטת */}
+      {editingTask.lead && (
+        <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border/50">
+          <div className="flex items-center gap-2">
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">נכנס:</span>
+            <span className="text-sm font-semibold text-foreground">
+              {safeFormat(editingTask.lead.created_date, 'dd/MM/yyyy HH:mm')}
+            </span>
+          </div>
+          <SLABadge lead={editingTask.lead} />
+        </div>
+      )}
+
+      {/* כרטיסיות מידע */}
+      <div className="grid grid-cols-2 border-t border-border/50">
+        <div className="px-4 py-3 border-e border-border/50">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Megaphone className="h-3 w-3 text-violet-500" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">מודעה</span>
+          </div>
+          <p className={`text-xs font-semibold leading-snug line-clamp-2 ${editingTask.lead?.facebook_ad_name ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+            {editingTask.lead?.facebook_ad_name || '-'}
+          </p>
+        </div>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Tag className="h-3 w-3 text-blue-500" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">מקור</span>
+          </div>
+          <p className={`text-sm font-semibold leading-snug ${(editingTask.lead?.utm_source || editingTask.lead?.source) ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+            {editingTask.lead?.utm_source || SOURCE_LABELS[editingTask.lead?.source] || editingTask.lead?.source || '-'}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -348,6 +419,9 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
             )}
 
             {editingTask.task_type !== 'assignment' && <>
+            {/* פרטי הליד - מעל הסטטוס, כדי שהנציג יראה את מי הוא מטפל */}
+            {editingTask.lead_id && leadSummaryCard}
+
             {/* סטטוס ליד - highlighted - למעלה */}
             <div className="border border-primary/20 bg-primary/5 rounded-xl p-4 space-y-2">
               <Label className="text-xs font-semibold text-primary uppercase tracking-wider">סטטוס ליד</Label>
@@ -801,72 +875,7 @@ export default function EditSalesTaskDialog({ isOpen, onClose, task, effectiveUs
 
           <TabsContent value="lead_details" className="space-y-4 mt-0">
             {/* כרטיס ליד ראשי */}
-            <div className="rounded-xl border border-border overflow-hidden">
-              {/* Header עם שם + טלפון + לינק */}
-              <div className="bg-gradient-to-l from-blue-50/80 to-primary/5 px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
-                    {(editingTask.lead?.full_name || '?')[0]}
-                  </div>
-                  <div>
-                    <p className="font-bold text-foreground text-base leading-tight">
-                      {editingTask.lead?.full_name || editingTask.lead_id}
-                    </p>
-                    {leadPhone && (
-                      <button
-                        onClick={() => handleCall(leadPhone)}
-                        className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium mt-0.5"
-                      >
-                        <Phone className="h-3 w-3" /> {leadPhone}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { onClose(); openLead(editingTask.lead_id); }}
-                  className="text-xs text-primary hover:text-primary/80 font-medium whitespace-nowrap focus:outline-none focus:underline"
-                >
-                  עבור לליד ←
-                </button>
-              </div>
-
-              {/* SLA + שעת הליד - שורה בולטת */}
-              {editingTask.lead && (
-                <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-t border-border/50">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">נכנס:</span>
-                    <span className="text-sm font-semibold text-foreground">
-                      {safeFormat(editingTask.lead.created_date, 'dd/MM/yyyy HH:mm')}
-                    </span>
-                  </div>
-                  <SLABadge lead={editingTask.lead} />
-                </div>
-              )}
-
-              {/* כרטיסיות מידע */}
-              <div className="grid grid-cols-2 border-t border-border/50">
-                <div className="px-4 py-3 border-e border-border/50">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Megaphone className="h-3 w-3 text-violet-500" />
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">מודעה</span>
-                  </div>
-                  <p className={`text-xs font-semibold leading-snug line-clamp-2 ${editingTask.lead?.facebook_ad_name ? 'text-foreground' : 'text-muted-foreground/40'}`}>
-                    {editingTask.lead?.facebook_ad_name || '-'}
-                  </p>
-                </div>
-                <div className="px-4 py-3">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Tag className="h-3 w-3 text-blue-500" />
-                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">מקור</span>
-                  </div>
-                  <p className={`text-sm font-semibold leading-snug ${(editingTask.lead?.utm_source || editingTask.lead?.source) ? 'text-foreground' : 'text-muted-foreground/40'}`}>
-                    {editingTask.lead?.utm_source || SOURCE_LABELS[editingTask.lead?.source] || editingTask.lead?.source || '-'}
-                  </p>
-                </div>
-              </div>
-            </div>
+            {leadSummaryCard}
 
             {/* פעולות מהירות */}
             <div className="flex gap-2">

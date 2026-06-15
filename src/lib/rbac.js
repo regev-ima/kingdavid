@@ -10,6 +10,38 @@ export const USER_SCOPES = {
   ANON: 'anonymous',
 };
 
+// ── Grantable per-rep permissions ───────────────────────────────────────
+// Extra capabilities an admin can switch on for an individual rep, on top of
+// whatever their role already grants. Stored in `users.extra_permissions`
+// (jsonb object, e.g. { "view_finance": true }) and managed from the
+// "נהל נציג" → הרשאות tab. Each key below is wired into a real gate (see the
+// helpers further down), so toggling it actually changes what the rep can do.
+export const GRANTABLE_PERMISSIONS = [
+  {
+    key: 'manage_service',
+    label: 'ניהול מרכז שירות',
+    description: 'הקצאת פניות שירות לכל נציג והרצת ייבוא — לא רק פתיחת פנייה.',
+  },
+  {
+    key: 'view_finance',
+    label: 'צפייה באזור פיננסי',
+    description: 'גישה לדשבורד הפיננסי ולנתוני הכנסות/חשבוניות.',
+  },
+  {
+    key: 'bulk_update',
+    label: 'עדכון מרוכז',
+    description: 'שימוש בכלי העדכון המרוכז (Bulk Update) לעריכת לידים בכמות.',
+  },
+];
+
+// True when `key` is switched on in the rep's extra_permissions blob.
+// Admins implicitly have every grantable permission.
+export function hasExtraPermission(user, key) {
+  if (!user) return false;
+  if (isAdmin(user)) return true;
+  return user.extra_permissions?.[key] === true;
+}
+
 export function getUserScope(user) {
   if (!user) return USER_SCOPES.ANON;
   if (user.role === 'admin') return USER_SCOPES.ADMIN;
@@ -54,7 +86,13 @@ export function canViewOrdersWorkspace(user) {
 }
 
 export function canViewFinanceWorkspace(user) {
-  return isAdmin(user) || isBookkeeperUser(user);
+  return isAdmin(user) || isBookkeeperUser(user) || hasExtraPermission(user, 'view_finance');
+}
+
+// Grantable access to the Bulk Update tool. Admins always; otherwise the
+// `bulk_update` extra permission opens it for a specific rep.
+export function canUseBulkUpdate(user) {
+  return isAdmin(user) || hasExtraPermission(user, 'bulk_update');
 }
 
 export function canAccessSupportWorkspace(user) {
@@ -83,7 +121,7 @@ export function canOpenServiceTicket(user) {
 // imports. Admins always have it.
 export function canManageService(user) {
   if (!user) return false;
-  return isAdmin(user) || user.can_manage_service === true;
+  return isAdmin(user) || user.can_manage_service === true || hasExtraPermission(user, 'manage_service');
 }
 
 // Assigning a service follow-up task to a rep is a manager action.

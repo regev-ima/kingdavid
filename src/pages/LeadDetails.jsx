@@ -66,7 +66,6 @@ import SLABadge from '@/components/sla/SLABadge';
 import CommunicationHistory from '@/components/lead/CommunicationHistory';
 import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
-import DetailField from '@/components/lead/DetailField';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
 import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
@@ -80,11 +79,12 @@ import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
+import NewOrder from '@/pages/NewOrder';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
-import { canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
+import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
 // Hebrew counter with proper singular / dual / plural forms
@@ -142,6 +142,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [showAddTaskDialog, setShowAddTaskDialog] = useState(false);
+  // Create an order inline (as a dialog over the lead) instead of navigating
+  // away — lets a rep close a walk-in sale without leaving the lead screen.
+  const [showOrderDialog, setShowOrderDialog] = useState(false);
   // Gating dialog for "משימה חדשה" on unassigned leads — instead of
   // letting the rep open a task on a lead that has no owner (and then
   // wondering who's supposed to do it), we intercept and require an
@@ -428,10 +431,16 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
   }
 
-  if (!isAdmin && lead.rep1 !== effectiveUser?.email && lead.rep2 !== effectiveUser?.email && lead.pending_rep_email !== effectiveUser?.email) {
+  // Lead lookup, intentionally cross-rep: any sales rep may open any lead so a
+  // walk-in customer can be served by whoever is free. Ownership never moves
+  // here — rep1 is admin-only (canEditPrimaryRep) and the rep2/edit controls
+  // need `canEdit` (owner/admin), so a non-owner can view + work the lead but
+  // can't claim it. A banner below makes the "view/serve, not yours" state
+  // explicit. Only users outside the sales workspace are turned away.
+  if (!canAccessSalesWorkspace(effectiveUser)) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground text-lg font-medium">אין לך הרשאות לצפות בליד זה כיוון שאינו משויך אליך.</p>
+        <p className="text-muted-foreground text-lg font-medium">אין לך הרשאות לצפות בליד זה.</p>
         {isModal ? (
           <Button className="mt-4 bg-primary hover:bg-primary/90" onClick={onClose}>סגור</Button>
         ) : (
@@ -664,6 +673,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             הצעה חדשה
           </Button>
         </Link>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowOrderDialog(true)}
+          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
+        >
+          <ShoppingBag className="h-3.5 w-3.5 me-1.5" />
+          הזמנה חדשה
+        </Button>
       </div>
 
       {/* Action bar — חייג / משימה / הצעה. Always one click away
@@ -698,6 +716,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               הצעה חדשה
             </Button>
           </Link>
+          <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)} className="h-8 text-xs">
+            <ShoppingBag className="h-3.5 w-3.5 me-1" />
+            הזמנה חדשה
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" className="h-8 w-8">
@@ -730,6 +752,22 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           full-page mode this is a passive wrapper that preserves the
           original space-y-6 rhythm. */}
       <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4 space-y-6' : 'space-y-6'}>
+
+      {/* Cross-rep view/serve banner — shown when this rep isn't the owner
+          (and isn't admin). Makes clear the lead belongs to someone else and
+          that working it here won't transfer ownership. */}
+      {!canEdit && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-4 py-2.5 text-sm flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>
+            {lead.rep1 ? (
+              <>ליד זה משויך ל<span className="font-semibold">{getRepDisplayName(lead.rep1, users)}</span> — מצב טיפול. אפשר לראות פרטים והיסטוריה ולטפל בלקוח; הבעלות על הליד לא משתנה.</>
+            ) : (
+              <>ליד לא משויך — אפשר לראות פרטים והיסטוריה ולטפל בלקוח.</>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Main Info */}
@@ -1542,6 +1580,37 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         preSelectedLead={lead}
         effectiveUser={effectiveUser}
       />
+
+      {/* Inline order creation — opens over the lead, no navigation away.
+          On success we just close + refresh the lead's linked orders, so the
+          rep stays on the lead they were working. */}
+      <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
+        <DialogContent
+          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          dir="rtl"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">הזמנה חדשה - {lead?.full_name || ''}</DialogTitle>
+          </DialogHeader>
+          <NewOrder
+            asDialog
+            dialogLeadId={leadId}
+            onDialogClose={(order) => {
+              setShowOrderDialog(false);
+              // order is truthy only on a successful create (null = cancel),
+              // so we refresh the lead's linked orders and confirm only then.
+              if (order?.id) {
+                queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+                queryClient.invalidateQueries({ queryKey: ['leads'] });
+                queryClient.invalidateQueries({ queryKey: ['orders'] });
+                toast({ title: 'ההזמנה נוצרה' });
+              }
+            }}
+          />
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Task Dialog */}
       <EditSalesTaskDialog

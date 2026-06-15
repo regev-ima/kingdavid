@@ -106,11 +106,14 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
       setFormData(prev => ({
         ...prev,
         lead_id: preSelectedLead.id,
-        rep1: preSelectedLead.rep1 || prev.rep1,
+        // A task always belongs to the rep creating it (the one working the
+        // customer), not the lead's owner — so a rep serving someone else's
+        // lead gets the task on their own list. Admin keeps assigning freely.
+        rep1: isAdmin ? (preSelectedLead.rep1 || prev.rep1) : (effectiveUser?.email || prev.rep1),
         status: preSelectedLead.status || '',
       }));
     }
-  }, [preSelectedLead]);
+  }, [preSelectedLead, isAdmin, effectiveUser]);
 
   // Reset all the lookup state along with the form when the dialog closes.
   useEffect(() => {
@@ -126,7 +129,7 @@ export default function AddSalesTaskDialog({ isOpen, onClose, preSelectedLead, e
     setFormData(prev => ({
       ...prev,
       lead_id: lead.id,
-      rep1: lead.rep1 || prev.rep1,
+      rep1: isAdmin ? (lead.rep1 || prev.rep1) : (effectiveUser?.email || prev.rep1),
       status: lead.status || '',
     }));
     setLeadSearch('');

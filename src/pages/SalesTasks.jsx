@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
+import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
 import StatCube from "@/components/shared/StatCube";
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { format, isValid, startOfDay, endOfDay } from '@/lib/safe-date-fns';
 import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 
@@ -57,11 +59,11 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import QuickActions from '@/components/shared/QuickActions';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
-import { buildLeadsById, canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
+import { canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
 import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
-import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { SOURCE_LABELS, SLA_THRESHOLDS, CLOSED_STATUSES } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
 // Sales-return categories, per the rep workflow brief. Each category is
@@ -83,41 +85,52 @@ const CATEGORY_BY_LEAD_STATUS = (() => {
   return map;
 })();
 
-// Each category gets a distinct tone keyed to where the lead sits in
-// the funnel — so the rep can read the colour grid like a heatmap of
-// "what stage everything is in" without reading the labels:
-//   sky    = brand-new, never been contacted
-//   rose   = urgent retry — we tried, they didn't answer
-//   amber  = warming up, ball's in our court (build the quote)
-//   violet = ball's in their court (waiting on the customer to decide)
-//   emerald = closing — committed meeting on the books
-const CATEGORY_META = {
-  cat_new_lead:     { label: 'חזרה לליד חדש',        accent: 'sky',     desc: 'לידים חדשים שלא נוצרה איתם שיחה' },
-  cat_no_answer:    { label: 'חזרה לאחר אין מענה',   accent: 'rose',    desc: 'לידים שניסיתי להחזיר ולא ענו' },
-  cat_before_quote: { label: 'פולו-אפ לפני הצעה',     accent: 'amber',   desc: 'דובר, ממתינים להצעת מחיר' },
-  cat_after_quote:  { label: 'פולו-אפ אחרי הצעה',     accent: 'violet',  desc: 'נשלחה הצעה, בדרך לסגירה' },
-  cat_meeting:      { label: 'חזרה ללקוח עם פגישה',  accent: 'emerald', desc: 'נקבעה פגישה — לאישור / סגירה' },
-};
-
-// Funnel-stage icon per category, for the StatCube chips. Phone (new lead),
-// missed retry, quote/build, sent-quote follow-up, booked meeting.
-const CATEGORY_ICON = {
-  cat_new_lead: Phone,
-  cat_no_answer: RefreshCw,
-  cat_before_quote: FileText,
-  cat_after_quote: MessageCircle,
-  cat_meeting: Calendar,
-};
-
 // "Due now" window — a task whose due_date is within ±60min of the
 // current clock is highlighted as actionable-now (the brief's "מהבהב").
 const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
+
+// A task scheduled for a specific time is "due now" once the clock lands
+// within that ±60-min window. The today queue floats these to the very top
+// so the rep sees a 16:00 callback the moment 16:00 arrives.
+const isTaskDueNow = (task, now) => {
+  if (normalizeTaskStatus(task.task_status) !== 'not_completed') return false;
+  const due = parseSalesTaskDate(task.due_date);
+  if (!due) return false;
+  return Math.abs(due.getTime() - now.getTime()) <= DUE_NOW_WINDOW_MS;
+};
+
+// The three header lead-cubes. Both the cube COUNTS and the table FILTER run
+// `matchesLeadCube` over the SAME open-task set, so a cube's number always
+// equals the rows you see when you click it. The buckets overlap (a fresh
+// lead is both "new today" and "unhandled"), so this is a per-cube test
+// rather than a partition. Everything keys off fields already on the task —
+// the denormalised lead-status mirror and the task's own created_date — so the
+// page never has to pre-load lead rows just to count/filter these.
+const LEAD_CUBES = ['leads_new_today', 'leads_unhandled', 'leads_in_handling'];
+// Stable empty map: task scoping/sorting reads the task's own status mirror,
+// so we no longer hydrate a full leads-by-id map (see leadsById below).
+const EMPTY_LEADS_BY_ID = {};
+const matchesLeadCube = (task, cube, todayStart, todayEnd) => {
+  const status = task.status;
+  if (cube === 'leads_new_today') {
+    // A brand-new lead gets its call task at assignment, so an open new_lead
+    // task created today == a new lead that came in today — no lead row needed.
+    const created = parseSalesTaskDate(task.created_date);
+    return status === 'new_lead' && !!created && created >= todayStart && created <= todayEnd;
+  }
+  if (cube === 'leads_unhandled') return status === 'new_lead';
+  if (cube === 'leads_in_handling') {
+    return !!status && status !== 'new_lead' && !CLOSED_STATUSES.includes(status);
+  }
+  return false;
+};
 
 export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
   const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'completed_today', 'not_done', 'cancelled', 'all',
+    'leads_new_today', 'leads_unhandled', 'leads_in_handling',
     'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
@@ -131,6 +144,15 @@ export default function SalesTasks() {
   const [editingTask, setEditingTask] = useState(null);
   const [completingTask, setCompletingTask] = useState(null);
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
+
+  // Live clock: re-render every 30s so the today queue re-sorts and the
+  // due-now highlight advances on their own. A task scheduled for 16:00
+  // floats to the top the moment 16:00 arrives — no page refresh needed.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const initialTaskId = urlParams.get('id');
 
@@ -156,7 +178,10 @@ export default function SalesTasks() {
   }, [initialTask]);
 
   const [tasksPage, setTasksPage] = useState(0);
-  const TASKS_PER_PAGE = 50;
+  const TASKS_PER_PAGE = 100;
+  // Sentinel at the foot of the list — when it scrolls into view we append the
+  // next page in place (see effect below), so the page never jumps to the top.
+  const loadMoreRef = useRef(null);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
   const isAdmin = isAdminUser(effectiveUser);
   const userEmail = effectiveUser?.email;
@@ -293,6 +318,10 @@ export default function SalesTasks() {
     queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList, showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
+    // Keep today's queue live without a manual refresh — newly scheduled or
+    // reassigned tasks surface on their own within a minute.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'), { includeAssignment: includeAssignmentInList });
       if (activeTab === 'today') {
@@ -315,11 +344,12 @@ export default function SalesTasks() {
         q = q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso);
       } else if (['completed', 'not_done', 'cancelled'].includes(activeTab)) {
         q = q.eq('task_status', activeTab);
-      } else if (activeTab.startsWith('cat_')) {
-        // Category tabs are partition-of-open-tasks driven by the related
-        // lead's status. Server-side we just narrow to open tasks; the
-        // lead-status check happens client-side using `leadsById` so we
-        // don't have to .in() over a list of thousands of lead ids.
+      } else if (activeTab.startsWith('cat_') || activeTab.startsWith('leads_')) {
+        // Category + header lead-cube tabs are partitions of the open queue
+        // driven by the related lead's state. Server-side we just narrow to
+        // open tasks; the lead-level check (status / first_action_at /
+        // created_date) happens client-side using `leadsById` so we don't
+        // have to .in() over a list of thousands of lead ids.
         q = q.eq('task_status', 'not_completed');
       }
       // 'all' falls through with no filter.
@@ -349,44 +379,26 @@ export default function SalesTasks() {
     },
   });
 
-  // Deals closed today — counts leads that flipped to status='deal_closed'
-  // within today's window. Drives the "סגירות עסקה" KPI tile in the new
-  // rep cockpit header.
-  const { data: dealsClosedToday = 0 } = useQuery({
-    queryKey: ['leads-deals-closed-today', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon'],
+  // Lead-cube source rows: lead_id + the denormalised lead-status mirror for
+  // every OPEN task the rep owns (uncapped scan; distinct-by-lead happens in
+  // leadCubeCounts below). We derive the header cube counts from THIS — the
+  // same task set the table renders — rather than from the leads table, so a
+  // cube's number always equals the rows you see when you click it: a lead
+  // with no open task lands in neither the count nor the list. Scoped to the
+  // rep via applyUserScope, exactly like the list query.
+  const { data: openTaskRows = [] } = useQuery({
+    queryKey: ['salesTasks-open-cube-rows', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
     enabled: canAccessSales,
     staleTime: 60_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
-      let q = base44.supabase
-        .from('leads')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'deal_closed')
-        .gte('updated_date', todayStartIso)
-        .lte('updated_date', todayEndIso);
-      if (!isAdmin && userEmail) {
-        q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail}`);
-      }
-      const { count, error } = await q;
+      const { data, error } = await applyUserScope(
+        base44.supabase.from('sales_tasks').select('lead_id, status, created_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+        { includeAssignment: includeAssignmentInCounts },
+      ).limit(10_000);
       if (error) throw error;
-      return count || 0;
+      return data || [];
     },
-  });
-
-  const { data: allLeads = [] } = useQuery({
-    queryKey: ['sales-task-ownership-leads'],
-    queryFn: async () => {
-      let skip = 0;
-      const leads = [];
-      while (true) {
-        const batch = await base44.entities.Lead.list('-created_date', 500, skip);
-        leads.push(...batch);
-        if (batch.length < 500) break;
-        skip += 500;
-      }
-      return leads;
-    },
-    enabled: canAccessSales,
-    staleTime: 60000,
   });
 
   // Fetch users for rep name display
@@ -399,10 +411,19 @@ export default function SalesTasks() {
 
   const getRepName = (email) => getRepDisplayName(email, allUsers);
 
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
-  const leadsById = useMemo(() => buildLeadsById(allLeads), [allLeads]);
+  // Derived from the live tick (above) so every now-based memo — sort order,
+  // due-now highlight, today's day boundaries — recomputes on the timer
+  // rather than only on user interaction.
+  const now = useMemo(() => new Date(nowTick), [nowTick]);
+  const todayStart = useMemo(() => startOfDay(now), [now]);
+  const todayEnd = useMemo(() => endOfDay(now), [now]);
+  // We no longer pre-load every lead in the system just to scope, sort and
+  // count tasks — that was the page's slowest query by far. The task already
+  // carries a denormalised lead-status mirror (and its own created_date),
+  // which covers the cubes, the priority sort and ownership; visible rows
+  // fetch their own lead below. This stays an (empty, stable) map so the rare
+  // fallback lookups degrade gracefully without extra deps churn.
+  const leadsById = EMPTY_LEADS_BY_ID;
   // Non-admin reps never see assignment tasks anywhere on this page —
   // those belong to the manager workflow. Stripping them at the
   // ownedTasks layer makes counts, toggles, and empty-state CTAs all
@@ -424,53 +445,34 @@ export default function SalesTasks() {
         return CATEGORY_BY_LEAD_STATUS[status] === activeTab;
       });
     }
+    // The three header lead-cubes filter the task queue by the related lead's
+    // state, using the exact same predicate as the cube counts so the number
+    // on a cube equals the rows shown here.
+    if (LEAD_CUBES.includes(activeTab)) {
+      return filtered.filter((t) => matchesLeadCube(t, activeTab, todayStart, todayEnd));
+    }
     return filtered;
-  }, [effectiveUser, allSalesTasks, leadsById, activeTab]);
+  }, [effectiveUser, allSalesTasks, leadsById, activeTab, todayStart, todayEnd]);
 
-  // Lead IDs of every open task the current user owns — independent of
-  // the active tab so the category counters always reflect the full
-  // queue, not just "today's slice" or "what fit in the 1000-row page".
-  // Crucially, scoped by TASK ownership (rep1/rep2/pending_rep_email on
-  // the task), not by lead ownership: a rep often holds a task on a
-  // lead they don't own, and those tasks need to be counted in the
-  // category cards above. We also pull the task's own `status` mirror
-  // so we can categorise without a lookup hop through `leadsById` —
-  // that map is paginated from the leads table and may not have the
-  // row yet on first paint (the symptom: cards say 0 while rows for
-  // those exact leads sit in the table below).
-  const { data: openTaskRows = [] } = useQuery({
-    queryKey: ['salesTasks-open-lead-ids', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
-    enabled: canAccessSales,
-    staleTime: 60_000,
-    queryFn: async () => {
-      let q = applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status').eq('task_status', 'not_completed').not('lead_id', 'is', null),
-        { includeAssignment: includeAssignmentInCounts },
-      ).limit(10_000);
-      const { data, error } = await q;
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  // Category counts: prefer the task's own denormalised `status` mirror
-  // (it matches what the row in the table is showing), and fall back to
-  // the lead's current status from leadsById when the task didn't carry
-  // a mirror. Distinct by lead_id so a lead with three open tasks
-  // counts once.
-  const categoryCounts = useMemo(() => {
-    const counts = { cat_new_lead: 0, cat_no_answer: 0, cat_before_quote: 0, cat_after_quote: 0, cat_meeting: 0 };
-    const seen = new Set();
+  // Distinct leads per header cube, computed from the rep's open-task rows
+  // with the SAME predicate the table filter uses (matchesLeadCube) — so each
+  // cube number equals the rows you see when you click it. A lead with three
+  // open tasks counts once; a lead with no open task counts in neither.
+  const leadCubeCounts = useMemo(() => {
+    const sets = { leads_new_today: new Set(), leads_unhandled: new Set(), leads_in_handling: new Set() };
     for (const row of openTaskRows) {
       const lid = row?.lead_id;
-      if (!lid || seen.has(lid)) continue;
-      seen.add(lid);
-      const status = row.status || leadsById[lid]?.status;
-      const cat = CATEGORY_BY_LEAD_STATUS[status];
-      if (cat) counts[cat] += 1;
+      if (!lid) continue;
+      for (const cube of LEAD_CUBES) {
+        if (matchesLeadCube(row, cube, todayStart, todayEnd)) sets[cube].add(lid);
+      }
     }
-    return counts;
-  }, [openTaskRows, leadsById]);
+    return {
+      newToday: sets.leads_new_today.size,
+      unhandled: sets.leads_unhandled.size,
+      inHandling: sets.leads_in_handling.size,
+    };
+  }, [openTaskRows, todayStart, todayEnd]);
 
   // Counts of what the default-view filter is hiding so we can tell the user.
   const hiddenStaleCount = useMemo(
@@ -499,13 +501,12 @@ export default function SalesTasks() {
   const scopedTasks = useMemo(() => {
     let tasks = ownedTasks;
     // Stale (>30d overdue) tasks are migration noise on the time buckets, so
-    // they're hidden there by default. But the funnel-category queues
-    // (cat_*) are an explicit "work these leads now" request — a new-lead
-    // callback must show up there regardless of age, or the card says 3
-    // while the list shows 0. So skip stale-hiding for category tabs; their
-    // counts (categoryCounts) don't apply it either, keeping the two equal.
-    const isCategoryTab = activeTab.startsWith('cat_');
-    if (!showStale && !isCategoryTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
+    // they're hidden there by default. But the lead-driven queues (cat_* and
+    // the header lead-cubes leads_*) are an explicit "work these leads now"
+    // request — a lead's task must show up there regardless of age, or the
+    // cube says 3 while the list shows 0. So skip stale-hiding for those tabs.
+    const isLeadDrivenTab = activeTab.startsWith('cat_') || activeTab.startsWith('leads_');
+    if (!showStale && !isLeadDrivenTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
     if (activeTab === 'assignment') {
       tasks = tasks.filter(isAssignmentTask);
     } else if (!showAssignmentTasks) {
@@ -563,10 +564,20 @@ export default function SalesTasks() {
       return compareSalesTasks(a, b, activeTab, now);
     });
 
+    // Scheduled-time tasks float to the top of the today queue the moment
+    // they come due (within the ±60-min due-now window). The sort is stable,
+    // so it only lifts the due-now rows and preserves the order below them;
+    // the live `now` tick re-runs this, so a 16:00 callback rises on its own.
+    if (activeTab === 'today') {
+      tasks = [...tasks].sort(
+        (a, b) => (isTaskDueNow(a, now) ? 0 : 1) - (isTaskDueNow(b, now) ? 0 : 1),
+      );
+    }
+
     const total = tasks.length;
     const paginated = tasks.slice(0, (tasksPage + 1) * TASKS_PER_PAGE);
     return { totalFilteredCount: total, paginatedTasks: paginated };
-  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now]);
+  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now, leadsById]);
 
   // 3. Fetch leads ONLY for the paginated (visible) tasks
   const paginatedTaskLeadIds = useMemo(() => 
@@ -576,18 +587,24 @@ export default function SalesTasks() {
 
   const { data: leads = [] } = useQuery({
     queryKey: ['leads-for-paginated-tasks', paginatedTaskLeadIds.join(',')],
+    // The key grows each time we append a page, so without this the already
+    // visible rows would flash their lead data away while the larger set
+    // refetches. Keep the previous leads on screen until the new set lands.
+    placeholderData: (previousData) => previousData,
     queryFn: async () => {
       if (paginatedTaskLeadIds.length === 0) return [];
-      const allLeads = [];
-      const batchSize = 20;
-      for (let i = 0; i < paginatedTaskLeadIds.length; i += batchSize) {
-        const batch = paginatedTaskLeadIds.slice(i, i + batchSize);
-        const results = await Promise.all(
-          batch.map(id => base44.entities.Lead.filter({ id }).then(res => res[0] || null).catch(() => null))
-        );
-        allLeads.push(...results.filter(Boolean));
+      // One batched `id IN (...)` query per ~200 ids instead of a separate
+      // round trip per lead. For a 100-row page that's a single request rather
+      // than 100 — the difference between a snappy table and a visible stall.
+      const out = [];
+      const chunk = 200;
+      for (let i = 0; i < paginatedTaskLeadIds.length; i += chunk) {
+        const ids = paginatedTaskLeadIds.slice(i, i + chunk);
+        const { data, error } = await base44.supabase.from('leads').select('*').in('id', ids);
+        if (error) throw error;
+        out.push(...(data || []));
       }
-      return allLeads;
+      return out;
     },
     enabled: canAccessSales && paginatedTaskLeadIds.length > 0,
   });
@@ -618,6 +635,27 @@ export default function SalesTasks() {
     });
 
   const hasMoreTasks = paginatedTasks.length < totalFilteredCount;
+
+  // Infinite scroll: reveal the next page of rows the moment the sentinel at
+  // the foot of the list comes into view (with a 400px head-start so it feels
+  // instant). Because we only grow the already-rendered slice — same list,
+  // more rows appended below — the scroll position is untouched and the page
+  // never jumps back to the top. Re-running on tasksPage re-checks the
+  // intersection after each append, so a tall viewport keeps filling until the
+  // sentinel is pushed off-screen or every row is loaded.
+  useEffect(() => {
+    if (!hasMoreTasks) return undefined;
+    const el = loadMoreRef.current;
+    if (!el) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setTasksPage((prev) => prev + 1);
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreTasks, tasksPage]);
 
   // KPI numbers come straight from the server-side count query — no longer
   // capped by which rows happen to be loaded for the current tab. The
@@ -1023,6 +1061,17 @@ export default function SalesTasks() {
             </button>
           </div>
           <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="h-9 border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground gap-1.5"
+          >
+            <Link to={createPageUrl('LeadLookup')}>
+              <Search className="h-4 w-4" />
+              <span className="hidden sm:inline">איתור ליד</span>
+            </Link>
+          </Button>
+          <Button
             onClick={() => setShowImportDialog(true)}
             variant="outline"
             size="sm"
@@ -1057,80 +1106,48 @@ export default function SalesTasks() {
       ) : (
       <>
       {/* ===== TOP KPI STRIP =====
-          Per the customer brief: a four-tile header summarising the rep's
-          day. Each tile is clickable and sets the active filter on the
-          list below — tiles ARE the navigation, not decoration. Default
-          tone is muted (subtle gray surface, low-contrast value) and a
-          tile lights up to its full accent colour only when active or
-          on hover, so the rep can see at a glance which filter is on. */}
+          Per the customer brief: exactly four tiles summarising the rep's
+          day — today's task queue plus three lead snapshots (fresh intake,
+          waiting-for-first-contact, and actively in handling). Each tile is
+          clickable and filters the task table below it — tiles ARE the
+          navigation, not decoration. Default tone is muted and a tile lights
+          up to its accent colour when active, so the rep can see at a glance
+          which filter is on. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { id: 'today',    label: 'משימות להיום', value: todayCount,          tone: 'amber',   icon: Calendar  },
-          { id: 'overdue',  label: 'משימות באיחור', value: overdueCount,        tone: 'red',     icon: AlertCircle },
-          { id: 'completed_today', label: 'הושלמו היום', value: completedTodayCount, tone: 'emerald', icon: CheckCircle2 },
-          { id: 'deals_closed',   label: 'סגירות עסקה (היום)', value: dealsClosedToday, tone: 'indigo', icon: ArrowUpRight, readOnly: true },
+          { id: 'today',             label: 'משימות להיום',          value: todayCount,                tone: 'amber',  icon: Calendar,    sub: 'כל המשימות להיום' },
+          { id: 'leads_new_today',   label: 'לידים חדשים',           value: leadCubeCounts.newToday,   tone: 'sky',    icon: UserPlus,    sub: 'שויכו אליי היום' },
+          { id: 'leads_unhandled',   label: 'לידים חדשים ללא טיפול', value: leadCubeCounts.unhandled,  tone: 'rose',   icon: AlertCircle, sub: 'טרם טופלו' },
+          { id: 'leads_in_handling', label: 'בטיפול',                value: leadCubeCounts.inHandling, tone: 'violet', icon: RefreshCw,   sub: 'פתוחים בטיפול' },
         ].map((tile) => {
-          const target = tile.asTab || tile.id;
-          const isActive = !tile.readOnly && activeTab === target;
+          const target = tile.id;
+          const isActive = activeTab === target;
           return (
             <StatCube
               key={tile.id}
               label={tile.label}
               value={Number(tile.value || 0).toLocaleString()}
+              sub={tile.sub}
               icon={tile.icon}
               tone={tile.tone}
               active={isActive}
-              disabled={tile.readOnly}
-              onClick={tile.readOnly ? undefined : () => setActiveTab(isActive ? 'all' : target)}
-              title={tile.readOnly ? undefined : (isActive ? 'בטל סינון' : `הצג ${tile.label}`)}
+              onClick={() => setActiveTab(isActive ? 'all' : target)}
+              title={isActive ? 'בטל סינון' : `הצג ${tile.label}`}
             />
           );
         })}
       </div>
 
-      {/* ===== SALES-RETURN CATEGORIES =====
-          Five queues, one per stage of the rep's funnel. Default state
-          is muted gray; clicking a card lights it up to its accent
-          colour with a matching ring so the rep can read at a glance
-          which filter is currently on. Colours follow the funnel
-          temperature: sky (new) → rose (urgent retry) → amber (our
-          turn — build the quote) → violet (their turn — waiting on
-          them) → emerald (closing zone, meeting booked). */}
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">סוגי משימות לטיפול</p>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          {Object.entries(LEAD_STATUSES_BY_CATEGORY).map(([catId]) => {
-            const meta = CATEGORY_META[catId];
-            const value = categoryCounts[catId] || 0;
-            const isActive = activeTab === catId;
-            return (
-              <StatCube
-                key={catId}
-                label={meta.label}
-                value={value.toLocaleString()}
-                sub={meta.desc}
-                icon={CATEGORY_ICON[catId] || List}
-                tone={meta.accent}
-                active={isActive}
-                onClick={() => setActiveTab(isActive ? 'all' : catId)}
-                title={isActive ? 'בטל סינון' : `הצג ${meta.label}`}
-              />
-            );
-          })}
-        </div>
-      </div>
-
       {/* ===== SECONDARY FILTERS =====
-          The four daily-driver buckets (today / overdue / completed-today
-          / deals-closed) and the five funnel categories already live in
-          the KPI tiles above — duplicating them as a tab strip was pure
-          redundancy. What's left are the secondary states a rep rarely
-          touches (עתידי / ללא יעד / לא בוצע / בוטל / הכל) plus admin-
-          only assignment workflow. They sit in a small dropdown so they
-          stay accessible without competing for visual weight with the
-          primary tile grid. */}
+          The header tiles cover the rep's daily drivers (today + the three
+          lead snapshots). Everything else — overdue, completed-today, and
+          the rarely-touched states (עתידי / ללא יעד / לא בוצע / בוטל / הכל)
+          plus the admin-only assignment queue — sits in this small dropdown
+          so it stays reachable without competing with the primary tiles. */}
       {(() => {
         const SECONDARY = [
+          { id: 'overdue',        label: 'משימות באיחור', count: overdueCount,        Icon: AlertCircle },
+          { id: 'completed_today', label: 'הושלמו היום',   count: completedTodayCount, Icon: CheckCircle2 },
           { id: 'upcoming',  label: 'עתידי',    count: upcomingCount,  Icon: ArrowUpRight },
           { id: 'undated',   label: 'ללא יעד',  count: undatedCount,   Icon: List },
           { id: 'not_done',  label: 'לא בוצע',  count: null,           Icon: XCircle },
@@ -1377,9 +1394,14 @@ export default function SalesTasks() {
         )}
 
         {hasMoreTasks && (
-          <div className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card">
+          // Auto-load sentinel — scrolling near it appends the next 100 rows.
+          // The button is a manual fallback (keyboard / observer unavailable).
+          <div
+            ref={loadMoreRef}
+            className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card"
+          >
             <span className="text-xs text-muted-foreground/70">
-              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות
+              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות · טוען עוד…
             </span>
             <Button
               variant="outline"
