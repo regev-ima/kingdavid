@@ -55,8 +55,10 @@ function deriveSource(lead: any) {
   const explicit = normalizeString(lead?.utm_source) || normalizeString(lead?.source);
   if (explicit) return explicit;
   const platform = normalizeLower(lead?.facebook_platform);
-  if (platform) return platform; // 'facebook' / 'instagram'
-  if (lead?.facebook_lead_id || lead?.facebook_form_id || lead?.facebook_ad_id || lead?.facebook_campaign_id) return 'facebook';
+  if (platform) return platform; // 'facebook' / 'instagram' (present only on SELECT * fallback)
+  // Confirmed facebook_* lead-form columns — their presence means Facebook.
+  if (lead?.facebook_campaign_name || lead?.facebook_ad_name || lead?.facebook_adset_name
+      || lead?.facebook_lead_id || lead?.facebook_form_id) return 'facebook';
   return '';
 }
 
@@ -89,25 +91,46 @@ function aggregateTrend(items: any[], dateField: string, valueField?: string) {
 
 function getSeverityWeight(s: string) { if (s === 'critical') return 4; if (s === 'high') return 3; if (s === 'medium') return 2; return 1; }
 
-async function fetchAll(supabase: any, table: string, query: any) {
-  let allData: any[] = [];
-  let from = 0;
-  const batchSize = 1000;
-  while (true) {
-    let q = supabase.from(table).select('*').range(from, from + batchSize - 1);
-    if (query.gte) for (const [col, val] of Object.entries(query.gte)) q = q.gte(col, val);
-    if (query.lte) for (const [col, val] of Object.entries(query.lte)) q = q.lte(col, val);
-    if (query.lt) for (const [col, val] of Object.entries(query.lt)) q = q.lt(col, val);
-    if (query.eq) for (const [col, val] of Object.entries(query.eq)) q = q.eq(col, val);
-    if (query.order) q = q.order(query.order, { ascending: query.ascending ?? false });
-    const { data, error } = await q;
-    if (error) throw error;
-    allData = allData.concat(data || []);
-    if (!data || data.length < batchSize) break;
-    from += batchSize;
+// Page through a table. `columns` lets callers fetch only what they use —
+// critical for `leads`, which has ~40 columns (every utm_*/facebook_* field)
+// and dominates this function's payload + CPU on wide date ranges. If a
+// projected column doesn't exist in this deployment's schema the projected
+// query errors; rather than sink the whole table (and the dashboard) we retry
+// once with SELECT * — i.e. degrade to "slower but correct", never empty.
+async function fetchAll(supabase: any, table: string, query: any, columns = '*') {
+  const runWith = async (cols: string) => {
+    let allData: any[] = [];
+    let from = 0;
+    const batchSize = 1000;
+    while (true) {
+      let q = supabase.from(table).select(cols).range(from, from + batchSize - 1);
+      if (query.gte) for (const [col, val] of Object.entries(query.gte)) q = q.gte(col, val);
+      if (query.lte) for (const [col, val] of Object.entries(query.lte)) q = q.lte(col, val);
+      if (query.lt) for (const [col, val] of Object.entries(query.lt)) q = q.lt(col, val);
+      if (query.eq) for (const [col, val] of Object.entries(query.eq)) q = q.eq(col, val);
+      if (query.order) q = q.order(query.order, { ascending: query.ascending ?? false });
+      const { data, error } = await q;
+      if (error) throw error;
+      allData = allData.concat(data || []);
+      if (!data || data.length < batchSize) break;
+      from += batchSize;
+    }
+    return allData;
+  };
+  if (columns === '*') return runWith('*');
+  try {
+    return await runWith(columns);
+  } catch (e) {
+    console.warn(`[getDashboardStats] column projection on "${table}" failed, retrying with *:`, e);
+    return runWith('*');
   }
-  return allData;
 }
+
+// Only the lead columns this function reads — keeps the heaviest query lean so
+// wide ranges (30/60/90 days) don't time out. `deriveSource`/campaign use the
+// confirmed facebook_* name columns; the SELECT * fallback in fetchAll covers
+// any column that's absent in a given deployment.
+const LEAD_COLUMNS = 'id,status,rep1,created_date,effective_sort_date,first_action_at,utm_source,source,utm_campaign,landing_page,facebook_campaign_name,facebook_ad_name,facebook_adset_name';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -153,7 +176,7 @@ Deno.serve(async (req) => {
     };
 
     const [rangeLeads, rangeOrders, rangeQuotes, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes, unassignedLeadsCountRes, stuckLeadsCountRes] = await Promise.all([
-      safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }), [] as any[]),
+      safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }, LEAD_COLUMNS), [] as any[]),
       safe('orders', fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
       safe('quotes', fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
       safe('marketing_costs', fetchAll(supabase, 'marketing_costs', { gte: { date: startIso }, lte: { date: endIso }, order: 'date' }), [] as any[]),
