@@ -56,7 +56,6 @@ export default function NewServiceTicketDialog({ open, onOpenChange, order, curr
     subject: '',
     description: '',
     warranty_issue_type: '',
-    is_within_trial: trialInfo.isInTrial,
   });
 
   const set = (key, value) => setFormData(prev => ({ ...prev, [key]: value }));
