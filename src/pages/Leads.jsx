@@ -32,7 +32,7 @@ import { formatInTimeZone, parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
-import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, SLA_THRESHOLDS, ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
 import { useNavigate } from 'react-router-dom';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
@@ -655,8 +655,9 @@ export default function Leads() {
           quote_preparation: { Icon: FileText, label: 'הצעת מחיר', color: 'text-primary' },
           close_order: { Icon: ShoppingCart, label: 'סגירת הזמנה', color: 'text-emerald-600' },
           whatsapp: { Icon: MessageCircle, label: 'וואטסאפ', color: 'text-green-600' },
+          assignment: { Icon: UserPlus, label: 'שיוך', color: 'text-violet-600' },
         };
-        const meta = TYPE_META[task.task_type] || { Icon: Phone, label: task.task_type, color: 'text-muted-foreground' };
+        const meta = TYPE_META[task.task_type] || { Icon: Phone, label: ALL_TASK_TYPE_LABELS[task.task_type] || task.task_type, color: 'text-muted-foreground' };
         const due = task.due_date ? new Date(task.due_date) : null;
         const now = new Date();
         const todayStart = new Date(); todayStart.setHours(0,0,0,0);
