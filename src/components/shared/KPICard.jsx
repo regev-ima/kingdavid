@@ -25,13 +25,18 @@ export default function KPICard({
   trendValue,
   color = 'indigo',
   onClick,
+  // When false, render `value` exactly as given (no thousands-formatting).
+  // formatNumber() runs parseFloat first, which silently strips a trailing
+  // "%" ("73.7%"→"73.7") or a ":ss" ("1:23"→"1"), so callers passing a
+  // percentage or a m:ss duration opt out of it.
+  formatValue = true,
   delta,
   // 'positive' = rising is good (green ▲); 'negative' = rising is bad (e.g.
   // unpaid balance, pending commissions). Affects color of the delta badge.
   deltaPolarity = 'positive',
   deltaLabel,
 }) {
-  const displayValue = formatNumber(value);
+  const displayValue = formatValue ? formatNumber(value) : value;
   const colorConfig = {
     indigo: { bg: 'bg-indigo-50/50', icon: 'text-indigo-600', iconBg: 'bg-indigo-100', text: 'text-indigo-600', border: 'border-indigo-100/50' },
     emerald: { bg: 'bg-emerald-50/50', icon: 'text-emerald-600', iconBg: 'bg-emerald-100', text: 'text-emerald-600', border: 'border-emerald-100/50' },
