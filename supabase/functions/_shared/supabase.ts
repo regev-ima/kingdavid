@@ -50,9 +50,20 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
 ];
 
+// Vercel preview deployments use dynamic, per-branch subdomains
+// (e.g. kingdavid-git-<branch>-regevs-projects.vercel.app), so they can't be
+// listed individually. Match them by pattern so previews can call the
+// functions during review; everything else falls back to the canonical origin.
+function isAllowedOrigin(origin: string) {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  return /^https:\/\/kingdavid[a-z0-9-]*\.vercel\.app$/.test(origin)
+    || /^https:\/\/[a-z0-9-]+-regevs-projects\.vercel\.app$/.test(origin);
+}
+
 export function getCorsHeaders(req?: Request) {
   const origin = req?.headers?.get('origin') || '';
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowedOrigin = isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',

@@ -1,4 +1,4 @@
-import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 const SLA_RED_MINUTES = 15;
 const EXPIRING_QUOTES_DAYS = 3;
@@ -133,11 +133,14 @@ async function fetchAll(supabase: any, table: string, query: any, columns = '*')
 const LEAD_COLUMNS = 'id,status,rep1,created_date,effective_sort_date,first_action_at,utm_source,source,utm_campaign,landing_page,facebook_campaign_name,facebook_ad_name,facebook_adset_name';
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // Reflect the caller's origin (canonical site + Vercel previews) so the
+  // dashboard works during PR review, not only on production.
+  const cors = getCorsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
     const user = await getUser(req);
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: cors });
 
     const supabase = createServiceClient();
     let body: any = {};
@@ -374,9 +377,12 @@ Deno.serve(async (req) => {
       smart_alerts,
       trends: { leads_daily: aggregateTrend(rangeLeads, 'effective_sort_date'), revenue_daily: aggregateTrend(rangeOrders, 'created_date', 'total') },
       tasks: { pending_total: openTaskCount, today: todayTasks.length, overdue: overdueTasks.length },
-    }, { headers: corsHeaders });
+    }, { headers: cors });
   } catch (error) {
+    // Surface the real reason (the client extracts body.error into the failure
+    // banner) instead of a generic 500 that hides what actually broke.
     console.error('Function error:', error);
-    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: `getDashboardStats failed: ${message}` }, { status: 500, headers: cors });
   }
 });
