@@ -99,7 +99,7 @@ export default function LeadWorkbenchQueue({ state, onAction }) {
           <div className="space-y-0.5">
             <CardTitle className="text-base font-bold flex items-center gap-2 text-sky-900">
               <Clock className="h-4 w-4 text-sky-600" />
-              הצעד הבא
+              משימת מכירה קרובה
             </CardTitle>
             <p className="text-xs text-sky-800/70">
               {queue.length === 0

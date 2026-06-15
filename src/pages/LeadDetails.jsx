@@ -72,13 +72,12 @@ import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceI
 import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
-import AddSalesTaskDialog from '@/components/task/AddSalesTaskDialog';
+import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import LeadActivityTimeline from '@/components/lead/LeadActivityTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
-import EditSalesTaskDialog from '@/components/task/EditSalesTaskDialog';
 import NewOrder from '@/pages/NewOrder';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
@@ -86,6 +85,21 @@ import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
+
+// Glanceable chip metadata for a task's *type* (the verb: call / meeting
+// / quote…). Used in the task-history rows so the rep reads "what kind of
+// action was this?" at a glance, with a colour that matches the app's
+// type palette. Mirrors the queue card's TYPE_META so the two read alike.
+const TASK_TYPE_CHIP = {
+  call:              { icon: Phone,        tone: 'bg-blue-100 text-blue-700' },
+  meeting:           { icon: CalendarDays, tone: 'bg-amber-100 text-amber-700' },
+  quote_preparation: { icon: FileText,     tone: 'bg-indigo-100 text-indigo-700' },
+  close_order:       { icon: ShoppingBag,  tone: 'bg-emerald-100 text-emerald-700' },
+  assignment:        { icon: User,         tone: 'bg-slate-100 text-slate-700' },
+  followup:          { icon: Clock,        tone: 'bg-violet-100 text-violet-700' },
+};
+const FALLBACK_TASK_TYPE_CHIP = { icon: Tag, tone: 'bg-muted text-foreground/70' };
+
 
 // Hebrew counter with proper singular / dual / plural forms
 // (e.g. 1 → "יום", 2 → "יומיים", 3 → "3 ימים").
@@ -154,6 +168,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [isAssigningBeforeTask, setIsAssigningBeforeTask] = useState(false);
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
+  // In-flight guard for the no-answer / followup "אישור" buttons. These
+  // handlers fire raw base44 writes (status update + task create) rather
+  // than a react-query mutation, so there was no `isPending` flag to lean
+  // on — the dialog stayed open and clickable through the whole network
+  // round-trip, and every extra click minted another duplicate follow-up
+  // task. This flag disables the button and short-circuits re-entry until
+  // the write settles and the dialog closes.
+  const [isSavingStatusFlow, setIsSavingStatusFlow] = useState(false);
   // The old `workMode` state (sales vs service) was removed when we
   // collapsed the two modes into a single unified lead screen. Sales
   // and service info now live side-by-side, the service section is a
@@ -772,7 +794,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Main Info */}
         <div className="lg:col-span-2 space-y-4">
-          <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
               <CardTitle className="text-sm font-semibold">פרטי לקוח</CardTitle>
@@ -952,6 +973,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
+          {/* Upcoming sales task — sits between the customer details and
+              the task history: the rep reads who the lead is, then what
+              they need to do next, then what's already been done. */}
+          <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
+
           {/* Tasks */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
@@ -1016,7 +1042,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
                               const dueDate = task.due_date ? new Date(task.due_date) : null;
                               const isDone = task.task_status === 'completed';
-                              
+
                               const taskStatusStyle = {
                                 not_completed: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
                                 completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
@@ -1039,79 +1065,80 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                                 cancelled: 'bg-muted/50 hover:bg-muted border-border',
                               }[task.task_status] || 'bg-card hover:bg-muted/50 border-border';
 
+                              const typeChip = TASK_TYPE_CHIP[task.task_type] || FALLBACK_TASK_TYPE_CHIP;
+                              const TypeIcon = typeChip.icon;
+                              const StatusIcon = { completed: CheckCircle2, not_done: XCircle, cancelled: Ban }[task.task_status] || Clock;
+                              const createdDisplay = formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM HH:mm');
+                              const closedDisplay = task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : null;
+                              const isPending = task.task_status !== 'completed' && task.task_status !== 'cancelled';
+
                               return (
                                 <div
                                   key={task.id}
                                   onClick={() => { setEditingTask(task); setShowEditTaskDialog(true); }}
-                                  className={`relative p-4 border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md ${cardBgClass} ${isDone ? 'opacity-70' : ''}`}
+                                  className={`relative p-3.5 border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md ${cardBgClass} ${isDone ? 'opacity-80' : ''}`}
                                 >
-                                  {/* Delete button removed - tasks can only be deleted from detail view */}
-
-                                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-center pe-6">
-                                    
-                                    {/* רבע 1: לקוח ונציג */}
-                                    <div className="flex flex-col gap-1.5 text-start overflow-hidden">
-                                      <span className="font-bold text-base text-foreground truncate">
-                                        {lead?.full_name || 'ליד לא ידוע'}
-                                      </span>
-                                      <div className="text-sm text-muted-foreground truncate">
-                                        נציג מטפל: {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
-                                      </div>
-                                    </div>
-
-                                    {/* רבע 2: סוג וסטטוס */}
-                                    <div className="flex flex-col items-start gap-2">
-                                      <span className="font-bold text-sm text-foreground">
-                                        {taskTypeLabel}
-                                      </span>
-                                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
-                                        {taskStatusLabel}
-                                      </span>
-                                    </div>
-
-                                    {/* רבע 3: תאריכים */}
-                                    <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-muted-foreground">תאריך יצירה:</span>
-                                        <span dir="ltr" className="tabular-nums font-medium">
-                                          {formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="text-muted-foreground">תאריך יעד:</span>
-                                        <span dir="ltr" className="tabular-nums font-medium">
-                                          {dueDateDisplay || 'ללא יעד'}
-                                        </span>
-                                      </div>
-                                    </div>
-
-                                    {/* רבע 4: זמן נותר/עבר */}
-                                    <div className="flex flex-col items-end justify-center gap-2 h-full">
-                                      <div className="flex-1 flex items-center">
-                                        {dueDate && task.task_status !== 'completed' && task.task_status !== 'cancelled' && (
-                                          <span className="font-bold text-sm text-blue-800">
-                                            בעוד
-                                            {formatDistanceToNow(dueDate, { locale: he })}
-                                          </span>
-                                        )}
-                                      </div>
-                                      {(statusKey === 'completed' || statusKey === 'not_done') && task.updated_date && (
-                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1 tabular-nums ${
-                                          statusKey === 'completed' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'bg-red-50 text-red-600 ring-1 ring-red-200'
-                                        }`}>
-                                          {statusKey === 'completed' ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                          <span dir="ltr">
-                                            {task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : '-'}
-                                          </span>
-                                        </span>
-                                      )}
-                                    </div>
-
+                                  {/* Top line: the verb (task type) on the start,
+                                      the outcome badge (בוצע / לא בוצע / בוטל) on
+                                      the end. One glance answers "what was it, and
+                                      how did it end?". */}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${typeChip.tone}`}>
+                                      <TypeIcon className="h-3.5 w-3.5" />
+                                      {taskTypeLabel}
+                                    </span>
+                                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
+                                      <StatusIcon className="h-3 w-3" />
+                                      {taskStatusLabel}
+                                    </span>
                                   </div>
-                                  
+
+                                  {/* Result line: the lead status this task moved
+                                      the lead into (the thing the rep actually cares
+                                      about) + who handled it. No truncation — the
+                                      full status label always shows. */}
+                                  <div className="mt-2.5 flex items-center gap-x-2 gap-y-1.5 flex-wrap text-xs">
+                                    {task.status ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <span className="text-muted-foreground">סטטוס שעודכן:</span>
+                                        <StatusBadge status={task.status} />
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground/60">ללא עדכון סטטוס</span>
+                                    )}
+                                    <span className="text-border" aria-hidden>·</span>
+                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                      <User className="h-3 w-3 flex-shrink-0" />
+                                      {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
+                                    </span>
+                                  </div>
+
+                                  {/* Timeline line: created → due → (remaining or
+                                      closed-at), all inline and compact so the dates
+                                      never wrap into a tall cramped column. */}
+                                  <div className="mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-muted-foreground tabular-nums">
+                                    <span>נוצר <span dir="ltr" className="font-medium">{createdDisplay}</span></span>
+                                    <span className="text-border" aria-hidden>·</span>
+                                    <span>יעד <span dir="ltr" className="font-medium">{dueDateDisplay || 'ללא'}</span></span>
+                                    {isPending && dueDate && (
+                                      <>
+                                        <span className="text-border" aria-hidden>·</span>
+                                        <span className="font-semibold text-blue-700">בעוד {formatDistanceToNow(dueDate, { locale: he })}</span>
+                                      </>
+                                    )}
+                                    {(task.task_status === 'completed' || task.task_status === 'not_done') && closedDisplay && (
+                                      <>
+                                        <span className="text-border" aria-hidden>·</span>
+                                        <span className={`inline-flex items-center gap-1 font-semibold ${task.task_status === 'completed' ? 'text-emerald-700' : 'text-red-600'}`}>
+                                          {task.task_status === 'completed' ? 'נסגר' : 'סומן'} <span dir="ltr">{closedDisplay}</span>
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+
                                   {/* Summary Row */}
                                   {task.summary && (
-                                    <div className="mt-3 pt-3 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
+                                    <div className="mt-2.5 pt-2.5 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
                                       {task.summary}
                                     </div>
                                   )}
@@ -1574,7 +1601,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         onClose={() => setShowAddCommunication(false)} />
 
       {/* Add Task Dialog */}
-      <AddSalesTaskDialog
+      <SalesTaskDialog
         isOpen={showAddTaskDialog}
         onClose={() => setShowAddTaskDialog(false)}
         preSelectedLead={lead}
@@ -1613,7 +1640,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       </Dialog>
 
       {/* Edit Task Dialog */}
-      <EditSalesTaskDialog
+      <SalesTaskDialog
         isOpen={showEditTaskDialog}
         onClose={() => { setShowEditTaskDialog(false); setEditingTask(null); }}
         task={editingTask ? { ...editingTask, lead } : null}
@@ -1698,59 +1725,66 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1"
-                  disabled={!noAnswerFlow.selectedHours || updateLeadMutation.isPending}
+                  disabled={!noAnswerFlow.selectedHours || isSavingStatusFlow}
                   onClick={async () => {
-                    if (!noAnswerFlow.selectedHours) return;
+                    if (!noAnswerFlow.selectedHours || isSavingStatusFlow) return;
+                    setIsSavingStatusFlow(true);
+                    try {
+                      // 1. Update lead status
+                      createAuditLog({
+                        leadId,
+                        actionType: 'status_changed',
+                        description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${noAnswerFlow.status}"`,
+                        user,
+                        fieldName: 'status',
+                        oldValue: lead.status,
+                        newValue: noAnswerFlow.status,
+                      });
+                      const noAnswerNow = new Date().toISOString();
+                      await base44.entities.Lead.update(leadId, { status: noAnswerFlow.status });
 
-                    // 1. Update lead status
-                    createAuditLog({
-                      leadId,
-                      actionType: 'status_changed',
-                      description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${noAnswerFlow.status}"`,
-                      user,
-                      fieldName: 'status',
-                      oldValue: lead.status,
-                      newValue: noAnswerFlow.status,
-                    });
-                    const noAnswerNow = new Date().toISOString();
-                    await base44.entities.Lead.update(leadId, { status: noAnswerFlow.status });
+                      // 2. Mark current open tasks as completed with timestamp
+                      const openTasks = tasks.filter(t => t.task_status === 'not_completed');
+                      if (openTasks.length > 0) {
+                        await Promise.all(openTasks.map(t =>
+                          base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+                        ));
+                      }
 
-                    // 2. Mark current open tasks as completed with timestamp
-                    const openTasks = tasks.filter(t => t.task_status === 'not_completed');
-                    if (openTasks.length > 0) {
-                      await Promise.all(openTasks.map(t =>
-                        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                      ));
+                      // 3. Create new call task
+                      const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
+                      await base44.entities.SalesTask.create({
+                        lead_id: leadId,
+                        rep1: lead.rep1 || user?.email,
+                        rep2: lead.rep2 || '',
+                        task_type: 'call',
+                        task_status: 'not_completed',
+                        status: noAnswerFlow.status,
+                        due_date: dueDate.toISOString(),
+                        work_start_date: noAnswerNow,
+                        created_date: noAnswerNow,
+                        summary: `חזור ללקוח ${lead.full_name || ''} - ${noAnswerFlow.label}`,
+                      });
+
+                      // 4. Refresh
+                      queryClient.invalidateQueries(['lead', leadId]);
+                      queryClient.invalidateQueries(['tasks', leadId]);
+                      queryClient.invalidateQueries(['leadActivityLogs', leadId]);
+                      queryClient.invalidateQueries(['salesTasks']);
+                      queryClient.invalidateQueries(['taskCounters']);
+                      setNoAnswerFlow(null);
+                    } catch (err) {
+                      toast({ title: 'שמירת הסטטוס נכשלה', description: err?.message || 'נסה שוב', variant: 'destructive' });
+                    } finally {
+                      setIsSavingStatusFlow(false);
                     }
-
-                    // 3. Create new call task
-                    const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
-                    await base44.entities.SalesTask.create({
-                      lead_id: leadId,
-                      rep1: lead.rep1 || user?.email,
-                      rep2: lead.rep2 || '',
-                      task_type: 'call',
-                      task_status: 'not_completed',
-                      status: noAnswerFlow.status,
-                      due_date: dueDate.toISOString(),
-                      work_start_date: noAnswerNow,
-                      created_date: noAnswerNow,
-                      summary: `חזור ללקוח ${lead.full_name || ''} - ${noAnswerFlow.label}`,
-                    });
-
-                    // 4. Refresh
-                    queryClient.invalidateQueries(['lead', leadId]);
-                    queryClient.invalidateQueries(['tasks', leadId]);
-                    queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                    queryClient.invalidateQueries(['salesTasks']);
-                    queryClient.invalidateQueries(['taskCounters']);
-                    setNoAnswerFlow(null);
                   }}
                 >
-                  אישור
+                  {isSavingStatusFlow ? 'שומר…' : 'אישור'}
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={isSavingStatusFlow}
                   onClick={() => {
                     setNoAnswerFlow(null);
                     setFormData(prev => ({ ...prev, status: lead.status }));
@@ -1850,62 +1884,71 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               <div className="flex gap-2 pt-2">
                 <Button
                   className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || updateLeadMutation.isPending}
+                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingStatusFlow}
                   onClick={async () => {
-                    const dueDate = new Date(followupFlow.selectedDate);
-                    dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
-                    const now = new Date().toISOString();
-                    const fStatus = followupFlow.status;
-                    const statusLabel = fStatus === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
-                    const statusHebrew = fStatus === 'followup_after_quote' ? 'פולאפ - אחרי הצעת מחיר' : 'פולאפ - לפני הצעה';
+                    if (!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingStatusFlow) return;
+                    setIsSavingStatusFlow(true);
+                    try {
+                      const dueDate = new Date(followupFlow.selectedDate);
+                      dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
+                      const now = new Date().toISOString();
+                      const fStatus = followupFlow.status;
+                      const statusLabel = fStatus === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
+                      const statusHebrew = fStatus === 'followup_after_quote' ? 'פולאפ - אחרי הצעת מחיר' : 'פולאפ - לפני הצעה';
 
-                    // 1. Update lead status
-                    createAuditLog({
-                      leadId,
-                      actionType: 'status_changed',
-                      description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${statusHebrew}"`,
-                      user,
-                      fieldName: 'status',
-                      oldValue: lead.status,
-                      newValue: fStatus,
-                    });
-                    await base44.entities.Lead.update(leadId, { status: fStatus });
+                      // 1. Update lead status
+                      createAuditLog({
+                        leadId,
+                        actionType: 'status_changed',
+                        description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${statusHebrew}"`,
+                        user,
+                        fieldName: 'status',
+                        oldValue: lead.status,
+                        newValue: fStatus,
+                      });
+                      await base44.entities.Lead.update(leadId, { status: fStatus });
 
-                    // 2. Mark current open tasks as completed with timestamp
-                    const openTasks = tasks.filter(t => t.task_status === 'not_completed');
-                    if (openTasks.length > 0) {
-                      await Promise.all(openTasks.map(t =>
-                        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                      ));
+                      // 2. Mark current open tasks as completed with timestamp
+                      const openTasks = tasks.filter(t => t.task_status === 'not_completed');
+                      if (openTasks.length > 0) {
+                        await Promise.all(openTasks.map(t =>
+                          base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+                        ));
+                      }
+
+                      // 3. Create followup call task
+                      await base44.entities.SalesTask.create({
+                        lead_id: leadId,
+                        rep1: lead.rep1 || user?.email,
+                        rep2: lead.rep2 || '',
+                        task_type: 'call',
+                        task_status: 'not_completed',
+                        status: fStatus,
+                        due_date: dueDate.toISOString(),
+                        work_start_date: now,
+                        created_date: now,
+                        summary: `פולואפ - חזור ללקוח ${lead.full_name || ''} ${statusLabel}`,
+                      });
+
+                      // 4. Refresh
+                      queryClient.invalidateQueries(['lead', leadId]);
+                      queryClient.invalidateQueries(['tasks', leadId]);
+                      queryClient.invalidateQueries(['leadActivityLogs', leadId]);
+                      queryClient.invalidateQueries(['salesTasks']);
+                      queryClient.invalidateQueries(['taskCounters']);
+                      setFollowupFlow(null);
+                    } catch (err) {
+                      toast({ title: 'שמירת הסטטוס נכשלה', description: err?.message || 'נסה שוב', variant: 'destructive' });
+                    } finally {
+                      setIsSavingStatusFlow(false);
                     }
-
-                    // 3. Create followup call task
-                    await base44.entities.SalesTask.create({
-                      lead_id: leadId,
-                      rep1: lead.rep1 || user?.email,
-                      rep2: lead.rep2 || '',
-                      task_type: 'call',
-                      task_status: 'not_completed',
-                      status: fStatus,
-                      due_date: dueDate.toISOString(),
-                      work_start_date: now,
-                      created_date: now,
-                      summary: `פולואפ - חזור ללקוח ${lead.full_name || ''} ${statusLabel}`,
-                    });
-
-                    // 4. Refresh
-                    queryClient.invalidateQueries(['lead', leadId]);
-                    queryClient.invalidateQueries(['tasks', leadId]);
-                    queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                    queryClient.invalidateQueries(['salesTasks']);
-                    queryClient.invalidateQueries(['taskCounters']);
-                    setFollowupFlow(null);
                   }}
                 >
-                  אישור
+                  {isSavingStatusFlow ? 'שומר…' : 'אישור'}
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={isSavingStatusFlow}
                   onClick={() => {
                     setFollowupFlow(null);
                     setFormData(prev => ({ ...prev, status: lead.status }));
