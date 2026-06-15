@@ -15,28 +15,29 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Megaphone, Users, Target, TrendingUp, DollarSign, RefreshCw, Trophy, AlertTriangle,
 } from 'lucide-react';
-import { format } from '@/lib/safe-date-fns';
-import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { getDateRange } from '@/utils/dateRange';
 import Dashboard2DateRange from '@/components/dashboard2/Dashboard2DateRange';
 import useMarketingStats from '@/components/marketing/useMarketingStats';
+import LeadListTable from '@/components/lead/LeadListTable';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessAdminOnly } from '@/lib/rbac';
 
-// Friendly Hebrew labels + a stable accent colour per known source so the same
-// channel always looks the same across the cubes and table.
+// A stable accent colour per known source so the same channel always looks the
+// same across the cubes and table. Source NAMES are shown exactly as stored
+// (utm_source) — not translated — only the empty bucket gets a Hebrew label.
 const SOURCE_META = {
-  facebook: { label: 'פייסבוק', dot: 'bg-blue-500', ring: 'border-blue-200 bg-blue-50/60' },
-  instant_form: { label: 'טופס מהיר (פייסבוק)', dot: 'bg-blue-500', ring: 'border-blue-200 bg-blue-50/60' },
-  instagram: { label: 'אינסטגרם', dot: 'bg-pink-500', ring: 'border-pink-200 bg-pink-50/60' },
-  google: { label: 'גוגל', dot: 'bg-amber-500', ring: 'border-amber-200 bg-amber-50/60' },
-  tiktok: { label: 'טיקטוק', dot: 'bg-gray-800', ring: 'border-gray-200 bg-gray-50' },
-  taboola: { label: 'טאבולה', dot: 'bg-cyan-500', ring: 'border-cyan-200 bg-cyan-50/60' },
-  outbrain: { label: 'אאוטבריין', dot: 'bg-orange-500', ring: 'border-orange-200 bg-orange-50/60' },
-  whatsapp: { label: 'וואטסאפ', dot: 'bg-emerald-500', ring: 'border-emerald-200 bg-emerald-50/60' },
-  other: { label: 'אחר / ללא מקור', dot: 'bg-slate-400', ring: 'border-slate-200 bg-slate-50' },
+  facebook: { dot: 'bg-blue-500', ring: 'border-blue-200 bg-blue-50/60' },
+  instant_form: { dot: 'bg-blue-500', ring: 'border-blue-200 bg-blue-50/60' },
+  instagram: { dot: 'bg-pink-500', ring: 'border-pink-200 bg-pink-50/60' },
+  google: { dot: 'bg-amber-500', ring: 'border-amber-200 bg-amber-50/60' },
+  tiktok: { dot: 'bg-gray-800', ring: 'border-gray-200 bg-gray-50' },
+  taboola: { dot: 'bg-cyan-500', ring: 'border-cyan-200 bg-cyan-50/60' },
+  outbrain: { dot: 'bg-orange-500', ring: 'border-orange-200 bg-orange-50/60' },
+  whatsapp: { dot: 'bg-emerald-500', ring: 'border-emerald-200 bg-emerald-50/60' },
+  other: { dot: 'bg-slate-400', ring: 'border-slate-200 bg-slate-50' },
 };
-const sourceLabel = (name) => SOURCE_META[name]?.label || name;
+const sourceLabel = (name) => (name === 'other' ? 'ללא מקור' : name);
 const sourceRing = (name) => SOURCE_META[name]?.ring || 'border-indigo-200 bg-indigo-50/60';
 const sourceDot = (name) => SOURCE_META[name]?.dot || 'bg-indigo-500';
 
@@ -109,6 +110,17 @@ export default function Marketing() {
     start, end, enabled: isAdmin,
   });
 
+  // Open a lead in the same popup ניהול לידים uses, and resolve rep emails to
+  // names for the shared leads table.
+  const { openLead, lastOpenedLeadId } = useLeadModal();
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60 * 1000,
+    enabled: isAdmin,
+  });
+  const repNameByEmail = useMemo(() => new Map(users.map((u) => [u.email, u.full_name || u.email])), [users]);
+
   // Lead-level rows for the "לידים" tab + source drill-down. Fetched only for
   // the selected range (not the whole table) and only when that tab is open.
   const { data: rangeLeads = [], isFetching: leadsFetching } = useQuery({
@@ -130,8 +142,6 @@ export default function Marketing() {
   const visibleSources = sourceFilter === 'all' ? sources : sources.filter((s) => s.name === sourceFilter);
   const visibleCampaigns = sourceFilter === 'all' ? campaigns : campaigns.filter((c) => c.source === sourceFilter);
 
-  const getCampaign = (l) => l?.utm_campaign || l?.facebook_campaign_name || null;
-  const getAdName = (l) => l?.utm_content || l?.facebook_ad_name || null;
   const normSource = (l) => {
     const s = String(l?.utm_source || l?.source || '').toLowerCase();
     if (!s) return 'other';
@@ -376,41 +386,17 @@ export default function Marketing() {
               <span className="text-xs font-normal text-muted-foreground">{leadsFetching ? 'טוען…' : `${displayLeads.length} לידים`}</span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">שם לקוח</TableHead>
-                    <TableHead className="text-right">תאריך</TableHead>
-                    <TableHead className="text-right">סטטוס</TableHead>
-                    <TableHead className="text-right">מקור</TableHead>
-                    <TableHead className="text-right">קמפיין</TableHead>
-                    <TableHead className="text-right">מודעה</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {leadsFetching ? (
-                    <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">טוען לידים…</TableCell></TableRow>
-                  ) : displayLeads.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">לא נמצאו לידים בטווח</TableCell></TableRow>
-                  ) : displayLeads.slice(0, 500).map((lead) => (
-                    <TableRow key={lead.id}>
-                      <TableCell className="font-medium">{lead.full_name}</TableCell>
-                      <TableCell className="text-sm">{format(parseDbTimestamp(lead.created_date) ?? new Date(lead.created_date), 'dd/MM/yyyy HH:mm')}</TableCell>
-                      <TableCell>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${lead.status === 'deal_closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-foreground'}`}>
-                          {lead.status === 'deal_closed' ? 'נסגר' : lead.status}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{lead.utm_source || lead.source || '-'}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{getCampaign(lead) || '-'}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{getAdName(lead) || '-'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          <CardContent className="p-3">
+            {/* Same table as ניהול לידים — click a row to open the lead in the
+                same popup. */}
+            <LeadListTable
+              leads={displayLeads.slice(0, 500)}
+              isLoading={leadsFetching && displayLeads.length === 0}
+              repNameByEmail={repNameByEmail}
+              onRowClick={(lead) => openLead(lead.id)}
+              highlightId={lastOpenedLeadId}
+              emptyMessage="לא נמצאו לידים בטווח"
+            />
           </CardContent>
         </Card>
       )}

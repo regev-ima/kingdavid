@@ -3,10 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
-import StatusBadge from '@/components/shared/StatusBadge';
-import DataTable from '@/components/shared/DataTable';
-import { useLeadModal, LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
-import { Checkbox } from '@/components/ui/checkbox';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
+import LeadListTable from '@/components/lead/LeadListTable';
 import FilterBar from '@/components/shared/FilterBar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -679,7 +677,7 @@ export default function LeadManagement() {
           a popup over this page: no navigation, so the scroll position,
           filters and pagination are all preserved untouched. The row of
           the most recently opened lead stays highlighted. */}
-      <LeadTable
+      <LeadListTable
         leads={leads}
         isLoading={isLoading && !leads.length}
         isAdmin={isAdmin}
@@ -750,103 +748,6 @@ function RepWorkloadCard({ label, avatar, newCount, handlingCount, wonCount, los
         <p className="text-[10px] mt-1.5 text-muted-foreground">פנוי</p>
       )}
     </button>
-  );
-}
-
-// ─── Lead table ─────────────────────────────────────────────────
-function LeadTable({ leads, isLoading, isAdmin, selectedLeads, onSelectionChange, repNameByEmail, onRowClick, highlightId }) {
-  const allSelected = selectedLeads.length > 0 && selectedLeads.length === leads.length;
-  const someSelected = selectedLeads.length > 0 && !allSelected;
-  const toggleAll = (checked) => {
-    onSelectionChange(checked ? leads.map((l) => l.id) : []);
-  };
-  const toggleOne = (id, checked) => {
-    onSelectionChange(checked
-      ? [...selectedLeads, id]
-      : selectedLeads.filter((x) => x !== id));
-  };
-  const formatPhone = (p) => {
-    if (!p) return '';
-    const cleaned = p.replace(/\D/g, '');
-    return cleaned.length === 10 ? `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}` : p;
-  };
-  const columns = [
-    ...(isAdmin ? [{
-      header: () => (
-        <div className="flex items-center justify-center">
-          <Checkbox
-            checked={allSelected ? true : someSelected ? 'indeterminate' : false}
-            onCheckedChange={(c) => toggleAll(!!c)}
-          />
-        </div>
-      ),
-      accessor: 'select',
-      align: 'center',
-      width: '52px',
-      render: (row) => (
-        <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-          <Checkbox
-            checked={selectedLeads.includes(row.id)}
-            onCheckedChange={(c) => toggleOne(row.id, !!c)}
-          />
-        </div>
-      ),
-    }] : []),
-    {
-      header: 'לקוח',
-      accessor: 'full_name',
-      width: '260px',
-      render: (row) => (
-        <div className="min-w-0">
-          <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
-          <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
-        </div>
-      ),
-    },
-    {
-      header: 'סטטוס',
-      width: '140px',
-      render: (row) => row.status ? <StatusBadge status={row.status} /> : '—',
-    },
-    {
-      header: 'מקור',
-      width: '120px',
-      render: (row) => (
-        <p className="text-xs text-muted-foreground truncate" title={row.source ? (SOURCE_LABELS[row.source] || row.source) : ''}>
-          {row.source ? (SOURCE_LABELS[row.source] || row.source) : '—'}
-        </p>
-      ),
-    },
-    {
-      header: 'נציג מטפל',
-      width: '160px',
-      render: (row) => {
-        if (!row.rep1) return <span className="text-xs text-amber-700">לא משויך</span>;
-        const name = repNameByEmail.get(row.rep1) || row.rep1;
-        return <p className="text-sm truncate" title={name}>{name}</p>;
-      },
-    },
-    {
-      header: 'תאריך פעילות',
-      width: '120px',
-      render: (row) => {
-        try {
-          const d = row.effective_sort_date || row.created_date;
-          return d ? <span className="text-xs text-muted-foreground">{format(new Date(d), 'dd/MM/yyyy')}</span> : '—';
-        } catch { return '—'; }
-      },
-    },
-  ];
-  return (
-    <DataTable
-      columns={columns}
-      data={leads}
-      isLoading={isLoading}
-      emptyMessage="לא נמצאו לידים תואמים"
-      onRowClick={onRowClick}
-      rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
-      tableClassName="w-full table-fixed min-w-[720px]"
-    />
   );
 }
 
