@@ -3,8 +3,10 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowRight, Loader2, ShoppingCart, ShieldCheck, MessageSquare, LifeBuoy, Phone, PhoneCall, Mail, Calendar, User, Image as ImageIcon, Clock, MessageSquarePlus, UserPlus, SendHorizonal, CircleDot, MapPin, Repeat, MessageCircle, AlertCircle, Flag, Pencil, CheckCircle2 } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
@@ -25,8 +27,6 @@ import EditServiceTicketDialog from '@/components/service/EditServiceTicketDialo
 const QUESTION_LABELS = Object.fromEntries(DIAGNOSTIC_QUESTIONS.map((q) => [q.key, q.label]));
 const REQUEST_TYPE_BY_VALUE = Object.fromEntries(REQUEST_TYPE_OPTIONS.map((o) => [o.value, o]));
 
-// Diagnostic keys surfaced specially in the problem brief, so we don't repeat
-// them in the generic "extra answers" list below.
 const HANDLED_ANSWER_KEYS = new Set(['product', 'problem_summary', 'problem_area', 'when_started', 'usage', 'notes']);
 
 const PRIORITY_DOT = {
@@ -36,7 +36,6 @@ const PRIORITY_DOT = {
   low: 'bg-slate-400',
 };
 
-// Per-event-type styling for the handling timeline.
 const TIMELINE_META = {
   created:    { Icon: CircleDot,          color: 'text-blue-600',    ring: 'bg-blue-100' },
   sms:        { Icon: SendHorizonal,      color: 'text-indigo-600',  ring: 'bg-indigo-100' },
@@ -46,7 +45,6 @@ const TIMELINE_META = {
   note:       { Icon: MessageSquarePlus,  color: 'text-slate-500',   ring: 'bg-slate-100' },
 };
 
-// Short Hebrew "time ago" for the ticket-age tile.
 function timeAgoHe(date) {
   const ms = Date.now() - new Date(date).getTime();
   if (!Number.isFinite(ms) || ms < 0) return '';
@@ -56,6 +54,22 @@ function timeAgoHe(date) {
   if (hrs < 24) return `לפני ${hrs} שע׳`;
   const days = Math.floor(hrs / 24);
   return `לפני ${days} ימים`;
+}
+
+// Card matching the lead-screen design language: rounded-xl + shadow-card with a
+// muted, bordered header row.
+function SectionCard({ icon: Icon, title, action, children, contentClassName }) {
+  return (
+    <Card className="rounded-xl border-border shadow-card overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-border/50 bg-muted/50 px-5 py-3">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}{title}
+        </CardTitle>
+        {action}
+      </CardHeader>
+      <CardContent className={cn('p-5', contentClassName)}>{children}</CardContent>
+    </Card>
+  );
 }
 
 // Small labelled field used in the customer card.
@@ -90,7 +104,6 @@ function StatTile({ icon: Icon, label, tone = 'default', children, sub }) {
   );
 }
 
-// Highlighted diagnostic fact (location / when / usage) — scannable at a glance.
 function DiagChip({ icon: Icon, label, value }) {
   if (!value) return null;
   return (
@@ -103,12 +116,12 @@ function DiagChip({ icon: Icon, label, value }) {
 }
 
 // The full service-ticket detail view, shared by the standalone page
-// (ServiceRequestDetails) and the in-list popup (ServiceRequestModal). Built as
-// a "smart ticket": an at-a-glance summary strip, a prominent problem brief with
-// scannable diagnostics, warranty insight, photos, and the handling timeline —
-// so a service manager understands the issue fast. When `onClose` is set we're
-// in a popup; the Dialog supplies its own close button.
+// (ServiceRequestDetails) and the in-list popup (ServiceRequestModal). In popup
+// mode it mirrors the lead-popup layout: a fixed header + action bar over a
+// scrollable body, with the same Card design language. `onClose` is set in the
+// popup; its presence selects the modal layout.
 export default function ServiceRequestDetailContent({ ticketId, onClose }) {
+  const isModal = !!onClose;
   const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const canAccess = canAccessServiceWorkspace(effectiveUser);
@@ -209,7 +222,6 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
   const photos = Array.isArray(ticket.photo_urls) ? ticket.photo_urls : [];
   const isOverdueSla = ticket.sla_due_date && new Date(ticket.sla_due_date) < new Date() && !['resolved', 'closed'].includes(ticket.status);
 
-  // ── Derived "smart" bits for the summary strip + warranty insight ──────────
   const rtOpt = REQUEST_TYPE_BY_VALUE[ticket.request_type];
   const RtIcon = rtOpt?.Icon || MessageSquare;
   const rtTone = ticket.request_type === 'warranty' ? 'emerald' : ticket.request_type === 'trial_30d' ? 'amber' : 'default';
@@ -230,32 +242,39 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
     ? ticket.complaint_age_months <= warrantyMonths
     : null;
 
-  // Diagnostic answers not already surfaced as chips/strip.
   const extraAnswers = Object.entries(answers).filter(([k, v]) => v && !HANDLED_ANSWER_KEYS.has(k));
   const intlPhone = toInternationalPhone(ticket.customer_phone);
 
   return (
-    <div className="space-y-5 text-right" dir="rtl">
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex items-start gap-2 pe-8">
-        {!onClose && (
-          <Link to={createPageUrl('ServiceCenter')} className="mt-0.5">
-            <Button variant="ghost" size="icon"><ArrowRight className="h-5 w-5" /></Button>
-          </Link>
-        )}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-lg font-bold text-foreground">פנייה #{ticket.ticket_number}</h2>
-            <span className={`text-[11px] px-2 py-0.5 rounded-full ${SOURCE_CHIP[srcKey] || ''}`}>{SOURCE_LABELS[srcKey] || srcKey}</span>
-            {ticket.opened_by_customer && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">נפתחה ע״י הלקוח</span>}
-            {ticket.public_status === 'pending' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ממתין למילוי הלקוח</span>}
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden text-right' : 'space-y-5 text-right'} dir="rtl">
+      {/* ── Header bar (fixed in popup) ─────────────────────────── */}
+      <div className={isModal ? 'flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border' : ''}>
+        <div className="flex items-start gap-3">
+          {isModal ? (
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg mt-0.5" onClick={onClose} title="סגור">
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Link to={createPageUrl('ServiceCenter')} className="mt-0.5">
+              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg"><ArrowRight className="h-4 w-4" /></Button>
+            </Link>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">פנייה #{ticket.ticket_number}</h1>
+              <span className={`text-[11px] px-2 py-0.5 rounded-full ${SOURCE_CHIP[srcKey] || ''}`}>{SOURCE_LABELS[srcKey] || srcKey}</span>
+              {ticket.opened_by_customer && <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">נפתחה ע״י הלקוח</span>}
+              {ticket.public_status === 'pending' && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ממתין למילוי הלקוח</span>}
+            </div>
+            {ticket.subject && <p className="text-sm text-muted-foreground mt-1">{ticket.subject}</p>}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">{ticket.subject}</p>
         </div>
       </div>
 
-      {/* ── Toolbar: status + owner + actions ──────────────────── */}
-      <div className="rounded-xl border border-border bg-muted/30 px-4 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-2.5">
+      {/* ── Action bar (fixed in popup): status + owner + actions ─ */}
+      <div className={isModal
+        ? 'flex-shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2.5'
+        : 'rounded-xl border border-border bg-muted/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2.5'}>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">סטטוס</span>
           <Select value={ticket.status} onValueChange={changeStatus}>
@@ -284,185 +303,173 @@ export default function ServiceRequestDetailContent({ ticketId, onClose }) {
         </div>
       </div>
 
-      {/* ── At-a-glance summary strip ──────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatTile icon={Flag} label="סוג פנייה" tone={rtTone}>
-          <RtIcon className="h-4 w-4" />{REQUEST_TYPE_LABELS[ticket.request_type] || ticket.request_type || '—'}
-        </StatTile>
-        <StatTile icon={AlertCircle} label="עדיפות" tone={ticket.priority === 'urgent' ? 'red' : ticket.priority === 'high' ? 'amber' : 'default'}>
-          <span className={`h-2 w-2 rounded-full ${PRIORITY_DOT[ticket.priority] || 'bg-slate-400'}`} />
-          {PRIORITY_LABELS[ticket.priority] || ticket.priority || '—'}
-        </StatTile>
-        <StatTile icon={Clock} label="יעד טיפול (SLA)" tone={slaTone} sub={slaSub}>{slaText}</StatTile>
-        <StatTile icon={User} label="מקור" tone={ticket.opened_by_customer ? 'violet' : 'default'}>{SOURCE_LABELS[srcKey] || srcKey}</StatTile>
-        <StatTile icon={Calendar} label="נפתחה" sub={ticket.created_date ? format(new Date(ticket.created_date), 'dd/MM/yyyy') : null}>
-          {ticket.created_date ? timeAgoHe(ticket.created_date) : '—'}
-        </StatTile>
-      </div>
+      {/* ── Scrollable body ─────────────────────────────────────── */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4 space-y-5' : 'space-y-5'}>
+        {/* At-a-glance summary strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <StatTile icon={Flag} label="סוג פנייה" tone={rtTone}>
+            <RtIcon className="h-4 w-4" />{REQUEST_TYPE_LABELS[ticket.request_type] || ticket.request_type || '—'}
+          </StatTile>
+          <StatTile icon={AlertCircle} label="עדיפות" tone={ticket.priority === 'urgent' ? 'red' : ticket.priority === 'high' ? 'amber' : 'default'}>
+            <span className={`h-2 w-2 rounded-full ${PRIORITY_DOT[ticket.priority] || 'bg-slate-400'}`} />
+            {PRIORITY_LABELS[ticket.priority] || ticket.priority || '—'}
+          </StatTile>
+          <StatTile icon={Clock} label="יעד טיפול (SLA)" tone={slaTone} sub={slaSub}>{slaText}</StatTile>
+          <StatTile icon={User} label="מקור" tone={ticket.opened_by_customer ? 'violet' : 'default'}>{SOURCE_LABELS[srcKey] || srcKey}</StatTile>
+          <StatTile icon={Calendar} label="נפתחה" sub={ticket.created_date ? format(new Date(ticket.created_date), 'dd/MM/yyyy') : null}>
+            {ticket.created_date ? timeAgoHe(ticket.created_date) : '—'}
+          </StatTile>
+        </div>
 
-      {/* ── Body: problem + evidence beside the timeline ───────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        <div className="lg:col-span-2 space-y-5">
-          {/* Customer + quick contact actions — who we're dealing with, up front */}
-          <div className="rounded-xl border border-border p-5">
-            <p className="text-xs font-semibold text-muted-foreground mb-3">פרטי לקוח</p>
-            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
-              <Field icon={User} label="שם">{ticket.customer_name}</Field>
-              <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
-              {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
-              {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
-              {ticket.contact_preference && <Field icon={PhoneCall} label="העדפת יצירת קשר">{CONTACT_PREFERENCE_LABELS[ticket.contact_preference] || ticket.contact_preference}</Field>}
-            </div>
-            {ticket.customer_phone && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                <a href={`tel:${ticket.customer_phone}`}>
-                  <Button variant="outline" size="sm" className="gap-1.5"><Phone className="h-4 w-4" /> חיוג</Button>
-                </a>
-                {intlPhone && (
-                  <a href={`https://wa.me/${intlPhone}`} target="_blank" rel="noreferrer">
-                    <Button variant="outline" size="sm" className="gap-1.5"><MessageCircle className="h-4 w-4" /> וואטסאפ</Button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+          <div className="lg:col-span-2 space-y-5">
+            {/* Customer — who we're dealing with, up front */}
+            <SectionCard icon={User} title="פרטי לקוח">
+              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-3">
+                <Field icon={User} label="שם">{ticket.customer_name}</Field>
+                <Field icon={Phone} label="טלפון" ltr>{ticket.customer_phone}</Field>
+                {ticket.customer_email && <Field icon={Mail} label="אימייל" ltr>{ticket.customer_email}</Field>}
+                {ticket.product_name && <Field icon={ShoppingCart} label="מוצר">{ticket.product_name}</Field>}
+                {ticket.contact_preference && <Field icon={PhoneCall} label="העדפת יצירת קשר">{CONTACT_PREFERENCE_LABELS[ticket.contact_preference] || ticket.contact_preference}</Field>}
+              </div>
+              {ticket.customer_phone && (
+                <div className="flex flex-wrap gap-2 mt-4">
+                  <a href={`tel:${ticket.customer_phone}`}>
+                    <Button variant="outline" size="sm" className="gap-1.5"><Phone className="h-4 w-4" /> חיוג</Button>
                   </a>
-                )}
-                {ticket.customer_email && (
-                  <a href={`mailto:${ticket.customer_email}`}>
-                    <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" /> אימייל</Button>
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Problem brief — the first thing a manager reads */}
-          <div className="rounded-xl border border-border p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center"><AlertCircle className="h-4 w-4" /></span>
-              <h3 className="font-semibold text-foreground">הבעיה</h3>
-            </div>
-            {answers.problem_summary && <p className="text-sm font-medium text-foreground">{answers.problem_summary}</p>}
-            {ticket.description
-              ? <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
-              : (!answers.problem_summary && <p className="text-sm text-muted-foreground">לא צוין תיאור.</p>)}
-            {(answers.problem_area || answers.when_started || answers.usage) && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                <DiagChip icon={MapPin} label="מיקום" value={answers.problem_area} />
-                <DiagChip icon={Clock} label="התחיל" value={answers.when_started} />
-                <DiagChip icon={Repeat} label="תדירות" value={answers.usage} />
-              </div>
-            )}
-            {answers.notes && (
-              <div className="rounded-lg bg-muted/40 p-3 text-sm">
-                <span className="text-xs text-muted-foreground">פרטים נוספים: </span>{answers.notes}
-              </div>
-            )}
-            {extraAnswers.length > 0 && (
-              <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 pt-1">
-                {extraAnswers.map(([k, v]) => (
-                  <div key={k} className="text-sm">
-                    <span className="text-muted-foreground">{QUESTION_LABELS[k] || k}: </span>
-                    <span className="font-medium">{String(v)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Warranty insight — in/out of warranty at a glance */}
-          {ticket.request_type === 'warranty' && (ticket.warranty_years || ticket.complaint_age_months) && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 flex items-start gap-3">
-              <ShieldCheck className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold text-emerald-900 text-sm">אחריות יצרן</p>
-                  {withinWarranty === true && <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">בתוך תקופת האחריות</span>}
-                  {withinWarranty === false && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200">מחוץ לתקופת האחריות</span>}
+                  {intlPhone && (
+                    <a href={`https://wa.me/${intlPhone}`} target="_blank" rel="noreferrer">
+                      <Button variant="outline" size="sm" className="gap-1.5"><MessageCircle className="h-4 w-4" /> וואטסאפ</Button>
+                    </a>
+                  )}
+                  {ticket.customer_email && (
+                    <a href={`mailto:${ticket.customer_email}`}>
+                      <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" /> אימייל</Button>
+                    </a>
+                  )}
                 </div>
-                <p className="text-sm text-emerald-800 mt-0.5">
-                  {ticket.warranty_years ? `${ticket.warranty_years} שנות אחריות` : 'אחריות'}
-                  {ticket.complaint_age_months ? ` · התלונה התקבלה ${ticket.complaint_age_months} חודשים לאחר הרכישה` : ''}
-                </p>
-              </div>
-            </div>
-          )}
-          {ticket.request_type === 'trial_30d' && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 flex items-center gap-3">
-              <Clock className="h-5 w-5 text-amber-600 shrink-0" />
-              <p className="text-sm text-amber-800 font-medium">פנייה במסגרת 30 ימי ניסיון</p>
-            </div>
-          )}
+              )}
+            </SectionCard>
 
-          {/* Photos — visual evidence */}
-          <div className="rounded-xl border border-border p-5 space-y-4">
-            <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
-              <ImageIcon className="h-3.5 w-3.5" /> תמונות{photos.length ? ` (${photos.length})` : ''}
-            </p>
-            {photos.length > 0 ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                {photos.map((url, i) => (
-                  <button key={i} type="button" onClick={() => setLightbox(url)} className="aspect-square rounded-xl overflow-hidden border border-border hover:ring-2 hover:ring-primary/40 transition">
-                    <img src={url} alt={`תמונה ${i + 1}`} className="h-full w-full object-cover" />
-                  </button>
-                ))}
+            {/* Problem brief */}
+            <SectionCard icon={AlertCircle} title="הבעיה" contentClassName="p-5 space-y-3">
+              {answers.problem_summary && <p className="text-sm font-medium text-foreground">{answers.problem_summary}</p>}
+              {ticket.description
+                ? <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{ticket.description}</p>
+                : (!answers.problem_summary && <p className="text-sm text-muted-foreground">לא צוין תיאור.</p>)}
+              {(answers.problem_area || answers.when_started || answers.usage) && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <DiagChip icon={MapPin} label="מיקום" value={answers.problem_area} />
+                  <DiagChip icon={Clock} label="התחיל" value={answers.when_started} />
+                  <DiagChip icon={Repeat} label="תדירות" value={answers.usage} />
+                </div>
+              )}
+              {answers.notes && (
+                <div className="rounded-lg bg-muted/40 p-3 text-sm">
+                  <span className="text-xs text-muted-foreground">פרטים נוספים: </span>{answers.notes}
+                </div>
+              )}
+              {extraAnswers.length > 0 && (
+                <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 pt-1">
+                  {extraAnswers.map(([k, v]) => (
+                    <div key={k} className="text-sm">
+                      <span className="text-muted-foreground">{QUESTION_LABELS[k] || k}: </span>
+                      <span className="font-medium">{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </SectionCard>
+
+            {/* Warranty / trial insight */}
+            {ticket.request_type === 'warranty' && (ticket.warranty_years || ticket.complaint_age_months) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-emerald-900 text-sm">אחריות יצרן</p>
+                    {withinWarranty === true && <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">בתוך תקופת האחריות</span>}
+                    {withinWarranty === false && <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200">מחוץ לתקופת האחריות</span>}
+                  </div>
+                  <p className="text-sm text-emerald-800 mt-0.5">
+                    {ticket.warranty_years ? `${ticket.warranty_years} שנות אחריות` : 'אחריות'}
+                    {ticket.complaint_age_months ? ` · התלונה התקבלה ${ticket.complaint_age_months} חודשים לאחר הרכישה` : ''}
+                  </p>
+                </div>
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">לא צורפו תמונות.</p>
             )}
-            <div className="rounded-xl border border-dashed border-border p-4">
-              <ServicePhotoUploader value={photos} onChange={savePhotos} />
-            </div>
-          </div>
+            {ticket.request_type === 'trial_30d' && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 flex items-center gap-3">
+                <Clock className="h-5 w-5 text-amber-600 shrink-0" />
+                <p className="text-sm text-amber-800 font-medium">פנייה במסגרת 30 ימי ניסיון</p>
+              </div>
+            )}
 
-          {/* Linked order */}
-          {order && (
-            <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 font-medium text-sm"><ShoppingCart className="h-4 w-4" /> הזמנה מקושרת #{order.order_number}</p>
-                <div className="flex flex-wrap items-center gap-2 mt-1">
+            {/* Photos */}
+            <SectionCard icon={ImageIcon} title={`תמונות${photos.length ? ` (${photos.length})` : ''}`} contentClassName="p-5 space-y-4">
+              {photos.length > 0 ? (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                  {photos.map((url, i) => (
+                    <button key={i} type="button" onClick={() => setLightbox(url)} className="aspect-square rounded-xl overflow-hidden border border-border hover:ring-2 hover:ring-primary/40 transition">
+                      <img src={url} alt={`תמונה ${i + 1}`} className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">לא צורפו תמונות.</p>
+              )}
+              <div className="rounded-xl border border-dashed border-border p-4">
+                <ServicePhotoUploader value={photos} onChange={savePhotos} />
+              </div>
+            </SectionCard>
+
+            {/* Linked order */}
+            {order && (
+              <SectionCard icon={ShoppingCart} title={`הזמנה מקושרת #${order.order_number}`}
+                action={<Link to={createPageUrl('OrderDetails') + `?id=${order.id}`}><Button variant="outline" size="sm">צפה בהזמנה</Button></Link>}>
+                <div className="flex flex-wrap items-center gap-2">
                   {order.total != null && <span className="text-xs text-muted-foreground">₪{Number(order.total).toLocaleString()}</span>}
                   {ticket.order_date && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Calendar className="h-3 w-3" />הוזמן {ticket.order_date}</span>}
                   {Array.isArray(order.tags) && order.tags.map((t) => <span key={t} className="text-[11px] px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{t}</span>)}
                 </div>
                 <p className="text-[11px] text-muted-foreground/70 mt-1">פניית שירות אינה עורכת את ההזמנה.</p>
-              </div>
-              <Link to={createPageUrl('OrderDetails') + `?id=${order.id}`}><Button variant="outline" size="sm">צפה בהזמנה</Button></Link>
-            </div>
-          )}
-        </div>
-
-        {/* Side column: handling timeline */}
-        <div className="lg:col-span-1 rounded-xl border border-border p-5 space-y-5">
-          <p className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5" /> ציר זמן
-          </p>
-          <div className="flex gap-2">
-            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="הוסף הערה / עדכון טיפול..." className="resize-none" />
-            <Button onClick={addNote} disabled={!note.trim() || updateMutation.isPending}>הוסף</Button>
+              </SectionCard>
+            )}
           </div>
 
-          {timeline.length === 0 ? (
-            <p className="text-sm text-muted-foreground">אין עדיין אירועים.</p>
-          ) : (
-            <div className="space-y-0">
-              {timeline.map((e, i) => {
-                const meta = TIMELINE_META[e.type] || TIMELINE_META.note;
-                return (
-                  <div key={i} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <span className={`h-7 w-7 rounded-full flex items-center justify-center ${meta.ring}`}>
-                        <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
-                      </span>
-                      {i < timeline.length - 1 && <span className="w-px flex-1 bg-border my-1" />}
-                    </div>
-                    <div className="flex-1 pb-5 pt-1">
-                      <p className="text-sm text-foreground whitespace-pre-wrap">{e.text}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {e.by ? `${e.by} · ` : ''}{e.at ? format(new Date(e.at), 'dd/MM/yyyy HH:mm') : ''}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Side column: handling timeline */}
+          <SectionCard icon={Clock} title="ציר זמן" contentClassName="p-5 space-y-5">
+            <div className="flex gap-2">
+              <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="הוסף הערה / עדכון טיפול..." className="resize-none" />
+              <Button onClick={addNote} disabled={!note.trim() || updateMutation.isPending}>הוסף</Button>
             </div>
-          )}
+
+            {timeline.length === 0 ? (
+              <p className="text-sm text-muted-foreground">אין עדיין אירועים.</p>
+            ) : (
+              <div className="space-y-0">
+                {timeline.map((e, i) => {
+                  const meta = TIMELINE_META[e.type] || TIMELINE_META.note;
+                  return (
+                    <div key={i} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className={`h-7 w-7 rounded-full flex items-center justify-center ${meta.ring}`}>
+                          <meta.Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+                        </span>
+                        {i < timeline.length - 1 && <span className="w-px flex-1 bg-border my-1" />}
+                      </div>
+                      <div className="flex-1 pb-5 pt-1">
+                        <p className="text-sm text-foreground whitespace-pre-wrap">{e.text}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {e.by ? `${e.by} · ` : ''}{e.at ? format(new Date(e.at), 'dd/MM/yyyy HH:mm') : ''}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </SectionCard>
         </div>
       </div>
 
