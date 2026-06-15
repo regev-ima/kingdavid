@@ -119,6 +119,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDate, selectedHour, status }
   const [isSavingFollowup, setIsSavingFollowup] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
   const [showQuoteDialog, setShowQuoteDialog] = useState(false);
 
   // Lead picker (create mode only). Search by phone or name against the entire
@@ -192,6 +193,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     setNextTask({ task_type: 'call', due_date: '', due_hours: null });
     setNoAnswerFlow(null);
     setFollowupFlow(null);
+    setIsAssigning(false);
     setShowQuoteDialog(false);
     setLeadSearch('');
     setDebouncedLeadSearch('');
@@ -443,6 +445,41 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
       toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     } finally {
       setIsSavingFollowup(false);
+    }
+  };
+
+  // Assign a rep from the "משימת שיוך" flow: stamp the lead's owner, complete
+  // this assignment task, and open a call task for the rep to phone the
+  // customer. Guarded by isAssigning so a slow network can't turn impatient
+  // double-clicks into duplicate call tasks.
+  const handleAssignRep = async () => {
+    if (isAssigning || !editingTask?.rep1) return;
+    setIsAssigning(true);
+    try {
+      if (editingTask.lead_id) {
+        await base44.entities.Lead.update(editingTask.lead_id, { rep1: editingTask.rep1 });
+        queryClient.invalidateQueries({ queryKey: ['lead'] });
+        queryClient.invalidateQueries({ queryKey: ['leads'] });
+      }
+      await base44.entities.SalesTask.create({
+        lead_id: editingTask.lead_id,
+        rep1: editingTask.rep1,
+        rep2: editingTask.rep2,
+        task_type: 'call',
+        task_status: 'not_completed',
+        status: editingTask.lead?.status || 'new_lead',
+        work_start_date: new Date().toISOString(),
+        due_date: new Date().toISOString(),
+        summary: `יש להתקשר ללקוח ${editingTask.lead?.full_name || ''}`.trim(),
+      });
+      await base44.entities.SalesTask.update(editingTask.id, { task_status: 'completed' });
+      invalidateTaskCaches(queryClient);
+      toast.success('הנציג שויך והמשימה נוצרה');
+      onClose();
+    } catch (err) {
+      console.error('Assign rep failed', err);
+      toast.error(`שיוך נכשל: ${err?.message || 'שגיאה לא ידועה'}`);
+      setIsAssigning(false);
     }
   };
 
@@ -1064,31 +1101,10 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
                   {editingTask.rep1 && (
                     <Button
                       className="w-full bg-blue-600 hover:bg-blue-700"
-                      disabled={updateTaskMutation.isPending}
-                      onClick={async () => {
-                        if (editingTask.lead_id) {
-                          await base44.entities.Lead.update(editingTask.lead_id, { rep1: editingTask.rep1 });
-                          queryClient.invalidateQueries({ queryKey: ['lead'] });
-                          queryClient.invalidateQueries({ queryKey: ['leads'] });
-                        }
-                        await base44.entities.SalesTask.create({
-                          lead_id: editingTask.lead_id,
-                          rep1: editingTask.rep1,
-                          rep2: editingTask.rep2,
-                          task_type: 'call',
-                          task_status: 'not_completed',
-                          status: editingTask.lead?.status || 'new_lead',
-                          work_start_date: new Date().toISOString(),
-                          due_date: new Date().toISOString(),
-                          summary: `שיוך נציג - ${editingTask.lead?.full_name || ''}`,
-                        });
-                        await base44.entities.SalesTask.update(editingTask.id, { task_status: 'completed' });
-                        invalidateTaskCaches(queryClient);
-                        toast.success('הנציג שויך והמשימה נוצרה');
-                        onClose();
-                      }}
+                      disabled={isAssigning}
+                      onClick={handleAssignRep}
                     >
-                      אשר שיוך והמשך
+                      {isAssigning ? 'משייך...' : 'אשר שיוך והמשך'}
                     </Button>
                   )}
                 </div>
