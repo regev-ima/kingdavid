@@ -180,12 +180,14 @@ Deno.serve(async (req) => {
       }
     };
 
-    const [rangeLeads, rangeOrders, rangeQuotes, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes, unassignedLeadsCountRes, stuckLeadsCountRes] = await Promise.all([
-      safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }, LEAD_COLUMNS), [] as any[]),
-      safe('orders', fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
-      safe('quotes', fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
+    // Heavy lead/order/quote aggregation runs in Postgres (dashboard_stats_v1)
+    // — one call returns pre-summed rows instead of pulling thousands of raw
+    // rows per request. Everything else here is small/point-in-time. The RPC
+    // is fetched alongside; if it's unavailable we fall back to the raw scan.
+    const [statsRpc, rangeMarketingCosts, allUsers, overdueTasks, todayTasks, sentQuotes, unassignedLeadsCountRes, stuckLeadsCountRes] = await Promise.all([
+      safe('dashboardStatsRpc', supabase.rpc('dashboard_stats_v1', { p_start: startIso, p_end: endIso }).then((r: any) => { if (r.error) throw r.error; return r.data; }), null as any),
       safe('marketing_costs', fetchAll(supabase, 'marketing_costs', { gte: { date: startIso }, lte: { date: endIso }, order: 'date' }), [] as any[]),
-      safe('users', supabase.from('users').select('*').then((r: any) => { if (r.error) throw r.error; return r.data || []; }), [] as any[]),
+      safe('users', supabase.from('users').select('email,full_name,role,profile_icon').then((r: any) => { if (r.error) throw r.error; return r.data || []; }), [] as any[]),
       safe('overdueTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, lt: { due_date: todayStart.toISOString() }, order: 'due_date' }), [] as any[]),
       safe('todayTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, gte: { due_date: todayStart.toISOString() }, lte: { due_date: todayEnd.toISOString() }, order: 'due_date' }), [] as any[]),
       safe('sentQuotes', fetchAll(supabase, 'quotes', { eq: { status: 'sent' }, order: 'created_date' }), [] as any[]),
@@ -205,90 +207,13 @@ Deno.serve(async (req) => {
 
     const unassignedLeadsCount = unassignedLeadsCountRes?.count || 0;
     const stuckLeadsCount = stuckLeadsCountRes?.count || 0;
-
     const openTaskCount = overdueTasks.length + todayTasks.length;
-    const rangeLeadsById = new Map(rangeLeads.map((l: any) => [l.id, l]));
-    const leadsWithQuoteRange = new Set(rangeQuotes.map((q: any) => q.lead_id).filter(Boolean));
 
-    const rangeSlaRedLeads = rangeLeads.filter((l: any) => {
-      if (l.first_action_at) return false;
-      const c = parseDateLoose(l.created_date);
-      return c ? ((now.getTime() - c.getTime()) / 60000) > SLA_RED_MINUTES : false;
-    });
-
-    const liveSlaRedCount = rangeSlaRedLeads.length;
-
-    const expiringQuotes = sentQuotes.map((q: any) => {
-      const vu = parseDateLoose(q.valid_until);
-      if (!vu) return null;
-      const dl = Math.ceil((vu.getTime() - now.getTime()) / 86400000);
-      if (dl < 0 || dl > EXPIRING_QUOTES_DAYS) return null;
-      return { id: q.id, quote_number: q.quote_number, customer_name: q.customer_name, total: safeNumber(q.total), valid_until: q.valid_until, days_left: dl };
-    }).filter(Boolean).slice(0, 8);
-
-    const pendingQuotesLive = sentQuotes.filter((q: any) => {
-      if (!q.valid_until) return true;
-      const vu = parseDateLoose(q.valid_until);
-      return vu ? vu >= todayStart : true;
-    });
-
-    // Summary KPIs
-    const rangeRevenue = rangeOrders.reduce((a: number, o: any) => a + safeNumber(o.total), 0);
-    const rangeLeadsCount = rangeLeads.length;
-    const rangeWonLeadsCount = rangeLeads.filter((l: any) => isLeadWon(l.status)).length;
-    const rangeConversionRate = rangeLeadsCount > 0 ? Math.round((rangeWonLeadsCount / rangeLeadsCount) * 1000) / 10 : 0;
-    const rangeSlaCompliance = rangeLeadsCount > 0 ? Math.max(0, Math.round(((rangeLeadsCount - rangeSlaRedLeads.length) / rangeLeadsCount) * 1000) / 10) : 100;
-
-    const summary_kpis = {
-      revenue: { value: rangeRevenue, currency: 'ILS', label: 'הכנסות בטווח' },
-      conversion: { value: rangeConversionRate, won_leads: rangeWonLeadsCount, total_leads: rangeLeadsCount, label: 'המרה', unit: '%' },
-      sla: { value: rangeSlaCompliance, red_count: rangeSlaRedLeads.length, threshold_minutes: SLA_RED_MINUTES, label: 'SLA תקין', unit: '%' },
-      open_workload: { value: openTaskCount, label: 'עומס פתוח' },
-    };
-
-    const live_pipeline = {
-      tasks_overdue: { count: overdueTasks.length, label: 'משימות באיחור' },
-      tasks_today: { count: todayTasks.length, label: 'משימות להיום' },
-      sla_red_open: { count: liveSlaRedCount, label: 'SLA אדום פתוח' },
-      pending_quotes: { count: pendingQuotesLive.length, label: 'הצעות ממתינות' },
-    };
-
-    // Rep performance
-    const reps = (allUsers as any[]).filter(u => u.role === 'admin' || u.role === 'user');
-    const repRows = reps.map(rep => {
-      const repEmail = normalizeLower(rep.email);
-      const repLeads = rangeLeads.filter((l: any) => normalizeLower(l.rep1) === repEmail);
-      const repWon = repLeads.filter((l: any) => isLeadWon(l.status)).length;
-      const repConversion = repLeads.length > 0 ? Math.round((repWon / repLeads.length) * 1000) / 10 : 0;
-      const repRevenue = rangeOrders.reduce((acc: number, order: any) => {
-        if (normalizeLower(order.rep1) === repEmail) return acc + safeNumber(order.total);
-        const lead = order.lead_id ? rangeLeadsById.get(order.lead_id) : null;
-        if (lead && normalizeLower(lead.rep1) === repEmail) return acc + safeNumber(order.total);
-        return acc;
-      }, 0);
-      const repTasksOverdue = overdueTasks.filter((t: any) => normalizeLower(t.rep1) === repEmail || normalizeLower(t.rep2) === repEmail);
-      const repTasksToday = todayTasks.filter((t: any) => normalizeLower(t.rep1) === repEmail || normalizeLower(t.rep2) === repEmail);
-      const repSlaRed = rangeSlaRedLeads.filter((l: any) => normalizeLower(l.rep1) === repEmail).length;
-
-      return {
-        rep_name: rep.full_name || rep.email,
-        rep_email: rep.email,
-        profile_icon: rep.profile_icon || null,
-        leads_range: repLeads.length,
-        won_range: repWon,
-        conversion_rate: repConversion,
-        revenue: repRevenue,
-        workload_open_tasks: repTasksOverdue.length + repTasksToday.length,
-        workload_overdue_tasks: repTasksOverdue.length,
-        sla_red_open: repSlaRed,
-      };
-    }).sort((a, b) => b.revenue !== a.revenue ? b.revenue - a.revenue : b.conversion_rate - a.conversion_rate);
-
-    // Marketing
+    // Marketing maps — populated identically whether the numbers come from the
+    // SQL function (fast) or the raw scan (fallback).
     const sourceMap = new Map();
     const campaignMap = new Map();
     const landingPageMap = new Map();
-
     const getSourceRow = (source: string) => {
       if (!sourceMap.has(source)) sourceMap.set(source, { source, leads: 0, won: 0, lost: 0, open: 0, quote_sent: 0, conversion_rate: 0, quote_rate: 0, attributed_revenue: 0, spend: 0, roas: null, cost_per_lead: 0 });
       return sourceMap.get(source);
@@ -306,34 +231,93 @@ Deno.serve(async (req) => {
       return row;
     };
 
-    rangeLeads.forEach((lead: any) => {
-      const source = normalizeSource(deriveSource(lead));
-      const campaign = normalizeCampaign(lead.utm_campaign || lead.facebook_campaign_name);
-      const lp = normalizeString(lead.landing_page) || 'ללא דף נחיתה';
-      const sRow = getSourceRow(source);
-      const cRow = getCampaignRow(campaign, source);
-      const lRow = getLandingPageRow(lp, source);
-      sRow.leads += 1; cRow.leads += 1; lRow.leads += 1;
-      // Classify won / lost / still-in-handling so each row exposes real
-      // סגירה/בטיפול/אבד rates (won = deal_closed, lost = any other closed
-      // status, open = everything still live in the pipeline).
-      if (isLeadWon(lead.status)) { sRow.won += 1; cRow.won += 1; lRow.won += 1; }
-      else if (isLeadClosed(lead.status)) { sRow.lost += 1; cRow.lost += 1; lRow.lost += 1; }
-      else { sRow.open += 1; cRow.open += 1; lRow.open += 1; }
-      if (leadsWithQuoteRange.has(lead.id)) { sRow.quote_sent += 1; cRow.quote_sent += 1; lRow.quote_sent += 1; }
-    });
+    let rangeLeadsCount = 0;
+    let rangeWonLeadsCount = 0;
+    let rangeRevenue = 0;
+    let liveSlaRedCount = 0;
+    let leadsTrend: any[] = [];
+    let revenueTrend: any[] = [];
+    const repAgg = new Map<string, { leads: number; won: number; revenue: number; slaRed: number }>();
+    const bumpRep = (email: string) => {
+      if (!repAgg.has(email)) repAgg.set(email, { leads: 0, won: 0, revenue: 0, slaRed: 0 });
+      return repAgg.get(email)!;
+    };
 
-    rangeOrders.forEach((order: any) => {
-      const lead = order.lead_id ? rangeLeadsById.get(order.lead_id) : null;
-      const source = normalizeSource((lead && deriveSource(lead)) || order.source);
-      const campaign = normalizeCampaign(lead?.utm_campaign || lead?.facebook_campaign_name);
-      const lp = normalizeString(lead?.landing_page) || 'ללא דף נחיתה';
-      const total = safeNumber(order.total);
-      getSourceRow(source).attributed_revenue += total;
-      getCampaignRow(campaign, source).attributed_revenue += total;
-      getLandingPageRow(lp, source).attributed_revenue += total;
-    });
+    if (statsRpc) {
+      // ── Fast path: Postgres already did the GROUP BYs. Normalize the raw
+      // source/campaign keys + merge here (small arrays, single source of truth
+      // for normalization stays in JS).
+      const d: any = statsRpc;
+      rangeLeadsCount = safeNumber(d.summary?.leads);
+      rangeWonLeadsCount = safeNumber(d.summary?.won);
+      rangeRevenue = safeNumber(d.summary?.revenue);
+      liveSlaRedCount = safeNumber(d.summary?.sla_red);
+      (d.lead_sources || []).forEach((r: any) => { const row = getSourceRow(normalizeSource(r.k)); row.leads += safeNumber(r.leads); row.won += safeNumber(r.won); row.lost += safeNumber(r.lost); row.open += safeNumber(r.open); row.quote_sent += safeNumber(r.quote_sent); });
+      (d.src_rev || []).forEach((r: any) => { getSourceRow(normalizeSource(r.k)).attributed_revenue += safeNumber(r.revenue); });
+      (d.lead_campaigns || []).forEach((r: any) => { const row = getCampaignRow(normalizeCampaign(r.k), normalizeSource(r.src)); row.leads += safeNumber(r.leads); row.won += safeNumber(r.won); row.lost += safeNumber(r.lost); row.open += safeNumber(r.open); row.quote_sent += safeNumber(r.quote_sent); });
+      (d.camp_rev || []).forEach((r: any) => { getCampaignRow(normalizeCampaign(r.k)).attributed_revenue += safeNumber(r.revenue); });
+      (d.lead_lps || []).forEach((r: any) => { const row = getLandingPageRow(normalizeString(r.k) || 'ללא דף נחיתה', normalizeSource(r.src)); row.leads += safeNumber(r.leads); row.won += safeNumber(r.won); row.lost += safeNumber(r.lost); row.open += safeNumber(r.open); row.quote_sent += safeNumber(r.quote_sent); });
+      (d.lp_rev || []).forEach((r: any) => { getLandingPageRow(normalizeString(r.k) || 'ללא דף נחיתה').attributed_revenue += safeNumber(r.revenue); });
+      (d.reps || []).forEach((r: any) => { const e = normalizeLower(r.email); if (e) repAgg.set(e, { leads: safeNumber(r.leads), won: safeNumber(r.won), revenue: safeNumber(r.revenue), slaRed: safeNumber(r.sla_red) }); });
+      leadsTrend = (d.leads_daily || []).map((x: any) => ({ date: x.date, value: safeNumber(x.value) }));
+      revenueTrend = (d.revenue_daily || []).map((x: any) => ({ date: x.date, value: safeNumber(x.value) }));
+    } else {
+      // ── Fallback: scan the raw rows in JS (the previous behaviour). Slower,
+      // but keeps the dashboard correct if the SQL function isn't deployed yet.
+      const [rangeLeads, rangeOrders, rangeQuotes] = await Promise.all([
+        safe('leads', fetchAll(supabase, 'leads', { gte: { effective_sort_date: startIso }, lte: { effective_sort_date: endIso }, order: 'effective_sort_date' }, LEAD_COLUMNS), [] as any[]),
+        safe('orders', fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
+        safe('quotes', fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
+      ]);
+      const rangeLeadsById = new Map(rangeLeads.map((l: any) => [l.id, l]));
+      const leadsWithQuoteRange = new Set(rangeQuotes.map((q: any) => q.lead_id).filter(Boolean));
+      const slaRedLeads = rangeLeads.filter((l: any) => {
+        if (l.first_action_at) return false;
+        const c = parseDateLoose(l.created_date);
+        return c ? ((now.getTime() - c.getTime()) / 60000) > SLA_RED_MINUTES : false;
+      });
+      rangeLeadsCount = rangeLeads.length;
+      rangeWonLeadsCount = rangeLeads.filter((l: any) => isLeadWon(l.status)).length;
+      rangeRevenue = rangeOrders.reduce((a: number, o: any) => a + safeNumber(o.total), 0);
+      liveSlaRedCount = slaRedLeads.length;
+      slaRedLeads.forEach((l: any) => { const e = normalizeLower(l.rep1); if (e) bumpRep(e).slaRed += 1; });
 
+      rangeLeads.forEach((lead: any) => {
+        const source = normalizeSource(deriveSource(lead));
+        const campaign = normalizeCampaign(lead.utm_campaign || lead.facebook_campaign_name);
+        const lp = normalizeString(lead.landing_page) || 'ללא דף נחיתה';
+        const sRow = getSourceRow(source);
+        const cRow = getCampaignRow(campaign, source);
+        const lRow = getLandingPageRow(lp, source);
+        sRow.leads += 1; cRow.leads += 1; lRow.leads += 1;
+        const won = isLeadWon(lead.status);
+        if (won) { sRow.won += 1; cRow.won += 1; lRow.won += 1; }
+        else if (isLeadClosed(lead.status)) { sRow.lost += 1; cRow.lost += 1; lRow.lost += 1; }
+        else { sRow.open += 1; cRow.open += 1; lRow.open += 1; }
+        if (leadsWithQuoteRange.has(lead.id)) { sRow.quote_sent += 1; cRow.quote_sent += 1; lRow.quote_sent += 1; }
+        const e = normalizeLower(lead.rep1);
+        if (e) { const ra = bumpRep(e); ra.leads += 1; if (won) ra.won += 1; }
+      });
+
+      rangeOrders.forEach((order: any) => {
+        const lead = order.lead_id ? rangeLeadsById.get(order.lead_id) : null;
+        const source = normalizeSource((lead && deriveSource(lead)) || order.source);
+        const campaign = normalizeCampaign(lead?.utm_campaign || lead?.facebook_campaign_name);
+        const lp = normalizeString(lead?.landing_page) || 'ללא דף נחיתה';
+        const total = safeNumber(order.total);
+        getSourceRow(source).attributed_revenue += total;
+        getCampaignRow(campaign, source).attributed_revenue += total;
+        getLandingPageRow(lp, source).attributed_revenue += total;
+        const e = normalizeLower(order.rep1) || (lead ? normalizeLower(lead.rep1) : '');
+        if (e) bumpRep(e).revenue += total;
+      });
+
+      leadsTrend = aggregateTrend(rangeLeads, 'effective_sort_date');
+      revenueTrend = aggregateTrend(rangeOrders, 'created_date', 'total');
+    }
+
+    // Spend comes from the (small) marketing_costs table — merged in JS either
+    // way so we never have to reference its columns from SQL.
     rangeMarketingCosts.forEach((cost: any) => {
       const source = normalizeSource(cost.source || cost.utm_source || cost.channel || cost.platform);
       const campaign = normalizeCampaign(cost.campaign_name || cost.campaign || cost.utm_campaign);
@@ -341,6 +325,58 @@ Deno.serve(async (req) => {
       getSourceRow(source).spend += amount;
       getCampaignRow(campaign, source).spend += amount;
     });
+
+    const expiringQuotes = sentQuotes.map((q: any) => {
+      const vu = parseDateLoose(q.valid_until);
+      if (!vu) return null;
+      const dl = Math.ceil((vu.getTime() - now.getTime()) / 86400000);
+      if (dl < 0 || dl > EXPIRING_QUOTES_DAYS) return null;
+      return { id: q.id, quote_number: q.quote_number, customer_name: q.customer_name, total: safeNumber(q.total), valid_until: q.valid_until, days_left: dl };
+    }).filter(Boolean).slice(0, 8);
+
+    const pendingQuotesLive = sentQuotes.filter((q: any) => {
+      if (!q.valid_until) return true;
+      const vu = parseDateLoose(q.valid_until);
+      return vu ? vu >= todayStart : true;
+    });
+
+    const rangeConversionRate = rangeLeadsCount > 0 ? Math.round((rangeWonLeadsCount / rangeLeadsCount) * 1000) / 10 : 0;
+    const rangeSlaCompliance = rangeLeadsCount > 0 ? Math.max(0, Math.round(((rangeLeadsCount - liveSlaRedCount) / rangeLeadsCount) * 1000) / 10) : 100;
+
+    const summary_kpis = {
+      revenue: { value: rangeRevenue, currency: 'ILS', label: 'הכנסות בטווח' },
+      conversion: { value: rangeConversionRate, won_leads: rangeWonLeadsCount, total_leads: rangeLeadsCount, label: 'המרה', unit: '%' },
+      sla: { value: rangeSlaCompliance, red_count: liveSlaRedCount, threshold_minutes: SLA_RED_MINUTES, label: 'SLA תקין', unit: '%' },
+      open_workload: { value: openTaskCount, label: 'עומס פתוח' },
+    };
+
+    const live_pipeline = {
+      tasks_overdue: { count: overdueTasks.length, label: 'משימות באיחור' },
+      tasks_today: { count: todayTasks.length, label: 'משימות להיום' },
+      sla_red_open: { count: liveSlaRedCount, label: 'SLA אדום פתוח' },
+      pending_quotes: { count: pendingQuotesLive.length, label: 'הצעות ממתינות' },
+    };
+
+    // Rep performance — one row per active rep (admin/user), filled from the
+    // aggregated counts + live task workload.
+    const repRows = (allUsers as any[]).filter(u => u.role === 'admin' || u.role === 'user').map(rep => {
+      const repEmail = normalizeLower(rep.email);
+      const agg = repAgg.get(repEmail) || { leads: 0, won: 0, revenue: 0, slaRed: 0 };
+      const repTasksOverdue = overdueTasks.filter((t: any) => normalizeLower(t.rep1) === repEmail || normalizeLower(t.rep2) === repEmail);
+      const repTasksToday = todayTasks.filter((t: any) => normalizeLower(t.rep1) === repEmail || normalizeLower(t.rep2) === repEmail);
+      return {
+        rep_name: rep.full_name || rep.email,
+        rep_email: rep.email,
+        profile_icon: rep.profile_icon || null,
+        leads_range: agg.leads,
+        won_range: agg.won,
+        conversion_rate: agg.leads > 0 ? Math.round((agg.won / agg.leads) * 1000) / 10 : 0,
+        revenue: agg.revenue,
+        workload_open_tasks: repTasksOverdue.length + repTasksToday.length,
+        workload_overdue_tasks: repTasksOverdue.length,
+        sla_red_open: agg.slaRed,
+      };
+    }).sort((a, b) => b.revenue !== a.revenue ? b.revenue - a.revenue : b.conversion_rate - a.conversion_rate);
 
     const finalizeMktRow = (row: any) => {
       row.conversion_rate = row.leads > 0 ? Math.round((row.won / row.leads) * 1000) / 10 : 0;
@@ -377,7 +413,7 @@ Deno.serve(async (req) => {
       sales_performance: { reps: repRows },
       marketing_performance: { totals: { leads: rangeLeadsCount, won_leads: rangeWonLeadsCount, spend: rangeMarketingCosts.reduce((a: number, r: any) => a + safeNumber(r.amount), 0), conversion_rate: rangeConversionRate }, sources: sourceRows, campaigns: campaignRows, landing_pages: landingPageRows },
       smart_alerts,
-      trends: { leads_daily: aggregateTrend(rangeLeads, 'effective_sort_date'), revenue_daily: aggregateTrend(rangeOrders, 'created_date', 'total') },
+      trends: { leads_daily: leadsTrend, revenue_daily: revenueTrend },
       tasks: { pending_total: openTaskCount, today: todayTasks.length, overdue: overdueTasks.length },
     }, { headers: cors });
   } catch (error) {
