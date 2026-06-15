@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Clock, User, UserCheck, X, ShieldCheck, Info } from 'lucide-react';
+import { Loader2, Clock, User, UserCheck, X, ShieldCheck, Info, AlertCircle } from 'lucide-react';
 import { addHours, differenceInDays } from '@/lib/safe-date-fns';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
 import {
@@ -62,6 +62,8 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
 
   const [formData, setFormData] = useState(emptyForm);
   const [error, setError] = useState('');
+  const [photosUploading, setPhotosUploading] = useState(false);
+  const [confirmNoPhotos, setConfirmNoPhotos] = useState(false);
   const set = (key, value) => setFormData((prev) => ({ ...prev, [key]: value }));
   const setAnswer = (key, value) =>
     setFormData((prev) => ({ ...prev, issue_answers: { ...prev.issue_answers, [key]: value } }));
@@ -164,7 +166,13 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     if (!formData.customer_name?.trim()) return setError('יש למלא שם לקוח');
     if (!formData.customer_phone?.trim()) return setError('יש למלא טלפון');
     if (!formData.subject?.trim()) return setError('יש למלא נושא');
+    if (photosUploading) return setError('יש להמתין לסיום העלאת הקבצים');
     setError('');
+    // Nudge the rep to attach evidence — confirm once before opening empty-handed.
+    if ((formData.photo_urls?.length || 0) === 0 && !confirmNoPhotos) {
+      setConfirmNoPhotos(true);
+      return;
+    }
     createMutation.mutate(formData);
   };
 
@@ -316,47 +324,59 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
           </div>
 
           <div className="space-y-1.5">
-            <Label>תיאור מפורט</Label>
+            <Label>תיאור הבעיה</Label>
             <Textarea value={formData.description} onChange={(e) => set('description', e.target.value)} rows={2} placeholder="פרט את הבעיה" />
           </div>
 
-          {/* Diagnostic questions (collapsed into a compact grid) */}
-          <details className="rounded-lg border border-border bg-muted/20 p-3">
-            <summary className="text-sm font-medium cursor-pointer select-none">שאלות אבחון (אופציונלי)</summary>
-            <div className="space-y-2.5 pt-3">
-              {DIAGNOSTIC_QUESTIONS.filter((q) => q.key !== 'product').map((q) => (
-                <div key={q.key} className="space-y-1">
-                  <Label className="text-xs">{q.label}</Label>
-                  {q.type === 'select' ? (
-                    <Select value={formData.issue_answers[q.key] || ''} onValueChange={(v) => setAnswer(q.key, v)}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="בחר..." /></SelectTrigger>
-                      <SelectContent>
-                        {q.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ) : q.type === 'textarea' ? (
-                    <Textarea rows={2} value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
-                  ) : (
-                    <Input value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </details>
-
-          {/* Photos */}
-          <div className="space-y-1.5">
-            <Label>תמונות של הבעיה</Label>
-            <ServicePhotoUploader value={formData.photo_urls} onChange={(urls) => set('photo_urls', urls)} />
+          {/* Diagnostic questions — same set the customer sees in the public link */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2.5">
+            <p className="text-sm font-medium">שאלות אבחון</p>
+            {DIAGNOSTIC_QUESTIONS.filter((q) => q.key !== 'product').map((q) => (
+              <div key={q.key} className="space-y-1">
+                <Label className="text-xs">{q.label}</Label>
+                {q.type === 'select' ? (
+                  <Select value={formData.issue_answers[q.key] || ''} onValueChange={(v) => setAnswer(q.key, v)}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר..." /></SelectTrigger>
+                    <SelectContent>
+                      {q.options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : q.type === 'textarea' ? (
+                  <Textarea rows={2} value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                ) : (
+                  <Input value={formData.issue_answers[q.key] || ''} onChange={(e) => setAnswer(q.key, e.target.value)} placeholder={q.placeholder} />
+                )}
+              </div>
+            ))}
           </div>
+
+          {/* Photos / short videos */}
+          <div className="space-y-1.5">
+            <Label>תמונות / סרטון של הבעיה</Label>
+            <ServicePhotoUploader
+              value={formData.photo_urls}
+              onChange={(urls) => { set('photo_urls', urls); if (urls.length) setConfirmNoPhotos(false); }}
+              onUploadingChange={setPhotosUploading}
+            />
+          </div>
+
+          {confirmNoPhotos && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
+              <p className="text-amber-800 flex items-start gap-1.5"><AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> לא צורפו תמונות. תמונות/סרטון עוזרים להבין ולטפל בבעיה מהר יותר — לפתוח בכל זאת?</p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={() => createMutation.mutate(formData)} disabled={createMutation.isPending}>פתח בכל זאת</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setConfirmNoPhotos(false)}>הוסף תמונות</Button>
+              </div>
+            </div>
+          )}
 
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
 
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
-            <Button type="submit" disabled={createMutation.isPending}>
+            <Button type="submit" disabled={createMutation.isPending || photosUploading}>
               {createMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
-              פתח פנייה
+              {photosUploading ? 'ממתין להעלאה…' : 'פתח פנייה'}
             </Button>
           </div>
         </form>

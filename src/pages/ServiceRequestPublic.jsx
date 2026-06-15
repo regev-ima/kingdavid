@@ -6,9 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, CheckCircle2, Crown, ShieldCheck } from 'lucide-react';
+import { Loader2, CheckCircle2, Crown, ShieldCheck, Info, AlertCircle } from 'lucide-react';
 import ServicePhotoUploader from '@/components/service/ServicePhotoUploader';
-import { compressImage } from '@/lib/imageCompression';
 import {
   REQUEST_TYPE_OPTIONS, DIAGNOSTIC_QUESTIONS, CONTACT_PREFERENCE_OPTIONS,
 } from '@/constants/serviceOptions';
@@ -64,6 +63,9 @@ export default function ServiceRequestPublic() {
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
   const setAnswer = (k, v) => setForm((p) => ({ ...p, issue_answers: { ...p.issue_answers, [k]: v } }));
   const [error, setError] = useState('');
+  const [photosUploading, setPhotosUploading] = useState(false);
+  const [confirmNoPhotos, setConfirmNoPhotos] = useState(false);
+  const [showTips, setShowTips] = useState(false);
 
   // Anon upload straight into the 'uploads' bucket under the service-requests/
   // prefix the storage policy whitelists for anonymous inserts.
@@ -104,7 +106,12 @@ export default function ServiceRequestPublic() {
     e.preventDefault();
     if (!form.request_type) return setError('יש לבחור סוג פנייה');
     if (!form.description.trim()) return setError('יש לתאר את הבעיה');
+    if (photosUploading) return setError('יש להמתין לסיום העלאת הקבצים');
     setError('');
+    if ((form.photo_urls?.length || 0) === 0 && !confirmNoPhotos) {
+      setConfirmNoPhotos(true);
+      return;
+    }
     submitMutation.mutate();
   };
 
@@ -219,16 +226,31 @@ export default function ServiceRequestPublic() {
             <Textarea rows={3} className="text-right" value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="ספרו לנו מה קרה..." required />
           </div>
 
-          {/* Photos */}
+          {/* Photos / short video */}
           <div className="space-y-1.5">
-            <Label>צירוף תמונות של הבעיה</Label>
+            <div className="flex items-center justify-between">
+              <Label>צירוף תמונות / סרטון של הבעיה</Label>
+              <button type="button" onClick={() => setShowTips((v) => !v)} className="text-xs text-primary inline-flex items-center gap-1">
+                <Info className="h-3.5 w-3.5" /> איך לצלם?
+              </button>
+            </div>
+            {showTips && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 text-xs text-blue-900 space-y-1">
+                <p className="font-medium">טיפים לצילום שיעזרו לנו לטפל מהר יותר:</p>
+                <ul className="list-disc pe-4 space-y-0.5">
+                  <li>צלמו באור טוב, רצוי באור יום.</li>
+                  <li>תמונה כללית של המוצר ועוד תמונה מקרוב של הבעיה עצמה.</li>
+                  <li>אפשר להניח חפץ לגודל (מטבע / סרגל) ליד הפגם.</li>
+                  <li>סרטון קצר (עד דקה) אם הבעיה מורגשת בתנועה / בלחיצה.</li>
+                </ul>
+              </div>
+            )}
             <ServicePhotoUploader
               value={form.photo_urls}
-              onChange={(urls) => set('photo_urls', urls)}
-              uploadFn={async (file) => {
-                const compressed = await compressImage(file, { maxSizeMB: 0.6, maxWidthOrHeight: 1600 });
-                return publicUpload(compressed);
-              }}
+              onChange={(urls) => { set('photo_urls', urls); if (urls.length) setConfirmNoPhotos(false); }}
+              uploadFn={(file) => publicUpload(file)}
+              onUploadingChange={setPhotosUploading}
+              deleteFn={() => {}}
             />
           </div>
 
@@ -241,11 +263,21 @@ export default function ServiceRequestPublic() {
             </Select>
           </div>
 
+          {confirmNoPhotos && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
+              <p className="text-amber-800 flex items-start gap-1.5"><AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /> לא צירפתם תמונות. תמונות או סרטון עוזרים לנו לטפל בבעיה מהר יותר — לשלוח בכל זאת?</p>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending}>שלח בכל זאת</Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setConfirmNoPhotos(false)}>הוסף תמונות</Button>
+              </div>
+            </div>
+          )}
+
           {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">{error}</div>}
 
-          <Button type="submit" className="w-full" disabled={submitMutation.isPending}>
+          <Button type="submit" className="w-full" disabled={submitMutation.isPending || photosUploading}>
             {submitMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
-            שליחת הפנייה
+            {photosUploading ? 'ממתין להעלאה…' : 'שליחת הפנייה'}
           </Button>
         </form>
       </div>

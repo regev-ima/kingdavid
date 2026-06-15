@@ -78,13 +78,14 @@ export const SOURCE_LABELS = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.val
 export const SOURCE_CHIP = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value, o.chip]));
 
 // ── Diagnostic questions ──────────────────────────────────────────────────
-// A small, ordered set of the questions the service team needs to understand a
-// fault. Answers are stored in support_tickets.issue_answers as
-// { [key]: value }. Generic enough for mattresses/beds/furniture; the team can
-// extend this list later.
+// A small, ordered set of structured questions the service team needs to triage
+// a fault fast. Answers are stored in support_tickets.issue_answers as
+// { [key]: value }. The free-text "what happened" lives in the ticket's
+// `description` field (a single place), so we deliberately keep NO overlapping
+// free-text questions here. Shown identically in the rep dialog and the public
+// link. Generic enough for mattresses/beds/furniture.
 export const DIAGNOSTIC_QUESTIONS = [
   { key: 'product', label: 'באיזה מוצר מדובר?', type: 'text', placeholder: 'למשל: מזרן קפיצים מבודדים 160/200' },
-  { key: 'problem_summary', label: 'מה הבעיה בקצרה?', type: 'text', placeholder: 'תארו את התקלה' },
   {
     key: 'problem_area',
     label: 'היכן ממוקמת הבעיה?',
@@ -103,8 +104,18 @@ export const DIAGNOSTIC_QUESTIONS = [
     type: 'select',
     options: ['שימוש יומיומי', 'שימוש מזדמן', 'חדר אורחים / לא בשימוש קבוע'],
   },
-  { key: 'notes', label: 'פרטים נוספים שיעזרו לנו', type: 'textarea', placeholder: 'כל מידע נוסף' },
 ];
+
+// ── Customer media upload limits ──────────────────────────────────────────
+// Client-side guards for the photos/short-videos a customer attaches. These are
+// UX guards, not a hard security boundary — the real gate is the storage RLS
+// policy (only image/* + reasonable size land in the 'uploads' bucket). Images
+// are compressed before upload; videos are accepted as-is up to these caps so a
+// customer can send a short clip without us swallowing multi-GB files.
+export const UPLOAD_ACCEPT = 'image/*,video/*';
+export const UPLOAD_MAX_IMAGE_MB = 12;     // pre-compression ceiling
+export const UPLOAD_MAX_VIDEO_MB = 40;
+export const UPLOAD_MAX_VIDEO_SECONDS = 60;
 
 // Standard contact-preference choices for the public form.
 export const CONTACT_PREFERENCE_OPTIONS = [
