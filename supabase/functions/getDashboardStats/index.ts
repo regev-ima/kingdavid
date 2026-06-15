@@ -1,3 +1,5 @@
+// Dashboard control-center stats. CORS reflects the canonical site + Vercel
+// previews (see _shared/supabase.ts) so the dashboard works during PR review.
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 const SLA_RED_MINUTES = 15;
