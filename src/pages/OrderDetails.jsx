@@ -40,7 +40,13 @@ import {
   Headphones,
   CreditCard,
   Download,
-  CheckCircle2
+  CheckCircle2,
+  User,
+  Mail,
+  MapPin,
+  Home,
+  Package,
+  Clock,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -290,51 +296,60 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Info */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Customer & Order Info */}
+          {/* Customer & delivery — same dl icon-row design as the lead screen:
+              one row per field with a leading icon + slim label, value on the
+              left, empty rows hidden so a sparse order shows no blank "-"s. */}
           <Card>
-            <CardHeader>
-              <CardTitle>פרטי הזמנה</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+                פרטי לקוח
+              </CardTitle>
+              {customer && (
+                <Link to={createPageUrl('CustomerDetails') + `?id=${customer.id}`}>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-primary">
+                    פרופיל לקוח
+                  </Button>
+                </Link>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="grid sm:grid-cols-2 gap-6">
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold">פרטי לקוח</h4>
-                    {customer && (
-                      <Link to={createPageUrl('CustomerDetails') + `?id=${customer.id}`}>
-                        <Button variant="ghost" size="sm" className="text-primary">
-                          פרופיל לקוח
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-muted-foreground">שם:</span> {order.customer_name}</p>
-                    <p><span className="text-muted-foreground">טלפון:</span> {order.customer_phone}</p>
-                    <p><span className="text-muted-foreground">אימייל:</span> {order.customer_email || '-'}</p>
-                    {customer && (
-                      <>
-                        <p><span className="text-muted-foreground">סה"כ הזמנות:</span> {customer.total_orders}</p>
-                        <p><span className="text-muted-foreground">LTV:</span> ₪{customer.lifetime_value?.toLocaleString()}</p>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-3">כתובת למשלוח</h4>
-                  <div className="space-y-2 text-sm">
-                    <p>{order.delivery_address}</p>
-                    <p>{order.delivery_city}</p>
-                  </div>
-                </div>
-              </div>
+              <dl className="divide-y divide-border/30">
+                {[
+                  { label: 'שם', value: order.customer_name, icon: User },
+                  { label: 'טלפון', value: order.customer_phone, icon: Phone },
+                  { label: 'אימייל', value: order.customer_email, icon: Mail },
+                  { label: 'עיר', value: order.delivery_city, icon: MapPin },
+                  { label: 'כתובת למשלוח', value: order.delivery_address, icon: Home },
+                  ...(customer ? [
+                    { label: 'סה"כ הזמנות', value: customer.total_orders != null ? String(customer.total_orders) : null, icon: Package },
+                    { label: 'LTV', value: customer.lifetime_value != null ? `₪${customer.lifetime_value.toLocaleString()}` : null, icon: Wallet },
+                  ] : []),
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => {
+                    const Icon = row.icon;
+                    return (
+                      <div key={row.label} className="flex items-baseline gap-3 py-3">
+                        <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                          <span>{row.label}</span>
+                        </dt>
+                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate">{row.value}</dd>
+                      </div>
+                    );
+                  })}
+              </dl>
             </CardContent>
           </Card>
 
           {/* Items */}
           <Card>
             <CardHeader>
-              <CardTitle>פריטים</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                פריטים
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -413,7 +428,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           {/* Notes */}
           <Card>
             <CardHeader>
-              <CardTitle>הערות</CardTitle>
+              <CardTitle className="text-sm font-semibold">הערות</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -449,8 +464,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           {/* Payment Management */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Wallet className="h-5 w-5" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-muted-foreground" />
                 ניהול תשלומים
               </CardTitle>
             </CardHeader>
@@ -532,10 +547,11 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                           onClick={() => {
                             const updatedPayments = order.payments.filter((_, i) => i !== idx);
                             const newStatus = calcPaymentStatus(updatedPayments, order.total);
-                            const totalPaid = updatedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+                            // amount_paid is NOT a stored column (see the hyp-* Edge
+                            // Functions) — it's derived from payments. Persist only the
+                            // payments array + the recomputed status.
                             updateOrderMutation.mutate({
                               payments: updatedPayments,
-                              amount_paid: totalPaid,
                               payment_status: newStatus,
                             });
                           }}
@@ -614,11 +630,11 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                           recorded_by: effectiveUser?.email,
                         };
                         const updatedPayments = [...(order.payments || []), paymentEntry];
-                        const totalPaid = updatedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
                         const newStatus = calcPaymentStatus(updatedPayments, order.total);
+                        // amount_paid is derived (not a stored column) — persist only
+                        // the payments array + the recomputed status.
                         updateOrderMutation.mutate({
                           payments: updatedPayments,
-                          amount_paid: totalPaid,
                           payment_status: newStatus,
                         });
                         setNewPayment({ amount: '', method: 'credit_card', date: new Date().toISOString().split('T')[0], notes: '' });
@@ -643,7 +659,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     size="sm"
                     className="w-full"
                     onClick={() => setShowHypPayment(true)}
-                    disabled={(order?.total || 0) - (order?.amount_paid || 0) <= 0}
+                    disabled={(order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
                   >
                     <CreditCard className="h-3.5 w-3.5 me-1.5" />
                     תשלום באשראי (Hyp)
@@ -684,8 +700,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Factory className="h-5 w-5" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Factory className="h-4 w-4 text-muted-foreground" />
                 סטטוס ייצור
               </CardTitle>
             </CardHeader>
@@ -712,8 +728,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="h-5 w-5" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Truck className="h-4 w-4 text-muted-foreground" />
                 סטטוס משלוח
               </CardTitle>
             </CardHeader>
@@ -762,7 +778,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           {order.trial_30d_enabled && (
             <Card>
               <CardHeader>
-                <CardTitle>ניסיון 30 יום</CardTitle>
+                <CardTitle className="text-sm font-semibold">ניסיון 30 יום</CardTitle>
               </CardHeader>
               <CardContent>
                 <StatusBadge status={order.trial_status} />
@@ -780,7 +796,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           {commission && (
             <Card>
               <CardHeader>
-                <CardTitle>עמלות</CardTitle>
+                <CardTitle className="text-sm font-semibold">עמלות</CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-3">
                 <div className="space-y-2">
@@ -817,7 +833,10 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           {/* Timeline */}
           <Card>
             <CardHeader>
-              <CardTitle>ציר זמן</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                ציר זמן
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3 text-sm">
