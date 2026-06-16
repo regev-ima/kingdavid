@@ -66,7 +66,7 @@ function calcPaymentStatus(payments, total) {
   return 'deposit_paid';
 }
 
-export default function OrderDetails() {
+export default function OrderDetails({ orderId: orderIdProp, isModal = false, onClose }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
@@ -79,8 +79,11 @@ export default function OrderDetails() {
   });
   const queryClient = useQueryClient();
 
+  // In popup mode the id arrives as a prop (the list opens the order without
+  // navigating, so the URL carries no ?id=). On the standalone page it still
+  // comes from the query string.
   const urlParams = new URLSearchParams(window.location.search);
-  const orderId = urlParams.get('id');
+  const orderId = orderIdProp ?? urlParams.get('id');
 
   const { data: order, isLoading } = useQuery({
     queryKey: ['order', orderId],
@@ -167,9 +170,13 @@ export default function OrderDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">ההזמנה לא נמצאה</p>
-        <Link to={createPageUrl('Orders')}>
-          <Button className="mt-4">חזור לרשימת ההזמנות</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Orders')}>
+            <Button className="mt-4">חזור לרשימת ההזמנות</Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -178,9 +185,13 @@ export default function OrderDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">אין לך הרשאה לצפות בהזמנה זו</p>
-        <Link to={createPageUrl('Orders')}>
-          <Button className="mt-4">חזור לרשימת ההזמנות</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Orders')}>
+            <Button className="mt-4">חזור לרשימת ההזמנות</Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -199,64 +210,83 @@ export default function OrderDetails() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link to={createPageUrl('Orders')}>
-            <Button variant="ghost" size="icon">
-              <ArrowRight className="h-5 w-5" />
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {/* Header — order number + the 3 status badges. Fixed (flex-shrink-0) in
+          popup mode so it never scrolls; pe-12 reserves room for the dialog's
+          close-X. Mirrors the lead / service-ticket header. */}
+      <div className={isModal ? 'flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border' : ''}>
+        <div className="flex items-center gap-3">
+          {isModal ? (
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
+              <ArrowRight className="h-4 w-4" />
             </Button>
-          </Link>
+          ) : (
+            <Link to={createPageUrl('Orders')}>
+              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-foreground">הזמנה #{order.order_number}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">הזמנה #{order.order_number}</h1>
               {order.is_imported && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 ring-1 ring-stone-200">הזמנה מיובאת</span>
               )}
             </div>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StatusBadge status={order.payment_status} />
               <StatusBadge status={order.production_status} />
               <StatusBadge status={order.delivery_status} />
             </div>
           </div>
         </div>
-        
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleCall}>
-            <Phone className="h-4 w-4 me-2" />
-            התקשר
-          </Button>
-          <Button variant="outline" onClick={handleWhatsApp} className="[&_svg]:text-green-600">
-            <MessageCircle className="h-4 w-4 me-2" />
-            WhatsApp
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => generatePdfMutation.mutate()}
-            disabled={generatePdfMutation.isPending}
-          >
-            {generatePdfMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4 me-2" />
-            )}
-            הורד PDF
-          </Button>
-          <Button variant="outline" onClick={() => setShowServiceTicket(true)}>
-            <Headphones className="h-4 w-4 me-2" />
-            קריאת שירות
-          </Button>
-          <Link to={createPageUrl('NewReturn') + `?order_id=${orderId}`}>
-            <Button variant="outline">
-              <RotateCcw className="h-4 w-4 me-2" />
-              בקשת החזרה
-            </Button>
-          </Link>
-        </div>
       </div>
 
+      {/* Action bar — call / WhatsApp / PDF / service / return. Fixed under the
+          header in popup mode; a bordered bar on the full page. Same surface
+          (border + backdrop-blur) as the lead action bar for a consistent feel. */}
+      <div className={
+        isModal
+          ? 'flex-shrink-0 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2.5'
+          : 'flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
+      }>
+        <Button variant="outline" size="sm" onClick={handleCall} className="h-8 text-xs">
+          <Phone className="h-3.5 w-3.5 me-1.5" />
+          התקשר
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} className="h-8 text-xs [&_svg]:text-green-600">
+          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          WhatsApp
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => generatePdfMutation.mutate()}
+          disabled={generatePdfMutation.isPending}
+          className="h-8 text-xs"
+        >
+          {generatePdfMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5 me-1.5" />
+          )}
+          הורד PDF
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowServiceTicket(true)} className="h-8 text-xs">
+          <Headphones className="h-3.5 w-3.5 me-1.5" />
+          קריאת שירות
+        </Button>
+        <Link to={createPageUrl('NewReturn') + `?order_id=${orderId}`}>
+          <Button variant="outline" size="sm" className="h-8 text-xs">
+            <RotateCcw className="h-3.5 w-3.5 me-1.5" />
+            בקשת החזרה
+          </Button>
+        </Link>
+      </div>
+
+      {/* Body — the only scrollable region in popup mode. */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4' : ''}>
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Info */}
         <div className="lg:col-span-2 space-y-6">
@@ -837,6 +867,7 @@ export default function OrderDetails() {
           }, 1500);
         }}
       />
+      </div>
     </div>
   );
 }

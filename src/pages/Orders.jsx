@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
+import { useOrderModal } from '@/components/order/OrderModalContext';
+import { LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
@@ -80,7 +82,7 @@ function rangeKeyFromDates(startIso, endIso, now = new Date()) {
 }
 
 export default function Orders() {
-  const navigate = useNavigate();
+  const { openOrder, lastOpenedOrderId } = useOrderModal();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
@@ -227,10 +229,10 @@ export default function Orders() {
     {
       header: 'פעולות',
       render: (row) => (
-        <QuickActions 
-          type="order" 
+        <QuickActions
+          type="order"
           data={row}
-          onView={() => navigate(createPageUrl('OrderDetails') + `?id=${row.id}`)}
+          onView={() => openOrder(row.id)}
         />
       )
     }
@@ -368,7 +370,8 @@ export default function Orders() {
         data={filteredOrders}
         isLoading={isLoading}
         emptyMessage="לא נמצאו הזמנות"
-        onRowClick={(row) => navigate(createPageUrl('OrderDetails') + `?id=${row.id}`)}
+        onRowClick={(row) => openOrder(row.id)}
+        rowClassName={(row) => (row.id === lastOpenedOrderId ? LAST_OPENED_ROW_CLASS : '')}
       />
     </div>
   );
