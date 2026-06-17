@@ -948,7 +948,7 @@ export default function EditQuote() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">תנאי תשלום ואספקה</Label>
+              <Label className="text-sm font-medium">תנאי אספקה</Label>
               <Textarea
                 value={formData.terms}
                 onChange={(e) => setFormData({...formData, terms: e.target.value})}

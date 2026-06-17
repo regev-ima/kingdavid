@@ -83,7 +83,7 @@ export default function QuoteDefaultsTab() {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-2">
-          <Label htmlFor="qd-terms">תנאי תשלום ואספקה</Label>
+          <Label htmlFor="qd-terms">תנאי אספקה</Label>
           <Textarea
             id="qd-terms"
             value={draft.terms}
