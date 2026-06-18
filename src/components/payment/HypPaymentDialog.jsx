@@ -21,12 +21,17 @@ import { Loader2, CreditCard, ShieldCheck } from 'lucide-react';
 //      writes it — see the Edge Function).
 
 export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) {
+  // amount_paid is not a stored column (see the hyp-* Edge Functions) — it's
+  // always the sum of the payments array.
+  const paid = useMemo(
+    () => (order?.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0),
+    [order],
+  );
   const remaining = useMemo(() => {
     if (!order) return 0;
     const total = Number(order.total || 0);
-    const paid = Number(order.amount_paid || 0);
     return Math.max(0, +(total - paid).toFixed(2));
-  }, [order]);
+  }, [order, paid]);
 
   const [amount, setAmount] = useState('');
   const [iframeUrl, setIframeUrl] = useState(null);
@@ -122,7 +127,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]">
+      <DialogContent className="sm:max-w-[560px]" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-primary" />
@@ -139,7 +144,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">שולם עד כה:</span>
-                <span>₪{Number(order?.amount_paid || 0).toLocaleString()}</span>
+                <span>₪{paid.toLocaleString()}</span>
               </div>
               <div className="mt-1 flex justify-between border-t pt-1 font-semibold">
                 <span>יתרה לתשלום:</span>

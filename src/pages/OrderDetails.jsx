@@ -40,7 +40,13 @@ import {
   Headphones,
   CreditCard,
   Download,
-  CheckCircle2
+  CheckCircle2,
+  User,
+  Mail,
+  MapPin,
+  Home,
+  Package,
+  Clock,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -66,7 +72,7 @@ function calcPaymentStatus(payments, total) {
   return 'deposit_paid';
 }
 
-export default function OrderDetails() {
+export default function OrderDetails({ orderId: orderIdProp, isModal = false, onClose }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
@@ -79,8 +85,11 @@ export default function OrderDetails() {
   });
   const queryClient = useQueryClient();
 
+  // In popup mode the id arrives as a prop (the list opens the order without
+  // navigating, so the URL carries no ?id=). On the standalone page it still
+  // comes from the query string.
   const urlParams = new URLSearchParams(window.location.search);
-  const orderId = urlParams.get('id');
+  const orderId = orderIdProp ?? urlParams.get('id');
 
   const { data: order, isLoading } = useQuery({
     queryKey: ['order', orderId],
@@ -167,9 +176,13 @@ export default function OrderDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">ההזמנה לא נמצאה</p>
-        <Link to={createPageUrl('Orders')}>
-          <Button className="mt-4">חזור לרשימת ההזמנות</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Orders')}>
+            <Button className="mt-4">חזור לרשימת ההזמנות</Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -178,9 +191,13 @@ export default function OrderDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">אין לך הרשאה לצפות בהזמנה זו</p>
-        <Link to={createPageUrl('Orders')}>
-          <Button className="mt-4">חזור לרשימת ההזמנות</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Orders')}>
+            <Button className="mt-4">חזור לרשימת ההזמנות</Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -199,112 +216,140 @@ export default function OrderDetails() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link to={createPageUrl('Orders')}>
-            <Button variant="ghost" size="icon">
-              <ArrowRight className="h-5 w-5" />
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {/* Header — order number + the 3 status badges. Fixed (flex-shrink-0) in
+          popup mode so it never scrolls; pe-12 reserves room for the dialog's
+          close-X. Mirrors the lead / service-ticket header. */}
+      <div className={isModal ? 'flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border' : ''}>
+        <div className="flex items-center gap-3">
+          {isModal ? (
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
+              <ArrowRight className="h-4 w-4" />
             </Button>
-          </Link>
+          ) : (
+            <Link to={createPageUrl('Orders')}>
+              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-foreground">הזמנה #{order.order_number}</h1>
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">הזמנה #{order.order_number}</h1>
               {order.is_imported && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 ring-1 ring-stone-200">הזמנה מיובאת</span>
               )}
             </div>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StatusBadge status={order.payment_status} />
               <StatusBadge status={order.production_status} />
               <StatusBadge status={order.delivery_status} />
             </div>
           </div>
         </div>
-        
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleCall}>
-            <Phone className="h-4 w-4 me-2" />
-            התקשר
-          </Button>
-          <Button variant="outline" onClick={handleWhatsApp} className="[&_svg]:text-green-600">
-            <MessageCircle className="h-4 w-4 me-2" />
-            WhatsApp
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => generatePdfMutation.mutate()}
-            disabled={generatePdfMutation.isPending}
-          >
-            {generatePdfMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4 me-2" />
-            )}
-            הורד PDF
-          </Button>
-          <Button variant="outline" onClick={() => setShowServiceTicket(true)}>
-            <Headphones className="h-4 w-4 me-2" />
-            קריאת שירות
-          </Button>
-          <Link to={createPageUrl('NewReturn') + `?order_id=${orderId}`}>
-            <Button variant="outline">
-              <RotateCcw className="h-4 w-4 me-2" />
-              בקשת החזרה
-            </Button>
-          </Link>
-        </div>
       </div>
 
+      {/* Action bar — call / WhatsApp / PDF / service / return. Fixed under the
+          header in popup mode; a bordered bar on the full page. Same surface
+          (border + backdrop-blur) as the lead action bar for a consistent feel. */}
+      <div className={
+        isModal
+          ? 'flex-shrink-0 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2.5'
+          : 'flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
+      }>
+        <Button variant="outline" size="sm" onClick={handleCall} className="h-8 text-xs">
+          <Phone className="h-3.5 w-3.5 me-1.5" />
+          התקשר
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} className="h-8 text-xs [&_svg]:text-green-600">
+          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          WhatsApp
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => generatePdfMutation.mutate()}
+          disabled={generatePdfMutation.isPending}
+          className="h-8 text-xs"
+        >
+          {generatePdfMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5 me-1.5" />
+          )}
+          הורד PDF
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setShowServiceTicket(true)} className="h-8 text-xs">
+          <Headphones className="h-3.5 w-3.5 me-1.5" />
+          קריאת שירות
+        </Button>
+        <Link to={createPageUrl('NewReturn') + `?order_id=${orderId}`}>
+          <Button variant="outline" size="sm" className="h-8 text-xs">
+            <RotateCcw className="h-3.5 w-3.5 me-1.5" />
+            בקשת החזרה
+          </Button>
+        </Link>
+      </div>
+
+      {/* Body — the only scrollable region in popup mode. */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4' : ''}>
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Info */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Customer & Order Info */}
+          {/* Customer & delivery — same dl icon-row design as the lead screen:
+              one row per field with a leading icon + slim label, value on the
+              left, empty rows hidden so a sparse order shows no blank "-"s. */}
           <Card>
-            <CardHeader>
-              <CardTitle>פרטי הזמנה</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+                פרטי לקוח
+              </CardTitle>
+              {customer && (
+                <Link to={createPageUrl('CustomerDetails') + `?id=${customer.id}`}>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-primary">
+                    פרופיל לקוח
+                  </Button>
+                </Link>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="grid sm:grid-cols-2 gap-6">
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold">פרטי לקוח</h4>
-                    {customer && (
-                      <Link to={createPageUrl('CustomerDetails') + `?id=${customer.id}`}>
-                        <Button variant="ghost" size="sm" className="text-primary">
-                          פרופיל לקוח
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-muted-foreground">שם:</span> {order.customer_name}</p>
-                    <p><span className="text-muted-foreground">טלפון:</span> {order.customer_phone}</p>
-                    <p><span className="text-muted-foreground">אימייל:</span> {order.customer_email || '-'}</p>
-                    {customer && (
-                      <>
-                        <p><span className="text-muted-foreground">סה"כ הזמנות:</span> {customer.total_orders}</p>
-                        <p><span className="text-muted-foreground">LTV:</span> ₪{customer.lifetime_value?.toLocaleString()}</p>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-semibold mb-3">כתובת למשלוח</h4>
-                  <div className="space-y-2 text-sm">
-                    <p>{order.delivery_address}</p>
-                    <p>{order.delivery_city}</p>
-                  </div>
-                </div>
-              </div>
+              <dl className="divide-y divide-border/30">
+                {[
+                  { label: 'שם', value: order.customer_name, icon: User },
+                  { label: 'טלפון', value: order.customer_phone, icon: Phone },
+                  { label: 'אימייל', value: order.customer_email, icon: Mail },
+                  { label: 'עיר', value: order.delivery_city, icon: MapPin },
+                  { label: 'כתובת למשלוח', value: order.delivery_address, icon: Home },
+                  ...(customer ? [
+                    { label: 'סה"כ הזמנות', value: customer.total_orders != null ? String(customer.total_orders) : null, icon: Package },
+                    { label: 'LTV', value: customer.lifetime_value != null ? `₪${customer.lifetime_value.toLocaleString()}` : null, icon: Wallet },
+                  ] : []),
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => {
+                    const Icon = row.icon;
+                    return (
+                      <div key={row.label} className="flex items-baseline gap-3 py-3">
+                        <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                          <span>{row.label}</span>
+                        </dt>
+                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate">{row.value}</dd>
+                      </div>
+                    );
+                  })}
+              </dl>
             </CardContent>
           </Card>
 
           {/* Items */}
           <Card>
             <CardHeader>
-              <CardTitle>פריטים</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                פריטים
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -383,7 +428,7 @@ export default function OrderDetails() {
           {/* Notes */}
           <Card>
             <CardHeader>
-              <CardTitle>הערות</CardTitle>
+              <CardTitle className="text-sm font-semibold">הערות</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -419,8 +464,8 @@ export default function OrderDetails() {
           {/* Payment Management */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Wallet className="h-5 w-5" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-muted-foreground" />
                 ניהול תשלומים
               </CardTitle>
             </CardHeader>
@@ -502,10 +547,11 @@ export default function OrderDetails() {
                           onClick={() => {
                             const updatedPayments = order.payments.filter((_, i) => i !== idx);
                             const newStatus = calcPaymentStatus(updatedPayments, order.total);
-                            const totalPaid = updatedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+                            // amount_paid is NOT a stored column (see the hyp-* Edge
+                            // Functions) — it's derived from payments. Persist only the
+                            // payments array + the recomputed status.
                             updateOrderMutation.mutate({
                               payments: updatedPayments,
-                              amount_paid: totalPaid,
                               payment_status: newStatus,
                             });
                           }}
@@ -584,11 +630,11 @@ export default function OrderDetails() {
                           recorded_by: effectiveUser?.email,
                         };
                         const updatedPayments = [...(order.payments || []), paymentEntry];
-                        const totalPaid = updatedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
                         const newStatus = calcPaymentStatus(updatedPayments, order.total);
+                        // amount_paid is derived (not a stored column) — persist only
+                        // the payments array + the recomputed status.
                         updateOrderMutation.mutate({
                           payments: updatedPayments,
-                          amount_paid: totalPaid,
                           payment_status: newStatus,
                         });
                         setNewPayment({ amount: '', method: 'credit_card', date: new Date().toISOString().split('T')[0], notes: '' });
@@ -613,7 +659,7 @@ export default function OrderDetails() {
                     size="sm"
                     className="w-full"
                     onClick={() => setShowHypPayment(true)}
-                    disabled={(order?.total || 0) - (order?.amount_paid || 0) <= 0}
+                    disabled={(order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
                   >
                     <CreditCard className="h-3.5 w-3.5 me-1.5" />
                     תשלום באשראי (Hyp)
@@ -654,8 +700,8 @@ export default function OrderDetails() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Factory className="h-5 w-5" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Factory className="h-4 w-4 text-muted-foreground" />
                 סטטוס ייצור
               </CardTitle>
             </CardHeader>
@@ -682,8 +728,8 @@ export default function OrderDetails() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="h-5 w-5" />
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Truck className="h-4 w-4 text-muted-foreground" />
                 סטטוס משלוח
               </CardTitle>
             </CardHeader>
@@ -732,7 +778,7 @@ export default function OrderDetails() {
           {order.trial_30d_enabled && (
             <Card>
               <CardHeader>
-                <CardTitle>ניסיון 30 יום</CardTitle>
+                <CardTitle className="text-sm font-semibold">ניסיון 30 יום</CardTitle>
               </CardHeader>
               <CardContent>
                 <StatusBadge status={order.trial_status} />
@@ -750,7 +796,7 @@ export default function OrderDetails() {
           {commission && (
             <Card>
               <CardHeader>
-                <CardTitle>עמלות</CardTitle>
+                <CardTitle className="text-sm font-semibold">עמלות</CardTitle>
               </CardHeader>
               <CardContent className="text-sm space-y-3">
                 <div className="space-y-2">
@@ -787,7 +833,10 @@ export default function OrderDetails() {
           {/* Timeline */}
           <Card>
             <CardHeader>
-              <CardTitle>ציר זמן</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                ציר זמן
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3 text-sm">
@@ -837,6 +886,7 @@ export default function OrderDetails() {
           }, 1500);
         }}
       />
+      </div>
     </div>
   );
 }
