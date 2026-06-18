@@ -127,7 +127,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]" dir="rtl">
+      <DialogContent className="sm:max-w-[620px] max-h-[92vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-primary" />
@@ -192,7 +192,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             <iframe
               src={iframeUrl}
               title="תשלום Hyp"
-              className="w-full h-[520px] border-0 rounded-lg"
+              className="w-full h-[640px] max-h-[74vh] border-0 rounded-lg"
               allow="payment"
             />
             {error && (
