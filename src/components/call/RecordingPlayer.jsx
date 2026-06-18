@@ -31,7 +31,7 @@ export default function RecordingPlayer({ recordingUrl, hasRecording }) {
         נגן הקלטה
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[760px]" dir="rtl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Headphones className="h-5 w-5 text-primary" />
@@ -42,7 +42,7 @@ export default function RecordingPlayer({ recordingUrl, hasRecording }) {
             <div className="bg-gradient-to-br from-primary/5 to-purple-50/50 rounded-lg p-4">
               <iframe
                 src={recordingUrl}
-                className="w-full h-[120px] border-0 rounded-lg"
+                className="w-full h-[300px] border-0 rounded-lg"
                 title="הקלטת שיחה"
                 allow="autoplay"
               />
