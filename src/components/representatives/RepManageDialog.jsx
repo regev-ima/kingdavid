@@ -92,7 +92,7 @@ const newId = () =>
     ? crypto.randomUUID()
     : `id_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequestDeactivate }) {
+export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequestDeactivate, onRequestDelete }) {
   const queryClient = useQueryClient();
 
   // ── Details ──
@@ -344,6 +344,18 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                 >
                   השבת והעבר את כל הלידים לנציג אחר ←
                 </button>
+              )}
+              {onRequestDelete && rep?.email !== currentUserEmail && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => { onClose(); onRequestDelete(rep); }}
+                    className="text-xs text-red-700 font-medium hover:underline inline-flex items-center gap-1"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    מחק נציג לצמיתות והעבר את כל הלידים לנציג אחר ←
+                  </button>
+                </div>
               )}
 
               <div className="flex justify-end">
