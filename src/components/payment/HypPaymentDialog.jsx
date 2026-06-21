@@ -127,7 +127,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[620px] max-h-[92vh] overflow-y-auto" dir="rtl">
+      <DialogContent className="w-[80vw] max-w-[1100px] max-h-[92vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-primary" />
@@ -136,7 +136,8 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
         </DialogHeader>
 
         {!iframeUrl ? (
-          <div className="space-y-4 py-2">
+          // Keep the amount form tidy/centered now that the dialog is wide.
+          <div className="space-y-4 py-2 w-full max-w-md mx-auto">
             <div className="rounded-lg bg-muted/40 p-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">סה״כ הזמנה:</span>
@@ -192,7 +193,7 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             <iframe
               src={iframeUrl}
               title="תשלום Hyp"
-              className="w-full h-[640px] max-h-[74vh] border-0 rounded-lg"
+              className="w-full h-[80vh] max-h-[82vh] border-0 rounded-lg"
               allow="payment"
             />
             {error && (
