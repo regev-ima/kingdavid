@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
-import { ChevronUp, ChevronDown, Calendar as CalendarIcon, Lock, Clock } from "lucide-react";
+import { ChevronUp, ChevronDown, Calendar as CalendarIcon, Clock } from "lucide-react";
 import { format } from "@/lib/safe-date-fns";
 import { he } from "date-fns/locale";
 import { useClosureChecker } from "@/hooks/useCompanyClosures";
@@ -177,15 +177,27 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
                 selected={selectedDate}
                 onSelect={setDate}
                 disabled={(date) => evaluate(date).status === 'closed'}
-                modifiers={{ halfDay: (date) => evaluate(date).status === 'half_day' }}
-                modifiersClassNames={{ halfDay: 'text-amber-600 font-semibold underline decoration-dotted underline-offset-2' }}
+                modifiers={{
+                  halfDay: (date) => evaluate(date).status === 'half_day',
+                  closedDay: (date) => evaluate(date).status === 'closed',
+                }}
+                modifiersClassNames={{
+                  halfDay: 'text-amber-600 font-semibold underline decoration-dotted underline-offset-2',
+                  closedDay: 'text-red-400 line-through',
+                }}
                 initialFocus
                 className="rounded-lg border-0"
               />
-              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground" dir="rtl">
-                <Lock className="h-3 w-3" />
-                ימים סגורים (שבת, חגים וימי סגירה) חסומים לבחירה
-              </p>
+              <div className="mt-2 space-y-1 text-[11px] text-muted-foreground" dir="rtl">
+                <p className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-400" />
+                  ימי חג / שבת / סגירה — חסומים לבחירה
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" />
+                  ערב חג / חצי יום — פתוח עד שעת הסגירה
+                </p>
+              </div>
             </div>
           </div>
         </DialogContent>
