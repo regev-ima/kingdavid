@@ -450,8 +450,8 @@ export default function Representatives() {
                 העבר נתונים בין נציגים
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
+            <DialogContent dir="rtl" className="text-right [&>button]:left-4 [&>button]:right-auto">
+              <DialogHeader className="text-right sm:text-right">
                 <DialogTitle>העברת נתונים בין נציגים</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleTransferData} className="space-y-4">
@@ -558,8 +558,8 @@ export default function Representatives() {
                 ייבא מגוגל שיטס
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
+            <DialogContent dir="rtl" className="max-w-2xl max-h-[90vh] overflow-y-auto text-right [&>button]:left-4 [&>button]:right-auto">
+              <DialogHeader className="text-right sm:text-right">
                 <DialogTitle>ייבא נציגים מגוגל שיטס</DialogTitle>
               </DialogHeader>
               
@@ -808,8 +808,8 @@ export default function Representatives() {
                 הזמן נציג חדש
               </Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
+            <DialogContent dir="rtl" className="text-right [&>button]:left-4 [&>button]:right-auto">
+              <DialogHeader className="text-right sm:text-right">
                 <DialogTitle>הזמן נציג חדש</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleInvite} className="space-y-4">
@@ -897,8 +897,8 @@ export default function Representatives() {
 
       {/* Deactivate Dialog */}
       <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent dir="rtl" className="text-right [&>button]:left-4 [&>button]:right-auto">
+          <DialogHeader className="text-right sm:text-right">
             <DialogTitle>השבת נציג - {repToDeactivate?.full_name}</DialogTitle>
           </DialogHeader>
           
