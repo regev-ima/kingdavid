@@ -38,6 +38,7 @@ jobs:
             createNotification
             createSalesTaskAPI
             createSalesTaskForNewLead
+            deleteUser
             exportDashboardCsv
             fetchSheetsColumns
             getDashboardStats

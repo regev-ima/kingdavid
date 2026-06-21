@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings } from "lucide-react";
+import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
@@ -32,6 +32,7 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import RepManageDialog from '@/components/representatives/RepManageDialog';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { supabase } from '@/api/supabaseClient';
+import { createAuditLog } from '@/utils/auditLog';
 
 const ROLE_LABELS = {
   admin: 'מנהל',
@@ -50,6 +51,9 @@ export default function Representatives() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [repToDeactivate, setRepToDeactivate] = useState(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [repToDelete, setRepToDelete] = useState(null);
+  const [deleteTransferTo, setDeleteTransferTo] = useState('');
   const [transferToRep, setTransferToRep] = useState('');
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [oldRepEmail, setOldRepEmail] = useState('');
@@ -107,28 +111,28 @@ export default function Representatives() {
   const { data: leads = [] } = useQuery({
     queryKey: ['leads'],
     queryFn: () => base44.entities.Lead.list(),
-    enabled: !!repToDeactivate,
+    enabled: !!repToDeactivate || !!repToDelete,
     staleTime: 60_000,
   });
 
   const { data: quotes = [] } = useQuery({
     queryKey: ['quotes'],
     queryFn: () => base44.entities.Quote.list(),
-    enabled: !!repToDeactivate,
+    enabled: !!repToDeactivate || !!repToDelete,
     staleTime: 60_000,
   });
 
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
     queryFn: () => base44.entities.Customer.list(),
-    enabled: !!repToDeactivate,
+    enabled: !!repToDeactivate || !!repToDelete,
     staleTime: 60_000,
   });
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: () => base44.entities.Order.list(),
-    enabled: !!repToDeactivate,
+    enabled: !!repToDeactivate || !!repToDelete,
     staleTime: 60_000,
   });
 
@@ -305,6 +309,78 @@ export default function Representatives() {
     },
   });
 
+  // Permanently delete a rep: first move every assignment to the chosen rep
+  // (client-side, so the lead-activity trigger attributes the change to the
+  // acting admin), drop an explicit "transferred because the rep was deleted"
+  // line into each lead's history, then hard-delete the profile + Auth account
+  // via the deleteUser edge function.
+  const deleteRepMutation = useMutation({
+    mutationFn: async ({ repId, repEmail, transferEmail }) => {
+      const actor = user;
+
+      // Leads (rep1 / rep2) — the DB trigger logs the rep change, and we add a
+      // clear audit entry naming the reason so the lead history reads cleanly.
+      const repLeads = leads.filter(l => l.rep1 === repEmail || l.rep2 === repEmail);
+      for (const lead of repLeads) {
+        const updates = {};
+        if (lead.rep1 === repEmail) updates.rep1 = transferEmail;
+        if (lead.rep2 === repEmail) updates.rep2 = transferEmail;
+        await base44.entities.Lead.update(lead.id, updates);
+        await createAuditLog({
+          leadId: lead.id,
+          actionType: 'rep_changed',
+          description: `הליד הועבר מ-${repEmail} ל-${transferEmail} עקב מחיקת הנציג`,
+          user: actor,
+          fieldName: lead.rep1 === repEmail ? 'rep1' : 'rep2',
+          oldValue: repEmail,
+          newValue: transferEmail,
+          metadata: { reason: 'user_deleted', deleted_rep: repEmail },
+        });
+      }
+
+      // Quotes
+      const repQuotes = quotes.filter(q => q.created_by_rep === repEmail);
+      for (const quote of repQuotes) {
+        await base44.entities.Quote.update(quote.id, { created_by_rep: transferEmail });
+      }
+
+      // Customers
+      const repCustomers = customers.filter(c => c.account_manager === repEmail || c.rep2 === repEmail);
+      for (const customer of repCustomers) {
+        const updates = {};
+        if (customer.account_manager === repEmail) updates.account_manager = transferEmail;
+        if (customer.rep2 === repEmail) updates.rep2 = transferEmail;
+        await base44.entities.Customer.update(customer.id, updates);
+      }
+
+      // Orders
+      const repOrders = orders.filter(o => o.rep1 === repEmail || o.rep2 === repEmail);
+      for (const order of repOrders) {
+        const updates = {};
+        if (order.rep1 === repEmail) updates.rep1 = transferEmail;
+        if (order.rep2 === repEmail) updates.rep2 = transferEmail;
+        await base44.entities.Order.update(order.id, updates);
+      }
+
+      // Finally, hard-delete (profile row + Auth account) via the edge function.
+      await base44.users.deleteUser({ userId: repId, email: repEmail });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['reps']);
+      queryClient.invalidateQueries(['leads']);
+      queryClient.invalidateQueries(['quotes']);
+      queryClient.invalidateQueries(['customers']);
+      queryClient.invalidateQueries(['orders']);
+      setShowDeleteDialog(false);
+      setRepToDelete(null);
+      setDeleteTransferTo('');
+      toast.success('הנציג נמחק והשיוכים הועברו');
+    },
+    onError: (err) => {
+      toast.error(`מחיקת הנציג נכשלה: ${err?.message || 'שגיאה לא ידועה'}`, { duration: 8000 });
+    },
+  });
+
   const handleInvite = (e) => {
     e.preventDefault();
     if (inviteEmail) {
@@ -362,6 +438,22 @@ export default function Representatives() {
       deactivateRepMutation.mutate({
         repEmail: repToDeactivate.email,
         transferEmail: transferToRep,
+      });
+    }
+  };
+
+  const handleDeleteClick = (rep) => {
+    setRepToDelete(rep);
+    setShowDeleteDialog(true);
+  };
+
+  const handleDelete = (e) => {
+    e.preventDefault();
+    if (repToDelete && deleteTransferTo) {
+      deleteRepMutation.mutate({
+        repId: repToDelete.id,
+        repEmail: repToDelete.email,
+        transferEmail: deleteTransferTo,
       });
     }
   };
@@ -434,6 +526,7 @@ export default function Representatives() {
   const activeReps = reps.filter(r => r.is_active !== false);
   const inactiveReps = reps.filter(r => r.is_active === false);
   const availableRepsForTransfer = activeReps.filter(r => r.email !== repToDeactivate?.email);
+  const availableRepsForDeleteTransfer = activeReps.filter(r => r.email !== repToDelete?.email);
 
   return (
     <div className="space-y-6">
@@ -983,6 +1076,98 @@ export default function Representatives() {
         </DialogContent>
       </Dialog>
 
+      {/* Delete Dialog (permanent) */}
+      <Dialog open={showDeleteDialog} onOpenChange={(o) => {
+        setShowDeleteDialog(o);
+        if (!o) { setRepToDelete(null); setDeleteTransferTo(''); }
+      }}>
+        <DialogContent dir="rtl" className="text-right [&>button]:left-4 [&>button]:right-auto">
+          <DialogHeader className="text-right sm:text-right">
+            <DialogTitle>מחיקת נציג - {repToDelete?.full_name}</DialogTitle>
+          </DialogHeader>
+
+          {repToDelete && (
+            <div className="space-y-4">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-800 font-medium mb-2">נציג זה משויך ל:</p>
+                <div className="space-y-1 text-sm text-amber-700">
+                  {getRepAssignmentCounts(repToDelete.email).leadsCount > 0 && (
+                    <p>• {getRepAssignmentCounts(repToDelete.email).leadsCount} לידים</p>
+                  )}
+                  {getRepAssignmentCounts(repToDelete.email).quotesCount > 0 && (
+                    <p>• {getRepAssignmentCounts(repToDelete.email).quotesCount} הצעות מחיר</p>
+                  )}
+                  {getRepAssignmentCounts(repToDelete.email).customersCount > 0 && (
+                    <p>• {getRepAssignmentCounts(repToDelete.email).customersCount} לקוחות</p>
+                  )}
+                  {getRepAssignmentCounts(repToDelete.email).ordersCount > 0 && (
+                    <p>• {getRepAssignmentCounts(repToDelete.email).ordersCount} הזמנות</p>
+                  )}
+                </div>
+              </div>
+
+              <form onSubmit={handleDelete} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>העבר את כל הלידים (וההזמנות/הצעות/לקוחות) לנציג:</Label>
+                  <Select value={deleteTransferTo} onValueChange={setDeleteTransferTo} required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="בחר נציג לקבלת השיוכים" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableRepsForDeleteTransfer.map(r => (
+                        <SelectItem key={r.id} value={r.email}>
+                          {r.full_name} ({r.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-1">
+                  <p className="text-sm text-red-800">
+                    <strong>מחיקה לצמיתות:</strong> הנציג יוסר כליל מהמערכת ומאפשרות ההתחברות (לא ניתן לשחזר).
+                  </p>
+                  <p className="text-sm text-red-700">
+                    כל השיוכים יועברו לנציג שנבחר, וכל העברת ליד תתועד בהיסטוריית הליד (מי ומתי).
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowDeleteDialog(false);
+                      setRepToDelete(null);
+                      setDeleteTransferTo('');
+                    }}
+                  >
+                    ביטול
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={deleteRepMutation.isPending || !deleteTransferTo}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    {deleteRepMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                        מוחק...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4 me-2" />
+                        מחק לצמיתות
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Representatives Table */}
       <Card className="border-border shadow-sm rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -1150,6 +1335,7 @@ export default function Representatives() {
           currentUserEmail={user?.email}
           onClose={() => setManageRep(null)}
           onRequestDeactivate={handleDeactivateClick}
+          onRequestDelete={handleDeleteClick}
         />
       )}
     </div>

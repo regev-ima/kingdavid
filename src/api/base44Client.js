@@ -159,6 +159,13 @@ const users = {
       redirectTo,
     });
   },
+
+  // Hard-delete a user (CRM profile row + Auth account). Admin-only; enforced
+  // server-side. Lead/quote/order/customer reassignment must happen on the
+  // client first so the activity log attributes the transfer to the admin.
+  deleteUser: async ({ userId, email }) => {
+    return await functions.invoke('deleteUser', { userId, email });
+  },
 };
 
 // ── Agents ──────────────────────────────────────────────────────
