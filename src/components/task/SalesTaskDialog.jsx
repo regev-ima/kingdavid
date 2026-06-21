@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
-import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, UserPlus, Download, ExternalLink, Search, UserCheck, X } from "lucide-react";
+import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, UserPlus, Download, ExternalLink, Search, UserCheck, X, Lock } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
@@ -645,51 +645,78 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
             <p className="text-xs text-blue-600 mt-1">בחר יום ושעה לחזרה:</p>
           </div>
 
-          {/* Day selection - next 5 working days (no Saturday) */}
+          {/* Day selection — a continuous run of upcoming days. Closed days
+              (שבת / חג / יום סגירה) are shown but labeled + disabled so the rep
+              sees *why* they can't pick them; half-days (ערב חג) are pickable
+              with an amber note. */}
           <div className="space-y-1.5">
             <span className="text-xs font-semibold text-blue-700">יום</span>
             <div className="grid grid-cols-5 gap-1.5">
               {(() => {
-                const days = [];
+                const out = [];
                 let d = startOfDay(new Date());
+                let openCount = 0;
                 let guard = 0;
-                // Next 5 *open* days — skips שבת, חגים, and admin-defined closures.
-                while (days.length < 5 && guard < 90) {
-                  if (evaluateClosure(d).status !== 'closed') days.push(new Date(d));
+                // Keep going until we've surfaced 5 *pickable* days, including any
+                // closed days encountered in between (so they're visible).
+                while (openCount < 5 && guard < 60) {
+                  const ev = evaluateClosure(d);
+                  out.push({ date: new Date(d), ev });
+                  if (ev.status !== 'closed') openCount++;
                   d = addDays(d, 1);
                   guard++;
                 }
-                return days;
-              })().map((day) => {
+                return out;
+              })().map(({ date: day, ev }) => {
                 const dayKey = day.toISOString();
                 const dayName = format(day, 'EEEE', { locale: he });
                 const dateLabel = format(day, 'd/M');
+                const isClosed = ev.status === 'closed';
+                const isHalf = ev.status === 'half_day';
                 const isSelected = followupFlow.selectedDate === dayKey;
+                const note = isClosed || isHalf ? (ev.label || (isHalf ? 'חצי יום' : 'סגור')) : null;
                 return (
                   <button
                     key={dayKey}
                     type="button"
+                    disabled={isClosed}
+                    title={isClosed ? `סגור — ${ev.reason || ev.label || ''}` : isHalf ? `${ev.label || 'חצי יום'} — עד ${ev.until}` : undefined}
                     onClick={() => {
+                      if (isClosed) return;
                       // Drop a previously-picked hour if it falls after the new
                       // day's half-day cutoff, so the confirm button can't
                       // submit a blocked time.
-                      const ev = evaluateClosure(day);
                       const cutoff = ev.status === 'half_day' && ev.until ? parseTimeToMinutes(ev.until) : null;
                       const keepHour = followupFlow.selectedHour != null && (cutoff == null || followupFlow.selectedHour * 60 < cutoff);
                       setFollowupFlow({ ...followupFlow, selectedDate: dayKey, selectedHour: keepHour ? followupFlow.selectedHour : null });
                     }}
-                    className={`flex flex-col items-center py-2.5 px-1 rounded-xl border-2 text-xs font-bold transition-all ${
-                      isSelected
+                    className={`flex flex-col items-center py-2 px-1 rounded-xl border-2 text-xs font-bold transition-all ${
+                      isClosed
+                        ? 'border-red-200 bg-red-50/60 text-red-400 cursor-not-allowed'
+                        : isHalf
+                        ? isSelected
+                          ? 'border-amber-500 bg-amber-100 text-amber-800 shadow-sm'
+                          : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                        : isSelected
                         ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-sm'
                         : 'border-border bg-white hover:border-blue-300 hover:bg-blue-50 text-muted-foreground'
                     }`}
                   >
                     <span className="leading-tight">{dayName}</span>
                     <span className="text-[10px] font-normal mt-0.5 opacity-70">{dateLabel}</span>
+                    {note && (
+                      <span className="mt-1 flex items-center gap-0.5 max-w-full text-[9px] font-semibold leading-none">
+                        {isClosed ? <Lock className="h-2.5 w-2.5 shrink-0" /> : <Clock className="h-2.5 w-2.5 shrink-0" />}
+                        <span className="truncate">{note}</span>
+                      </span>
+                    )}
                   </button>
                 );
               })}
             </div>
+            <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Lock className="h-2.5 w-2.5" /> ימי חג / ערב חג / סגירה מסומנים וחסומים לבחירה
+            </p>
           </div>
 
           {/* Hour selection */}
