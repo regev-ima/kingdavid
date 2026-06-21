@@ -143,7 +143,11 @@ const appLogs = {
 
 // ── Users management ────────────────────────────────────────────
 const users = {
-  inviteUser: async (email, role) => {
+  // Every invited user starts as a basic sales rep ("נציג מכירות") with no
+  // extra permissions. An admin promotes them afterwards from the
+  // Representatives screen, so there's no role to pick at invite time — the
+  // Edge Function enforces this server-side as well.
+  inviteUser: async (email) => {
     // Create user via Edge Function (needs service role). Pass redirectTo so the
     // invite email link lands on /login, where the set-password flow is wired up.
     const redirectTo = typeof window !== 'undefined'
@@ -152,7 +156,7 @@ const users = {
     return await functions.invoke('importUsersFromSheets', {
       directInvite: true,
       email,
-      role: role || 'user',
+      role: 'sales_user',
       redirectTo,
     });
   },

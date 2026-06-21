@@ -175,7 +175,13 @@ Deno.serve(async (req) => {
 
 async function handleDirectInvite(body: Record<string, any>) {
   const email: string | undefined = body.email?.trim();
-  const role: string = body.role || 'user';
+  // Least-privilege by default: every invited user comes in as a basic sales
+  // rep ("נציג מכירות") with no extra permissions. The role the caller sends
+  // is intentionally ignored — an admin promotes the rep afterwards from the
+  // "נהל נציג" screen (Representatives.jsx → RepManageDialog). Enforcing it
+  // here (not just in the UI) keeps new accounts basic even if the request is
+  // crafted by hand.
+  const role = 'sales_user';
   const fullName: string | undefined = body.full_name || body.fullName;
   const redirectTo: string | undefined = body.redirectTo;
 
@@ -203,22 +209,30 @@ async function handleDirectInvite(body: Record<string, any>) {
   }
 
   const hasExistingProfile = !!(existingProfiles && existingProfiles.length > 0);
-  const profileBase: Record<string, any> = {
-    role,
-    full_name: fullName || email.split('@')[0],
-  };
 
   if (hasExistingProfile) {
-    const { error } = await supabase.from('users').update(profileBase).eq('id', existingProfiles![0].id);
-    if (error) {
-      console.error('[directInvite] profile update failed', error);
-      return Response.json({ error: `Profile update failed: ${error.message}` }, { status: 500, headers: corsHeaders });
+    // Re-invite (resend the email): only refresh the display name if one was
+    // supplied, and never touch role / extra_permissions. Re-sending an invite
+    // must not silently demote or promote an existing account — the admin owns
+    // those fields via "נהל נציג".
+    if (fullName) {
+      const { error } = await supabase
+        .from('users')
+        .update({ full_name: fullName })
+        .eq('id', existingProfiles![0].id);
+      if (error) {
+        console.error('[directInvite] profile update failed', error);
+        return Response.json({ error: `Profile update failed: ${error.message}` }, { status: 500, headers: corsHeaders });
+      }
     }
   } else {
+    // Brand-new rep: basic "נציג" role, no extra permissions.
     const { error } = await supabase.from('users').insert({
       email,
       is_active: true,
-      ...profileBase,
+      role,
+      full_name: fullName || email.split('@')[0],
+      extra_permissions: {},
     });
     if (error) {
       console.error('[directInvite] profile insert failed', error);

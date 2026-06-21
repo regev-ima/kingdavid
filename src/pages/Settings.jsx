@@ -64,9 +64,12 @@ export default function Settings() {
     factory_user: 'נציג מפעל (FACTORY_USER)'
   };
 
-  const handleInviteUser = async (email, role) => {
+  const handleInviteUser = async (email) => {
     try {
-      const result = await base44.users.inviteUser(email, role);
+      // New users always come in as a basic sales rep ("נציג") with no extra
+      // permissions; an admin promotes them afterwards from the Representatives
+      // screen.
+      const result = await base44.users.inviteUser(email);
       queryClient.invalidateQueries(['users']);
       toast.success(result?.already_registered ? 'המשתמש כבר רשום — הפרופיל עודכן' : 'ההזמנה נשלחה במייל');
     } catch (err) {
@@ -278,26 +281,19 @@ export default function Settings() {
                       placeholder="אימייל"
                       className="flex-1"
                     />
-                    <select
-                      id="invite-role"
-                      className="px-3 py-2 border rounded-md"
-                      defaultValue="sales_user"
-                    >
-                      <option value="admin">מנהל מערכת</option>
-                      <option value="sales_user">נציג מכירות</option>
-                      <option value="factory_user">נציג מפעל</option>
-                    </select>
                     <Button
                       onClick={() => {
                         const email = document.getElementById('invite-email').value;
-                        const role = document.getElementById('invite-role').value;
-                        if (email) handleInviteUser(email, role);
+                        if (email) handleInviteUser(email);
                       }}
                       className="bg-primary hover:bg-primary/90"
                     >
                       הזמן
                     </Button>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    כל משתמש חדש נוצר כנציג מכירות עם הרשאות בסיס בלבד. ניתן לשנות לו את התפקיד וההרשאות לאחר מכן דרך מסך ניהול הנציגים.
+                  </p>
                 </div>
 
                 <div className="space-y-4">

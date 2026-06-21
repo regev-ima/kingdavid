@@ -46,7 +46,6 @@ export default function Representatives() {
   const [manageRep, setManageRep] = useState(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState('sales_user');
   const [selectedRep, setSelectedRep] = useState(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
@@ -134,14 +133,13 @@ export default function Representatives() {
   });
 
   const inviteUserMutation = useMutation({
-    mutationFn: async ({ email, role }) => {
-      return await base44.users.inviteUser(email, role);
+    mutationFn: async ({ email }) => {
+      return await base44.users.inviteUser(email);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries(['reps']);
       setShowInviteDialog(false);
       setInviteEmail('');
-      setInviteRole('sales_user');
       if (data?.email_sent) {
         toast.success('הנציג נוסף וההזמנה נשלחה במייל');
       } else if (data?.already_registered) {
@@ -310,7 +308,7 @@ export default function Representatives() {
   const handleInvite = (e) => {
     e.preventDefault();
     if (inviteEmail) {
-      inviteUserMutation.mutate({ email: inviteEmail, role: inviteRole });
+      inviteUserMutation.mutate({ email: inviteEmail });
     }
   };
 
@@ -825,19 +823,11 @@ export default function Representatives() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>תפקיד</Label>
-                  <Select value={inviteRole} onValueChange={setInviteRole}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">מנהל מערכת (ADMIN)</SelectItem>
-                      <SelectItem value="sales_user">נציג מכירות (SALES_USER)</SelectItem>
-                      <SelectItem value="factory_user">נציג מפעל (FACTORY_USER)</SelectItem>
-                      <SelectItem value="bookkeeper">מנהלת חשבונות (BOOKKEEPER)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="rounded-lg border border-border bg-muted/40 p-3">
+                  <p className="text-sm font-medium text-foreground">נציג מכירות — הרשאות בסיס</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    כל נציג חדש נוצר עם הרשאות בסיס בלבד. לאחר ההזמנה ניתן לשנות לו את התפקיד וההרשאות דרך כפתור "נהל".
+                  </p>
                 </div>
                 <div className="flex justify-end gap-3">
                   <Button
