@@ -952,23 +952,18 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
             </div>
           )}
 
-          {/* תוכן המשימה — editable on create, read-only when viewing an existing task */}
-          {isCreate ? (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תוכן המשימה</Label>
-              <Textarea
-                placeholder="הקלד את תוכן המשימה והפרטים כאן..."
-                value={editingTask.summary || ''}
-                onChange={(e) => setEditingTask({ ...editingTask, summary: e.target.value })}
-                className="min-h-[100px] bg-muted resize-none"
-              />
-            </div>
-          ) : editingTask.summary ? (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תוכן המשימה</Label>
-              <p className="text-sm text-foreground bg-muted rounded-lg px-3 py-2">{editingTask.summary}</p>
-            </div>
-          ) : null}
+          {/* תיאור / סיכום המשימה — always editable (create AND when viewing an
+              existing task) so the rep can record what happened. Saved to
+              `summary`, the same field the completion flow appends notes to. */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">תיאור / סיכום המשימה</Label>
+            <Textarea
+              placeholder="מה היה במשימה? לדוגמה: הלקוח ביקש שנחזור אליו מחר, נשמע מעוניין לסגור..."
+              value={editingTask.summary || ''}
+              onChange={(e) => setEditingTask({ ...editingTask, summary: e.target.value })}
+              className="min-h-[100px] bg-muted resize-none"
+            />
+          </div>
         </>
       )}
     </>
