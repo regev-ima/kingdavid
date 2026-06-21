@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import {
   Loader2, Save, CalendarDays, CalendarX2, PartyPopper, Plus, Trash2,
-  ChevronDown, Lock, Clock, DoorOpen,
+  ChevronDown, Lock, Clock, DoorOpen, CopyCheck,
 } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
@@ -29,6 +29,16 @@ function statusEquals(a, b) {
   if (a.status !== b.status) return false;
   if (a.status === 'half_day') return (a.until || '') === (b.until || '');
   return true;
+}
+
+// A stable identity for a holiday across years. Hebcal embeds the Hebrew year
+// in some titles ("Rosh Hashana 5787"), so strip a trailing year number — the
+// day suffix ("Pesach I" / "Rosh Hashana II") is kept so each festival day maps
+// to its own counterpart in other years.
+function holidayMatchKey(items) {
+  const it = (items || []).find((i) => i.isYomTov) || (items || []).find((i) => i.isErev) || (items || [])[0];
+  if (!it) return '';
+  return (it.title || it.hebrew || '').replace(/\s+\d{3,4}$/, '').trim();
 }
 
 // 3-way segmented control (סגור / חצי יום / פתוח) + an inline time input that
@@ -120,14 +130,18 @@ export default function CompanyClosuresTab() {
   }, [years.length]);
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    // Accepts an optional explicit payload so callers that just mutated state
+    // (e.g. "apply to all years") can persist the new value without waiting for
+    // the async setDraft to flush.
+    mutationFn: async (payload) => {
+      const p = payload || draft;
       await base44.entities.CompanyClosures.update(1, {
-        weekly_closed_days: draft.weekly_closed_days,
-        close_on_holidays: draft.close_on_holidays,
-        erev_half_day: draft.erev_half_day,
-        erev_until: draft.erev_until,
-        holiday_overrides: draft.holiday_overrides,
-        custom_closures: draft.custom_closures,
+        weekly_closed_days: p.weekly_closed_days,
+        close_on_holidays: p.close_on_holidays,
+        erev_half_day: p.erev_half_day,
+        erev_until: p.erev_until,
+        holiday_overrides: p.holiday_overrides,
+        custom_closures: p.custom_closures,
       });
     },
     onSuccess: () => {
@@ -136,6 +150,40 @@ export default function CompanyClosuresTab() {
     },
     onError: (err) => toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה'}`),
   });
+
+  // Take every holiday the admin marked (an override) and replicate it onto the
+  // matching holiday in all other years in the loaded 10-year window — matched
+  // by holiday identity, since the Gregorian date shifts each year. Persists
+  // immediately so it's a single click.
+  const applyOverridesToAllYears = () => {
+    const overrides = draft.holiday_overrides || {};
+    if (Object.keys(overrides).length === 0) {
+      toast.error('עדיין לא סומנו חגים. סמנו קודם את החגים בשנה אחת, ואז נעתיק אותם קדימה.');
+      return;
+    }
+    // Map holiday-identity -> chosen override, from the dates already marked.
+    const byIdentity = {};
+    for (const key of Object.keys(overrides)) {
+      const items = holidaysByDate[key];
+      if (!items) continue;
+      const id = holidayMatchKey(items);
+      if (id) byIdentity[id] = overrides[key];
+    }
+    if (Object.keys(byIdentity).length === 0) {
+      toast.error('לא נמצאו חגים תואמים בלוח. נסו שוב לאחר שלוח החגים נטען.');
+      return;
+    }
+    // Apply to every matching holiday date across the whole loaded range.
+    const next = { ...overrides };
+    for (const [key, items] of Object.entries(holidaysByDate)) {
+      const id = holidayMatchKey(items);
+      if (id && byIdentity[id]) next[key] = byIdentity[id];
+    }
+    const updated = { ...draft, holiday_overrides: next };
+    setDraft(updated);
+    saveMutation.mutate(updated);
+    toast.success(`הסימונים של ${Object.keys(byIdentity).length} חגים הוחלו על כל השנים`);
+  };
 
   const toggleWeekday = (idx) => {
     setDraft((d) => ({
@@ -269,9 +317,23 @@ export default function CompanyClosuresTab() {
 
           {/* Per-holiday overrides, grouped by year */}
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              לוח החגים (לפי Hebcal). כל חג מציג את ברירת-המחדל; שנו רק חגים ספציפיים לפי הצורך.
-            </p>
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <p className="text-xs text-muted-foreground flex-1 min-w-[200px]">
+                לוח החגים (לפי Hebcal). כל חג מציג את ברירת-המחדל; שנו רק חגים ספציפיים לפי הצורך.
+                לאחר שסימנתם חגים בשנה אחת, לחצו "החל על כל השנים" כדי להעתיק את אותם סימונים קדימה.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={applyOverridesToAllYears}
+                disabled={saveMutation.isPending || Object.keys(draft.holiday_overrides || {}).length === 0}
+                className="gap-1.5 whitespace-nowrap"
+              >
+                <CopyCheck className="h-3.5 w-3.5" />
+                החל על כל השנים קדימה
+              </Button>
+            </div>
             {years.length === 0 && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                 <Loader2 className="h-4 w-4 animate-spin" /> טוען חגים…
