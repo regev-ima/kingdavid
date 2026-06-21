@@ -17,8 +17,10 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import {
   Users, UserPlus, UserCheck, Calendar as CalendarIcon,
   Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
-  Moon, Sun, Hourglass,
+  Moon, Sun, Hourglass, Loader2, CheckCircle2,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 import { startOfDay, endOfDay, startOfWeek, startOfMonth, format } from '@/lib/safe-date-fns';
 import { toZonedTime, fromZonedTime } from '@/lib/safe-date-fns-tz';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
@@ -526,31 +528,65 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   // Bulk reassignment.
   // ───────────────────────────────────────────────────────────────
+  // Progress state for the bulk-reassign modal (null when idle):
+  // { total, done, failed, repName, finished }.
+  const [assignProgress, setAssignProgress] = useState(null);
+
   const assignLeadsMutation = useMutation({
     mutationFn: async ({ leadIds, repEmail }) => {
-      // Sequential so a failure on row N leaves rows 1..N-1 reassigned
-      // (rather than half-updated with no observable order). Each row is
-      // small (single UPDATE), so the latency cost is acceptable for the
-      // 10-50 row batches this UI supports.
-      for (const id of leadIds) {
-        await base44.entities.Lead.update(id, {
-          rep1: repEmail,
-          pending_rep_email: null,
-          first_action_at: new Date().toISOString(),
-        });
-      }
-    },
-    onSuccess: (_, { leadIds, repEmail }) => {
       const repName = salesReps.find((r) => r.email === repEmail)?.full_name || repEmail;
-      toast({ title: `${leadIds.length} לידים שויכו ל${repName}` });
+      setAssignProgress({ total: leadIds.length, done: 0, failed: 0, repName, finished: false });
+
+      // Reassign with bounded concurrency instead of one-at-a-time: the
+      // browser caps ~6 connections to the Supabase host, so ~8 in-flight
+      // workers drain the queue in a handful of round-trips instead of N
+      // sequential ones — a 20-50 row batch goes from seconds to ~instant.
+      // Each row is still its own UPDATE, so the per-lead assignment-log
+      // trigger fires exactly as before (works for both unassigned leads and
+      // ones that already had a rep). We process every row and report any
+      // failures at the end rather than aborting the whole batch on one.
+      const stamp = new Date().toISOString();
+      let done = 0;
+      let failed = 0;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < leadIds.length) {
+          const id = leadIds[cursor++];
+          try {
+            await base44.entities.Lead.update(id, {
+              rep1: repEmail,
+              pending_rep_email: null,
+              first_action_at: stamp,
+            });
+          } catch {
+            failed += 1;
+          } finally {
+            done += 1;
+            setAssignProgress((p) => (p ? { ...p, done, failed } : p));
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(8, leadIds.length) }, worker));
+      setAssignProgress((p) => (p ? { ...p, done, failed, finished: true } : p));
+      return { total: leadIds.length, failed, repName };
+    },
+    onSuccess: ({ total, failed, repName }) => {
+      if (failed > 0) {
+        toast({ title: `שויכו ${total - failed}/${total} לידים ל${repName}`, description: `${failed} נכשלו — נסה שוב`, variant: 'destructive' });
+      } else {
+        toast({ title: `${total} לידים שויכו ל${repName}` });
+      }
       setSelectedLeads([]);
       setAssigningRep('');
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-leads'] });
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-count'] });
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-kpis'] });
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-workload'] });
+      // Let the "הושלם" state show for a beat, then dismiss the modal.
+      setTimeout(() => setAssignProgress(null), 1200);
     },
     onError: (err) => {
+      setAssignProgress(null);
       toast({ title: 'שגיאה בשיוך הלידים', description: err?.message || '', variant: 'destructive' });
     },
   });
@@ -818,6 +854,44 @@ export default function LeadManagement() {
           </div>
         </div>
       ) : null}
+
+      {/* Bulk-reassign progress popup — a live progress bar so the manager
+          can watch a 20-50 lead reassignment fly through. Locked while it
+          runs; auto-closes shortly after it finishes. */}
+      <Dialog
+        open={!!assignProgress}
+        onOpenChange={(o) => { if (!o && assignProgress?.finished) setAssignProgress(null); }}
+      >
+        <DialogContent
+          dir="rtl"
+          className="sm:max-w-[420px]"
+          onPointerDownOutside={(e) => { if (!assignProgress?.finished) e.preventDefault(); }}
+          onEscapeKeyDown={(e) => { if (!assignProgress?.finished) e.preventDefault(); }}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              {assignProgress?.finished
+                ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                : <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+              {assignProgress?.finished ? 'השיוך הושלם' : 'משייך לידים…'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              {assignProgress?.finished
+                ? `${assignProgress.done - assignProgress.failed} מתוך ${assignProgress.total} לידים שויכו ל${assignProgress.repName}`
+                : `מעביר ${assignProgress?.total || 0} לידים ל${assignProgress?.repName || ''}…`}
+            </p>
+            <Progress value={assignProgress ? Math.round((assignProgress.done / Math.max(1, assignProgress.total)) * 100) : 0} />
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium tabular-nums">{assignProgress?.done || 0} / {assignProgress?.total || 0}</span>
+              {assignProgress?.failed > 0
+                ? <span className="text-xs text-red-600">{assignProgress.failed} נכשלו</span>
+                : null}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Quick-pick selector — admin-only. Manual checkbox-by-checkbox
           selection is painful when the manager wants to triage 50
