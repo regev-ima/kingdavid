@@ -19,6 +19,8 @@ import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-
 import { he } from 'date-fns/locale';
 import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
+import { useClosureChecker } from '@/hooks/useCompanyClosures';
+import { parseTimeToMinutes } from '@/lib/companyClosures';
 import SLABadge from '@/components/sla/SLABadge';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import NewQuote from '@/pages/NewQuote';
@@ -104,6 +106,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
   const navigate = useNavigate();
   const { openLead } = useLeadModal();
   const { hiddenStatuses } = useHiddenStatuses();
+  const { evaluate: evaluateClosure } = useClosureChecker();
   const { effectiveUser: effectiveUserFromHook } = useEffectiveCurrentUser(isOpen);
   const effectiveUser = effectiveUserProp || effectiveUserFromHook;
   const isAdmin = isAdminUser(effectiveUser);
@@ -649,9 +652,12 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
               {(() => {
                 const days = [];
                 let d = startOfDay(new Date());
-                while (days.length < 5) {
-                  if (d.getDay() !== 6) days.push(new Date(d));
+                let guard = 0;
+                // Next 5 *open* days — skips שבת, חגים, and admin-defined closures.
+                while (days.length < 5 && guard < 90) {
+                  if (evaluateClosure(d).status !== 'closed') days.push(new Date(d));
                   d = addDays(d, 1);
+                  guard++;
                 }
                 return days;
               })().map((day) => {
@@ -663,7 +669,15 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
                   <button
                     key={dayKey}
                     type="button"
-                    onClick={() => setFollowupFlow({ ...followupFlow, selectedDate: dayKey })}
+                    onClick={() => {
+                      // Drop a previously-picked hour if it falls after the new
+                      // day's half-day cutoff, so the confirm button can't
+                      // submit a blocked time.
+                      const ev = evaluateClosure(day);
+                      const cutoff = ev.status === 'half_day' && ev.until ? parseTimeToMinutes(ev.until) : null;
+                      const keepHour = followupFlow.selectedHour != null && (cutoff == null || followupFlow.selectedHour * 60 < cutoff);
+                      setFollowupFlow({ ...followupFlow, selectedDate: dayKey, selectedHour: keepHour ? followupFlow.selectedHour : null });
+                    }}
                     className={`flex flex-col items-center py-2.5 px-1 rounded-xl border-2 text-xs font-bold transition-all ${
                       isSelected
                         ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-sm'
@@ -679,30 +693,44 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
           </div>
 
           {/* Hour selection */}
-          {followupFlow.selectedDate && (
-            <div className="space-y-1.5">
-              <span className="text-xs font-semibold text-blue-700">שעה</span>
-              <div className="grid grid-cols-5 gap-1.5">
-                {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((hour) => {
-                  const isSelected = followupFlow.selectedHour === hour;
-                  return (
-                    <button
-                      key={hour}
-                      type="button"
-                      onClick={() => setFollowupFlow({ ...followupFlow, selectedHour: hour })}
-                      className={`py-2 rounded-lg border-2 text-sm font-bold transition-all ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-sm'
-                          : 'border-border bg-white hover:border-blue-300 hover:bg-blue-50 text-muted-foreground'
-                      }`}
-                    >
-                      {String(hour).padStart(2, '0')}:00
-                    </button>
-                  );
-                })}
+          {followupFlow.selectedDate && (() => {
+            // On a half-day (ערב חג / חצי-יום סגירה) only offer hours before the cutoff.
+            const dayEval = evaluateClosure(new Date(followupFlow.selectedDate));
+            const cutoffMin = dayEval.status === 'half_day' && dayEval.until ? parseTimeToMinutes(dayEval.until) : null;
+            return (
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-blue-700">שעה</span>
+                {cutoffMin != null && (
+                  <p className="text-[11px] text-amber-600">
+                    {dayEval.label || 'חצי יום'} — ניתן לקבוע עד {dayEval.until}
+                  </p>
+                )}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((hour) => {
+                    const isSelected = followupFlow.selectedHour === hour;
+                    const blocked = cutoffMin != null && hour * 60 >= cutoffMin;
+                    return (
+                      <button
+                        key={hour}
+                        type="button"
+                        disabled={blocked}
+                        onClick={() => setFollowupFlow({ ...followupFlow, selectedHour: hour })}
+                        className={`py-2 rounded-lg border-2 text-sm font-bold transition-all ${
+                          blocked
+                            ? 'border-border bg-muted/40 text-muted-foreground/40 cursor-not-allowed line-through'
+                            : isSelected
+                            ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-sm'
+                            : 'border-border bg-white hover:border-blue-300 hover:bg-blue-50 text-muted-foreground'
+                        }`}
+                      >
+                        {String(hour).padStart(2, '0')}:00
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <Button
             className="w-full bg-blue-600 hover:bg-blue-700"
