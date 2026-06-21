@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
-import { ChevronUp, ChevronDown, Calendar as CalendarIcon } from "lucide-react";
+import { ChevronUp, ChevronDown, Calendar as CalendarIcon, Lock, Clock } from "lucide-react";
 import { format } from "@/lib/safe-date-fns";
 import { he } from "date-fns/locale";
+import { useClosureChecker } from "@/hooks/useCompanyClosures";
+import { parseTimeToMinutes } from "@/lib/companyClosures";
 
 // Auto-commits internal state to the parent on every change so the value
 // is always live — closing the dialog by clicking outside, hitting Esc,
@@ -14,6 +16,7 @@ import { he } from "date-fns/locale";
 // surprises when the user closed the dialog any other way.
 export function DateTimePicker({ value, onChange, placeholder = "בחר תאריך ושעה" }) {
   const [isOpen, setIsOpen] = useState(false);
+  const { evaluate } = useClosureChecker();
 
   // Sensible default: if no value (or a past value), point at the next
   // upcoming hour today instead of dragging a stale month forward.
@@ -66,6 +69,12 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
   const decrementHours = () => setHoursAndCommit((hours - 1 + 24) % 24);
   const incrementMinutes = () => setMinutesAndCommit((minutes + 1) % 60);
   const decrementMinutes = () => setMinutesAndCommit((minutes - 1 + 60) % 60);
+
+  // Company closure verdict for the currently-selected day, so the picker can
+  // block closed days outright and warn when a half-day's cutoff is crossed.
+  const selEval = evaluate(selectedDate);
+  const cutoffMin = selEval.status === 'half_day' && selEval.until ? parseTimeToMinutes(selEval.until) : null;
+  const timePastCutoff = cutoffMin != null && hours * 60 + minutes >= cutoffMin;
 
   return (
     <>
@@ -140,6 +149,19 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
                 </div>
               </div>
 
+              {/* Half-day notice for the selected day (ערב חג / חצי-יום סגירה) */}
+              {selEval.status === 'half_day' && (
+                <div className={`mb-3 w-full rounded-lg border px-3 py-2 text-xs text-center ${
+                  timePastCutoff ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'
+                }`} dir="rtl">
+                  <div className="flex items-center justify-center gap-1.5 font-semibold">
+                    <Clock className="h-3.5 w-3.5" />
+                    {selEval.label || 'חצי יום'} — פתוח עד {selEval.until}
+                  </div>
+                  {timePastCutoff && <div className="mt-1">השעה שנבחרה היא לאחר שעת הסגירה</div>}
+                </div>
+              )}
+
               <Button type="button" onClick={() => setIsOpen(false)} className="px-10 py-2">
                 סיום
               </Button>
@@ -154,9 +176,16 @@ export function DateTimePicker({ value, onChange, placeholder = "בחר תארי
                 mode="single"
                 selected={selectedDate}
                 onSelect={setDate}
+                disabled={(date) => evaluate(date).status === 'closed'}
+                modifiers={{ halfDay: (date) => evaluate(date).status === 'half_day' }}
+                modifiersClassNames={{ halfDay: 'text-amber-600 font-semibold underline decoration-dotted underline-offset-2' }}
                 initialFocus
                 className="rounded-lg border-0"
               />
+              <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground" dir="rtl">
+                <Lock className="h-3 w-3" />
+                ימים סגורים (שבת, חגים וימי סגירה) חסומים לבחירה
+              </p>
             </div>
           </div>
         </DialogContent>

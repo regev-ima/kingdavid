@@ -34,11 +34,16 @@ export function useIsraeliHolidays(startDate, endDate) {
         const dateKey = (item.date || '').slice(0, 10);
         if (!dateKey) continue;
         const isYomTov = item.yomtov === true || /חג /.test(item.hebrew || '') || item.category === 'holiday';
+        // ערב חג — Hebcal labels these "Erev Pesach" / "ערב פסח" (only present
+        // because the query sends s=on). The closures policy treats these as
+        // optional half-days.
+        const isErev = /^erev\b/i.test(item.title || '') || /(^|\s)ערב\s/.test(item.hebrew || '');
         (map[dateKey] = map[dateKey] || []).push({
           title: item.title,
           hebrew: item.hebrew,
           category: item.category,
           isYomTov,
+          isErev,
         });
       }
       return map;
