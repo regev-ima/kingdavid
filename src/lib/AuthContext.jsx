@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
+import { resolveUserProfile } from '@/lib/resolveUserProfile';
 
 const AuthContext = createContext();
 
@@ -20,15 +21,18 @@ export const AuthProvider = ({ children }) => {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('auth_id', session.user.id)
-          .single();
+        const profile = await resolveUserProfile(session.user);
 
         if (profile) {
           setUser(profile);
           setIsAuthenticated(true);
+        } else {
+          // Valid session but no matching profile row. Don't leave the user
+          // stuck in the silent login→'/'→login bounce loop: surface why and
+          // clear the orphaned session so the login screen is usable.
+          console.error('Auth: signed in but no profile row found for', session.user.email);
+          setAuthError('no-profile');
+          await supabase.auth.signOut();
         }
       }
     } catch (err) {
