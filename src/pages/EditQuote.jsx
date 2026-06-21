@@ -18,21 +18,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ArrowRight, Save, Loader2, Plus, Trash2, Check, X } from "lucide-react";
+
+
+import { ArrowRight, Save, Loader2, Plus, Check } from "lucide-react";
 import { hasBedType, productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
-import DiscountPopover from '@/components/quote/DiscountPopover';
+import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewQuote } from '@/lib/rbac';
@@ -462,7 +456,7 @@ export default function EditQuote() {
   });
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link to={createPageUrl('QuoteDetails') + `?id=${quoteId}`}>
           <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
@@ -643,91 +637,13 @@ export default function EditQuote() {
                     )}
                   </div>
 
-                  {/* Bottom: compact details bar */}
-                  <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/30 border-t border-border/30">
-                    {/* SKU */}
-                    <div className="text-[11px] text-muted-foreground font-mono min-w-0 truncate" dir="ltr" title={item.sku}>
-                      {item.sku || '-'}
-                    </div>
-                    <div className="h-4 w-px bg-border/50" />
-                    {/* Quantity */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-[11px] text-muted-foreground">×</span>
-                      <div className="flex items-center border rounded-lg overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => updateItem(index, 'quantity', Math.max(1, (item.quantity || 1) - 1))}
-                          className="h-7 w-7 flex items-center justify-center text-sm font-medium hover:bg-muted transition-colors"
-                        >
-                          −
-                        </button>
-                        <span className="h-7 w-8 flex items-center justify-center text-xs font-medium border-x">
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => updateItem(index, 'quantity', (item.quantity || 1) + 1)}
-                          className="h-7 w-7 flex items-center justify-center text-sm font-medium hover:bg-muted transition-colors"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                    <div className="h-4 w-px bg-border/50" />
-                    {/* Price before VAT */}
-                    <div className="flex items-center gap-0.5">
-                      <span className="text-[10px] text-muted-foreground/60">לפני מע״מ</span>
-                      <span className="text-xs text-muted-foreground font-medium">₪{item.unit_price?.toLocaleString()}</span>
-                    </div>
-                    <div className="h-4 w-px bg-border/50" />
-                    {/* Discount */}
-                    <DiscountPopover
-                      item={item}
-                      onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                    />
-                    {item.discount_percent > 0 && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => updateItem(index, 'discount_percent', 0)}
-                            className="text-red-400 hover:text-red-600 transition-colors"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>הסר הנחה</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {/* Spacer */}
-                    <div className="flex-1" />
-                    {/* Total with VAT */}
-                    {item.discount_percent > 0 ? (
-                      <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-2.5 py-1 border border-emerald-200/50">
-                        <span className="text-[10px] text-red-400 line-through">₪{Math.round((item.unit_price * item.quantity || 0) * 1.18).toLocaleString()}</span>
-                        <span className="font-bold text-sm text-emerald-700">₪{Math.round((item.total || 0) * 1.18).toLocaleString()}</span>
-                        <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 rounded px-1">-{item.discount_percent}%</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 bg-primary/5 rounded-lg px-2 py-1">
-                        <span className="text-[10px] text-primary/70 font-medium">כולל מע״מ</span>
-                        <span className="font-bold text-sm text-primary">₪{Math.round((item.total || 0) * 1.18).toLocaleString()}</span>
-                      </div>
-                    )}
-                    {/* Delete */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(index)}
-                          className="text-muted-foreground/30 hover:text-red-500 transition-colors p-0.5"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>מחק שורה</TooltipContent>
-                    </Tooltip>
-                  </div>
+                  {/* Bottom: labelled details bar (qty / unit price / discount / totals) */}
+                  <QuoteItemDetailsBar
+                    item={item}
+                    onUpdateQuantity={(qty) => updateItem(index, 'quantity', qty)}
+                    onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
+                    onRemove={() => removeItem(index)}
+                  />
                   </TooltipProvider>
 
                   {/* Bed-only fabric catalog block — appears for items whose
