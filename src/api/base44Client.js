@@ -12,6 +12,7 @@
  */
 import { supabase } from './supabaseClient';
 import { entities } from './entities';
+import { resolveUserProfile } from '@/lib/resolveUserProfile';
 
 // Allow only same-origin redirects. Without this, a crafted login or
 // logout URL like `?redirect=https://attacker.com/phish` would bounce
@@ -39,13 +40,11 @@ const auth = {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) throw authError || new Error('Not authenticated');
 
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('auth_id', user.id)
-      .single();
-
-    if (profileError) throw profileError;
+    // Match by auth_id, falling back to the verified session email — same
+    // resolution the AuthContext gate uses, so a profile whose auth_id was
+    // never linked / drifted doesn't break every page that calls me().
+    const profile = await resolveUserProfile(user);
+    if (!profile) throw new Error('No profile found for the authenticated user');
     return profile;
   },
 
