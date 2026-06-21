@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>אפשרות 3 — Hero + אקורדיון</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+tailwind.config = { theme: { extend: {
+  fontFamily: { sans: ['Heebo','sans-serif'] },
+  colors: { brand: { 50:'#eef2ff',100:'#e0e7ff',500:'#6366f1',600:'#4f46e5',700:'#4338ca' } }
+}}}
+</script>
+<style>body{font-family:Heebo,sans-serif}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}.acc-open .chev{transform:rotate(180deg)}</style>
+</head>
+<body class="bg-slate-200/60 min-h-screen p-4 sm:p-8">
+
+<div class="mx-auto mb-4 max-w-[860px] text-center">
+  <span class="inline-block rounded-full bg-brand-600 text-white text-xs font-semibold px-3 py-1">אפשרות 3 — Hero + אקורדיון (חשיפה הדרגתית)</span>
+  <p class="text-xs text-slate-500 mt-2">הכל מקופל כברירת־מחדל = הכי נקי • הנציג רואה רק את הפעולה הבאה • פותח רק מה שצריך</p>
+</div>
+
+<div class="mx-auto max-w-[860px] bg-white rounded-3xl shadow-2xl ring-1 ring-black/5 overflow-hidden">
+  <!-- Close + manager -->
+  <div class="flex items-center justify-between px-6 pt-4">
+    <button class="text-slate-400 hover:text-slate-700 text-xl">✕</button>
+    <label class="flex items-center gap-2 text-xs text-slate-500 cursor-pointer select-none">
+      <span>תצוגת מנהל</span>
+      <span id="mgrTrack" class="relative w-9 h-5 rounded-full bg-slate-200"><span id="mgrKnob" class="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white shadow transition-all"></span></span>
+      <input id="mgr" type="checkbox" class="hidden" onchange="toggleMgr()">
+    </label>
+  </div>
+
+  <!-- Hero -->
+  <div class="px-6 pb-5 pt-2 text-center">
+    <div class="w-16 h-16 rounded-2xl bg-brand-600 text-white mx-auto flex items-center justify-center font-extrabold text-2xl">ת</div>
+    <h1 class="text-2xl font-extrabold text-slate-900 mt-3">תמיר גרידי</h1>
+    <p class="text-sm text-slate-400 mt-0.5" dir="ltr">050-487-7761 · Facebook Form</p>
+
+    <!-- Status pipeline -->
+    <div class="flex items-center justify-center gap-1 mt-4 text-[11px]">
+      <span class="rounded-full bg-brand-600 text-white px-3 py-1 font-semibold">ליד חדש</span>
+      <span class="text-slate-300">—</span>
+      <span class="rounded-full bg-slate-100 text-slate-400 px-3 py-1">פולואפ</span>
+      <span class="text-slate-300">—</span>
+      <span class="rounded-full bg-slate-100 text-slate-400 px-3 py-1">הצעה</span>
+      <span class="text-slate-300">—</span>
+      <span class="rounded-full bg-slate-100 text-slate-400 px-3 py-1">נסגרה עסקה</span>
+    </div>
+
+    <!-- Next action -->
+    <div class="mt-5 rounded-2xl bg-gradient-to-l from-brand-600 to-indigo-500 text-white p-4 flex items-center justify-between text-right">
+      <div class="flex gap-2">
+        <button class="rounded-xl bg-white text-brand-700 text-sm font-bold px-4 py-2">בצע →</button>
+        <button class="rounded-xl bg-white/15 text-white text-sm font-semibold px-3 py-2">📞</button>
+      </div>
+      <div><p class="text-xs text-white/70">הפעולה הבאה</p><p class="font-bold">משימת שיווק אוטומטית · מחר 02:09</p></div>
+    </div>
+  </div>
+
+  <!-- Accordions -->
+  <div class="px-6 pb-6 space-y-2 bg-slate-50/50 pt-4">
+    <!-- customer -->
+    <div class="acc rounded-2xl bg-white ring-1 ring-slate-100 overflow-hidden">
+      <button class="acc-btn w-full flex items-center justify-between px-4 py-3.5" onclick="toggleAcc(this)">
+        <span class="chev text-slate-300 transition-transform">▾</span>
+        <span class="font-semibold text-slate-800 flex items-center gap-2">👤 פרטי לקוח</span>
+      </button>
+      <div class="acc-body hidden px-4 pb-4">
+        <div class="divide-y divide-slate-100 text-sm">
+          <div class="flex justify-between py-2.5"><span class="text-slate-400">טלפון</span><span class="font-medium" dir="ltr">050-487-7761</span></div>
+          <div class="flex justify-between py-2.5"><span class="text-slate-400">מקור</span><span class="font-medium">Facebook Form</span></div>
+          <div class="flex justify-between py-2.5 gap-6"><span class="text-slate-400 shrink-0">הערות</span><span class="font-medium text-left">140/190 · זוגי סטנדרט · 30 ימי ניסיון</span></div>
+        </div>
+      </div>
+    </div>
+    <!-- tasks -->
+    <div class="acc rounded-2xl bg-white ring-1 ring-slate-100 overflow-hidden">
+      <button class="acc-btn w-full flex items-center justify-between px-4 py-3.5" onclick="toggleAcc(this)">
+        <span class="chev text-slate-300 transition-transform">▾</span>
+        <span class="font-semibold text-slate-800 flex items-center gap-2">✅ משימות <span class="text-[10px] bg-brand-100 text-brand-700 rounded-full px-1.5 py-0.5">1 פתוחה</span></span>
+      </button>
+      <div class="acc-body hidden px-4 pb-4">
+        <div class="rounded-xl ring-1 ring-slate-100 p-3 flex items-center justify-between"><button class="rounded-lg bg-brand-50 text-brand-700 text-xs font-semibold px-3 py-1.5">שייך</button><div class="text-right"><p class="font-medium text-sm">משימת שיווק אוטומטית</p><p class="text-xs text-slate-400">מחר 02:09</p></div></div>
+      </div>
+    </div>
+    <!-- deals -->
+    <div class="acc rounded-2xl bg-white ring-1 ring-slate-100 overflow-hidden">
+      <button class="acc-btn w-full flex items-center justify-between px-4 py-3.5" onclick="toggleAcc(this)">
+        <span class="chev text-slate-300 transition-transform">▾</span>
+        <span class="font-semibold text-slate-800 flex items-center gap-2">📄 הצעות והזמנות <span class="text-[10px] bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5">0</span></span>
+      </button>
+      <div class="acc-body hidden px-4 pb-4 text-center text-sm text-slate-400">אין הצעות מחיר · <button class="text-brand-600 font-semibold">צור הצעה</button></div>
+    </div>
+    <!-- activity -->
+    <div class="acc rounded-2xl bg-white ring-1 ring-slate-100 overflow-hidden">
+      <button class="acc-btn w-full flex items-center justify-between px-4 py-3.5" onclick="toggleAcc(this)">
+        <span class="chev text-slate-300 transition-transform">▾</span>
+        <span class="font-semibold text-slate-800 flex items-center gap-2">🕐 פעילות</span>
+      </button>
+      <div class="acc-body hidden px-4 pb-4">
+        <ol class="relative border-r-2 border-slate-100 pr-5 space-y-4 pt-1">
+          <li class="relative"><span class="absolute -right-[27px] top-1 w-2.5 h-2.5 rounded-full bg-brand-600 ring-4 ring-brand-100"></span><p class="text-sm font-medium">הליד נוצר</p><p class="text-xs text-slate-400">21/06 23:09</p></li>
+          <li class="relative"><span class="absolute -right-[27px] top-1 w-2.5 h-2.5 rounded-full bg-slate-300 ring-4 ring-slate-100"></span><p class="text-sm font-medium">משימת שיווק נוצרה</p><p class="text-xs text-slate-400">מערכת</p></li>
+        </ol>
+      </div>
+    </div>
+    <!-- manager analytics -->
+    <div class="acc mgr-only hidden rounded-2xl bg-amber-50 ring-1 ring-amber-100 overflow-hidden">
+      <button class="acc-btn w-full flex items-center justify-between px-4 py-3.5" onclick="toggleAcc(this)">
+        <span class="chev text-amber-400 transition-transform">▾</span>
+        <span class="font-semibold text-amber-800 flex items-center gap-2">📊 נתוני מנהל</span>
+      </button>
+      <div class="acc-body hidden px-4 pb-4 grid grid-cols-3 gap-2">
+        <div class="rounded-xl bg-white/70 p-3 text-right"><p class="text-[11px] text-amber-700/70">גיל הליד</p><p class="font-bold text-amber-800">0 דק'</p></div>
+        <div class="rounded-xl bg-white/70 p-3 text-right"><p class="text-[11px] text-amber-700/70">נגיעות</p><p class="font-bold text-amber-800">2</p></div>
+        <div class="rounded-xl bg-white/70 p-3 text-right"><p class="text-[11px] text-amber-700/70">נציג</p><p class="font-bold text-amber-800">לא שויך</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleAcc(btn){const card=btn.closest('.acc');card.classList.toggle('acc-open');card.querySelector('.acc-body').classList.toggle('hidden');}
+function toggleMgr(){const on=document.getElementById('mgr').checked;document.getElementById('mgrTrack').classList.toggle('bg-brand-600',on);document.getElementById('mgrKnob').classList.toggle('right-4',on);document.querySelectorAll('.mgr-only').forEach(e=>e.classList.toggle('hidden',!on));}
+</script>
+</body>
+</html>
