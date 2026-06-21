@@ -80,7 +80,6 @@ import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import NewOrder from '@/pages/NewOrder';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
-import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
@@ -184,7 +183,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   // still accepted as a prop for backwards-compat with any caller
   // that passes it; it's just ignored.
   void initialMode;
-  const { hiddenStatuses } = useHiddenStatuses();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -550,6 +548,27 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     } else {
       setAssignBeforeTaskRep('');
       setShowAssignBeforeTask(true);
+    }
+  };
+
+  // The lead status is changed only through a task (that's where the smart
+  // no-answer / follow-up scheduling lives), so clicking the status card opens
+  // the lead's most recent task — there the rep updates the status and records
+  // what happened. If the lead has no task yet, start a new one.
+  const openLastTask = () => {
+    const sorted = [...tasks].sort(
+      (a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0),
+    );
+    // Prefer the latest still-open task (that's where the status actually
+    // gets changed); otherwise the most recent task; with none, start one.
+    const target = sorted.find(
+      (t) => String(t?.task_status || '').toLowerCase() === 'not_completed',
+    ) || sorted[0];
+    if (target) {
+      setEditingTask(target);
+      setShowEditTaskDialog(true);
+    } else {
+      requestAddTask();
     }
   };
 
@@ -1273,49 +1292,20 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <CardContent className="p-4 space-y-2">
               <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">סטטוס ליד</span>
               {canEdit ? (
-                <Select
-                  value={formData.status || ''}
-                  onValueChange={(value) => {
-                    const NO_ANSWER_MAP = {
-                      no_answer_1: 'ללא מענה 1',
-                      no_answer_2: 'ללא מענה 2',
-                      no_answer_3: 'ללא מענה 3',
-                      no_answer_4: 'ללא מענה 4',
-                    };
-                    setFormData({ ...formData, status: value });
-                    if (!isEditing) {
-                      if (NO_ANSWER_MAP[value]) {
-                        setNoAnswerFlow({ status: value, label: NO_ANSWER_MAP[value], selectedHours: null });
-                        setFollowupFlow(null);
-                      } else if (value === 'followup_before_quote' || value === 'followup_after_quote') {
-                        setFollowupFlow({ selectedDate: null, selectedHour: null, status: value });
-                        setNoAnswerFlow(null);
-                      } else {
-                        setNoAnswerFlow(null);
-                        setFollowupFlow(null);
-                        createAuditLog({
-                          leadId,
-                          actionType: 'status_changed',
-                          description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${value}"`,
-                          user,
-                          fieldName: 'status',
-                          oldValue: lead.status,
-                          newValue: value,
-                        });
-                        updateLeadMutation.mutate({ status: value });
-                        queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                      }
-                    }
-                  }}>
-                  <SelectTrigger className="bg-white border-blue-200 h-10 text-sm font-semibold"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {getVisibleStatusOptions(hiddenStatuses, lead.status).map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        <StatusOptionRow status={opt.value} label={opt.label} />
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                // Status changes go through a task, so this opens the lead's
+                // most recent task instead of editing the status directly.
+                <button
+                  type="button"
+                  onClick={openLastTask}
+                  title="הסטטוס משתנה דרך משימה — לחץ לפתיחת המשימה האחרונה"
+                  className="w-full flex items-center justify-between gap-2 rounded-lg bg-white border border-blue-200 px-3 h-10 hover:bg-blue-50 transition-colors text-start"
+                >
+                  <StatusBadge status={lead.status} />
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 flex-shrink-0">
+                    <Clock className="h-3.5 w-3.5" />
+                    עדכן במשימה
+                  </span>
+                </button>
               ) : (
                 <StatusBadge status={lead.status} />
               )}
