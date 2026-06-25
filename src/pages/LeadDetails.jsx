@@ -636,7 +636,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
       {/* Status accent bar — purely decorative thin strip at the very
           top of the rendered tree. */}
-      <div className="h-1.5 w-full bg-primary shrink-0" />
+      <div className="h-1.5 w-full bg-blue-500 shrink-0" />
       {/* Header — name, status, SLA, mode toggle. In popup mode it's
           flex-shrink-0 so it never scrolls; pe-12 reserves room for
           the Radix close-X that sits in the dialog's right corner. */}
@@ -825,11 +825,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       <div className="space-y-4">
         {/* ESSENTIALS row — Lead Status + Assignment side by side,
             always visible. */}
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-3 gap-4">
           {/* Lead Status */}
-          <Card className="rounded-xl border-blue-200 shadow-card overflow-hidden bg-blue-50/60">
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardContent className="p-4 space-y-2">
-              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">סטטוס ליד</span>
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">סטטוס ליד</span>
               {canEdit ? (
                 // Status changes go through a task, so this opens the lead's
                 // most recent task instead of editing the status directly.
@@ -837,10 +837,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   type="button"
                   onClick={openLastTask}
                   title="הסטטוס משתנה דרך משימה — לחץ לפתיחת המשימה האחרונה"
-                  className="w-full flex items-center justify-between gap-2 rounded-lg bg-white border border-blue-200 px-3 h-10 hover:bg-blue-50 transition-colors text-start"
+                  className="w-full flex items-center justify-between gap-2 rounded-lg bg-card border border-border px-3 h-10 hover:bg-muted transition-colors text-start"
                 >
                   <StatusBadge status={lead.status} />
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 flex-shrink-0">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground flex-shrink-0">
                     <Clock className="h-3.5 w-3.5" />
                     עדכן במשימה
                   </span>
@@ -851,52 +851,26 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
-          {/* Assignment */}
+          {/* Primary rep */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-                שיוך נציגים
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 p-4">
-              {isEditing && (canEditLeadRep1 || canEditLeadRep2) ? (
-                <div className="space-y-3">
-                  {canEditLeadRep1 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
-                      <Select
-                        value={formData.rep1 || ''}
-                        onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={null}>ללא שיוך</SelectItem>
-                          {salesReps.map((rep) =>
-                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  {canEditLeadRep2 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">נציג משני</Label>
-                      <Select
-                        value={formData.rep2 || ''}
-                        onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={null}>ללא</SelectItem>
-                          {salesReps.map((rep) =>
-                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
+            <CardContent className="p-4 space-y-2">
+              {isEditing && canEditLeadRep1 ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
+                  <Select
+                    value={formData.rep1 || ''}
+                    onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={null}>ללא שיוך</SelectItem>
+                      {salesReps.map((rep) =>
+                        <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <>
                   <RepCard
                     label="נציג ראשי"
                     rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: getRepDisplayName(lead.rep1, salesReps) }) : null}
@@ -958,16 +932,39 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                       )}
                     </div>
                   )}
-                  <RepCard
-                    label="נציג משני"
-                    rep={lead.rep2 ? salesReps.find((r) => r.email === lead.rep2) : null}
-                    isEmpty={!lead.rep2}
-                    canEdit={canEditLeadRep2}
-                    salesReps={salesReps}
-                    onAssign={handleQuickAssignRep2}
-                    isPending={updateLeadMutation.isPending}
-                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Secondary rep */}
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardContent className="p-4 space-y-2">
+              {isEditing && canEditLeadRep2 ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">נציג משני</Label>
+                  <Select
+                    value={formData.rep2 || ''}
+                    onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={null}>ללא</SelectItem>
+                      {salesReps.map((rep) =>
+                        <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
+              ) : (
+                <RepCard
+                  label="נציג משני"
+                  rep={lead.rep2 ? salesReps.find((r) => r.email === lead.rep2) : null}
+                  isEmpty={!lead.rep2}
+                  canEdit={canEditLeadRep2}
+                  salesReps={salesReps}
+                  onAssign={handleQuickAssignRep2}
+                  isPending={updateLeadMutation.isPending}
+                />
               )}
             </CardContent>
           </Card>
@@ -980,7 +977,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
 
         {/* Tasks */}
-        <Card className="rounded-xl border-border shadow-card overflow-hidden">
+        <Card className="rounded-xl border-border border-r-4 border-r-blue-500 shadow-card overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Clock className="h-4 w-4 text-muted-foreground" />
