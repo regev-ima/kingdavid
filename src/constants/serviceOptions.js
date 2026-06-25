@@ -85,6 +85,17 @@ export const SOURCE_CHIP = Object.fromEntries(SOURCE_OPTIONS.map((o) => [o.value
 // free-text questions here. Shown identically in the rep dialog and the public
 // link. Generic enough for mattresses/beds/furniture.
 export const DIAGNOSTIC_QUESTIONS = [
+  {
+    key: 'order_age',
+    label: 'מתי ביצעת את ההזמנה?',
+    type: 'select',
+    options: [
+      'בשנה האחרונה', 'מעל שנה', 'שנתיים', '3 שנים', '4 שנים', '5 שנים',
+      '6 שנים', '7 שנים', '8 שנים', '9 שנים', '10 שנים', '11 שנים', '12 שנים',
+      '13 שנים', '14 שנים', '15 שנים', '16 שנים', '17 שנים', '18 שנים',
+      '19 שנים', '20 שנים',
+    ],
+  },
   { key: 'product', label: 'באיזה מוצר מדובר?', type: 'text', placeholder: 'למשל: מזרן קפיצים מבודדים 160/200' },
   {
     key: 'problem_area',
