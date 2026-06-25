@@ -1,24 +1,41 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { createPageUrl } from '@/utils';
 import { AlertTriangle, ChevronLeft } from 'lucide-react';
 
 // Red banner shown at the top while the rep has WhatsApp conversations waiting
 // for a reply (status = 'waiting' — i.e. the last message was incoming). It is
 // RLS-scoped, so a rep sees only their own count. Disappears automatically once
-// everything is answered. Polls every 30s and on window focus so it stays live
-// even without a realtime connection.
+// everything is answered.
+//
+// Freshness: it listens to whatsapp_chats over Realtime so it appears almost
+// instantly when a new message lands, and also polls every 15s + on window
+// focus as a fallback in case Realtime is unavailable.
 export default function WhatsAppWaitingBanner() {
+  const queryClient = useQueryClient();
+
   const { data: count = 0 } = useQuery({
     queryKey: ['wa-waiting-count'],
     queryFn: () => base44.entities.WhatsAppChat.count({ status: 'waiting' }),
-    refetchInterval: 30000,
+    refetchInterval: 15000,
     refetchOnWindowFocus: true,
     retry: false,
-    staleTime: 10000,
+    staleTime: 5000,
   });
+
+  // Live refresh: any change to the rep's chats re-checks the waiting count.
+  useEffect(() => {
+    const channel = supabase
+      .channel('wa-banner-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_chats' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   if (!count) return null;
 
