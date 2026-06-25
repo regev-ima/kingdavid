@@ -48,6 +48,7 @@ import NotificationBell from "@/components/shared/NotificationBell";
 
 import VoiceCenterCallPopup from "@/components/call/VoiceCenterCallPopup";
 import UserAvatar from "@/components/shared/UserAvatar";
+import WhatsAppWaitingBanner from "@/components/whatsapp/WhatsAppWaitingBanner";
 
 // Navigation organized by role priority
 const navigationByRole = {
@@ -373,6 +374,7 @@ function LayoutContent({ children, currentPageName }) {
 
       {/* Main Content */}
       <main className={`lg:pr-64 min-h-screen ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
+        {userRole !== 'admin' && <WhatsAppWaitingBanner />}
         <div className="p-6 lg:p-8">
           {children}
         </div>
