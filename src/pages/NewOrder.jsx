@@ -16,19 +16,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import QuoteItemDetailsBar from "@/components/quote/QuoteItemDetailsBar";
 import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X, Check } from "lucide-react";
 import { productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductSelector from '@/components/quote/ProductSelector';
-import DiscountPopover from '@/components/quote/DiscountPopover';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
@@ -775,236 +768,172 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             </Button>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">מוצר</TableHead>
-                  <TableHead className="text-right w-32">מק״ט</TableHead>
-                  <TableHead className="text-right w-24">כמות</TableHead>
-                  <TableHead className="text-right w-32">מחיר</TableHead>
-                  <TableHead className="text-right w-28">הנחה</TableHead>
-                  <TableHead className="text-right w-32">סה"כ</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {formData.items.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell>
-                      <div className="space-y-2">
-                        <ProductSelector
-                          products={products}
-                          variations={variations}
-                          value={item.product_id}
-                          selectedVariationId={item.variation_id}
-                          onSelect={(val) => selectProduct(index, val)}
-                          onVariationSelect={(variation) => handleVariationSelect(index, variation)}
-                          placeholder="בחר מוצר ומידות"
-                        />
-                        {/* Bed-only fabric catalog block */}
-                        {(() => {
-                          const product = products.find(p => p.id === item.product_id);
-                          if (product?.category !== 'bed') return null;
-                          return (
-                            <div className="mt-3 space-y-2 border-t border-border/40 pt-3">
-                              <Label className="text-xs text-muted-foreground">קטלוג בד</Label>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Input
-                                  placeholder="שם קטלוג"
-                                  value={item.fabric_catalog_name || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                                <Input
-                                  placeholder="מס׳ צבע"
-                                  value={item.fabric_color_number || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                                <Input
-                                  placeholder="צבע"
-                                  value={item.fabric_color || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                                <Select
-                                  value={item.fabric_supplier || ''}
-                                  onValueChange={(val) => {
-                                    updateItem(index, 'fabric_supplier', val);
-                                    if (val !== FABRIC_SUPPLIER_OTHER) {
-                                      updateItem(index, 'fabric_supplier_other', '');
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 text-xs">
-                                    <SelectValue placeholder="ספק" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {FABRIC_SUPPLIERS.map((s) => (
-                                      <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
-                                <Input
-                                  placeholder="שם הספק"
-                                  value={item.fabric_supplier_other || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                              )}
-                            </div>
-                          );
-                        })()}
-                        {item.variation_id && (() => {
-                              const variation = variations.find(v => v.id === item.variation_id);
-                              const product = products.find(p => p.id === item.product_id);
-                              const applicableAddons = addons.filter(addon => {
-                                const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
-                                if (!matchesCategory) return false;
-                                // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
-                                if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
-                                if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
-                                return true;
-                              });
-                              if (applicableAddons.length === 0) return null;
-                              return (
-                                <div className="mt-3 space-y-2">
-                                  <Label className="text-xs text-muted-foreground">תוספות למוצר</Label>
-                                  <div className="flex flex-wrap gap-2">
-                                    {applicableAddons.map(addon => {
-                                      const sizePrice = addon.size_prices?.find(
-                                        sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
-                                      );
-                                      const specificPrice = addonPrices.find(
-                                        ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
-                                      );
-                                      const productPrice = addonPrices.find(
-                                        ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
-                                      );
-                                      const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
-                                      const isSelected = (item.selected_addons || []).some(sa => sa.addon_id === addon.id);
-                                      return (
-                                        <Button
-                                          key={addon.id}
-                                          type="button"
-                                          variant={isSelected ? "default" : "outline"}
-                                          size="sm"
-                                          onClick={() => {
-                                            const currentAddons = item.selected_addons || [];
-                                            const newSelectedAddons = isSelected
-                                              ? currentAddons.filter(sa => sa.addon_id !== addon.id)
-                                              : [...currentAddons, { addon_id: addon.id, name: addon.name, price: finalAddonPrice }];
-                                            handleAddonsSelect(index, newSelectedAddons);
-                                          }}
-                                          className="text-xs"
-                                        >
-                                          {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })()}
+            <div className="space-y-4">
+              {formData.items.map((item, index) => (
+                <div key={index} className="rounded-xl overflow-hidden bg-white shadow-card border-2 border-border transition-colors">
+                  <TooltipProvider delayDuration={300}>
+                  {/* Top: Product selector full width */}
+                  <div className="px-3 pt-3 pb-2">
+                    {item.name && !item.product_id ? (
+                      <div className="px-3 py-2 border rounded-lg bg-muted/60 text-foreground font-semibold h-10 flex items-center text-sm">
+                        {item.name}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-muted-foreground" dir="ltr">{item.sku || '-'}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                        className="w-20"
+                    ) : (
+                      <ProductSelector
+                        products={products}
+                        variations={variations}
+                        value={item.product_id}
+                        selectedVariationId={item.variation_id}
+                        onSelect={(val) => selectProduct(index, val)}
+                        onVariationSelect={(variation) => handleVariationSelect(index, variation)}
+                        placeholder="בחר מוצר ומידות"
                       />
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <div className="font-medium">₪{item.unit_price?.toLocaleString()}</div>
-                        {item.selected_addons && item.selected_addons.length > 0 && (
-                          <div className="text-xs text-muted-foreground">
-                            +₪{item.selected_addons.reduce((sum, a) => sum + (a.price || 0), 0).toLocaleString()} תוספות
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <DiscountPopover
-                          item={item}
-                          onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                        />
-                        {item.discount_percent > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => updateItem(index, 'discount_percent', 0)}
-                            className="text-red-400 hover:text-red-600 transition-colors"
-                            aria-label="הסר הנחה"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-semibold">
-                      {(() => {
-                        const addonsTotal = (item.selected_addons || []).reduce((s, a) => s + (a.price || 0), 0);
-                        const baseLine = item.quantity * (item.unit_price + addonsTotal);
-                        return item.discount_percent > 0 ? (
-                          <div className="flex flex-col leading-tight">
-                            <span className="text-[11px] text-red-400 line-through">₪{Math.round(baseLine).toLocaleString()}</span>
-                            <span className="flex items-center gap-1">
-                              ₪{Math.round(item.total || 0).toLocaleString()}
-                              <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 rounded px-1">-{item.discount_percent}%</span>
-                            </span>
-                          </div>
-                        ) : (
-                          <span>₪{item.total?.toLocaleString()}</span>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      {formData.items.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeItem(index)}
-                          className="text-red-500"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    )}
+                  </div>
 
-            <div className="mt-6 flex justify-end">
-              <div className="w-64 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">סכום ביניים:</span>
-                  <span>₪{Math.round(formData.subtotal).toLocaleString()}</span>
+                  {/* Labelled qty / unit price / discount / totals bar — shared with quotes */}
+                  <QuoteItemDetailsBar
+                    item={item}
+                    onUpdateQuantity={(qty) => updateItem(index, 'quantity', qty)}
+                    onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
+                    onRemove={() => removeItem(index)}
+                  />
+                  </TooltipProvider>
+
+                  {/* Bed-only fabric catalog block */}
+                  {(() => {
+                    const product = products.find(p => p.id === item.product_id);
+                    if (product?.category !== 'bed') return null;
+                    return (
+                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
+                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <Input
+                            placeholder="שם קטלוג"
+                            value={item.fabric_catalog_name || ''}
+                            onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="מס׳ צבע"
+                            value={item.fabric_color_number || ''}
+                            onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="צבע"
+                            value={item.fabric_color || ''}
+                            onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                          <Select
+                            value={item.fabric_supplier || ''}
+                            onValueChange={(val) => {
+                              updateItem(index, 'fabric_supplier', val);
+                              if (val !== FABRIC_SUPPLIER_OTHER) {
+                                updateItem(index, 'fabric_supplier_other', '');
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="ספק" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {FABRIC_SUPPLIERS.map((s) => (
+                                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
+                          <Input
+                            placeholder="שם הספק"
+                            value={item.fabric_supplier_other || ''}
+                            onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Addons — toggle into the line item's selected_addons */}
+                  {item.variation_id && (() => {
+                    const variation = variations.find(v => v.id === item.variation_id);
+                    const product = products.find(p => p.id === item.product_id);
+                    const applicableAddons = addons.filter(addon => {
+                      const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
+                      if (!matchesCategory) return false;
+                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
+                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
+                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
+                      return true;
+                    });
+                    if (applicableAddons.length === 0) return null;
+                    return (
+                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
+                        <Label className="text-xs font-medium text-muted-foreground">תוספות למוצר</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {applicableAddons.map(addon => {
+                            const sizePrice = addon.size_prices?.find(
+                              sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
+                            );
+                            const specificPrice = addonPrices.find(
+                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
+                            );
+                            const productPrice = addonPrices.find(
+                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
+                            );
+                            const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
+                            const isSelected = (item.selected_addons || []).some(sa => sa.addon_id === addon.id);
+                            return (
+                              <Button
+                                key={addon.id}
+                                type="button"
+                                variant={isSelected ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  const currentAddons = item.selected_addons || [];
+                                  const newSelectedAddons = isSelected
+                                    ? currentAddons.filter(sa => sa.addon_id !== addon.id)
+                                    : [...currentAddons, { addon_id: addon.id, name: addon.name, price: finalAddonPrice }];
+                                  handleAddonsSelect(index, newSelectedAddons);
+                                }}
+                                className={`text-xs h-8 ${isSelected ? '' : 'bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary'}`}
+                              >
+                                {isSelected ? <Check className="w-3 h-3 me-1" /> : <Plus className="w-3 h-3 me-1" />}
+                                {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 border border-border rounded-xl overflow-hidden">
+              <div className="p-4 space-y-3 bg-muted/40">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">סכום לפני מע״מ</span>
+                  <span className="font-medium">₪{Math.round(formData.subtotal).toLocaleString()}</span>
                 </div>
                 {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>הנחה כולל מע״מ:</span>
+                  <div className="flex justify-between text-sm text-red-600">
+                    <span>הנחה כולל מע״מ</span>
                     <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">מע"מ (18%):</span>
-                  <span>₪{Math.round(formData.vat_amount).toLocaleString()}</span>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">מע״מ (18%)</span>
+                  <span className="font-medium">₪{Math.round(formData.vat_amount).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between text-lg font-bold border-t pt-2">
-                  <span>סה"כ לתשלום:</span>
-                  <span>₪{formData.total.toLocaleString()}</span>
-                </div>
+              </div>
+              <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
+                <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
+                <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
               </div>
             </div>
           </CardContent>
