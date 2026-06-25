@@ -231,6 +231,21 @@ export default function WhatsAppSettingsTab({ rep }) {
           <DiagRow ok={diag.green?.outgoingWebhook === 'yes'} label="התראות יוצאות (טלפון)" value={diag.green?.outgoingWebhook || '—'} />
           <DiagRow ok={diag.green?.outgoingAPIMessageWebhook === 'yes'} label="התראות יוצאות (API)" value={diag.green?.outgoingAPIMessageWebhook || '—'} />
           <DiagRow ok={!!diag.last_webhook_at} label="וובהוק התקבל אצלנו" value={diag.last_webhook_at ? new Date(diag.last_webhook_at).toLocaleString('he-IL') : 'עדיין לא'} />
+          <DiagRow ok={diag.messages_count > 0} label="הודעות שנקלטו" value={`${diag.messages_count ?? 0} (${diag.chats_count ?? 0} שיחות)`} />
+          {diag.last_message && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">הודעה אחרונה</span>
+              <span className="font-medium truncate max-w-[60%]" dir="auto">
+                {diag.last_message.direction === 'outgoing' ? '↗ ' : '↘ '}
+                {diag.last_message.body || `[${diag.last_message.message_type}]`}
+              </span>
+            </div>
+          )}
+          {diag.last_webhook_at && diag.messages_count === 0 && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 rounded p-2">
+              וובהוק מגיע אלינו אך לא נקלטו הודעות — ייתכן שהתקבל רק עדכון סטטוס. שלח הודעת וואטסאפ אמיתית ונסה שוב.
+            </p>
+          )}
           {!diag.webhook_matches && (
             <p className="text-[11px] text-amber-700 bg-amber-50 rounded p-2">
               הכתובת אצל Green לא תואמת. לחץ "חבר וובהוק" כדי להגדיר אותה מחדש.

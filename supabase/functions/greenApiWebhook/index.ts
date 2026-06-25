@@ -13,12 +13,20 @@
 import { createServiceClient } from '../_shared/supabase.ts';
 import { normalizeWebhook } from '../_shared/greenApi.ts';
 
-function bearerToken(req: Request): string {
+// Collect every token the caller supplied — Green carries it as ?token= (our
+// setup), but a stale config or the Supabase gateway may also put one in the
+// Authorization header. We accept a match from EITHER, so reconfigurations and
+// gateway quirks don't silently 401 every webhook.
+function providedTokens(req: Request): string[] {
+  const out: string[] = [];
   const auth = req.headers.get('authorization') || '';
   const m = auth.match(/^Bearer\s+(.+)$/i);
-  if (m) return m[1].trim();
-  // Fallback: token in the query string (?token=...).
-  try { return new URL(req.url).searchParams.get('token') || ''; } catch { return ''; }
+  if (m) out.push(m[1].trim());
+  try {
+    const q = new URL(req.url).searchParams.get('token');
+    if (q) out.push(q.trim());
+  } catch { /* ignore */ }
+  return out;
 }
 
 Deno.serve(async (req) => {
@@ -62,7 +70,7 @@ Deno.serve(async (req) => {
     // Authenticate: the token must match what we configured (carried as
     // ?token= in the webhook URL, with an Authorization: Bearer fallback).
     if (account.webhook_token) {
-      if (bearerToken(req) !== account.webhook_token) {
+      if (!providedTokens(req).includes(account.webhook_token)) {
         console.warn('[greenApiWebhook] token mismatch for instance', norm.idInstance);
         return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
       }

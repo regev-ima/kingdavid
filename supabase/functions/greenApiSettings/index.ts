@@ -190,10 +190,27 @@ Deno.serve(async (req) => {
       const settings = await getGreenSettings(acc);
       const expectedUrl = buildWebhookUrlWithToken(webhookUrl(), acc.webhook_token);
       const greenUrl = settings.data?.webhookUrl || '';
+
+      // Ground truth: how much have we actually recorded for this account?
+      const { count: chatsCount } = await svc
+        .from('whatsapp_chats').select('id', { count: 'exact', head: true }).eq('account_id', acc.id);
+      const { count: msgsCount } = await svc
+        .from('whatsapp_messages').select('id', { count: 'exact', head: true }).eq('account_id', acc.id);
+      const { data: lastMsg } = await svc
+        .from('whatsapp_messages')
+        .select('direction, body, message_type, msg_timestamp, created_date')
+        .eq('account_id', acc.id)
+        .order('created_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       return Response.json({
         ok: true,
         state: state.data?.stateInstance || null,
         state_ok: state.ok,
+        chats_count: chatsCount ?? 0,
+        messages_count: msgsCount ?? 0,
+        last_message: lastMsg || null,
         green: {
           webhookUrl: greenUrl,
           incomingWebhook: settings.data?.incomingWebhook,
