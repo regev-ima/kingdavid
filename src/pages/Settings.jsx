@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2 } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -23,6 +23,7 @@ import { canAccessAdminOnly } from '@/lib/rbac';
 import ImportOrders from '@/components/service/ImportOrders';
 import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
 import CompanyClosuresTab from '@/components/settings/CompanyClosuresTab';
+import Sms019SettingsTab from '@/components/settings/Sms019SettingsTab';
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
@@ -119,6 +120,12 @@ export default function Settings() {
             <TabsTrigger value="closures" className="flex items-center gap-2">
               <CalendarX2 className="h-4 w-4" />
               ימי סגירה
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="sms" className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              שליחת SMS
             </TabsTrigger>
           )}
         </TabsList>
@@ -369,6 +376,12 @@ export default function Settings() {
         {isAdmin && (
           <TabsContent value="closures" className="space-y-6">
             <CompanyClosuresTab />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="sms" className="space-y-6">
+            <Sms019SettingsTab />
           </TabsContent>
         )}
       </Tabs>

@@ -69,6 +69,7 @@ jobs:
             sendPushNotification
             importLeadsFromGoogleSheets
             sendSms
+            smsSettings
           )
           for fn in "${FUNCTIONS[@]}"; do
             echo "Deploying $fn..."
