@@ -67,7 +67,6 @@ export const navigationByRole = {
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
     { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
     { name: 'כספים', href: 'Finance', icon: DollarSign },
-    { name: 'נציגים', href: 'Representatives', icon: Users },
     { name: 'שיווק', href: 'Marketing', icon: BarChart3 },
     { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown },
     { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },

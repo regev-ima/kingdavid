@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings, Trash2 } from "lucide-react";
+import { UserPlus, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
@@ -42,7 +42,7 @@ const ROLE_LABELS = {
   bookkeeper: 'מנהלת חשבונות',
 };
 
-export default function Representatives() {
+export default function Representatives({ embedded = false }) {
   const [user, setUser] = useState(null);
   const [manageRep, setManageRep] = useState(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
@@ -531,10 +531,12 @@ export default function Representatives() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">ניהול נציגים</h1>
-          <p className="text-muted-foreground">נהל את צוות המכירות והזמן נציגים חדשים</p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">ניהול נציגים</h1>
+            <p className="text-muted-foreground">נהל את צוות המכירות והזמן נציגים חדשים</p>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Dialog open={showTransferDialog} onOpenChange={setShowTransferDialog}>
             <DialogTrigger asChild>
@@ -947,45 +949,6 @@ export default function Representatives() {
             </DialogContent>
           </Dialog>
         </div>
-      </div>
-
-      {/* Statistics Overview */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">נציגים פעילים</p>
-                <p className="text-2xl font-bold">{activeReps.length}</p>
-              </div>
-              <Users className="h-10 w-10 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">נציגים מושבתים</p>
-                <p className="text-2xl font-bold">{inactiveReps.length}</p>
-              </div>
-              <UserX className="h-10 w-10 text-red-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">הוזמנו ולא נכנסו</p>
-                <p className="text-2xl font-bold">
-                  {activeReps.filter(r => !repStatsByEmail.get(r.email?.toLowerCase())?.last_sign_in_at).length}
-                </p>
-              </div>
-              <Clock className="h-10 w-10 text-amber-600" />
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Deactivate Dialog */}

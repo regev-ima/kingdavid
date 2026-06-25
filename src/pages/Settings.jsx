@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,6 @@ import { STATUS_COLOR_PRESETS, getStatusColorPreset } from '@/constants/statusCo
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import StatusBadge from '@/components/shared/StatusBadge';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
-import UserAvatar from "@/components/shared/UserAvatar";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly, canUseBulkUpdate } from '@/lib/rbac';
 import ImportOrders from '@/components/service/ImportOrders';
@@ -25,6 +24,7 @@ import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
 import CompanyClosuresTab from '@/components/settings/CompanyClosuresTab';
 import Sms019SettingsTab from '@/components/settings/Sms019SettingsTab';
 import BulkUpdate from '@/pages/BulkUpdate';
+import Representatives from '@/pages/Representatives';
 import { useHiddenMenuItems, applyMenuOrder, NON_HIDEABLE_HREFS } from '@/hooks/useHiddenMenuItems';
 import { navigationByRole } from '@/Layout';
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -36,7 +36,6 @@ export default function Settings() {
   const [showImportOrders, setShowImportOrders] = useState(false);
   // Settings nav is a card grid: null = the cards "home", otherwise the open section.
   const [section, setSection] = useState(null);
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -68,12 +67,6 @@ export default function Settings() {
     setMenuOrder(next.map((i) => i.href));
   };
 
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => base44.entities.User.list(),
-    enabled: isAdmin,
-  });
-
   const updateProfileMutation = useMutation({
     mutationFn: (data) => base44.auth.updateMe(data),
     onSuccess: (updatedUser) => {
@@ -88,24 +81,11 @@ export default function Settings() {
     factory_user: 'נציג מפעל (FACTORY_USER)'
   };
 
-  const handleInviteUser = async (email) => {
-    try {
-      // New users always come in as a basic sales rep ("נציג") with no extra
-      // permissions; an admin promotes them afterwards from the Representatives
-      // screen.
-      const result = await base44.users.inviteUser(email);
-      queryClient.invalidateQueries(['users']);
-      toast.success(result?.already_registered ? 'המשתמש כבר רשום — הפרופיל עודכן' : 'ההזמנה נשלחה במייל');
-    } catch (err) {
-      toast.error(`שליחת ההזמנה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
-    }
-  };
-
   // The settings sections, shown as cards on the "home" and gated by role.
   // `icon` is a Google Material Symbols ligature name.
   const SETTINGS_SECTIONS = [
     { value: 'profile',        label: 'פרופיל',            desc: 'פרטי החשבון והתראות',       icon: 'account_circle', show: true },
-    { value: 'users',          label: 'משתמשים',           desc: 'הזמנה וניהול הרשאות',        icon: 'group',          show: isAdmin },
+    { value: 'users',          label: 'נציגים',            desc: 'ניהול צוות המכירות, הזמנות והרשאות', icon: 'group',     show: isAdmin },
     { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      show: isAdmin },
     { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    show: isAdmin },
     { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   show: isAdmin },
@@ -315,60 +295,9 @@ export default function Settings() {
 
         {isAdmin && (
           <TabsContent value="users">
-            <Card>
-              <CardHeader>
-                <CardTitle>ניהול משתמשים</CardTitle>
-                <CardDescription>הזמן משתמשים חדשים ונהל הרשאות</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="p-4 bg-muted rounded-lg">
-                  <h3 className="font-semibold mb-3">הזמן משתמש חדש</h3>
-                  <div className="flex gap-3">
-                    <Input
-                      id="invite-email"
-                      placeholder="אימייל"
-                      className="flex-1"
-                    />
-                    <Button
-                      onClick={() => {
-                        const email = document.getElementById('invite-email').value;
-                        if (email) handleInviteUser(email);
-                      }}
-                      className="bg-primary hover:bg-primary/90"
-                    >
-                      הזמן
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    כל משתמש חדש נוצר כנציג מכירות עם הרשאות בסיס בלבד. ניתן לשנות לו את התפקיד וההרשאות לאחר מכן דרך מסך ניהול הנציגים.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="font-semibold">משתמשים קיימים ({users.length})</h3>
-                  <div className="space-y-3">
-                    {users.map(u => (
-                      <div key={u.id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <UserAvatar user={u} size="md" />
-                          <div>
-                            <p className="font-medium">{u.full_name || 'ללא שם'}</p>
-                            <p className="text-sm text-muted-foreground">{u.email}</p>
-                          </div>
-                        </div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 
-                          u.role === 'sales_user' ? 'bg-blue-100 text-blue-700' : 
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {roleLabels[u.role] || u.role}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* The full Representatives screen, embedded — single source of truth
+                for managing the sales team (was duplicated as a weaker tab). */}
+            <Representatives embedded />
           </TabsContent>
         )}
 
