@@ -40,9 +40,6 @@ import {
   Clock,
   User,
   Tag,
-  CheckCircle2,
-  XCircle,
-  Ban,
   AlertCircle,
   MoreVertical,
   Headphones,
@@ -51,7 +48,6 @@ import {
   Crown,
   Plus,
   Activity,
-  History,
   Phone,
   Mail,
   MapPin,
@@ -68,12 +64,12 @@ import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
-import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
+import { addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
-import LeadActivityTimeline from '@/components/lead/LeadActivityTimeline';
+import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
@@ -84,21 +80,6 @@ import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
-
-// Glanceable chip metadata for a task's *type* (the verb: call / meeting
-// / quote…). Used in the task-history rows so the rep reads "what kind of
-// action was this?" at a glance, with a colour that matches the app's
-// type palette. Mirrors the queue card's TYPE_META so the two read alike.
-const TASK_TYPE_CHIP = {
-  call:              { icon: Phone,        tone: 'bg-blue-100 text-blue-700' },
-  meeting:           { icon: CalendarDays, tone: 'bg-amber-100 text-amber-700' },
-  quote_preparation: { icon: FileText,     tone: 'bg-indigo-100 text-indigo-700' },
-  close_order:       { icon: ShoppingBag,  tone: 'bg-emerald-100 text-emerald-700' },
-  assignment:        { icon: User,         tone: 'bg-slate-100 text-slate-700' },
-  followup:          { icon: Clock,        tone: 'bg-violet-100 text-violet-700' },
-};
-const FALLBACK_TASK_TYPE_CHIP = { icon: Tag, tone: 'bg-muted text-foreground/70' };
-
 
 // Hebrew counter with proper singular / dual / plural forms
 // (e.g. 1 → "יום", 2 → "יומיים", 3 → "3 ימים").
@@ -359,10 +340,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const canEdit = isAdmin || lead?.rep1 === effectiveUser?.email || lead?.rep2 === effectiveUser?.email || lead?.pending_rep_email === effectiveUser?.email;
   const canEditLeadRep1 = canEditPrimaryRep(effectiveUser);
   const canEditLeadRep2 = canEditSecondaryRep(effectiveUser, lead);
-  const historicalTasks = useMemo(
-    () => tasks.filter((task) => String(task?.task_status || '').toLowerCase() !== 'not_completed'),
-    [tasks]
-  );
   const workbenchState = useMemo(() => buildLeadWorkbenchState({
     tasks,
   }), [tasks]);
@@ -804,7 +781,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           and NEVER get occluded by content scrolling under them. In
           full-page mode this is a passive wrapper that preserves the
           original space-y-6 rhythm. */}
-      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4 space-y-6' : 'space-y-6'}>
+      <div className={isModal
+        ? 'flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row lg:gap-4 p-4 lg:p-6'
+        : 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start'}>
+
+      {/* MAIN column — first in the DOM so RTL places it on the RIGHT:
+          customer data, the leading task, and the detail tabs. Scrolls on
+          its own in modal mode so the activity rail beside it stays put. */}
+      <div className={isModal ? 'lg:flex-1 lg:min-w-0 lg:overflow-y-auto lg:pe-1 space-y-4' : 'space-y-4 min-w-0'}>
 
       {/* Cross-rep view/serve banner — shown when this rep isn't the owner
           (and isn't admin). Makes clear the lead belongs to someone else and
@@ -822,7 +806,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </div>
       )}
 
-      <div className="space-y-4">
         {/* ESSENTIALS row — Lead Status + Assignment side by side,
             always visible. */}
         <div className="grid sm:grid-cols-3 gap-4">
@@ -976,196 +959,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             they need to do next, then what's already been done. */}
         <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
 
-        <div className="grid lg:grid-cols-2 gap-4 items-start">
-        <div>
-        {/* Tasks */}
-        <Card className="rounded-xl border-border border-r-4 border-r-blue-500 shadow-card overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              היסטוריית משימות ({historicalTasks.length})
-            </CardTitle>
-            <Button variant="outline" size="sm" onClick={requestAddTask}>
-              <Plus className="h-4 w-4 me-2" />
-              הוסף משימה
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0">
-            {historicalTasks.length === 0 ? (
-              <div className="px-4 py-5 flex items-center justify-between gap-3 text-sm">
-                <span className="text-muted-foreground">אין משימות סגורות/היסטוריות כרגע.</span>
-                <Button size="sm" variant="outline" onClick={requestAddTask}>
-                  <Plus className="h-3.5 w-3.5 me-1" />
-                  משימה חדשה
-                </Button>
-              </div>
-            ) : (
-              <Tabs defaultValue="completed" className="w-full" dir="rtl">
-                <div className="border-b border-border/50 px-2 pt-2">
-                  <TabsList className="w-full h-auto p-1 gap-1 bg-muted/80 rounded-xl flex flex-row flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                    <TabsTrigger value="completed" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-emerald-50 hover:text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-colors">
-                      <CheckCircle2 className="w-3.5 h-3.5 me-1.5 inline-block" /> בוצע
-                      <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{historicalTasks.filter(t => t.task_status === 'completed').length}</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="not_done" className="flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-colors">
-                      <XCircle className="w-3.5 h-3.5 me-1.5 inline-block" /> לא בוצע
-                    </TabsTrigger>
-                    <TabsTrigger value="cancelled" className="flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground data-[state=active]:bg-foreground/80 data-[state=active]:text-white data-[state=active]:shadow-sm transition-colors">
-                      <Ban className="w-3.5 h-3.5 me-1.5 inline-block" /> בוטל
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-
-                {['completed', 'not_done', 'cancelled'].map(statusKey => {
-                  const filteredTasks = historicalTasks
-                    .filter(t => t.task_status === statusKey)
-                    .sort((a, b) => {
-                      // Sort completed/not_done/cancelled by updated_date descending (most recent first)
-                      const dateA = a.updated_date ? new Date(a.updated_date).getTime() : new Date(a.created_date || 0).getTime();
-                      const dateB = b.updated_date ? new Date(b.updated_date).getTime() : new Date(b.created_date || 0).getTime();
-                      return dateB - dateA;
-                    });
-
-                  return (
-                    <TabsContent key={statusKey} value={statusKey} className="mt-3 p-2">
-                      {filteredTasks.length === 0 ? (
-                        <div className="flex flex-col items-center gap-2 py-8">
-                          <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                            <Clock className="h-5 w-5 text-muted-foreground/40" />
-                          </div>
-                          <p className="text-muted-foreground/70 text-sm">אין משימות</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {filteredTasks.map((task) => {
-                            const taskTypeLabel = ALL_TASK_TYPE_LABELS[task.task_type] || 'אחר';
-
-                            const dueDate = task.due_date ? new Date(task.due_date) : null;
-                            const isDone = task.task_status === 'completed';
-
-                            const taskStatusStyle = {
-                              not_completed: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-                              completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-                              not_done: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-                              cancelled: 'bg-muted text-muted-foreground ring-1 ring-border',
-                            }[task.task_status] || 'bg-muted/50 text-muted-foreground ring-1 ring-border';
-
-                            const taskStatusLabel = {
-                              not_completed: 'ממתין', completed: 'בוצע', not_done: 'לא בוצע', cancelled: 'בוטל',
-                            }[task.task_status] || task.task_status;
-
-                            const dueDateDisplay = dueDate
-                              ? formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM HH:mm')
-                              : '';
-
-                            const cardBgClass = {
-                              not_completed: 'bg-orange-50/60 hover:bg-orange-100/60 border-orange-100',
-                              completed: 'bg-green-50/60 hover:bg-green-100/60 border-green-100',
-                              not_done: 'bg-red-50/60 hover:bg-red-100/60 border-red-100',
-                              cancelled: 'bg-muted/50 hover:bg-muted border-border',
-                            }[task.task_status] || 'bg-card hover:bg-muted/50 border-border';
-
-                            const typeChip = TASK_TYPE_CHIP[task.task_type] || FALLBACK_TASK_TYPE_CHIP;
-                            const TypeIcon = typeChip.icon;
-                            const StatusIcon = { completed: CheckCircle2, not_done: XCircle, cancelled: Ban }[task.task_status] || Clock;
-                            const createdDisplay = formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM HH:mm');
-                            const closedDisplay = task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : null;
-                            const isPending = task.task_status !== 'completed' && task.task_status !== 'cancelled';
-
-                            return (
-                              <div
-                                key={task.id}
-                                onClick={() => { setEditingTask(task); setShowEditTaskDialog(true); }}
-                                className={`relative p-3.5 border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md ${cardBgClass} ${isDone ? 'opacity-80' : ''}`}
-                              >
-                                {/* Top line: the verb (task type) on the start,
-                                    the outcome badge (בוצע / לא בוצע / בוטל) on
-                                    the end. One glance answers "what was it, and
-                                    how did it end?". */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${typeChip.tone}`}>
-                                    <TypeIcon className="h-3.5 w-3.5" />
-                                    {taskTypeLabel}
-                                  </span>
-                                  <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
-                                    <StatusIcon className="h-3 w-3" />
-                                    {taskStatusLabel}
-                                  </span>
-                                </div>
-
-                                {/* Result line: the lead status this task moved
-                                    the lead into (the thing the rep actually cares
-                                    about) + who handled it. No truncation — the
-                                    full status label always shows. */}
-                                <div className="mt-2.5 flex items-center gap-x-2 gap-y-1.5 flex-wrap text-xs">
-                                  {task.status ? (
-                                    <span className="inline-flex items-center gap-1.5">
-                                      <span className="text-muted-foreground">סטטוס שעודכן:</span>
-                                      <StatusBadge status={task.status} />
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground/60">ללא עדכון סטטוס</span>
-                                  )}
-                                  <span className="text-border" aria-hidden>·</span>
-                                  <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                    <User className="h-3 w-3 flex-shrink-0" />
-                                    {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
-                                  </span>
-                                </div>
-
-                                {/* Timeline line: created → due → (remaining or
-                                    closed-at), all inline and compact so the dates
-                                    never wrap into a tall cramped column. */}
-                                <div className="mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-muted-foreground tabular-nums">
-                                  <span>נוצר <span dir="ltr" className="font-medium">{createdDisplay}</span></span>
-                                  <span className="text-border" aria-hidden>·</span>
-                                  <span>יעד <span dir="ltr" className="font-medium">{dueDateDisplay || 'ללא'}</span></span>
-                                  {isPending && dueDate && (
-                                    <>
-                                      <span className="text-border" aria-hidden>·</span>
-                                      <span className="font-semibold text-blue-700">בעוד {formatDistanceToNow(dueDate, { locale: he })}</span>
-                                    </>
-                                  )}
-                                  {(task.task_status === 'completed' || task.task_status === 'not_done') && closedDisplay && (
-                                    <>
-                                      <span className="text-border" aria-hidden>·</span>
-                                      <span className={`inline-flex items-center gap-1 font-semibold ${task.task_status === 'completed' ? 'text-emerald-700' : 'text-red-600'}`}>
-                                        {task.task_status === 'completed' ? 'נסגר' : 'סומן'} <span dir="ltr">{closedDisplay}</span>
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-
-                                {/* Summary Row */}
-                                {task.summary && (
-                                  <div className="mt-2.5 pt-2.5 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
-                                    {task.summary}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </TabsContent>
-                  );
-                })}
-              </Tabs>
-            )}
-          </CardContent>
-        </Card>
-        </div>
-        <div>
-        {/* Secondary content lives in tabs — TASKS lead above, details
-            and history are one click away. The outer Tabs
-            (defaultValue="details") is an independent Radix instance
-            from the Tasks card's inner Tabs (defaultValue="completed"). */}
+        {/* Detail tabs — customer details, marketing, deals/service and the
+            lead snapshot. Activity now lives in the left timeline rail. */}
         <Tabs defaultValue="details" dir="rtl" className="w-full">
           <TabsList className="bg-muted rounded-lg p-1 gap-1 h-auto flex flex-wrap justify-start">
             <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">פרטי לקוח מלאים</TabsTrigger>
             <TabsTrigger value="marketing" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">שיווק ומקור</TabsTrigger>
             <TabsTrigger value="deals" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">הצעות / שירות</TabsTrigger>
-            <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">פעילות</TabsTrigger>
+            <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">תמונת מצב</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="mt-4 space-y-4">
@@ -1482,19 +1283,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </TabsContent>
 
           <TabsContent value="activity" className="mt-4 space-y-4">
-          {/* Activity Log */}
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                לוג פעולות
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              <LeadActivityTimeline leadId={leadId} />
-            </CardContent>
-          </Card>
-
           {/* Communication History — temporarily hidden per product
               decision. The card was almost always empty for new
               leads, which made it dead visual weight. The
@@ -1607,11 +1395,20 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </Card>
           </TabsContent>
         </Tabs>
-        </div>
-        </div>
+      </div>{/* end MAIN column */}
+
+      {/* LEFT column (left in RTL) — the unified activity timeline, full
+          height. Replaces the old task-history card + activity-log tab. */}
+      <div className={isModal ? 'lg:w-[380px] lg:shrink-0 lg:overflow-y-auto mt-4 lg:mt-0' : 'min-w-0'}>
+        <LeadUnifiedTimeline
+          leadId={leadId}
+          tasks={tasks}
+          users={users}
+          onOpenTask={(task) => { setEditingTask(task); setShowEditTaskDialog(true); }}
+        />
       </div>
 
-      </div>{/* end of scrollable body wrapper (see comment near opener above) */}
+      </div>{/* end of two-pane body wrapper */}
 
       {/* Add Communication Dialog */}
       <AddCommunication
