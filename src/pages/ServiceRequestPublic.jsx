@@ -52,7 +52,6 @@ export default function ServiceRequestPublic() {
 
   const [form, setForm] = useState({
     request_type: '',
-    order_date: '',
     warranty_years: '',
     complaint_age_months: '',
     description: '',
@@ -82,7 +81,6 @@ export default function ServiceRequestPublic() {
     mutationFn: async () => {
       const payload = {
         request_type: form.request_type,
-        order_date: form.order_date || null,
         warranty_years: form.warranty_years || null,
         complaint_age_months: form.complaint_age_months || null,
         description: form.description,
@@ -179,12 +177,6 @@ export default function ServiceRequestPublic() {
                 );
               })}
             </div>
-          </div>
-
-          {/* Order date */}
-          <div className="space-y-1.5">
-            <Label>מתי ביצעת את ההזמנה?</Label>
-            <Input type="date" className="text-right" value={form.order_date} onChange={(e) => set('order_date', e.target.value)} />
           </div>
 
           {/* Warranty extra */}
