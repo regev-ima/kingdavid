@@ -28,6 +28,7 @@ import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X, Check } fr
 import { productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductSelector from '@/components/quote/ProductSelector';
+import DiscountPopover from '@/components/quote/DiscountPopover';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
@@ -68,7 +69,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -380,31 +381,47 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     },
   });
 
+  // Mirrors NewQuote.calculateTotals so an order "speaks the same language" as
+  // the quote it may have come from: per-item percentage discounts feed both
+  // the (discounted) subtotal and a separate discount_total line, and VAT is
+  // charged on the discounted items subtotal only.
   const calculateTotals = (items, extras = []) => {
-    const itemsTotal = items.reduce((sum, item) => {
+    const itemsSubtotal = items.reduce((sum, item) => {
       const addonsTotal = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      return sum + (item.quantity * (item.unit_price + addonsTotal));
+      const itemTotal = item.quantity * (item.unit_price + addonsTotal);
+      const discount = itemTotal * ((item.discount_percent || 0) / 100);
+      return sum + (itemTotal - discount);
     }, 0);
+
+    const discount_total = items.reduce((sum, item) => {
+      const addonsTotal = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
+      const itemTotal = item.quantity * (item.unit_price + addonsTotal);
+      return sum + (itemTotal * ((item.discount_percent || 0) / 100));
+    }, 0);
+
     // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-    const subtotal = itemsTotal + extrasTotal;
-    const vat_amount = Math.round(itemsTotal * 0.18);
+    const subtotal = itemsSubtotal + extrasTotal;
+    const vat_amount = Math.round(itemsSubtotal * 0.18);
     const total = Math.round(subtotal + vat_amount);
-    return { subtotal, vat_amount, total };
+    return { subtotal, discount_total, vat_amount, total };
   };
 
   const updateItem = (index, field, value) => {
-    const newItems = [...formData.items];
-    newItems[index][field] = value;
-    
-    if (field === 'quantity' || field === 'unit_price') {
-      const addonsTotal = (newItems[index].selected_addons || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
-      newItems[index].total = newItems[index].quantity * (newItems[index].unit_price + addonsTotal);
-    }
-    
-    const totals = calculateTotals(newItems, formData.extras);
-    setFormData(prev => ({ ...prev, items: newItems, ...totals }));
+    setFormData(prev => {
+      const newItems = prev.items.map((item, idx) => {
+        if (idx !== index) return item;
+        const updatedItem = { ...item, [field]: value };
+        const addonsTotal = (updatedItem.selected_addons || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
+        const itemTotal = updatedItem.quantity * (updatedItem.unit_price + addonsTotal);
+        const discount = itemTotal * ((updatedItem.discount_percent || 0) / 100);
+        updatedItem.total = itemTotal - discount;
+        return updatedItem;
+      });
+      const totals = calculateTotals(newItems, prev.extras);
+      return { ...prev, items: newItems, ...totals };
+    });
   };
 
   if (isLoadingUser) {
@@ -451,7 +468,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
+      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }]
     }));
   };
 
@@ -482,8 +499,11 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       unit_price: variation.final_price || 0,
       selected_addons: []
     };
-    newItems[index].total = newItems[index].quantity * newItems[index].unit_price;
-    
+    {
+      const base = newItems[index].quantity * newItems[index].unit_price;
+      newItems[index].total = base - base * ((newItems[index].discount_percent || 0) / 100);
+    }
+
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
@@ -494,8 +514,11 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     
     const basePrice = newItems[index].unit_price;
     const addonsTotal = addons.reduce((sum, addon) => sum + (addon.price || 0), 0);
-    newItems[index].total = newItems[index].quantity * (basePrice + addonsTotal);
-    
+    {
+      const base = newItems[index].quantity * (basePrice + addonsTotal);
+      newItems[index].total = base - base * ((newItems[index].discount_percent || 0) / 100);
+    }
+
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
@@ -703,6 +726,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                   <TableHead className="text-right w-32">מק״ט</TableHead>
                   <TableHead className="text-right w-24">כמות</TableHead>
                   <TableHead className="text-right w-32">מחיר</TableHead>
+                  <TableHead className="text-right w-28">הנחה</TableHead>
                   <TableHead className="text-right w-32">סה"כ</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
@@ -852,8 +876,40 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                         )}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <DiscountPopover
+                          item={item}
+                          onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
+                        />
+                        {item.discount_percent > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => updateItem(index, 'discount_percent', 0)}
+                            className="text-red-400 hover:text-red-600 transition-colors"
+                            aria-label="הסר הנחה"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="font-semibold">
-                      ₪{item.total?.toLocaleString()}
+                      {(() => {
+                        const addonsTotal = (item.selected_addons || []).reduce((s, a) => s + (a.price || 0), 0);
+                        const baseLine = item.quantity * (item.unit_price + addonsTotal);
+                        return item.discount_percent > 0 ? (
+                          <div className="flex flex-col leading-tight">
+                            <span className="text-[11px] text-red-400 line-through">₪{Math.round(baseLine).toLocaleString()}</span>
+                            <span className="flex items-center gap-1">
+                              ₪{Math.round(item.total || 0).toLocaleString()}
+                              <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 rounded px-1">-{item.discount_percent}%</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <span>₪{item.total?.toLocaleString()}</span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       {formData.items.length > 1 && (
@@ -877,11 +933,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
               <div className="w-64 space-y-2">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">סכום ביניים:</span>
-                  <span>₪{formData.subtotal.toLocaleString()}</span>
+                  <span>₪{Math.round(formData.subtotal).toLocaleString()}</span>
                 </div>
+                {formData.discount_total > 0 && (
+                  <div className="flex justify-between text-red-600">
+                    <span>הנחה כולל מע״מ:</span>
+                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">מע"מ (18%):</span>
-                  <span>₪{formData.vat_amount.toLocaleString()}</span>
+                  <span>₪{Math.round(formData.vat_amount).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
                   <span>סה"כ לתשלום:</span>
