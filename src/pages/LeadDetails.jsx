@@ -976,6 +976,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             they need to do next, then what's already been done. */}
         <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
 
+        <div className="grid lg:grid-cols-2 gap-4 items-start">
+        <div>
         {/* Tasks */}
         <Card className="rounded-xl border-border border-r-4 border-r-blue-500 shadow-card overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
@@ -1152,7 +1154,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             )}
           </CardContent>
         </Card>
-
+        </div>
+        <div>
         {/* Secondary content lives in tabs — TASKS lead above, details
             and history are one click away. The outer Tabs
             (defaultValue="details") is an independent Radix instance
@@ -1604,6 +1607,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </Card>
           </TabsContent>
         </Tabs>
+        </div>
+        </div>
       </div>
 
       </div>{/* end of scrollable body wrapper (see comment near opener above) */}
