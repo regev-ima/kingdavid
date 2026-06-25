@@ -1,17 +1,19 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Search, MessageCircle, Loader2, Lock, ArrowRight, Phone, Users as UsersIcon,
-  Circle, Inbox,
+  Circle, Inbox, Check,
 } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
 import {
@@ -36,6 +38,8 @@ export default function WhatsAppChat() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [repFilter, setRepFilter] = useState('all');
+  const rootRef = useRef(null);
+  const [areaH, setAreaH] = useState(null);
 
   // Conversations (RLS scopes: rep → own, admin → all).
   const { data: chats = [], isLoading: chatsLoading } = useQuery({
@@ -96,6 +100,35 @@ export default function WhatsAppChat() {
 
   const waitingCount = chats.filter((c) => c.status === 'waiting').length;
 
+  // Fit the chat to the viewport so only the panes scroll (no page scroll),
+  // robust to the header / impersonation bar / waiting banner. Re-measures on
+  // resize and whenever the waiting banner could toggle (waitingCount change).
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!rootRef.current) return;
+      const top = rootRef.current.getBoundingClientRect().top;
+      // subtract the wrapping page padding-bottom (p-8 = 32px) so the page
+      // itself never scrolls — only the panes inside do.
+      setAreaH(Math.max(360, window.innerHeight - top - 32));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const t = setTimeout(measure, 300);
+    return () => { window.removeEventListener('resize', measure); clearTimeout(t); };
+  }, [waitingCount, chatsLoading]);
+
+  // Mark a conversation as handled (clears the red "waiting" state + banner).
+  // Does NOT send anything to WhatsApp — it only updates our internal status.
+  const markHandled = useMutation({
+    mutationFn: (chatId) => base44.entities.WhatsAppChat.update(chatId, { status: 'answered', unread_count: 0 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+      toast.success('סומן כטופל');
+    },
+    onError: (err) => toast.error(`לא ניתן לסמן כטופל: ${err?.message || 'שגיאה'}`),
+  });
+
   // Reps who actually have conversations — for the admin filter dropdown.
   const repsWithChats = useMemo(() => {
     if (!isAdmin) return [];
@@ -104,7 +137,7 @@ export default function WhatsAppChat() {
   }, [isAdmin, chats, usersById]);
 
   return (
-    <div dir="rtl" className="h-[calc(100vh-7rem)] min-h-[520px] flex flex-col">
+    <div ref={rootRef} dir="rtl" style={areaH ? { height: areaH } : undefined} className="min-h-[360px] flex flex-col">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
@@ -191,6 +224,8 @@ export default function WhatsAppChat() {
               messages={messages}
               loading={msgsLoading}
               onBack={() => setSelectedId(null)}
+              onMarkHandled={() => markHandled.mutate(selectedChat.id)}
+              marking={markHandled.isPending}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
@@ -246,7 +281,7 @@ function ChatRow({ chat, active, rep, onClick }) {
   );
 }
 
-function Thread({ chat, rep, messages, loading, onBack }) {
+function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking }) {
   const meta = chatStatusMeta(chat.status);
   const title = chatTitle(chat);
   const bottomRef = useRef(null);
@@ -287,6 +322,18 @@ function Thread({ chat, rep, messages, loading, onBack }) {
             {rep && <span className="ms-2">· נציג: {rep.full_name || rep.email}</span>}
           </p>
         </div>
+        {chat.status === 'waiting' && onMarkHandled && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onMarkHandled}
+            disabled={marking}
+            className="gap-1.5 h-8 text-xs shrink-0 border-green-300 text-green-700 hover:bg-green-50"
+          >
+            {marking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            סמן כטופל
+          </Button>
+        )}
       </div>
 
       {/* Messages */}

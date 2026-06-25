@@ -374,7 +374,11 @@ function LayoutContent({ children, currentPageName }) {
 
       {/* Main Content */}
       <main className={`lg:pr-64 min-h-screen ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
-        {userRole !== 'admin' && <WhatsAppWaitingBanner />}
+        {userRole !== 'admin' && (
+          <div className={`sticky z-30 ${isImpersonating ? 'top-[104px]' : 'top-16'}`}>
+            <WhatsAppWaitingBanner />
+          </div>
+        )}
         <div className="p-6 lg:p-8">
           {children}
         </div>

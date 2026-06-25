@@ -147,6 +147,14 @@ ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON public.whatsapp_chats    TO authenticated;
 GRANT SELECT ON public.whatsapp_messages TO authenticated;
 
+-- Let a rep/admin mark a conversation as handled from the chat screen. This is
+-- the ONLY client write, and it is column-scoped to status/unread_count (via
+-- the column-level GRANT) — clients can never edit message content or rewire
+-- ownership. Used when a chat is stuck on 'waiting' but needs no reply (e.g. the
+-- customer just said "thanks"). A later incoming message re-flags it to
+-- 'waiting' via the webhook, as expected.
+GRANT UPDATE (status, unread_count) ON public.whatsapp_chats TO authenticated;
+
 -- Match the requesting user by auth_id (the proven pattern in this DB) OR by
 -- the JWT email claim, so the policy works regardless of how the session token
 -- is shaped. admin → all rows; rep → only rows they own.
@@ -171,6 +179,28 @@ CREATE POLICY "whatsapp_messages_select_own_or_admin"
       SELECT 1 FROM public.users u
       WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
         AND (u.role = 'admin' OR u.id = whatsapp_messages.user_id)
+    )
+  );
+
+-- UPDATE: a rep may mark their own chats handled; admin may mark any. Paired
+-- with the column-level GRANT above, the only thing they can actually change is
+-- status / unread_count.
+DROP POLICY IF EXISTS "whatsapp_chats_update_own_or_admin" ON public.whatsapp_chats;
+CREATE POLICY "whatsapp_chats_update_own_or_admin"
+  ON public.whatsapp_chats FOR UPDATE
+  TO authenticated
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
+        AND (u.role = 'admin' OR u.id = whatsapp_chats.user_id)
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
+        AND (u.role = 'admin' OR u.id = whatsapp_chats.user_id)
     )
   );
 
