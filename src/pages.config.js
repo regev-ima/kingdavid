@@ -89,6 +89,7 @@ import ServiceRequestDetails from './pages/ServiceRequestDetails';
 import Settings from './pages/Settings';
 import ShipmentDetails from './pages/ShipmentDetails';
 import TicketDetails from './pages/TicketDetails';
+import WhatsAppChat from './pages/WhatsAppChat';
 import __Layout from './Layout.jsx';
 
 
@@ -138,6 +139,7 @@ export const PAGES = {
     "Settings": Settings,
     "ShipmentDetails": ShipmentDetails,
     "TicketDetails": TicketDetails,
+    "WhatsAppChat": WhatsAppChat,
 }
 
 export const pagesConfig = {

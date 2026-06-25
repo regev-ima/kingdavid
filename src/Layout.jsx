@@ -35,7 +35,8 @@ import {
   Receipt,
   UserCog,
   RefreshCw,
-  LifeBuoy
+  LifeBuoy,
+  MessageCircle
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
 
@@ -62,6 +63,7 @@ const navigationByRole = {
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
     { name: 'מלאי', href: 'Inventory', icon: Package },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
@@ -84,6 +86,7 @@ const navigationByRole = {
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
   ],
   factory_user: [
     { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
