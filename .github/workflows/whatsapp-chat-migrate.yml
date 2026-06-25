@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - claude/clever-planck-qu7do6
     paths:
       - 'supabase/migrations/20260625000002_whatsapp_chat.sql'
       - '.github/workflows/whatsapp-chat-migrate.yml'

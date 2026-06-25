@@ -7,8 +7,11 @@ on:
       - claude/check-production-requirements-hO64j
       - claude/fix-lead-notifications-M2jB4
       - claude/wise-center-extension-BYxGw
+      - claude/clever-planck-qu7do6
     paths:
       - 'supabase/functions/**'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
