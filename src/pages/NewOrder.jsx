@@ -58,6 +58,15 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   const leadId = dialogLeadId || urlParams.get('leadId');
   const customerId = urlParams.get('customerId');
 
+  // Same 3-step wizard as NewQuote so creating an order "speaks the same
+  // language" as a quote: customer → products → extras & terms.
+  const [currentStep, setCurrentStep] = useState(1);
+  const steps = [
+    { id: 1, name: 'פרטי לקוח' },
+    { id: 2, name: 'מוצרים' },
+    { id: 3, name: 'תוספות להובלה ותנאים' },
+  ];
+
   const [formData, setFormData] = useState({
     source: 'store',
     customer_name: '',
@@ -531,7 +540,16 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // The required customer fields live on step 1; since steps are unmounted
+    // (not CSS-hidden), the browser can't enforce `required` from step 3 — so
+    // validate here and jump back so the rep sees exactly what's missing.
+    if (!formData.customer_name?.trim() || !formData.delivery_address?.trim()) {
+      setCurrentStep(1);
+      toast.error('יש למלא שם לקוח וכתובת למשלוח');
+      return;
+    }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
+      setCurrentStep(1);
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
@@ -554,7 +572,43 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
+      {/* Step indicator — mirrors NewQuote */}
+      <div className={asDialog ? 'mb-4 mt-2' : 'mb-8 mt-6'}>
+        <div className="flex items-center justify-center">
+          {steps.map((step, idx) => (
+            <React.Fragment key={step.id}>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(step.id)}
+                className="flex flex-col items-center gap-1.5 group relative"
+              >
+                <div className={`${asDialog ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-sm sm:text-base'} rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
+                  currentStep > step.id
+                    ? 'bg-emerald-500 text-white shadow-md'
+                    : currentStep === step.id
+                    ? 'gradient-brand text-white shadow-primary-glow ring-4 ring-indigo-100'
+                    : 'bg-white border-2 border-border text-muted-foreground group-hover:border-primary/30'
+                }`}>
+                  {currentStep > step.id ? <Check className={asDialog ? 'w-3.5 h-3.5' : 'w-5 h-5'} /> : step.id}
+                </div>
+                <span className={`${asDialog ? 'text-[11px]' : 'text-xs sm:text-sm'} font-medium whitespace-nowrap transition-colors ${
+                  currentStep === step.id ? 'text-primary font-semibold' : currentStep > step.id ? 'text-emerald-600' : 'text-muted-foreground'
+                }`}>{step.name}</span>
+              </button>
+              {idx < steps.length - 1 && (
+                <div className={`flex-1 ${asDialog ? 'mx-2 mt-[-18px]' : 'mx-3 sm:mx-6 mt-[-24px] sm:mt-[-28px]'}`}>
+                  <div className="h-0.5 w-full rounded-full bg-border relative overflow-hidden">
+                    <div className={`absolute inset-y-0 right-0 rounded-full transition-all duration-500 ${currentStep > step.id ? 'bg-emerald-500 w-full' : 'bg-transparent w-0'}`} />
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} onKeyDown={(e) => { if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') e.preventDefault(); }}>
+        {currentStep === 1 && (
         <Card>
           <CardHeader>
             <CardTitle>פרטי לקוח</CardTitle>
@@ -709,7 +763,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             </div>
           </CardContent>
         </Card>
+        )}
 
+        {currentStep === 2 && (
         <Card className="mt-6">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>פריטים</CardTitle>
@@ -953,7 +1009,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             </div>
           </CardContent>
         </Card>
+        )}
 
+        {currentStep === 3 && (
+        <>
         <Card className="mt-6">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>תוספות</CardTitle>
@@ -1060,27 +1119,52 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             </div>
           </CardContent>
         </Card>
+        </>
+        )}
 
-        <div className="flex justify-end gap-3 mt-6">
-          {asDialog ? (
-            <Button type="button" variant="outline" onClick={() => onDialogClose?.(null)}>ביטול</Button>
-          ) : (
-            <Link to={createPageUrl('Orders')}>
-              <Button type="button" variant="outline">ביטול</Button>
-            </Link>
-          )}
-          <Button
-            type="submit" 
-            className="bg-primary hover:bg-primary/90"
-            disabled={createOrderMutation.isPending}
-          >
-            {createOrderMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4 me-2" />
+        <div className="flex items-center justify-between gap-3 mt-8">
+          <div className="flex gap-2">
+            {currentStep > 1 && (
+              <Button type="button" variant="outline" onClick={() => setCurrentStep(currentStep - 1)}>
+                <ArrowRight className="h-4 w-4 me-1.5" />
+                חזור
+              </Button>
             )}
-            צור הזמנה
-          </Button>
+            {asDialog ? (
+              <Button type="button" variant="ghost" className="text-muted-foreground" onClick={() => onDialogClose?.(null)}>ביטול</Button>
+            ) : (
+              <Link to={createPageUrl('Orders')}>
+                <Button type="button" variant="ghost" className="text-muted-foreground">ביטול</Button>
+              </Link>
+            )}
+          </div>
+
+          <div>
+            {currentStep < 3 ? (
+              <Button
+                type="button"
+                size="lg"
+                className="h-11 px-8 text-base font-semibold"
+                disabled={currentStep === 2 && !formData.items.some(item => item.product_id)}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
+              >
+                המשך
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                className="bg-primary hover:bg-primary/90 h-11 px-8 text-base font-semibold"
+                disabled={createOrderMutation.isPending}
+              >
+                {createOrderMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 me-2" />
+                )}
+                צור הזמנה
+              </Button>
+            )}
+          </div>
         </div>
       </form>
     </div>
