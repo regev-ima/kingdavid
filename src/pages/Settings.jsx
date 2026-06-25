@@ -423,7 +423,7 @@ export default function Settings() {
                   (ההגדרה נשמרת בדפדפן הזה).
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2" dir="rtl">
                 {menuItems.map((item) => {
                   const ItemIcon = item.icon;
                   const visible = !isMenuItemHidden(item.href);
@@ -432,22 +432,17 @@ export default function Settings() {
                       key={item.href}
                       className="flex items-center justify-between gap-3 rounded-lg border p-3"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        {ItemIcon && <ItemIcon className={`h-4 w-4 shrink-0 ${visible ? 'text-foreground' : 'text-muted-foreground/50'}`} />}
+                      <div className="flex items-center gap-2 min-w-0">
+                        {ItemIcon && <ItemIcon className={`h-4 w-4 shrink-0 ${visible ? 'text-foreground' : 'text-muted-foreground/40'}`} />}
                         <span className={`text-sm font-medium truncate ${visible ? '' : 'text-muted-foreground line-through'}`}>
                           {item.name}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                          {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                          {visible ? 'מוצג' : 'מוסתר'}
-                        </span>
-                        <Switch
-                          checked={visible}
-                          onCheckedChange={(v) => setMenuItemHidden(item.href, !v)}
-                        />
-                      </div>
+                      <Switch
+                        checked={visible}
+                        onCheckedChange={(v) => setMenuItemHidden(item.href, !v)}
+                        className="shrink-0"
+                      />
                     </div>
                   );
                 })}
