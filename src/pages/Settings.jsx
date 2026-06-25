@@ -106,7 +106,11 @@ export default function Settings() {
         <p className="text-muted-foreground">ניהול חשבון והעדפות מערכת</p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
+      {/* dir="rtl" is required here: Radix Tabs defaults its direction to "ltr"
+          and stamps dir="ltr" on the wrapper around BOTH the tab row and all
+          tab content, which overrides the page's inherited RTL (tabs reversed,
+          content left-aligned, switch thumbs flipped). */}
+      <Tabs defaultValue="profile" className="space-y-6" dir="rtl">
         <TabsList className="bg-white border">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <SettingsIcon className="h-4 w-4" />
