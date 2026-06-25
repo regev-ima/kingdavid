@@ -73,6 +73,7 @@ import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
 import LeadActivityTimeline from '@/components/lead/LeadActivityTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
@@ -141,6 +142,7 @@ function formatLeadAge(createdDate) {
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
+  const { openNewQuote } = useCreationModal();
   const urlParams = new URLSearchParams(window.location.search);
   // When rendered as a popup the id/mode arrive as props and the URL is
   // left completely untouched, so the list page underneath keeps its
@@ -705,15 +707,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           <Clock className="h-3.5 w-3.5 me-1.5" />
           משימה חדשה
         </Button>
-        <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`} className="flex-1 min-w-[120px]">
-          <Button
-            size="sm"
-            className="w-full justify-center h-9 text-xs"
-          >
-            <FileText className="h-3.5 w-3.5 me-1.5" />
-            הצעה חדשה
-          </Button>
-        </Link>
+        <Button
+          size="sm"
+          onClick={() => openNewQuote({ leadId })}
+          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
+        >
+          <FileText className="h-3.5 w-3.5 me-1.5" />
+          הצעה חדשה
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -751,12 +752,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
           </Button>
-          <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`}>
-            <Button size="sm" className="h-8 text-xs">
-              <FileText className="h-3.5 w-3.5 me-1" />
-              הצעה חדשה
-            </Button>
-          </Link>
+          <Button size="sm" onClick={() => openNewQuote({ leadId })} className="h-8 text-xs">
+            <FileText className="h-3.5 w-3.5 me-1" />
+            הצעה חדשה
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)} className="h-8 text-xs">
             <ShoppingBag className="h-3.5 w-3.5 me-1" />
             הזמנה חדשה
@@ -1532,12 +1531,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               {quotes.length === 0 ? (
                 <div className="py-4 flex items-center justify-between gap-3 text-sm">
                   <span className="text-muted-foreground">אין הצעות מחיר לליד זה.</span>
-                  <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`}>
-                    <Button size="sm" variant="outline">
-                      <FileText className="h-3.5 w-3.5 me-1" />
-                      צור הצעה
-                    </Button>
-                  </Link>
+                  <Button size="sm" variant="outline" onClick={() => openNewQuote({ leadId })}>
+                    <FileText className="h-3.5 w-3.5 me-1" />
+                    צור הצעה
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-3">

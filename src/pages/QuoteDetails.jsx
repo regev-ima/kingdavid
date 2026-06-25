@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
 import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -81,6 +82,7 @@ export default function QuoteDetails() {
   const [statusConfirm, setStatusConfirm] = useState(null); // { targetStatus }
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { openNewOrder } = useCreationModal();
 
   const urlParams = new URLSearchParams(window.location.search);
   const quoteId = urlParams.get('id');
@@ -216,7 +218,7 @@ export default function QuoteDetails() {
       // order, so jump straight there with the quote (and via it the
       // customer) pre-filled.
       if (isApproval) {
-        navigate(createPageUrl('NewOrder') + `?quote_id=${quoteId}`);
+        openNewOrder({ quoteId });
       }
     }
   };
@@ -236,7 +238,7 @@ export default function QuoteDetails() {
   };
 
   const handleConvertToOrder = () => {
-    navigate(createPageUrl('NewOrder') + `?quote_id=${quoteId}`);
+    openNewOrder({ quoteId });
   };
 
   return (

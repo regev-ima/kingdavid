@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,6 +33,7 @@ const filterOptions = [
 
 export default function Quotes() {
   const navigate = useNavigate();
+  const { openNewQuote } = useCreationModal();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending', 'draft', 'expiring'].includes(initialTab) ? initialTab : 'all');
@@ -221,12 +223,10 @@ export default function Quotes() {
           <h1 className="text-xl sm:text-2xl font-bold text-foreground">הצעות מחיר</h1>
           <p className="text-sm text-muted-foreground">ניהול הצעות מחיר ללקוחות</p>
         </div>
-        <Link to={createPageUrl('NewQuote')}>
-          <Button>
-            <Plus className="h-4 w-4 me-2" />
-            הצעה חדשה
-          </Button>
-        </Link>
+        <Button onClick={() => openNewQuote({})}>
+          <Plus className="h-4 w-4 me-2" />
+          הצעה חדשה
+        </Button>
       </div>
 
       <Card className="border-border shadow-card">
