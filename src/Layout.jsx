@@ -34,7 +34,6 @@ import {
   CheckSquare,
   Receipt,
   UserCog,
-  RefreshCw,
   LifeBuoy
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
@@ -73,7 +72,6 @@ const navigationByRole = {
     { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },
     { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: DollarSign },
     { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
-    { name: 'עדכון המוני', href: 'BulkUpdate', icon: RefreshCw },
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
   sales_user: [
