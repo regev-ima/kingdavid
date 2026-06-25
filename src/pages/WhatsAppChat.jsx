@@ -42,6 +42,7 @@ export default function WhatsAppChat() {
     queryKey: ['wa-chats'],
     queryFn: () => base44.entities.WhatsAppChat.list('-last_message_at', 500),
     refetchOnWindowFocus: true,
+    refetchInterval: 20000, // resilience: refresh even if Realtime is unavailable
   });
 
   // Admin needs the rep directory to label each conversation + drive the filter.
@@ -58,6 +59,7 @@ export default function WhatsAppChat() {
     queryKey: ['wa-messages', selectedId],
     queryFn: () => base44.entities.WhatsAppMessage.filter({ chat_ref: selectedId }, 'msg_timestamp', 1000),
     enabled: !!selectedId,
+    refetchInterval: selectedId ? 15000 : false,
   });
 
   // ── Live updates ──────────────────────────────────────────────────────────

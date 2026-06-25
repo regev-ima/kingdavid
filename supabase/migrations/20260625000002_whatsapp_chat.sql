@@ -141,6 +141,15 @@ ALTER TABLE public.whatsapp_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_chats    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
 
+-- Make sure the authenticated role can reach the tables at all (RLS only
+-- filters rows; without the table GRANT the query errors outright). Harmless
+-- if Supabase already granted it via default privileges.
+GRANT SELECT ON public.whatsapp_chats    TO authenticated;
+GRANT SELECT ON public.whatsapp_messages TO authenticated;
+
+-- Match the requesting user by auth_id (the proven pattern in this DB) OR by
+-- the JWT email claim, so the policy works regardless of how the session token
+-- is shaped. admin → all rows; rep → only rows they own.
 DROP POLICY IF EXISTS "whatsapp_chats_select_own_or_admin" ON public.whatsapp_chats;
 CREATE POLICY "whatsapp_chats_select_own_or_admin"
   ON public.whatsapp_chats FOR SELECT
@@ -148,7 +157,7 @@ CREATE POLICY "whatsapp_chats_select_own_or_admin"
   USING (
     EXISTS (
       SELECT 1 FROM public.users u
-      WHERE u.email = (auth.jwt() ->> 'email')
+      WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
         AND (u.role = 'admin' OR u.id = whatsapp_chats.user_id)
     )
   );
@@ -160,7 +169,7 @@ CREATE POLICY "whatsapp_messages_select_own_or_admin"
   USING (
     EXISTS (
       SELECT 1 FROM public.users u
-      WHERE u.email = (auth.jwt() ->> 'email')
+      WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
         AND (u.role = 'admin' OR u.id = whatsapp_messages.user_id)
     )
   );
