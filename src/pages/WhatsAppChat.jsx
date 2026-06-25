@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -34,6 +35,7 @@ export default function WhatsAppChat() {
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = canAccessAdminOnly(effectiveUser);
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -99,6 +101,19 @@ export default function WhatsAppChat() {
   const selectedChat = useMemo(() => chats.find((c) => c.id === selectedId) || null, [chats, selectedId]);
 
   const waitingCount = chats.filter((c) => c.status === 'waiting').length;
+
+  // Arriving from the red banner (?focus=waiting) → jump straight to the most
+  // recent conversation still waiting for a reply (chats are sorted newest
+  // first), so the rep lands on the last message that came in. Clears the param
+  // afterwards so it only fires once per click.
+  useEffect(() => {
+    if (searchParams.get('focus') !== 'waiting' || chats.length === 0) return;
+    const target = chats.find((c) => c.status === 'waiting') || chats[0];
+    if (target) setSelectedId(target.id);
+    const next = new URLSearchParams(searchParams);
+    next.delete('focus');
+    setSearchParams(next, { replace: true });
+  }, [chats, searchParams, setSearchParams]);
 
   // Fit the chat to the viewport so only the panes scroll (no page scroll),
   // robust to the header / impersonation bar / waiting banner. Re-measures on
