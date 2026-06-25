@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare, RefreshCw } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare, RefreshCw, Menu } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -25,6 +25,8 @@ import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
 import CompanyClosuresTab from '@/components/settings/CompanyClosuresTab';
 import Sms019SettingsTab from '@/components/settings/Sms019SettingsTab';
 import BulkUpdate from '@/pages/BulkUpdate';
+import { useHiddenMenuItems, NON_HIDEABLE_HREFS } from '@/hooks/useHiddenMenuItems';
+import { navigationByRole } from '@/Layout';
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
@@ -47,6 +49,9 @@ export default function Settings() {
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = canAccessAdminOnly(effectiveUser);
   const canBulkUpdate = canUseBulkUpdate(effectiveUser);
+  const { isMenuItemHidden, setMenuItemHidden } = useHiddenMenuItems();
+  // The admin sidebar is the full menu — that's what the toggles control.
+  const menuItems = navigationByRole.admin.filter((i) => !NON_HIDEABLE_HREFS.includes(i.href));
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
@@ -134,6 +139,12 @@ export default function Settings() {
             <TabsTrigger value="bulk" className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4" />
               עדכון המוני
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="menu" className="flex items-center gap-2">
+              <Menu className="h-4 w-4" />
+              תפריט
             </TabsTrigger>
           )}
         </TabsList>
@@ -396,6 +407,52 @@ export default function Settings() {
         {canBulkUpdate && (
           <TabsContent value="bulk" className="space-y-6">
             <BulkUpdate />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="menu" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Menu className="h-5 w-5" />
+                  ניהול תפריט
+                </CardTitle>
+                <CardDescription>
+                  בחר אילו פריטים יוצגו בתפריט הצד. כיבוי המתג מסתיר את הפריט מהתפריט שלך
+                  (ההגדרה נשמרת בדפדפן הזה).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {menuItems.map((item) => {
+                  const ItemIcon = item.icon;
+                  const visible = !isMenuItemHidden(item.href);
+                  return (
+                    <div
+                      key={item.href}
+                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {ItemIcon && <ItemIcon className={`h-4 w-4 shrink-0 ${visible ? 'text-foreground' : 'text-muted-foreground/50'}`} />}
+                        <span className={`text-sm font-medium truncate ${visible ? '' : 'text-muted-foreground line-through'}`}>
+                          {item.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                          {visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                          {visible ? 'מוצג' : 'מוסתר'}
+                        </span>
+                        <Switch
+                          checked={visible}
+                          onCheckedChange={(v) => setMenuItemHidden(item.href, !v)}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>
