@@ -5,21 +5,33 @@ import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
+import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
+import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Search, MessageCircle, Loader2, Lock, ArrowRight, Phone, Users as UsersIcon,
-  Circle, Inbox, Check,
+  Circle, Inbox, Check, UserCheck, UserPlus, CircleUserRound,
 } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
+import WhatsAppContextPanel from '@/components/whatsapp/WhatsAppContextPanel';
+import { useWhatsAppContext } from '@/components/whatsapp/useWhatsAppContext';
+import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import {
   chatStatusMeta, chatTitle, chatInitial, prettyPhone, listTime, dayLabel, colorFromString,
 } from '@/components/whatsapp/whatsappHelpers';
+
+function localPhoneDigits(phone) {
+  const norm = normalizeIsraeliPhone(phone);
+  if (norm && norm.startsWith('972')) return '0' + norm.slice(3);
+  return String(phone || '').replace(/\D/g, '');
+}
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'הכל' },
@@ -42,6 +54,9 @@ export default function WhatsAppChat() {
   const [repFilter, setRepFilter] = useState('all');
   const rootRef = useRef(null);
   const [areaH, setAreaH] = useState(null);
+  const { openLead } = useLeadModal();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   // Conversations (RLS scopes: rep → own, admin → all).
   const { data: chats = [], isLoading: chatsLoading } = useQuery({
@@ -99,6 +114,23 @@ export default function WhatsAppChat() {
   }, [chats, search, statusFilter, repFilter, isAdmin]);
 
   const selectedChat = useMemo(() => chats.find((c) => c.id === selectedId) || null, [chats, selectedId]);
+
+  // CRM context (existing lead/customer/orders/quotes/tickets) for the open chat.
+  const contactPhone = selectedChat?.contact_phone || selectedChat?.chat_id || '';
+  const ctxQuery = useWhatsAppContext(contactPhone, !!selectedChat);
+  const context = ctxQuery.data;
+  const ctxHasMatch = !!(context && (
+    context.leads.length || context.customers.length || context.orders.length ||
+    context.tickets.length || context.quotes.length
+  ));
+  // Customer object passed to the service-ticket dialog when the contact isn't
+  // already linked to an order — prefilled with name + plain-digit phone so the
+  // new ticket is findable by phone later.
+  const ticketCustomer = context?.customers?.[0] || (selectedChat ? {
+    full_name: chatTitle(selectedChat),
+    phone: localPhoneDigits(contactPhone),
+    email: '',
+  } : null);
 
   const waitingCount = chats.filter((c) => c.status === 'waiting').length;
 
@@ -172,7 +204,7 @@ export default function WhatsAppChat() {
         )}
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr] gap-0 rounded-xl border bg-card overflow-hidden">
+      <div className={`flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr] ${selectedChat ? 'xl:grid-cols-[320px_1fr_340px]' : ''} gap-0 rounded-xl border bg-card overflow-hidden`}>
         {/* ── Conversation list ── */}
         <div className={`flex flex-col border-l min-h-0 ${selectedId ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-3 space-y-2 border-b bg-muted/30">
@@ -241,6 +273,9 @@ export default function WhatsAppChat() {
               onBack={() => setSelectedId(null)}
               onMarkHandled={() => markHandled.mutate(selectedChat.id)}
               marking={markHandled.isPending}
+              onShowInfo={() => setInfoOpen(true)}
+              ctxHasMatch={ctxHasMatch}
+              ctxLoading={ctxQuery.isLoading}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
@@ -250,7 +285,53 @@ export default function WhatsAppChat() {
             </div>
           )}
         </div>
+
+        {/* ── CRM context panel (persistent on xl) ── */}
+        {selectedChat && (
+          <aside className="hidden xl:flex flex-col min-h-0 border-r bg-card overflow-hidden">
+            <WhatsAppContextPanel
+              phone={contactPhone}
+              name={chatTitle(selectedChat)}
+              context={context}
+              isLoading={ctxQuery.isLoading}
+              onOpenLead={openLead}
+              onCreateTicket={() => setTicketOpen(true)}
+            />
+          </aside>
+        )}
       </div>
+
+      {/* CRM context as a slide-over on smaller screens */}
+      <Sheet open={infoOpen} onOpenChange={setInfoOpen}>
+        <SheetContent side="left" dir="rtl" className="p-0 w-[340px] sm:w-[380px] flex flex-col">
+          <SheetTitle className="sr-only">פרטי לקוח</SheetTitle>
+          {selectedChat && (
+            <WhatsAppContextPanel
+              phone={contactPhone}
+              name={chatTitle(selectedChat)}
+              context={context}
+              isLoading={ctxQuery.isLoading}
+              onOpenLead={(id) => { setInfoOpen(false); openLead(id); }}
+              onCreateTicket={() => { setInfoOpen(false); setTicketOpen(true); }}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Open a service ticket for this contact (reuses the Service Center dialog) */}
+      {ticketOpen && (
+        <OpenServiceTicketDialog
+          open={ticketOpen}
+          onOpenChange={setTicketOpen}
+          order={context?.orders?.[0] || null}
+          customer={ticketCustomer}
+          currentUser={user}
+          onCreated={() => {
+            setTicketOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['wa-context'] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -296,7 +377,7 @@ function ChatRow({ chat, active, rep, onClick }) {
   );
 }
 
-function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking }) {
+function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onShowInfo, ctxHasMatch, ctxLoading }) {
   const meta = chatStatusMeta(chat.status);
   const title = chatTitle(chat);
   const bottomRef = useRef(null);
@@ -328,15 +409,37 @@ function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking }
           {chat.is_group ? <UsersIcon className="h-4 w-4" /> : chatInitial(chat)}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium truncate">{title}</p>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${meta.chip}`}>{meta.label}</span>
+            {!ctxLoading && (
+              ctxHasMatch ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 inline-flex items-center gap-0.5">
+                  <UserCheck className="h-3 w-3" />לקוח קיים
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 inline-flex items-center gap-0.5">
+                  <UserPlus className="h-3 w-3" />לקוח חדש
+                </span>
+              )
+            )}
           </div>
           <p className="text-xs text-muted-foreground flex items-center gap-1">
             <Phone className="h-3 w-3" />{prettyPhone(chat.contact_phone || chat.chat_id)}
             {rep && <span className="ms-2">· נציג: {rep.full_name || rep.email}</span>}
           </p>
         </div>
+        {onShowInfo && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onShowInfo}
+            className="gap-1.5 h-8 text-xs shrink-0 xl:hidden"
+          >
+            <CircleUserRound className="h-3.5 w-3.5" />
+            פרטי לקוח
+          </Button>
+        )}
         {chat.status === 'waiting' && onMarkHandled && (
           <Button
             size="sm"
