@@ -43,16 +43,33 @@ export async function getStateInstance(acc: GreenAccount) {
   return callGreenApi(acc, 'getStateInstance');
 }
 
+/** Read the instance's current settings (webhookUrl, notification flags, …). */
+export async function getGreenSettings(acc: GreenAccount) {
+  return callGreenApi(acc, 'getSettings');
+}
+
+/** Append the auth token to the webhook URL as a query param. */
+export function buildWebhookUrlWithToken(webhookUrl: string, token?: string) {
+  if (!token) return webhookUrl;
+  return `${webhookUrl}${webhookUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+}
+
 /**
  * Point the instance's webhook at our function and turn on the notification
  * types we need. Crucially we keep this READ-ONLY oriented: we enable incoming
  * + outgoing message notifications and the state-change notification, nothing
  * that sends.
+ *
+ * We carry the auth token in the URL query string (?token=…) and leave
+ * webhookUrlToken EMPTY on purpose: when webhookUrlToken is set, Green API adds
+ * an `Authorization: Bearer …` header, which the Supabase Edge gateway can
+ * reject before the request reaches our function. A query-string token avoids
+ * that entirely; the webhook function authenticates on ?token=.
  */
 export async function setWebhookSettings(acc: GreenAccount, webhookUrl: string) {
   return callGreenApi(acc, 'setSettings', {
-    webhookUrl,
-    webhookUrlToken: acc.webhook_token || '',
+    webhookUrl: buildWebhookUrlWithToken(webhookUrl, acc.webhook_token),
+    webhookUrlToken: '',
     incomingWebhook: 'yes',
     outgoingWebhook: 'yes',           // messages sent from the phone
     outgoingAPIMessageWebhook: 'yes', // messages sent via API

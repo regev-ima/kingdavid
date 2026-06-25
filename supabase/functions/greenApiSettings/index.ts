@@ -18,7 +18,7 @@
 //   'list'    (admin only)                          → all accounts + status
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
-import { getStateInstance, setWebhookSettings } from '../_shared/greenApi.ts';
+import { getStateInstance, getGreenSettings, setWebhookSettings, buildWebhookUrlWithToken } from '../_shared/greenApi.ts';
 
 function maskToken(t: string) {
   return t ? `••••${t.slice(-4)}` : '';
@@ -176,6 +176,36 @@ Deno.serve(async (req) => {
         state_ok: state.ok,
         settings_ok: action === 'connect' ? !!settingsResult?.ok : undefined,
         ...statusOf(await loadAccount()),
+      }, { headers: cors });
+    }
+
+    if (action === 'diagnose') {
+      // Show what Green API ACTUALLY has configured, so we can confirm the
+      // webhook URL + notification flags match ours (key when nothing arrives).
+      const acc = await loadAccount();
+      if (!acc?.instance_id || !acc?.api_token) {
+        return Response.json({ ok: false, error: 'not_configured' }, { status: 400, headers: cors });
+      }
+      const state = await getStateInstance(acc);
+      const settings = await getGreenSettings(acc);
+      const expectedUrl = buildWebhookUrlWithToken(webhookUrl(), acc.webhook_token);
+      const greenUrl = settings.data?.webhookUrl || '';
+      return Response.json({
+        ok: true,
+        state: state.data?.stateInstance || null,
+        state_ok: state.ok,
+        green: {
+          webhookUrl: greenUrl,
+          incomingWebhook: settings.data?.incomingWebhook,
+          outgoingWebhook: settings.data?.outgoingWebhook,
+          outgoingAPIMessageWebhook: settings.data?.outgoingAPIMessageWebhook,
+          outgoingMessageWebhook: settings.data?.outgoingMessageWebhook,
+          stateWebhook: settings.data?.stateWebhook,
+        },
+        expected_webhook_url: expectedUrl,
+        webhook_matches: !!greenUrl && greenUrl === expectedUrl,
+        settings_ok: settings.ok,
+        last_webhook_at: acc.last_webhook_at || null,
       }, { headers: cors });
     }
 

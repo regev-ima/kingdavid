@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
   Loader2, Save, Eye, EyeOff, Plug, RefreshCw, CheckCircle2,
-  AlertTriangle, MessageCircle, KeyRound, Copy,
+  AlertTriangle, MessageCircle, KeyRound, Copy, Activity,
 } from 'lucide-react';
 
 // Per-rep Green API (WhatsApp) connection. The api_token is a secret stored
@@ -30,6 +30,7 @@ export default function WhatsAppSettingsTab({ rep }) {
 
   const [draft, setDraft] = useState({ instance_id: '', api_token: '', api_url: '' });
   const [showToken, setShowToken] = useState(false);
+  const [diag, setDiag] = useState(null);
 
   useEffect(() => {
     if (status) {
@@ -75,6 +76,15 @@ export default function WhatsAppSettingsTab({ rep }) {
       queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
     },
     onError: (err) => toast.error(`בדיקה נכשלה: ${err?.message || 'שגיאה'}`),
+  });
+
+  const diagnoseMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'diagnose', user_id: userId }),
+    onSuccess: (res) => {
+      setDiag(res);
+      queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
+    },
+    onError: (err) => toast.error(`האבחון נכשל: ${err?.message || 'שגיאה'}`),
   });
 
   if (isLoading) {
@@ -200,8 +210,39 @@ export default function WhatsAppSettingsTab({ rep }) {
             {checkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             בדוק חיבור
           </Button>
+          <Button variant="ghost" onClick={() => diagnoseMutation.mutate()} disabled={diagnoseMutation.isPending || !configured} className="gap-2">
+            {diagnoseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+            אבחון
+          </Button>
         </div>
       </div>
+
+      {/* Diagnosis results — what Green API ACTUALLY has configured */}
+      {diag && (
+        <div className="rounded-lg border p-3 space-y-2 text-xs">
+          <p className="text-sm font-medium flex items-center gap-1.5"><Activity className="h-4 w-4" />אבחון חיבור</p>
+          <DiagRow ok={diag.state === 'authorized'} label="סטטוס מכשיר" value={stateLabel(diag.state)} />
+          <DiagRow
+            ok={diag.webhook_matches}
+            label="כתובת וובהוק ב-Green"
+            value={diag.webhook_matches ? 'מוגדרת נכון ✓' : (diag.green?.webhookUrl ? 'שונה מהצפוי' : 'לא מוגדרת')}
+          />
+          <DiagRow ok={diag.green?.incomingWebhook === 'yes'} label="התראות נכנסות" value={diag.green?.incomingWebhook || '—'} />
+          <DiagRow ok={diag.green?.outgoingWebhook === 'yes'} label="התראות יוצאות (טלפון)" value={diag.green?.outgoingWebhook || '—'} />
+          <DiagRow ok={diag.green?.outgoingAPIMessageWebhook === 'yes'} label="התראות יוצאות (API)" value={diag.green?.outgoingAPIMessageWebhook || '—'} />
+          <DiagRow ok={!!diag.last_webhook_at} label="וובהוק התקבל אצלנו" value={diag.last_webhook_at ? new Date(diag.last_webhook_at).toLocaleString('he-IL') : 'עדיין לא'} />
+          {!diag.webhook_matches && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 rounded p-2">
+              הכתובת אצל Green לא תואמת. לחץ "חבר וובהוק" כדי להגדיר אותה מחדש.
+            </p>
+          )}
+          {diag.webhook_matches && !diag.last_webhook_at && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 rounded p-2">
+              הכתובת מוגדרת אך עדיין לא התקבלה הודעה. שינוי הגדרות ב-Green עשוי לקחת עד דקה; שלח הודעת בדיקה ונסה שוב.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Webhook URL reference */}
       {status?.webhook_url && (
@@ -222,6 +263,18 @@ export default function WhatsAppSettingsTab({ rep }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function DiagRow({ ok, label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        {ok ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />}
+        {label}
+      </span>
+      <span className={`font-medium ${ok ? 'text-green-700' : 'text-amber-700'}`} dir="ltr">{value}</span>
     </div>
   );
 }

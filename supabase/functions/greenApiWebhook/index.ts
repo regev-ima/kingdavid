@@ -48,23 +48,25 @@ Deno.serve(async (req) => {
       return Response.json({ ok: true, ignored: 'unknown_instance' }, { status: 200 });
     }
 
-    // Authenticate: the token Green API sends must match what we stored when
-    // we configured the instance. (If we never set one, accept — but we always
-    // set one in greenApiSettings 'connect'.)
-    if (account.webhook_token) {
-      if (bearerToken(req) !== account.webhook_token) {
-        console.warn('[greenApiWebhook] token mismatch for instance', norm.idInstance);
-        return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
-      }
-    }
-
-    // Capture the connected number (wid) the first time we learn it — Green API
+    // Record that Green API reached us BEFORE the auth check, so the
+    // "last received" timestamp is a reliable "is Green delivering?" signal
+    // even when the token is wrong. The instance id isn't secret, so a bumped
+    // timestamp leaks nothing. Also capture the connected number (wid) — Green
     // only sends it inside webhook payloads, not via getStateInstance.
     const wid: string = payload?.instanceData?.wid || '';
     const widPhone = wid ? wid.replace(/@c\.us$/, '') : '';
     const accUpdate: Record<string, unknown> = { last_webhook_at: new Date().toISOString() };
     if (widPhone && account.phone !== widPhone) accUpdate.phone = widPhone;
     await svc.from('whatsapp_accounts').update(accUpdate).eq('id', account.id);
+
+    // Authenticate: the token must match what we configured (carried as
+    // ?token= in the webhook URL, with an Authorization: Bearer fallback).
+    if (account.webhook_token) {
+      if (bearerToken(req) !== account.webhook_token) {
+        console.warn('[greenApiWebhook] token mismatch for instance', norm.idInstance);
+        return Response.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+      }
+    }
 
     if (norm.kind === 'state') {
       await svc.from('whatsapp_accounts')
