@@ -333,14 +333,16 @@ function LayoutContent({ children, currentPageName }) {
         </div>
       </header>
 
-      {/* Sidebar */}
+      {/* Sidebar — light theme, collapsed to icons on desktop, expands on hover */}
       <aside className={`
-        fixed right-0 bottom-0 w-64 gradient-sidebar z-40 
-        transition-transform duration-300 overflow-y-auto
+        group fixed right-0 bottom-0 z-40 overflow-y-auto overflow-x-hidden
+        bg-white border-l border-border shadow-sm
+        transition-all duration-200 ease-in-out
+        w-64 lg:w-16 lg:hover:w-64 lg:hover:shadow-2xl
         ${isImpersonating ? 'top-[104px]' : 'top-16'}
         ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
       `}>
-        <nav className="p-4 space-y-1">
+        <nav className="p-2 space-y-1">
           {filteredNav.map((item) => {
             const isActive = currentPageName === item.href;
             return (
@@ -348,16 +350,17 @@ function LayoutContent({ children, currentPageName }) {
                 key={item.name}
                 to={createPageUrl(item.href)}
                 onClick={() => setIsMobileMenuOpen(false)}
+                title={item.name}
                 className={`
-                  flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 text-sm font-medium
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 text-sm font-medium
                   ${isActive
-                    ? 'bg-sidebar-primary/20 text-sidebar-primary-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                    ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                    : 'text-foreground/70 hover:bg-muted hover:text-foreground'
                   }
                 `}
               >
-                <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/50'}`} />
-                <span className="truncate">{item.name}</span>
+                <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
+                <span className="truncate whitespace-nowrap lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200">{item.name}</span>
               </Link>
             );
           })}
@@ -373,7 +376,7 @@ function LayoutContent({ children, currentPageName }) {
       )}
 
       {/* Main Content */}
-      <main className={`lg:pr-64 min-h-screen ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
+      <main className={`lg:pr-16 min-h-screen ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
         <div className="p-6 lg:p-8">
           {children}
         </div>
