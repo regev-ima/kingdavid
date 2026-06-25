@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canViewOrder, isAdmin as isAdminUser } from '@/lib/rbac';
+import { canViewOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
@@ -163,6 +163,9 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   });
 
   const isAdmin = isAdminUser(effectiveUser);
+  // Factory-owned fields (production status + factory notes) are editable only
+  // by admin or the factory; a sales rep sees them read-only.
+  const canEditFactory = isAdmin || isFactoryUser(effectiveUser);
 
   if (isLoadingUser || isLoading) {
     return (
@@ -445,6 +448,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   value={order.notes_factory || ''}
                   onChange={(e) => updateOrderMutation.mutate({ notes_factory: e.target.value })}
                   rows={2}
+                  disabled={!canEditFactory}
                 />
               </div>
               <div className="space-y-2">
@@ -713,6 +717,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     : order.production_status
                 }
                 onValueChange={(val) => updateOrderMutation.mutate({ production_status: val })}
+                disabled={!canEditFactory}
               >
                 <SelectTrigger>
                   <SelectValue />

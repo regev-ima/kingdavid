@@ -77,7 +77,6 @@ const navigationByRole = {
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
   sales_user: [
-    { name: 'דשבורד מכירות', href: 'SalesDashboard', icon: BarChart3 },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לידים', href: 'LeadManagement', icon: Users },
