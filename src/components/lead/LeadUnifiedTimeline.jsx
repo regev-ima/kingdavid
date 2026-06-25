@@ -23,7 +23,7 @@ import {
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
+import { ALL_TASK_TYPE_LABELS, LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
 
 // ── shared text helpers (kept identical to the old LeadActivityTimeline so
 // historical entries read exactly the same) ───────────────────────────────
@@ -32,11 +32,30 @@ function humanizeEmails(text, users) {
   if (text == null) return text;
   return String(text).replace(EMAIL_REGEX, (email) => getRepDisplayName(email, users) || email);
 }
+
+// Status changes are logged with the raw status *key* (e.g. "no_answer_1")
+// in both the description and the old/new diff. Map every known key to its
+// Hebrew label at render time so the feed never surfaces English keys — this
+// also fixes every historical entry without a data migration.
+const STATUS_LABELS = Object.fromEntries(LEAD_STATUS_OPTIONS.map((s) => [s.value, s.label]));
+const STATUS_KEYS_RE = new RegExp(
+  '\\b(' + LEAD_STATUS_OPTIONS.map((s) => s.value).sort((a, b) => b.length - a.length).join('|') + ')\\b',
+  'g'
+);
+function humanizeStatuses(text) {
+  if (text == null) return text;
+  return String(text).replace(STATUS_KEYS_RE, (key) => STATUS_LABELS[key] || key);
+}
+// Map a single logged value (status key and/or rep email) to a human label.
+function humanizeValue(value, users) {
+  return humanizeStatuses(humanizeEmails(value, users));
+}
+
 // Log descriptions are "old → new"; inside RTL the arrow points the wrong way,
 // so flip → to ← (the same direction the diff badge uses).
 function formatDescription(text, users) {
   if (text == null) return text;
-  return humanizeEmails(text, users).replace(/→/g, '←');
+  return humanizeStatuses(humanizeEmails(text, users)).replace(/→/g, '←');
 }
 
 // ── change-event (activity-log) visual metadata ───────────────────────────
@@ -229,11 +248,11 @@ function renderChangeEvent(log, isLast, users) {
         {log.field_name && log.old_value != null && log.new_value != null && (
           <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
             <span className="bg-red-50 text-red-600 px-1.5 py-0.5 rounded line-through">
-              {humanizeEmails(log.old_value, users) || '(ריק)'}
+              {humanizeValue(log.old_value, users) || '(ריק)'}
             </span>
             <span className="text-muted-foreground/70">&larr;</span>
             <span className="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">
-              {humanizeEmails(log.new_value, users) || '(ריק)'}
+              {humanizeValue(log.new_value, users) || '(ריק)'}
             </span>
           </div>
         )}
