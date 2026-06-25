@@ -68,6 +68,24 @@ tailwind.config={theme:{extend:{fontFamily:{sans:['Heebo','sans-serif']},colors:
         <div class="rounded-xl border border-black/[0.06] bg-card shadow-card p-3"><p class="text-[11px] font-semibold text-muted-foreground mb-1.5">נציג משני</p><button class="w-full rounded-lg border border-dashed border-border text-sm text-muted-foreground px-3 py-2 flex items-center justify-between"><i data-lucide="chevron-down"></i><span>בחר נציג</span></button></div>
       </div>
 
+      <!-- NEXT TASK — a separate, WIDE block that leads the flow, sitting right
+           above the tabs. Pulled out of the side timeline so it gets full width
+           and clearly drives the next action. -->
+      <div class="rounded-xl border border-black/[0.06] border-r-4 border-r-blue-500 bg-card shadow-card overflow-hidden">
+        <div class="flex items-center justify-between px-5 py-3 border-b border-border">
+          <button class="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 hover:opacity-90"><i data-lucide="plus"></i> משימה חדשה</button>
+          <h3 class="font-semibold flex items-center gap-2 flex-row-reverse"><i data-lucide="list-checks" class="text-primary"></i> משימות <span class="text-[11px] bg-primary/10 text-primary rounded-full px-2 py-0.5">1 פתוחה</span></h3>
+        </div>
+        <div class="m-4 rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-3">
+          <button class="rounded-lg bg-primary text-primary-foreground text-sm font-semibold px-5 py-2 shrink-0 inline-flex items-center gap-1.5">בצע <i data-lucide="arrow-left"></i></button>
+          <div class="text-right">
+            <p class="text-[11px] font-semibold text-primary">המשימה הבאה</p>
+            <p class="font-semibold leading-snug">שיחת מעקב — תמיר גרידי</p>
+            <p class="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-row-reverse justify-end"><span dir="ltr">מחר · 02:09</span> <i data-lucide="clock"></i></p>
+          </div>
+        </div>
+      </div>
+
       <!-- depth tabs: customer details / marketing / deals (activity no longer
            needs a tab — it lives permanently in the left rail) -->
       <div>
@@ -103,23 +121,10 @@ tailwind.config={theme:{extend:{fontFamily:{sans:['Heebo','sans-serif']},colors:
     <!-- LEFT (timeline): full-height column, scrolls on its own, top→bottom -->
     <div class="w-[400px] shrink-0 flex flex-col rounded-xl border border-black/[0.06] border-r-4 border-r-blue-500 bg-card shadow-card overflow-hidden">
       <div class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <button class="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 hover:opacity-90"><i data-lucide="plus"></i> משימה</button>
         <h3 class="font-semibold flex items-center gap-2 flex-row-reverse text-sm"><i data-lucide="activity" class="text-blue-500"></i> פעילות הליד</h3>
       </div>
 
       <div class="flex-1 overflow-y-auto p-4 space-y-4">
-        <!-- PINNED next task -->
-        <div class="rounded-xl border border-primary/30 bg-primary/5 p-3.5">
-          <div class="flex items-center justify-between gap-2">
-            <button class="rounded-lg bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 shrink-0 inline-flex items-center gap-1.5">בצע <i data-lucide="arrow-left"></i></button>
-            <div class="text-right">
-              <p class="text-[11px] font-semibold text-primary">המשימה הבאה</p>
-              <p class="font-semibold leading-snug text-sm">שיחת מעקב — תמיר גרידי</p>
-              <p class="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-row-reverse justify-end"><span dir="ltr">מחר · 02:09</span> <i data-lucide="clock"></i></p>
-            </div>
-          </div>
-        </div>
-
         <!-- filter chips (optional) -->
         <div class="inline-flex bg-muted rounded-lg p-1 gap-1 text-xs" id="filters">
           <button data-filter="all" class="filt px-3 py-1 rounded-md font-medium">הכל</button>
