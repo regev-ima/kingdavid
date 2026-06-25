@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare, RefreshCw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -19,11 +19,12 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import UserAvatar from "@/components/shared/UserAvatar";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
-import { canAccessAdminOnly } from '@/lib/rbac';
+import { canAccessAdminOnly, canUseBulkUpdate } from '@/lib/rbac';
 import ImportOrders from '@/components/service/ImportOrders';
 import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
 import CompanyClosuresTab from '@/components/settings/CompanyClosuresTab';
 import Sms019SettingsTab from '@/components/settings/Sms019SettingsTab';
+import BulkUpdate from '@/pages/BulkUpdate';
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
@@ -45,6 +46,7 @@ export default function Settings() {
 
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = canAccessAdminOnly(effectiveUser);
+  const canBulkUpdate = canUseBulkUpdate(effectiveUser);
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
@@ -126,6 +128,12 @@ export default function Settings() {
             <TabsTrigger value="sms" className="flex items-center gap-2">
               <MessageSquare className="h-4 w-4" />
               שליחת SMS
+            </TabsTrigger>
+          )}
+          {canBulkUpdate && (
+            <TabsTrigger value="bulk" className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              עדכון המוני
             </TabsTrigger>
           )}
         </TabsList>
@@ -382,6 +390,12 @@ export default function Settings() {
         {isAdmin && (
           <TabsContent value="sms" className="space-y-6">
             <Sms019SettingsTab />
+          </TabsContent>
+        )}
+
+        {canBulkUpdate && (
+          <TabsContent value="bulk" className="space-y-6">
+            <BulkUpdate />
           </TabsContent>
         )}
       </Tabs>
