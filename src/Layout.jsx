@@ -46,9 +46,10 @@ import NotificationBell from "@/components/shared/NotificationBell";
 
 import VoiceCenterCallPopup from "@/components/call/VoiceCenterCallPopup";
 import UserAvatar from "@/components/shared/UserAvatar";
+import { useHiddenMenuItems, applyMenuOrder } from "@/hooks/useHiddenMenuItems";
 
 // Navigation organized by role priority
-const navigationByRole = {
+export const navigationByRole = {
   admin: [
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
     { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
@@ -113,6 +114,7 @@ function LayoutContent({ children, currentPageName }) {
 
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
+  const { hiddenMenuItems, menuOrder } = useHiddenMenuItems();
 
   // Cache user data - won't refetch on every page change
   const { data: user } = useQuery({
@@ -207,8 +209,12 @@ function LayoutContent({ children, currentPageName }) {
     userRole = 'sales_user';
   }
   
-  // Get navigation based on role
-  const filteredNav = user ? (navigationByRole[userRole] || navigationByRole.sales_user) : [];
+  // Get navigation based on role, reordered + filtered per the admin's
+  // Settings → תפריט preferences (stored per-browser in useHiddenMenuItems).
+  const filteredNav = user
+    ? applyMenuOrder(navigationByRole[userRole] || navigationByRole.sales_user, menuOrder)
+        .filter((item) => !hiddenMenuItems.includes(item.href))
+    : [];
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
