@@ -22,9 +22,10 @@ import {
 } from '@/components/ui/select';
 import {
   Loader2, KeyRound, Upload, FileText, Trash2, Plus, CalendarDays,
-  Clock, ShieldCheck, User as UserIcon, Save,
+  Clock, ShieldCheck, User as UserIcon, Save, MessageCircle,
 } from 'lucide-react';
 import UserAvatar from '@/components/shared/UserAvatar';
+import WhatsAppSettingsTab from '@/components/representatives/WhatsAppSettingsTab';
 import { GRANTABLE_PERMISSIONS, getUserScope, USER_SCOPES } from '@/lib/rbac';
 
 const ROLE_OPTIONS = [
@@ -266,11 +267,12 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
         </DialogHeader>
 
         <Tabs defaultValue="details" dir="rtl" className="flex-1 min-h-0 flex flex-col">
-          <TabsList className="mx-6 mt-3 grid grid-cols-5 shrink-0">
+          <TabsList className="mx-6 mt-3 grid grid-cols-6 shrink-0">
             <TabsTrigger value="details" className="gap-1 text-xs"><UserIcon className="h-3.5 w-3.5" />פרטים</TabsTrigger>
             <TabsTrigger value="schedule" className="gap-1 text-xs"><Clock className="h-3.5 w-3.5" />לו״ז</TabsTrigger>
             <TabsTrigger value="vacation" className="gap-1 text-xs"><CalendarDays className="h-3.5 w-3.5" />חופשות</TabsTrigger>
             <TabsTrigger value="permissions" className="gap-1 text-xs"><ShieldCheck className="h-3.5 w-3.5" />הרשאות</TabsTrigger>
+            <TabsTrigger value="whatsapp" className="gap-1 text-xs"><MessageCircle className="h-3.5 w-3.5" />וואטסאפ</TabsTrigger>
             <TabsTrigger value="documents" className="gap-1 text-xs"><FileText className="h-3.5 w-3.5" />קבצים</TabsTrigger>
           </TabsList>
 
@@ -557,6 +559,11 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                   שמור הרשאות
                 </Button>
               </div>
+            </TabsContent>
+
+            {/* ── WhatsApp (Green API) ── */}
+            <TabsContent value="whatsapp" className="mt-0">
+              <WhatsAppSettingsTab rep={rep} />
             </TabsContent>
 
             {/* ── Documents ── */}

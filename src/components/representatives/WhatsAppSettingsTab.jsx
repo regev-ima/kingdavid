@@ -1,0 +1,238 @@
+import React, { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
+import { toast } from 'sonner';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import {
+  Loader2, Save, Eye, EyeOff, Plug, RefreshCw, CheckCircle2,
+  AlertTriangle, MessageCircle, KeyRound, Copy,
+} from 'lucide-react';
+
+// Per-rep Green API (WhatsApp) connection. The api_token is a secret stored
+// server-side (whatsapp_accounts, RLS-locked) — the browser only ever sees a
+// masked hint. Everything goes through the greenApiSettings Edge Function with
+// the rep's user_id, so an admin can set this up from "נהל נציג".
+//
+// IMPORTANT: this only MIRRORS WhatsApp (incoming + outgoing). The platform
+// never sends a message — it just records what happens on the rep's phone.
+export default function WhatsAppSettingsTab({ rep }) {
+  const queryClient = useQueryClient();
+  const userId = rep?.id;
+
+  const { data: status, isLoading, isError, error } = useQuery({
+    queryKey: ['green-api', userId],
+    queryFn: () => base44.functions.invoke('greenApiSettings', { action: 'get', user_id: userId }),
+    enabled: !!userId,
+    retry: false,
+  });
+
+  const [draft, setDraft] = useState({ instance_id: '', api_token: '', api_url: '' });
+  const [showToken, setShowToken] = useState(false);
+
+  useEffect(() => {
+    if (status) {
+      setDraft({
+        instance_id: status.instance_id || '',
+        api_token: '',
+        api_url: status.api_url || 'https://api.green-api.com',
+      });
+    }
+  }, [status]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', {
+      action: 'save',
+      user_id: userId,
+      instance_id: draft.instance_id,
+      api_token: draft.api_token, // blank = keep existing
+      api_url: draft.api_url,
+    }),
+    onSuccess: () => {
+      toast.success('פרטי Green API נשמרו');
+      setDraft((d) => ({ ...d, api_token: '' }));
+      setShowToken(false);
+      queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
+    },
+    onError: (err) => toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה'}`),
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'connect', user_id: userId }),
+    onSuccess: (res) => {
+      if (res?.settings_ok) toast.success('הוובהוק חובר ל-Green API ✅');
+      else toast.warning('נשמר, אך חיבור הוובהוק ל-Green API לא אושר — בדוק את הקודים');
+      queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
+    },
+    onError: (err) => toast.error(`החיבור נכשל: ${err?.message || 'שגיאה'}`),
+  });
+
+  const checkMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'check', user_id: userId }),
+    onSuccess: (res) => {
+      toast.success(`סטטוס: ${stateLabel(res?.state)}`);
+      queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
+    },
+    onError: (err) => toast.error(`בדיקה נכשלה: ${err?.message || 'שגיאה'}`),
+  });
+
+  if (isLoading) {
+    return <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+        <p className="text-destructive font-medium">לא ניתן לטעון את הגדרות ה-WhatsApp מהשרת.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          ייתכן שהפונקציה <code>greenApiSettings</code> או הטבלאות עדיין לא נפרסו. נסה שוב בעוד כמה דקות.
+        </p>
+        <p className="text-[11px] text-muted-foreground mt-2">{error?.message}</p>
+      </div>
+    );
+  }
+
+  const configured = status?.configured;
+  const authorized = status?.state === 'authorized';
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3">
+        <MessageCircle className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+        <p className="text-xs text-muted-foreground">
+          חיבור הוואטסאפ של הנציג למערכת דרך Green API. המערכת <b>רק מתעדת</b> את ההודעות
+          (נכנסות ויוצאות) — היא לא שולחת הודעות. ההודעות יופיעו במסך "צ'אט וואטסאפ".
+        </p>
+      </div>
+
+      {/* Connection status */}
+      {configured ? (
+        <div className={`p-3 rounded-lg border flex items-start gap-2 ${authorized ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+          {authorized
+            ? <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+            : <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 shrink-0" />}
+          <div className="text-sm space-y-0.5">
+            <p className={`font-medium ${authorized ? 'text-green-800' : 'text-yellow-800'}`}>
+              {authorized ? 'מחובר ומאומת' : `סטטוס: ${stateLabel(status.state)}`}
+            </p>
+            <p className={`text-xs ${authorized ? 'text-green-700' : 'text-yellow-700'}`}>
+              {status.phone ? `מספר: ${status.phone} · ` : ''}
+              {status.webhook_set ? 'וובהוק מוגדר' : 'וובהוק לא מוגדר עדיין'}
+              {status.last_webhook_at ? ` · התקבל לאחרונה: ${new Date(status.last_webhook_at).toLocaleString('he-IL')}` : ''}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 shrink-0" />
+          <div className="text-sm text-yellow-800">
+            <p className="font-medium">החיבור עדיין לא הוגדר</p>
+            <p className="text-xs text-yellow-700">הזן את ה-ID Instance וה-API Token מחשבון Green API של הנציג ולחץ "שמור".</p>
+          </div>
+        </div>
+      )}
+
+      {/* Credentials */}
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <Label>ID Instance</Label>
+          <Input
+            value={draft.instance_id}
+            onChange={(e) => setDraft({ ...draft, instance_id: e.target.value })}
+            placeholder="1101000001"
+            dir="ltr"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>API Token</Label>
+          <div className="relative">
+            <Input
+              type={showToken ? 'text' : 'password'}
+              value={draft.api_token}
+              onChange={(e) => setDraft({ ...draft, api_token: e.target.value })}
+              placeholder={status?.token_set ? `שמור (${status.token_hint}) — השאר ריק כדי לא לשנות` : 'הדבק כאן את ה-API Token מ-Green API'}
+              dir="ltr"
+              className="pe-10"
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              onClick={() => setShowToken((v) => !v)}
+              className="absolute inset-y-0 end-0 flex items-center pe-3 text-muted-foreground hover:text-foreground"
+              aria-label={showToken ? 'הסתר טוקן' : 'הצג טוקן'}
+            >
+              {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <KeyRound className="h-3 w-3" />
+            מתוך הקונסולה של Green API ← פרטי המכונה (ID Instance + ApiTokenInstance). הטוקן נשמר מוצפן בשרת.
+          </p>
+        </div>
+
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground">הגדרות מתקדמות (כתובת API)</summary>
+          <div className="mt-2 space-y-1.5">
+            <Label className="text-xs">API URL</Label>
+            <Input
+              value={draft.api_url}
+              onChange={(e) => setDraft({ ...draft, api_url: e.target.value })}
+              placeholder="https://api.green-api.com"
+              dir="ltr"
+              className="h-8"
+            />
+            <p className="text-[11px] text-muted-foreground">השאר כברירת מחדל אלא אם Green API נתנו כתובת ייעודית למכונה.</p>
+          </div>
+        </details>
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !draft.instance_id.trim()} className="gap-2">
+            {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            שמור
+          </Button>
+          <Button variant="outline" onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending || !configured} className="gap-2">
+            {connectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
+            חבר וובהוק
+          </Button>
+          <Button variant="ghost" onClick={() => checkMutation.mutate()} disabled={checkMutation.isPending || !configured} className="gap-2">
+            {checkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            בדוק חיבור
+          </Button>
+        </div>
+      </div>
+
+      {/* Webhook URL reference */}
+      {status?.webhook_url && (
+        <div className="rounded-lg border p-3 space-y-1.5">
+          <p className="text-xs font-medium">כתובת הוובהוק (מוגדרת אוטומטית ב"חבר וובהוק")</p>
+          <div className="flex items-center gap-2">
+            <code className="text-[11px] bg-muted px-2 py-1 rounded flex-1 truncate" dir="ltr">{status.webhook_url}</code>
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7"
+              onClick={() => { navigator.clipboard?.writeText(status.webhook_url); toast.success('הועתק'); }}
+              aria-label="העתק"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            לחיצה על "חבר וובהוק" מגדירה את הכתובת הזו ב-Green API ומפעילה התראות על הודעות נכנסות ויוצאות.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function stateLabel(state) {
+  return {
+    authorized: 'מחובר',
+    notAuthorized: 'לא מאומת (סרוק QR ב-Green API)',
+    blocked: 'חסום',
+    sleepMode: 'במצב שינה',
+    starting: 'מתחיל',
+    yellowCard: 'מוגבל זמנית',
+  }[state] || state || 'לא ידוע';
+}
