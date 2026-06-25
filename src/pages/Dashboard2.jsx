@@ -90,7 +90,9 @@ export default function Dashboard2() {
             navigate(createPageUrl('Bookkeeping'));
             return;
           }
-          navigate(createPageUrl('SalesDashboard'));
+          // Reps no longer have the sales dashboard — land them on their
+          // task queue, their first nav item.
+          navigate(createPageUrl('SalesTasks'));
           return;
         }
         setUser(userData);

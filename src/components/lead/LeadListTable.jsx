@@ -56,6 +56,9 @@ export default function LeadListTable({
     const map = new Map();
     for (const t of leadActiveTasks) {
       if (!t?.lead_id) continue;
+      // Assignment ("שיוך") tasks are a management concern — reps shouldn't see
+      // them as their "next task".
+      if (!isAdmin && t.task_type === 'assignment') continue;
       const existing = map.get(t.lead_id);
       if (!existing) { map.set(t.lead_id, t); continue; }
       const a = t.due_date ? new Date(t.due_date).getTime() : Infinity;
@@ -63,7 +66,7 @@ export default function LeadListTable({
       if (a < b) map.set(t.lead_id, t);
     }
     return map;
-  }, [leadActiveTasks]);
+  }, [leadActiveTasks, isAdmin]);
   const [completingTask, setCompletingTask] = useState(null);
 
   const toggleAll = (checked) => {

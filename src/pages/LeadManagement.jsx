@@ -704,7 +704,9 @@ export default function LeadManagement() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { id: 'assigned_unhandled', label: 'משויך ולא טופל', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
-          { id: 'unassigned',         label: 'לא משויכים',      value: kpiCounts.unassignedCount,        tone: 'amber',  icon: UserPlus,  desc: 'לידים בלי נציג ראשי' },
+          // "לא משויכים" is a management-only pool — reps only handle leads
+          // assigned to them, so the unassigned tile is hidden for them.
+          ...(isAdmin ? [{ id: 'unassigned', label: 'לא משויכים', value: kpiCounts.unassignedCount, tone: 'amber', icon: UserPlus, desc: 'לידים בלי נציג ראשי' }] : []),
           { id: 'handling',           label: 'בטיפול',          value: kpiCounts.handlingCount,          tone: 'indigo', icon: Hourglass, desc: 'אחרי שלב "ליד חדש", טרם נסגר' },
         ].map((tile) => (
           <CategoryTile
