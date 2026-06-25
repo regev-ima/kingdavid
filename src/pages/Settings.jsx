@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare, RefreshCw, Menu, GripVertical } from "lucide-react";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { Loader2, Save, MessageCircle, Phone, Eye, EyeOff, Plus, Trash2, ShoppingCart, Upload, Menu, GripVertical } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -34,6 +34,8 @@ export default function Settings() {
   const [user, setUser] = useState(null);
   const [profileData, setProfileData] = useState({ full_name: '' });
   const [showImportOrders, setShowImportOrders] = useState(false);
+  // Settings nav is a card grid: null = the cards "home", otherwise the open section.
+  const [section, setSection] = useState(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -99,72 +101,68 @@ export default function Settings() {
     }
   };
 
+  // The settings sections, shown as cards on the "home" and gated by role.
+  // `icon` is a Google Material Symbols ligature name.
+  const SETTINGS_SECTIONS = [
+    { value: 'profile',        label: 'פרופיל',            desc: 'פרטי החשבון והתראות',       icon: 'account_circle', show: true },
+    { value: 'users',          label: 'משתמשים',           desc: 'הזמנה וניהול הרשאות',        icon: 'group',          show: isAdmin },
+    { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      show: isAdmin },
+    { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    show: isAdmin },
+    { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   show: isAdmin },
+    { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     show: isAdmin },
+    { value: 'sms',            label: 'שליחת SMS',         desc: 'חיבור חשבון 019',           icon: 'sms',            show: isAdmin },
+    { value: 'bulk',           label: 'עדכון המוני',        desc: 'עדכון נתונים בכמות',         icon: 'sync',           show: canBulkUpdate },
+    { value: 'menu',           label: 'תפריט',             desc: 'הסתרה וסידור התפריט',        icon: 'menu',           show: isAdmin },
+  ].filter((s) => s.show);
+  const activeSection = SETTINGS_SECTIONS.find((s) => s.value === section);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">הגדרות</h1>
-        <p className="text-muted-foreground">ניהול חשבון והעדפות מערכת</p>
+        <p className="text-muted-foreground">{section === null ? 'בחר אזור לניהול' : (activeSection?.desc || 'ניהול חשבון והעדפות מערכת')}</p>
       </div>
 
       {/* dir="rtl" is required here: Radix Tabs defaults its direction to "ltr"
           and stamps dir="ltr" on the wrapper around BOTH the tab row and all
           tab content, which overrides the page's inherited RTL (tabs reversed,
           content left-aligned, switch thumbs flipped). */}
-      <Tabs defaultValue="profile" className="space-y-6" dir="rtl">
-        <TabsList className="bg-white border">
-          <TabsTrigger value="profile" className="flex items-center gap-2">
-            <SettingsIcon className="h-4 w-4" />
-            פרופיל
-          </TabsTrigger>
-          {isAdmin && (
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              משתמשים
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="statuses" className="flex items-center gap-2">
-              <ListChecks className="h-4 w-4" />
-              סטטוסים
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="import" className="flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4" />
-              ייבוא נתונים
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="quote-defaults" className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              ברירות-מחדל הצעה
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="closures" className="flex items-center gap-2">
-              <CalendarX2 className="h-4 w-4" />
-              ימי סגירה
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="sms" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              שליחת SMS
-            </TabsTrigger>
-          )}
-          {canBulkUpdate && (
-            <TabsTrigger value="bulk" className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4" />
-              עדכון המוני
-            </TabsTrigger>
-          )}
-          {isAdmin && (
-            <TabsTrigger value="menu" className="flex items-center gap-2">
-              <Menu className="h-4 w-4" />
-              תפריט
-            </TabsTrigger>
-          )}
-        </TabsList>
+      {/* Card-grid navigation: the "home" shows a card per section; opening one
+          drives the controlled Tabs value so the matching content renders, with
+          a back link to return to the grid. dir="rtl" on Tabs is required —
+          Radix stamps dir="ltr" on its wrapper otherwise. */}
+      <Tabs value={section || ''} onValueChange={setSection} className="space-y-6" dir="rtl">
+        {section === null ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {SETTINGS_SECTIONS.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setSection(s.value)}
+                className="text-right rounded-xl border border-border bg-card p-4 shadow-card transition-all hover:border-primary hover:shadow-lg hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <span
+                  className="material-symbols-outlined mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary"
+                  style={{ fontSize: '24px' }}
+                  aria-hidden="true"
+                >
+                  {s.icon}
+                </span>
+                <p className="font-semibold text-foreground">{s.label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{s.desc}</p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setSection(null)}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '20px' }} aria-hidden="true">arrow_forward</span>
+            חזרה להגדרות
+          </button>
+        )}
 
         <TabsContent value="profile" className="space-y-6">
           <Card>
