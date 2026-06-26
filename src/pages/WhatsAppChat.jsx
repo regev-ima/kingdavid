@@ -154,11 +154,19 @@ export default function WhatsAppChat() {
   // first), so the rep lands on the last message that came in. Clears the param
   // afterwards so it only fires once per click.
   useEffect(() => {
-    if (searchParams.get('focus') !== 'waiting' || chats.length === 0) return;
-    const target = chats.find((c) => c.status === 'waiting') || chats[0];
+    const focus = searchParams.get('focus');
+    const chatParam = searchParams.get('chat');
+    if (!focus && !chatParam) return;
+    if (chats.length === 0) return;
+
+    let target = null;
+    if (chatParam) target = chats.find((c) => c.id === chatParam) || null;
+    if (!target && focus === 'waiting') target = chats.find((c) => c.status === 'waiting') || chats[0];
     if (target) setSelectedId(target.id);
+
     const next = new URLSearchParams(searchParams);
     next.delete('focus');
+    next.delete('chat');
     setSearchParams(next, { replace: true });
   }, [chats, searchParams, setSearchParams]);
 
