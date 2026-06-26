@@ -22,7 +22,6 @@ import {
   Factory,
   DollarSign,
   Package,
-  BarChart3,
   Settings,
   LogOut,
   Search,
@@ -34,7 +33,14 @@ import {
   CheckSquare,
   Receipt,
   UserCog,
-  LifeBuoy
+  LifeBuoy,
+  Contact,
+  Boxes,
+  ClipboardList,
+  Megaphone,
+  LayoutTemplate,
+  PlusCircle,
+  Pin
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
 
@@ -54,24 +60,24 @@ export const navigationByRole = {
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
     { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לקוחות', href: 'Customers', icon: Crown },
+    { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
     { name: 'מפעל', href: 'Factory', icon: Factory },
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
-    { name: 'מלאי', href: 'Inventory', icon: Package },
+    { name: 'מלאי', href: 'Inventory', icon: Boxes },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
-    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
+    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
     { name: 'כספים', href: 'Finance', icon: DollarSign },
     { name: 'נציגים', href: 'Representatives', icon: Users },
-    { name: 'שיווק', href: 'Marketing', icon: BarChart3 },
+    { name: 'שיווק', href: 'Marketing', icon: Megaphone },
     { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown },
-    { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },
-    { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: DollarSign },
+    { name: 'דפי נחיתה', href: 'LandingPages', icon: LayoutTemplate },
+    { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: PlusCircle },
     { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
@@ -79,7 +85,7 @@ export const navigationByRole = {
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לידים', href: 'LeadManagement', icon: Users },
-    { name: 'לקוחות', href: 'Customers', icon: Crown },
+    { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
@@ -89,9 +95,9 @@ export const navigationByRole = {
     { name: 'מפעל', href: 'Factory', icon: Factory },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
-    { name: 'מלאי', href: 'Inventory', icon: Package },
+    { name: 'מלאי', href: 'Inventory', icon: Boxes },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
-    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
+    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],
@@ -111,6 +117,18 @@ function LayoutContent({ children, currentPageName }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // Desktop sidebar: collapsed-to-icons + hover-to-open by default. The admin
+  // can "pin" it permanently open; the choice is remembered per-browser.
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    try { return localStorage.getItem('king_david_sidebar_pinned') === '1'; } catch { return false; }
+  });
+  const toggleSidebarPin = () => {
+    setSidebarPinned((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('king_david_sidebar_pinned', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
@@ -333,16 +351,31 @@ function LayoutContent({ children, currentPageName }) {
         </div>
       </header>
 
-      {/* Sidebar — light theme, collapsed to icons on desktop, expands on hover */}
+      {/* Sidebar — light theme. Desktop: pinned open, or collapsed to an icon
+          rail that expands on hover/focus. Mobile: full slide-in drawer. */}
       <aside className={`
         group fixed right-0 bottom-0 z-40 overflow-y-auto overflow-x-hidden
         bg-white border-l border-border shadow-sm
         transition-all duration-200 ease-in-out
-        w-64 lg:w-16 lg:hover:w-64 lg:hover:shadow-2xl
+        [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border
+        w-64
+        ${sidebarPinned ? 'lg:w-64' : 'lg:w-16 lg:hover:w-64 lg:focus-within:w-64 lg:hover:shadow-2xl lg:focus-within:shadow-2xl'}
         ${isImpersonating ? 'top-[104px]' : 'top-16'}
         ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
       `}>
-        <nav className="p-2 space-y-1">
+        {/* Pin / collapse control (desktop only) */}
+        <div className="hidden lg:flex justify-center p-2">
+          <button
+            type="button"
+            onClick={toggleSidebarPin}
+            title={sidebarPinned ? 'שחרר נעיצה (כיווץ אוטומטי)' : 'נעץ את התפריט פתוח'}
+            aria-pressed={sidebarPinned}
+            className={`p-1.5 rounded-lg transition-colors ${sidebarPinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+          >
+            <Pin className={`h-4 w-4 ${sidebarPinned ? 'fill-primary/20' : ''}`} />
+          </button>
+        </div>
+        <nav className="p-2 pt-0 space-y-1">
           {filteredNav.map((item) => {
             const isActive = currentPageName === item.href;
             return (
@@ -360,7 +393,7 @@ function LayoutContent({ children, currentPageName }) {
                 `}
               >
                 <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-                <span className="truncate whitespace-nowrap lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-200">{item.name}</span>
+                <span className={`truncate whitespace-nowrap transition-opacity duration-200 ${sidebarPinned ? '' : 'lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100'}`}>{item.name}</span>
               </Link>
             );
           })}
@@ -376,7 +409,7 @@ function LayoutContent({ children, currentPageName }) {
       )}
 
       {/* Main Content */}
-      <main className={`lg:pr-16 min-h-screen ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
+      <main className={`min-h-screen ${sidebarPinned ? 'lg:pr-64' : 'lg:pr-16'} ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
         <div className="p-6 lg:p-8">
           {children}
         </div>
