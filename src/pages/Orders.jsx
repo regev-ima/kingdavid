@@ -1,8 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import DataTable from '@/components/shared/DataTable';
 import { useOrderModal } from '@/components/order/OrderModalContext';
 import { LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
@@ -19,6 +17,7 @@ import { canViewOrdersWorkspace, filterOrdersForUser, canAccessAdminOnly } from 
 import { getDateRange } from '@/utils/dateRange';
 import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
 import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
+import NewOrderDialog from '@/components/order/NewOrderDialog';
 
 // The Orders page adds an "all time" option on top of the shared presets so
 // the operational list defaults to every order, not an empty "today".
@@ -87,6 +86,8 @@ export default function Orders() {
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
   const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' });
+  const [showNewOrder, setShowNewOrder] = useState(false);
+  const queryClient = useQueryClient();
   const canAccessSales = canViewOrdersWorkspace(effectiveUser);
   const isManager = canAccessAdminOnly(effectiveUser);
 
@@ -287,13 +288,19 @@ export default function Orders() {
           <h1 className="text-xl sm:text-2xl font-bold text-foreground">הזמנות</h1>
           <p className="text-sm text-muted-foreground">ניהול הזמנות ומעקב אחרי תהליך המכירה</p>
         </div>
-        <Link to={createPageUrl('NewOrder')}>
-          <Button>
-            <Plus className="h-4 w-4 me-2" />
-            הזמנה חדשה
-          </Button>
-        </Link>
+        <Button onClick={() => setShowNewOrder(true)}>
+          <Plus className="h-4 w-4 me-2" />
+          הזמנה חדשה
+        </Button>
       </div>
+
+      <NewOrderDialog
+        open={showNewOrder}
+        onOpenChange={setShowNewOrder}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['orders'] });
+        }}
+      />
 
       {isManager ? (
         <section className="space-y-4">

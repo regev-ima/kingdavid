@@ -34,7 +34,6 @@ import {
   CheckSquare,
   Receipt,
   UserCog,
-  RefreshCw,
   LifeBuoy
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
@@ -47,9 +46,10 @@ import NotificationBell from "@/components/shared/NotificationBell";
 
 import VoiceCenterCallPopup from "@/components/call/VoiceCenterCallPopup";
 import UserAvatar from "@/components/shared/UserAvatar";
+import { useHiddenMenuItems, applyMenuOrder } from "@/hooks/useHiddenMenuItems";
 
 // Navigation organized by role priority
-const navigationByRole = {
+export const navigationByRole = {
   admin: [
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
     { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
@@ -73,11 +73,9 @@ const navigationByRole = {
     { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },
     { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: DollarSign },
     { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
-    { name: 'עדכון המוני', href: 'BulkUpdate', icon: RefreshCw },
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
   sales_user: [
-    { name: 'דשבורד מכירות', href: 'SalesDashboard', icon: BarChart3 },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לידים', href: 'LeadManagement', icon: Users },
@@ -116,6 +114,7 @@ function LayoutContent({ children, currentPageName }) {
 
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
+  const { hiddenMenuItems, menuOrder } = useHiddenMenuItems();
 
   // Cache user data - won't refetch on every page change
   const { data: user } = useQuery({
@@ -210,8 +209,12 @@ function LayoutContent({ children, currentPageName }) {
     userRole = 'sales_user';
   }
   
-  // Get navigation based on role
-  const filteredNav = user ? (navigationByRole[userRole] || navigationByRole.sales_user) : [];
+  // Get navigation based on role, reordered + filtered per the admin's
+  // Settings → תפריט preferences (stored per-browser in useHiddenMenuItems).
+  const filteredNav = user
+    ? applyMenuOrder(navigationByRole[userRole] || navigationByRole.sales_user, menuOrder)
+        .filter((item) => !hiddenMenuItems.includes(item.href))
+    : [];
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">

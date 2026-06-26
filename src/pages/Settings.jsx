@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2 } from "lucide-react";
+import { Loader2, Save, Users, Settings as SettingsIcon, MessageCircle, Phone, ListChecks, Eye, EyeOff, Plus, Trash2, FileSpreadsheet, ShoppingCart, Upload, FileText, CalendarX2, MessageSquare, RefreshCw, Menu, GripVertical } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -19,10 +19,15 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import UserAvatar from "@/components/shared/UserAvatar";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
-import { canAccessAdminOnly } from '@/lib/rbac';
+import { canAccessAdminOnly, canUseBulkUpdate } from '@/lib/rbac';
 import ImportOrders from '@/components/service/ImportOrders';
 import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
 import CompanyClosuresTab from '@/components/settings/CompanyClosuresTab';
+import Sms019SettingsTab from '@/components/settings/Sms019SettingsTab';
+import BulkUpdate from '@/pages/BulkUpdate';
+import { useHiddenMenuItems, applyMenuOrder, NON_HIDEABLE_HREFS } from '@/hooks/useHiddenMenuItems';
+import { navigationByRole } from '@/Layout';
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
@@ -44,6 +49,22 @@ export default function Settings() {
 
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = canAccessAdminOnly(effectiveUser);
+  const canBulkUpdate = canUseBulkUpdate(effectiveUser);
+  const { isMenuItemHidden, setMenuItemHidden, menuOrder, setMenuOrder } = useHiddenMenuItems();
+  // The admin sidebar is the full menu — that's what the toggles control.
+  // Sorted by the saved drag order so the tab mirrors the live sidebar.
+  const menuItems = applyMenuOrder(
+    navigationByRole.admin.filter((i) => !NON_HIDEABLE_HREFS.includes(i.href)),
+    menuOrder,
+  );
+
+  const handleMenuDragEnd = (result) => {
+    if (!result.destination || result.source.index === result.destination.index) return;
+    const next = Array.from(menuItems);
+    const [moved] = next.splice(result.source.index, 1);
+    next.splice(result.destination.index, 0, moved);
+    setMenuOrder(next.map((i) => i.href));
+  };
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
@@ -85,7 +106,11 @@ export default function Settings() {
         <p className="text-muted-foreground">ניהול חשבון והעדפות מערכת</p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
+      {/* dir="rtl" is required here: Radix Tabs defaults its direction to "ltr"
+          and stamps dir="ltr" on the wrapper around BOTH the tab row and all
+          tab content, which overrides the page's inherited RTL (tabs reversed,
+          content left-aligned, switch thumbs flipped). */}
+      <Tabs defaultValue="profile" className="space-y-6" dir="rtl">
         <TabsList className="bg-white border">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <SettingsIcon className="h-4 w-4" />
@@ -119,6 +144,24 @@ export default function Settings() {
             <TabsTrigger value="closures" className="flex items-center gap-2">
               <CalendarX2 className="h-4 w-4" />
               ימי סגירה
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="sms" className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              שליחת SMS
+            </TabsTrigger>
+          )}
+          {canBulkUpdate && (
+            <TabsTrigger value="bulk" className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" />
+              עדכון המוני
+            </TabsTrigger>
+          )}
+          {isAdmin && (
+            <TabsTrigger value="menu" className="flex items-center gap-2">
+              <Menu className="h-4 w-4" />
+              תפריט
             </TabsTrigger>
           )}
         </TabsList>
@@ -369,6 +412,80 @@ export default function Settings() {
         {isAdmin && (
           <TabsContent value="closures" className="space-y-6">
             <CompanyClosuresTab />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="sms" className="space-y-6">
+            <Sms019SettingsTab />
+          </TabsContent>
+        )}
+
+        {canBulkUpdate && (
+          <TabsContent value="bulk" className="space-y-6">
+            <BulkUpdate />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="menu" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Menu className="h-5 w-5" />
+                  ניהול תפריט
+                </CardTitle>
+                <CardDescription>
+                  גרור את הידית (☰) כדי לשנות את סדר הפריטים בתפריט הצד, וכבה את המתג כדי
+                  להסתיר פריט. ההגדרה נשמרת בדפדפן הזה.
+                </CardDescription>
+              </CardHeader>
+              <CardContent dir="rtl">
+                <DragDropContext onDragEnd={handleMenuDragEnd}>
+                  <Droppable droppableId="menu-items">
+                    {(dropProvided) => (
+                      <div ref={dropProvided.innerRef} {...dropProvided.droppableProps} className="space-y-2">
+                        {menuItems.map((item, index) => {
+                          const ItemIcon = item.icon;
+                          const visible = !isMenuItemHidden(item.href);
+                          return (
+                            <Draggable key={item.href} draggableId={item.href} index={index}>
+                              {(dragProvided, snapshot) => (
+                                <div
+                                  ref={dragProvided.innerRef}
+                                  {...dragProvided.draggableProps}
+                                  className={`flex items-center justify-between gap-3 rounded-lg border bg-card p-3 ${snapshot.isDragging ? 'shadow-lg ring-1 ring-primary/30' : ''}`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span
+                                      {...dragProvided.dragHandleProps}
+                                      className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-foreground shrink-0"
+                                      aria-label="גרור לשינוי הסדר"
+                                    >
+                                      <GripVertical className="h-4 w-4" />
+                                    </span>
+                                    {ItemIcon && <ItemIcon className={`h-4 w-4 shrink-0 ${visible ? 'text-foreground' : 'text-muted-foreground/40'}`} />}
+                                    <span className={`text-sm font-medium truncate ${visible ? '' : 'text-muted-foreground line-through'}`}>
+                                      {item.name}
+                                    </span>
+                                  </div>
+                                  <Switch
+                                    checked={visible}
+                                    onCheckedChange={(v) => setMenuItemHidden(item.href, !v)}
+                                    className="shrink-0"
+                                  />
+                                </div>
+                              )}
+                            </Draggable>
+                          );
+                        })}
+                        {dropProvided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </DragDropContext>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
       </Tabs>
