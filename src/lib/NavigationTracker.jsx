@@ -2,13 +2,12 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { base44 } from '@/api/base44Client';
-import { pagesConfig } from '@/pages.config';
+import { pageNames, mainPage } from '@/lib/pageRoutes';
 
 export default function NavigationTracker() {
     const location = useLocation();
     const { isAuthenticated } = useAuth();
-    const { Pages, mainPage } = pagesConfig;
-    const mainPageKey = mainPage ?? Object.keys(Pages)[0];
+    const mainPageKey = mainPage ?? pageNames[0];
 
     // Log user activity when navigating to a page
     useEffect(() => {
@@ -23,7 +22,7 @@ export default function NavigationTracker() {
             const pathSegment = pathname.replace(/^\//, '').split('/')[0];
 
             // Try case-insensitive lookup in Pages config
-            const pageKeys = Object.keys(Pages);
+            const pageKeys = pageNames;
             const matchedKey = pageKeys.find(
                 key => key.toLowerCase() === pathSegment.toLowerCase()
             );
@@ -36,7 +35,7 @@ export default function NavigationTracker() {
                 // Silently fail - logging shouldn't break the app
             });
         }
-    }, [location, isAuthenticated, Pages, mainPageKey]);
+    }, [location, isAuthenticated, mainPageKey]);
 
     return null;
 }
