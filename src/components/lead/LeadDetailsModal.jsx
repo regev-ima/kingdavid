@@ -23,7 +23,7 @@ export default function LeadDetailsModal({ leadId, mode = 'sales', onClose }) {
           other DialogContent in this codebase. */}
       <DialogContent
         dir="rtl"
-        className="w-[80vw] max-w-[1100px] h-[95vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl
+        className="w-[94vw] max-w-[1280px] h-[92vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl
                    [&>button.absolute]:right-auto [&>button.absolute]:left-4"
       >
         <DialogTitle className="sr-only">פרטי ליד</DialogTitle>

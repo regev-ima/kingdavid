@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>פעילות הליד — ציר זמן מאוחד</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--background:30 6% 97%;--foreground:24 10% 10%;--card:0 0% 100%;--muted:30 6% 95%;--muted-foreground:24 6% 45%;--primary:239 84% 67%;--primary-foreground:0 0% 100%;--border:24 6% 90%;--ring:239 84% 67%;}
+body{font-family:Heebo,sans-serif;background:hsl(var(--background));color:hsl(var(--foreground));text-align:right}
+.shadow-card{box-shadow:0 1px 3px 0 rgb(0 0 0/.1),0 1px 2px -1px rgb(0 0 0/.1)}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#d6d3d1;border-radius:8px}
+[data-lucide]{width:1em;height:1em;display:inline-block;vertical-align:-.125em}
+</style>
+<script>
+tailwind.config={theme:{extend:{fontFamily:{sans:['Heebo','sans-serif']},colors:{background:'hsl(var(--background))',foreground:'hsl(var(--foreground))',card:'hsl(var(--card))',muted:{DEFAULT:'hsl(var(--muted))',foreground:'hsl(var(--muted-foreground))'},primary:{DEFAULT:'hsl(var(--primary))',foreground:'hsl(var(--primary-foreground))'},border:'hsl(var(--border))',ring:'hsl(var(--ring))'},borderRadius:{lg:'.5rem',md:'calc(.5rem - 2px)',sm:'calc(.5rem - 4px)',xl:'.75rem','2xl':'1rem'}}}}
+</script>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+<div class="mx-auto mb-4 max-w-[680px] text-center">
+  <span class="inline-block rounded-md bg-primary text-primary-foreground text-xs font-semibold px-3 py-1">מוקאפ — פעילות הליד (ציר זמן מאוחד)</span>
+  <p class="text-xs text-muted-foreground mt-2">איחוד של "היסטוריית משימות" + "לוג פעולות" לציר זמן כרונולוגי אחד. המשימה הבאה נשארת למעלה. הפילטר (הכל / משימות / שינויים) ניתן להסרה אם תעדיף הכל מעורבב.</p>
+</div>
+
+<!-- This is the single card that replaces BOTH "היסטוריית משימות" and "לוג פעולות".
+     It would sit where the tabs/history live in the lead screen. -->
+<div class="mx-auto max-w-[680px] rounded-xl border border-black/[0.06] border-r-4 border-r-blue-500 bg-card shadow-card overflow-hidden">
+
+  <!-- Header: title + new-task action -->
+  <div class="flex items-center justify-between px-5 py-3 border-b border-border">
+    <button class="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold px-3 py-1.5 hover:opacity-90"><i data-lucide="plus"></i> משימה חדשה</button>
+    <h3 class="font-semibold flex items-center gap-2 flex-row-reverse"><i data-lucide="activity" class="text-blue-500"></i> פעילות הליד</h3>
+  </div>
+
+  <div class="p-5 space-y-4">
+
+    <!-- PINNED: the next upcoming task always sits on top, visually distinct -->
+    <div class="rounded-xl border border-primary/30 bg-primary/5 p-4 flex items-center justify-between gap-3">
+      <button class="rounded-lg bg-primary text-primary-foreground text-sm font-semibold px-4 py-2 shrink-0 inline-flex items-center gap-1.5">בצע <i data-lucide="arrow-left"></i></button>
+      <div class="text-right">
+        <p class="text-[11px] font-semibold text-primary">המשימה הבאה</p>
+        <p class="font-semibold leading-snug">שיחת מעקב — תמיר גרידי</p>
+        <p class="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-row-reverse justify-end"><span dir="ltr">מחר · 02:09</span> <i data-lucide="clock"></i></p>
+      </div>
+    </div>
+
+    <!-- Filter chips (optional). הכל is the default. -->
+    <div class="inline-flex bg-muted rounded-lg p-1 gap-1 text-sm" id="filters">
+      <button data-filter="all" class="filt px-3.5 py-1.5 rounded-md font-medium">הכל</button>
+      <button data-filter="task" class="filt px-3.5 py-1.5 rounded-md font-medium text-muted-foreground">משימות</button>
+      <button data-filter="change" class="filt px-3.5 py-1.5 rounded-md font-medium text-muted-foreground">שינויים</button>
+    </div>
+
+    <!-- The unified chronological timeline. Newest first.
+         Right rail (RTL): icon on the right, content flows left. -->
+    <ol class="relative pt-1">
+
+      <!-- CHANGE: status changed (today) -->
+      <li class="ev flex gap-3 relative" data-kind="change">
+        <span class="tl-line absolute top-8 right-[15px] w-[2px] h-[calc(100%-8px)] bg-border"></span>
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-blue-100 text-blue-700"><i data-lucide="refresh-cw" class="text-[13px]"></i></span>
+        <div class="flex-1 pb-5 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">25/06/2026 14:32</span>
+            <span class="inline-flex items-center rounded border border-border text-[10px] h-5 px-1.5 text-muted-foreground">סטטוס</span>
+          </div>
+          <p class="text-sm text-foreground">סטטוס הליד עודכן</p>
+          <div class="mt-1 text-xs flex items-center gap-1 flex-row-reverse justify-end">
+            <span class="bg-red-50 text-red-600 px-1.5 py-0.5 rounded line-through">ליד חדש</span>
+            <span class="text-muted-foreground/70">&larr;</span>
+            <span class="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">בטיפול</span>
+          </div>
+          <p class="text-[11px] text-muted-foreground/70 mt-0.5">אלעד מלכא</p>
+        </div>
+      </li>
+
+      <!-- TASK: completed call (today) — enriched: outcome + status moved-to + summary -->
+      <li class="ev flex gap-3 relative" data-kind="task">
+        <span class="tl-line absolute top-8 right-[15px] w-[2px] h-[calc(100%-8px)] bg-border"></span>
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700"><i data-lucide="check-circle" class="text-[13px]"></i></span>
+        <div class="flex-1 pb-5 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">25/06/2026 14:30</span>
+            <span class="inline-flex items-center gap-1 rounded-full text-[10px] h-5 px-2 font-medium bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"><i data-lucide="check-circle" class="text-[11px]"></i> בוצע</span>
+            <span class="inline-flex items-center gap-1 rounded-lg text-[10px] h-5 px-2 font-semibold bg-sky-50 text-sky-700"><i data-lucide="phone" class="text-[11px]"></i> שיחת טלפון</span>
+          </div>
+          <p class="text-sm text-foreground">משימת שיחת טלפון הושלמה</p>
+          <div class="mt-1.5 flex items-center gap-2 flex-wrap flex-row-reverse justify-end text-xs">
+            <span class="inline-flex items-center rounded-md bg-blue-100 text-blue-700 ring-1 ring-blue-200 px-2 py-0.5 font-medium">בטיפול</span>
+            <span class="text-muted-foreground">סטטוס שעודכן:</span>
+          </div>
+          <div class="mt-2 rounded-lg bg-muted/60 border border-border/60 px-3 py-2 text-[13px] text-foreground/80 leading-relaxed">הלקוח מעוניין, ביקש שנחזור אליו מחר בערב לסגירה. מתלבט בין זוגי לקווין.</div>
+          <p class="text-[11px] text-muted-foreground/70 mt-1">אלעד מלכא</p>
+        </div>
+      </li>
+
+      <!-- CHANGE: quote created (yesterday) -->
+      <li class="ev flex gap-3 relative" data-kind="change">
+        <span class="tl-line absolute top-8 right-[15px] w-[2px] h-[calc(100%-8px)] bg-border"></span>
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-purple-100 text-purple-700"><i data-lucide="file-text" class="text-[13px]"></i></span>
+        <div class="flex-1 pb-5 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">24/06/2026 18:11</span>
+            <span class="inline-flex items-center rounded border border-border text-[10px] h-5 px-1.5 text-muted-foreground">הצעה</span>
+          </div>
+          <p class="text-sm text-foreground">נוצרה הצעת מחיר <span class="font-semibold" dir="ltr">#1042</span> · <span class="font-semibold">₪4,990</span></p>
+          <p class="text-[11px] text-muted-foreground/70 mt-0.5">אלעד מלכא</p>
+        </div>
+      </li>
+
+      <!-- CHANGE: primary rep assigned (yesterday) -->
+      <li class="ev flex gap-3 relative" data-kind="change">
+        <span class="tl-line absolute top-8 right-[15px] w-[2px] h-[calc(100%-8px)] bg-border"></span>
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-violet-100 text-violet-700"><i data-lucide="user-plus" class="text-[13px]"></i></span>
+        <div class="flex-1 pb-5 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">24/06/2026 09:02</span>
+            <span class="inline-flex items-center rounded border border-border text-[10px] h-5 px-1.5 text-muted-foreground">שיוך</span>
+          </div>
+          <p class="text-sm text-foreground">נציג ראשי שויך לליד</p>
+          <div class="mt-1 text-xs flex items-center gap-1 flex-row-reverse justify-end">
+            <span class="bg-red-50 text-red-600 px-1.5 py-0.5 rounded line-through">לא משויך</span>
+            <span class="text-muted-foreground/70">&larr;</span>
+            <span class="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">אלעד מלכא</span>
+          </div>
+          <p class="text-[11px] text-muted-foreground/70 mt-0.5">מערכת · שיוך אוטומטי</p>
+        </div>
+      </li>
+
+      <!-- TASK: not done (yesterday) — enriched: outcome + summary -->
+      <li class="ev flex gap-3 relative" data-kind="task">
+        <span class="tl-line absolute top-8 right-[15px] w-[2px] h-[calc(100%-8px)] bg-border"></span>
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-red-100 text-red-700"><i data-lucide="x-circle" class="text-[13px]"></i></span>
+        <div class="flex-1 pb-5 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">24/06/2026 08:40</span>
+            <span class="inline-flex items-center gap-1 rounded-full text-[10px] h-5 px-2 font-medium bg-red-50 text-red-700 ring-1 ring-red-200"><i data-lucide="x-circle" class="text-[11px]"></i> לא בוצע</span>
+            <span class="inline-flex items-center gap-1 rounded-lg text-[10px] h-5 px-2 font-semibold bg-sky-50 text-sky-700"><i data-lucide="phone" class="text-[11px]"></i> שיחת היכרות</span>
+          </div>
+          <p class="text-sm text-foreground">משימת שיחת היכרות לא בוצעה</p>
+          <div class="mt-2 rounded-lg bg-muted/60 border border-border/60 px-3 py-2 text-[13px] text-foreground/80 leading-relaxed">אין מענה. השארתי הודעה בוואטסאפ, אנסה שוב מחר בבוקר.</div>
+          <p class="text-[11px] text-muted-foreground/70 mt-1">אלעד מלכא</p>
+        </div>
+      </li>
+
+      <!-- CHANGE: field updated (2 days ago) -->
+      <li class="ev flex gap-3 relative" data-kind="change">
+        <span class="tl-line absolute top-8 right-[15px] w-[2px] h-[calc(100%-8px)] bg-border"></span>
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-muted text-foreground/80"><i data-lucide="edit-3" class="text-[13px]"></i></span>
+        <div class="flex-1 pb-5 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">23/06/2026 11:20</span>
+            <span class="inline-flex items-center rounded border border-border text-[10px] h-5 px-1.5 text-muted-foreground">עדכון</span>
+          </div>
+          <p class="text-sm text-foreground">עודכן שדה הערות</p>
+          <div class="mt-1 text-xs flex items-center gap-1 flex-row-reverse justify-end">
+            <span class="bg-red-50 text-red-600 px-1.5 py-0.5 rounded line-through">(ריק)</span>
+            <span class="text-muted-foreground/70">&larr;</span>
+            <span class="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">140/190 · זוגי סטנדרט</span>
+          </div>
+          <p class="text-[11px] text-muted-foreground/70 mt-0.5">אלעד מלכא</p>
+        </div>
+      </li>
+
+      <!-- CHANGE: created (origin) — last item, no rail -->
+      <li class="ev flex gap-3 relative" data-kind="change">
+        <span class="relative z-10 shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-green-100 text-green-700"><i data-lucide="plus-circle" class="text-[13px]"></i></span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap mb-0.5 flex-row-reverse justify-end">
+            <span class="text-[11px] text-muted-foreground/70" dir="ltr">21/06/2026 23:09</span>
+            <span class="inline-flex items-center rounded border border-border text-[10px] h-5 px-1.5 text-muted-foreground">נוצר</span>
+          </div>
+          <p class="text-sm text-foreground">הליד נוצר ממקור <span class="font-medium">Facebook Form</span></p>
+          <p class="text-[11px] text-muted-foreground/70 mt-0.5">מערכת</p>
+        </div>
+      </li>
+
+    </ol>
+  </div>
+</div>
+
+<script>
+// Filter chips
+const filts=[...document.querySelectorAll('.filt')];
+function setFilter(b){
+  filts.forEach(x=>{const on=x===b;x.classList.toggle('bg-card',on);x.classList.toggle('shadow-card',on);x.classList.toggle('text-foreground',on);x.classList.toggle('text-muted-foreground',!on);});
+  const f=b.dataset.filter;
+  document.querySelectorAll('.ev').forEach(e=>e.classList.toggle('hidden', f!=='all' && e.dataset.kind!==f));
+}
+filts.forEach(b=>b.addEventListener('click',()=>setFilter(b)));setFilter(filts[0]);
+lucide.createIcons();
+</script>
+</body>
+</html>
