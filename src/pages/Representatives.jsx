@@ -1134,17 +1134,12 @@ export default function Representatives({ embedded = false }) {
       {/* Representatives Table */}
       <Card className="border-border shadow-sm rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px]">
+          <table className="w-full min-w-[560px]">
             <thead className="bg-muted border-b border-border">
               <tr>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נציג</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">תפקיד</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">מספר שלוחה</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון נייד</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">עמלה (%)</th>
-                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">סה"כ לידים</th>
-                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעילים</th>
-                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נסגרו</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">כניסה אחרונה</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעולות</th>
               </tr>
@@ -1172,29 +1167,7 @@ export default function Representatives({ embedded = false }) {
                         {ROLE_LABELS[rep.role] || 'נציג מכירות'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.voicenter_extension || '—'}</td>
                     <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.phone || '—'}</td>
-                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
-                      {rep.commission_rate != null && rep.commission_rate !== '' ? `${rep.commission_rate}%` : '—'}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-foreground">
-                        {stats.total}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary">
-                        {stats.active}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800"
-                        title={`נסגרה עסקה: ${stats.won} | לא רלוונטי: ${stats.lost}`}
-                      >
-                        {stats.won + stats.lost}
-                      </span>
-                    </td>
                     <td className="py-3 px-4">
                       {(() => {
                         const lastSignIn = parseDbTimestamp(stats.lastSignIn);
