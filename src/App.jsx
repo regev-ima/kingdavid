@@ -2,7 +2,8 @@ import React, { Suspense, lazy } from 'react';
 import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { pagesConfig } from './pages.config'
+import Layout from './Layout.jsx';
+import { pageLoaders, pageNames, mainPage } from '@/lib/pageRoutes';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
@@ -18,14 +19,10 @@ const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
 // link). Rendered outside the auth gate, like /HypReturn.
 const LazyServiceRequestPublic = lazy(() => import('./pages/ServiceRequestPublic.jsx'));
 
-const { Pages, Layout, mainPage } = pagesConfig;
-const mainPageKey = mainPage ?? Object.keys(Pages)[0];
+const mainPageKey = mainPage ?? pageNames[0];
 
 const LazyPages = Object.fromEntries(
-  Object.keys(Pages).map((name) => [
-    name,
-    lazy(() => import(`./pages/${name}.jsx`)),
-  ])
+  pageNames.map((name) => [name, lazy(pageLoaders[name])])
 );
 
 const MainPage = mainPageKey ? LazyPages[mainPageKey] : () => <></>;

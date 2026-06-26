@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserPlus, Users, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings, Trash2 } from "lucide-react";
+import { UserPlus, AlertCircle, CheckCircle, Loader2, Clock, FileSpreadsheet, Eye, UserX, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { formatDistanceToNow } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
@@ -42,7 +42,7 @@ const ROLE_LABELS = {
   bookkeeper: 'מנהלת חשבונות',
 };
 
-export default function Representatives() {
+export default function Representatives({ embedded = false }) {
   const [user, setUser] = useState(null);
   const [manageRep, setManageRep] = useState(null);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
@@ -531,10 +531,12 @@ export default function Representatives() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">ניהול נציגים</h1>
-          <p className="text-muted-foreground">נהל את צוות המכירות והזמן נציגים חדשים</p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">ניהול נציגים</h1>
+            <p className="text-muted-foreground">נהל את צוות המכירות והזמן נציגים חדשים</p>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Dialog open={showTransferDialog} onOpenChange={setShowTransferDialog}>
             <DialogTrigger asChild>
@@ -949,45 +951,6 @@ export default function Representatives() {
         </div>
       </div>
 
-      {/* Statistics Overview */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">נציגים פעילים</p>
-                <p className="text-2xl font-bold">{activeReps.length}</p>
-              </div>
-              <Users className="h-10 w-10 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">נציגים מושבתים</p>
-                <p className="text-2xl font-bold">{inactiveReps.length}</p>
-              </div>
-              <UserX className="h-10 w-10 text-red-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">הוזמנו ולא נכנסו</p>
-                <p className="text-2xl font-bold">
-                  {activeReps.filter(r => !repStatsByEmail.get(r.email?.toLowerCase())?.last_sign_in_at).length}
-                </p>
-              </div>
-              <Clock className="h-10 w-10 text-amber-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Deactivate Dialog */}
       <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
         <DialogContent dir="rtl" className="text-right [&>button]:left-4 [&>button]:right-auto">
@@ -1171,17 +1134,12 @@ export default function Representatives() {
       {/* Representatives Table */}
       <Card className="border-border shadow-sm rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px]">
+          <table className="w-full min-w-[560px]">
             <thead className="bg-muted border-b border-border">
               <tr>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נציג</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">תפקיד</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">מספר שלוחה</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון נייד</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">עמלה (%)</th>
-                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">סה"כ לידים</th>
-                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעילים</th>
-                <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נסגרו</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">כניסה אחרונה</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעולות</th>
               </tr>
@@ -1209,29 +1167,7 @@ export default function Representatives() {
                         {ROLE_LABELS[rep.role] || 'נציג מכירות'}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.voicenter_extension || '—'}</td>
                     <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.phone || '—'}</td>
-                    <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
-                      {rep.commission_rate != null && rep.commission_rate !== '' ? `${rep.commission_rate}%` : '—'}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-muted text-foreground">
-                        {stats.total}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary">
-                        {stats.active}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800"
-                        title={`נסגרה עסקה: ${stats.won} | לא רלוונטי: ${stats.lost}`}
-                      >
-                        {stats.won + stats.lost}
-                      </span>
-                    </td>
                     <td className="py-3 px-4">
                       {(() => {
                         const lastSignIn = parseDbTimestamp(stats.lastSignIn);
