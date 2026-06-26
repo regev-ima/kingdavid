@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Save, MessageCircle, Phone, Eye, EyeOff, Plus, Trash2, ShoppingCart, Upload, Menu, GripVertical } from "lucide-react";
+import { Loader2, Save, MessageCircle, Phone, Eye, EyeOff, Plus, Trash2, ShoppingCart, Upload } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
@@ -19,15 +19,26 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly, canUseBulkUpdate } from '@/lib/rbac';
-import ImportOrders from '@/components/service/ImportOrders';
-import QuoteDefaultsTab from '@/components/settings/QuoteDefaultsTab';
-import CompanyClosuresTab from '@/components/settings/CompanyClosuresTab';
-import Sms019SettingsTab from '@/components/settings/Sms019SettingsTab';
-import BulkUpdate from '@/pages/BulkUpdate';
-import Representatives from '@/pages/Representatives';
-import { useHiddenMenuItems, applyMenuOrder, NON_HIDEABLE_HREFS } from '@/hooks/useHiddenMenuItems';
-import { navigationByRole } from '@/Layout';
-import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+
+// Each settings section is code-split and loaded only when its card is opened,
+// so the cards "home" (and the whole screen) loads fast instead of bundling
+// the Representatives page, BulkUpdate, the drag-drop menu lib, etc. up front.
+const ImportOrders = lazy(() => import('@/components/service/ImportOrders'));
+const QuoteDefaultsTab = lazy(() => import('@/components/settings/QuoteDefaultsTab'));
+const CompanyClosuresTab = lazy(() => import('@/components/settings/CompanyClosuresTab'));
+const Sms019SettingsTab = lazy(() => import('@/components/settings/Sms019SettingsTab'));
+const BulkUpdate = lazy(() => import('@/pages/BulkUpdate'));
+const Representatives = lazy(() => import('@/pages/Representatives'));
+const MenuManagementTab = lazy(() => import('@/components/settings/MenuManagementTab'));
+
+// Centered spinner shown while a section's chunk downloads.
+function SectionFallback() {
+  return (
+    <div className="flex justify-center py-12">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
@@ -51,21 +62,6 @@ export default function Settings() {
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = canAccessAdminOnly(effectiveUser);
   const canBulkUpdate = canUseBulkUpdate(effectiveUser);
-  const { isMenuItemHidden, setMenuItemHidden, menuOrder, setMenuOrder } = useHiddenMenuItems();
-  // The admin sidebar is the full menu — that's what the toggles control.
-  // Sorted by the saved drag order so the tab mirrors the live sidebar.
-  const menuItems = applyMenuOrder(
-    navigationByRole.admin.filter((i) => !NON_HIDEABLE_HREFS.includes(i.href)),
-    menuOrder,
-  );
-
-  const handleMenuDragEnd = (result) => {
-    if (!result.destination || result.source.index === result.destination.index) return;
-    const next = Array.from(menuItems);
-    const [moved] = next.splice(result.source.index, 1);
-    next.splice(result.destination.index, 0, moved);
-    setMenuOrder(next.map((i) => i.href));
-  };
 
   const updateProfileMutation = useMutation({
     mutationFn: (data) => base44.auth.updateMe(data),
@@ -297,7 +293,9 @@ export default function Settings() {
           <TabsContent value="users">
             {/* The full Representatives screen, embedded — single source of truth
                 for managing the sales team (was duplicated as a weaker tab). */}
-            <Representatives embedded />
+            <Suspense fallback={<SectionFallback />}>
+              <Representatives embedded />
+            </Suspense>
           </TabsContent>
         )}
 
@@ -332,92 +330,50 @@ export default function Settings() {
 
         {isAdmin && (
           <TabsContent value="quote-defaults" className="space-y-6">
-            <QuoteDefaultsTab />
+            <Suspense fallback={<SectionFallback />}>
+              <QuoteDefaultsTab />
+            </Suspense>
           </TabsContent>
         )}
 
         {isAdmin && (
           <TabsContent value="closures" className="space-y-6">
-            <CompanyClosuresTab />
+            <Suspense fallback={<SectionFallback />}>
+              <CompanyClosuresTab />
+            </Suspense>
           </TabsContent>
         )}
 
         {isAdmin && (
           <TabsContent value="sms" className="space-y-6">
-            <Sms019SettingsTab />
+            <Suspense fallback={<SectionFallback />}>
+              <Sms019SettingsTab />
+            </Suspense>
           </TabsContent>
         )}
 
         {canBulkUpdate && (
           <TabsContent value="bulk" className="space-y-6">
-            <BulkUpdate />
+            <Suspense fallback={<SectionFallback />}>
+              <BulkUpdate />
+            </Suspense>
           </TabsContent>
         )}
 
         {isAdmin && (
           <TabsContent value="menu" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Menu className="h-5 w-5" />
-                  ניהול תפריט
-                </CardTitle>
-                <CardDescription>
-                  גרור את הידית (☰) כדי לשנות את סדר הפריטים בתפריט הצד, וכבה את המתג כדי
-                  להסתיר פריט. ההגדרה נשמרת בדפדפן הזה.
-                </CardDescription>
-              </CardHeader>
-              <CardContent dir="rtl">
-                <DragDropContext onDragEnd={handleMenuDragEnd}>
-                  <Droppable droppableId="menu-items">
-                    {(dropProvided) => (
-                      <div ref={dropProvided.innerRef} {...dropProvided.droppableProps} className="space-y-2">
-                        {menuItems.map((item, index) => {
-                          const ItemIcon = item.icon;
-                          const visible = !isMenuItemHidden(item.href);
-                          return (
-                            <Draggable key={item.href} draggableId={item.href} index={index}>
-                              {(dragProvided, snapshot) => (
-                                <div
-                                  ref={dragProvided.innerRef}
-                                  {...dragProvided.draggableProps}
-                                  className={`flex items-center justify-between gap-3 rounded-lg border bg-card p-3 ${snapshot.isDragging ? 'shadow-lg ring-1 ring-primary/30' : ''}`}
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span
-                                      {...dragProvided.dragHandleProps}
-                                      className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-foreground shrink-0"
-                                      aria-label="גרור לשינוי הסדר"
-                                    >
-                                      <GripVertical className="h-4 w-4" />
-                                    </span>
-                                    {ItemIcon && <ItemIcon className={`h-4 w-4 shrink-0 ${visible ? 'text-foreground' : 'text-muted-foreground/40'}`} />}
-                                    <span className={`text-sm font-medium truncate ${visible ? '' : 'text-muted-foreground line-through'}`}>
-                                      {item.name}
-                                    </span>
-                                  </div>
-                                  <Switch
-                                    checked={visible}
-                                    onCheckedChange={(v) => setMenuItemHidden(item.href, !v)}
-                                    className="shrink-0"
-                                  />
-                                </div>
-                              )}
-                            </Draggable>
-                          );
-                        })}
-                        {dropProvided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </DragDropContext>
-              </CardContent>
-            </Card>
+            <Suspense fallback={<SectionFallback />}>
+              <MenuManagementTab />
+            </Suspense>
           </TabsContent>
         )}
       </Tabs>
 
-      {isAdmin && <ImportOrders open={showImportOrders} onOpenChange={setShowImportOrders} />}
+      {isAdmin && showImportOrders && (
+        <Suspense fallback={null}>
+          <ImportOrders open={showImportOrders} onOpenChange={setShowImportOrders} />
+        </Suspense>
+      )}
     </div>
   );
 }
