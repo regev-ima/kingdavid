@@ -1,6 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from 'sonner';
 import { formatPhoneForWhatsApp } from '@/utils/phoneUtils';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
 
 export default function QuickActions({
   type,
@@ -37,7 +36,7 @@ export default function QuickActions({
   onView,
   hideContactButtons
 }) {
-  const navigate = useNavigate();
+  const { openNewOrder, openNewQuote } = useCreationModal();
   const [isCalling, setIsCalling] = useState(false);
 
   const handleCall = async () => {
@@ -119,11 +118,11 @@ export default function QuickActions({
 
           {type === 'lead' && (
             <>
-              <DropdownMenuItem onClick={() => navigate(createPageUrl('NewQuote') + `?leadId=${data.id}`)}>
+              <DropdownMenuItem onClick={() => openNewQuote({ leadId: data.id })}>
                 <FileText className="h-4 w-4 me-2" />
                 צור הצעת מחיר
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate(createPageUrl('NewOrder') + `?leadId=${data.id}`)}>
+              <DropdownMenuItem onClick={() => openNewOrder({ leadId: data.id })}>
                 <ShoppingCart className="h-4 w-4 me-2" />
                 המר להזמנה
               </DropdownMenuItem>

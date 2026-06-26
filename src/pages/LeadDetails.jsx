@@ -40,9 +40,6 @@ import {
   Clock,
   User,
   Tag,
-  CheckCircle2,
-  XCircle,
-  Ban,
   AlertCircle,
   MoreVertical,
   Headphones,
@@ -51,7 +48,6 @@ import {
   Crown,
   Plus,
   Activity,
-  History,
   Phone,
   Mail,
   MapPin,
@@ -68,12 +64,13 @@ import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
-import { formatDistanceToNow, addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
+import { addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
-import LeadActivityTimeline from '@/components/lead/LeadActivityTimeline';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
+import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
@@ -84,21 +81,6 @@ import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
-
-// Glanceable chip metadata for a task's *type* (the verb: call / meeting
-// / quote…). Used in the task-history rows so the rep reads "what kind of
-// action was this?" at a glance, with a colour that matches the app's
-// type palette. Mirrors the queue card's TYPE_META so the two read alike.
-const TASK_TYPE_CHIP = {
-  call:              { icon: Phone,        tone: 'bg-blue-100 text-blue-700' },
-  meeting:           { icon: CalendarDays, tone: 'bg-amber-100 text-amber-700' },
-  quote_preparation: { icon: FileText,     tone: 'bg-indigo-100 text-indigo-700' },
-  close_order:       { icon: ShoppingBag,  tone: 'bg-emerald-100 text-emerald-700' },
-  assignment:        { icon: User,         tone: 'bg-slate-100 text-slate-700' },
-  followup:          { icon: Clock,        tone: 'bg-violet-100 text-violet-700' },
-};
-const FALLBACK_TASK_TYPE_CHIP = { icon: Tag, tone: 'bg-muted text-foreground/70' };
-
 
 // Hebrew counter with proper singular / dual / plural forms
 // (e.g. 1 → "יום", 2 → "יומיים", 3 → "3 ימים").
@@ -141,6 +123,7 @@ function formatLeadAge(createdDate) {
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
+  const { openNewQuote } = useCreationModal();
   const urlParams = new URLSearchParams(window.location.search);
   // When rendered as a popup the id/mode arrive as props and the URL is
   // left completely untouched, so the list page underneath keeps its
@@ -359,10 +342,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const canEdit = isAdmin || lead?.rep1 === effectiveUser?.email || lead?.rep2 === effectiveUser?.email || lead?.pending_rep_email === effectiveUser?.email;
   const canEditLeadRep1 = canEditPrimaryRep(effectiveUser);
   const canEditLeadRep2 = canEditSecondaryRep(effectiveUser, lead);
-  const historicalTasks = useMemo(
-    () => tasks.filter((task) => String(task?.task_status || '').toLowerCase() !== 'not_completed'),
-    [tasks]
-  );
   const workbenchState = useMemo(() => buildLeadWorkbenchState({
     tasks,
   }), [tasks]);
@@ -634,6 +613,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
        context where sticky was unreliable. Full-page mode keeps the
        original space-y-6 vertical flow. */
     <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {/* Status accent bar — purely decorative thin strip at the very
+          top of the rendered tree. */}
+      <div className="h-1.5 w-full bg-blue-500 shrink-0" />
       {/* Header — name, status, SLA, mode toggle. In popup mode it's
           flex-shrink-0 so it never scrolls; pe-12 reserves room for
           the Radix close-X that sits in the dialog's right corner. */}
@@ -657,6 +639,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           )}
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-foreground">{lead.full_name}</h1>
+            {/* Phone + source kept in the always-visible header so they
+                never hide behind a tab (display-only). */}
+            {(lead.phone || lead.source) && (
+              <div className="flex items-center gap-2 mt-0.5 text-sm text-muted-foreground flex-wrap">
+                {lead.phone ? <span dir="ltr">{lead.phone}</span> : null}
+                {lead.phone && (lead.source || lead.source_form) ? <span className="text-muted-foreground/40">·</span> : null}
+                {(SOURCE_LABELS[lead.source] || lead.source) ? <span>{SOURCE_LABELS[lead.source] || lead.source}</span> : null}
+              </div>
+            )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StatusBadge status={lead.status} />
               <SLABadge lead={lead} />
@@ -705,15 +696,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           <Clock className="h-3.5 w-3.5 me-1.5" />
           משימה חדשה
         </Button>
-        <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`} className="flex-1 min-w-[120px]">
-          <Button
-            size="sm"
-            className="w-full justify-center h-9 text-xs"
-          >
-            <FileText className="h-3.5 w-3.5 me-1.5" />
-            הצעה חדשה
-          </Button>
-        </Link>
+        <Button
+          size="sm"
+          onClick={() => openNewQuote({ leadId })}
+          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
+        >
+          <FileText className="h-3.5 w-3.5 me-1.5" />
+          הצעה חדשה
+        </Button>
         <Button
           size="sm"
           variant="outline"
@@ -751,12 +741,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
           </Button>
-          <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`}>
-            <Button size="sm" className="h-8 text-xs">
-              <FileText className="h-3.5 w-3.5 me-1" />
-              הצעה חדשה
-            </Button>
-          </Link>
+          <Button size="sm" onClick={() => openNewQuote({ leadId })} className="h-8 text-xs">
+            <FileText className="h-3.5 w-3.5 me-1" />
+            הצעה חדשה
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)} className="h-8 text-xs">
             <ShoppingBag className="h-3.5 w-3.5 me-1" />
             הזמנה חדשה
@@ -792,7 +780,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           and NEVER get occluded by content scrolling under them. In
           full-page mode this is a passive wrapper that preserves the
           original space-y-6 rhythm. */}
-      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4 space-y-6' : 'space-y-6'}>
+      <div className={isModal
+        ? 'flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row lg:gap-4 p-4 lg:p-6'
+        : 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start'}>
+
+      {/* MAIN column — first in the DOM so RTL places it on the RIGHT:
+          customer data, the leading task, and the detail tabs. Scrolls on
+          its own in modal mode so the activity rail beside it stays put. */}
+      <div className={isModal ? 'lg:flex-1 lg:min-w-0 lg:overflow-y-auto lg:pe-1 space-y-4' : 'space-y-4 min-w-0'}>
 
       {/* Cross-rep view/serve banner — shown when this rep isn't the owner
           (and isn't admin). Makes clear the lead belongs to someone else and
@@ -810,9 +805,170 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Main Info */}
-        <div className="lg:col-span-2 space-y-4">
+        {/* ESSENTIALS row — Lead Status + Assignment side by side,
+            always visible. */}
+        <div className="grid sm:grid-cols-3 gap-4">
+          {/* Lead Status */}
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardContent className="p-4 space-y-2">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">סטטוס ליד</span>
+              {canEdit ? (
+                // Status changes go through a task, so this opens the lead's
+                // most recent task instead of editing the status directly.
+                <button
+                  type="button"
+                  onClick={openLastTask}
+                  title="הסטטוס משתנה דרך משימה — לחץ לפתיחת המשימה האחרונה"
+                  className="w-full flex items-center justify-between gap-2 rounded-lg bg-card border border-border px-3 h-10 hover:bg-muted transition-colors text-start"
+                >
+                  <StatusBadge status={lead.status} />
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground flex-shrink-0">
+                    <Clock className="h-3.5 w-3.5" />
+                    עדכן במשימה
+                  </span>
+                </button>
+              ) : (
+                <StatusBadge status={lead.status} />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Primary rep */}
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardContent className="p-4 space-y-2">
+              {isEditing && canEditLeadRep1 ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
+                  <Select
+                    value={formData.rep1 || ''}
+                    onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={null}>ללא שיוך</SelectItem>
+                      {salesReps.map((rep) =>
+                        <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <>
+                  <RepCard
+                    label="נציג ראשי"
+                    rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: getRepDisplayName(lead.rep1, salesReps) }) : null}
+                    isEmpty={!lead.rep1 && !lead.pending_rep_email}
+                    canEdit={canEditLeadRep1}
+                    salesReps={salesReps}
+                    onAssign={handleQuickAssignRep1}
+                    isPending={updateLeadMutation.isPending}
+                  />
+                  {!lead.rep1 && lead.pending_rep_email && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs text-amber-700 font-medium mb-1">נציג ממתין לשיוך:</p>
+                      <p className="text-sm text-amber-800">{lead.pending_rep_email}</p>
+                      {isAdmin && (
+                        <Button
+                          size="sm"
+                          className="mt-2 bg-amber-600 hover:bg-amber-700 h-7 text-xs w-full"
+                          onClick={async () => {
+                            const repName = salesReps.find(r => r.email === lead.pending_rep_email)?.full_name || lead.pending_rep_email;
+                            const openAssignmentTasks = tasks.filter(t =>
+                              t.task_status === 'not_completed' && (!t.rep1 || t.task_type === 'assignment')
+                            );
+
+                            if (openAssignmentTasks.length > 0) {
+                              await Promise.all(openAssignmentTasks.map(t =>
+                                base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+                              ));
+                            } else {
+                              await base44.entities.SalesTask.create({
+                                lead_id: leadId,
+                                rep1: lead.pending_rep_email,
+                                task_type: 'assignment',
+                                task_status: 'completed',
+                                summary: `שיוך לנציג: ${repName}`,
+                                work_start_date: new Date().toISOString(),
+                              });
+                            }
+
+                            await createAuditLog({
+                              leadId,
+                              actionType: 'rep_assigned',
+                              description: `${user.full_name} שייך את הליד לנציג ${lead.pending_rep_email}`,
+                              user,
+                              fieldName: 'rep1',
+                              oldValue: 'לא משויך',
+                              newValue: lead.pending_rep_email,
+                            });
+                            updateLeadMutation.mutate({
+                              rep1: lead.pending_rep_email,
+                              pending_rep_email: null
+                            });
+                            queryClient.invalidateQueries(['tasks', leadId]);
+                            queryClient.invalidateQueries(['leadActivityLogs', leadId]);
+                          }}
+                          disabled={updateLeadMutation.isPending}
+                        >
+                          שייך נציג זה כראשי
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Secondary rep */}
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardContent className="p-4 space-y-2">
+              {isEditing && canEditLeadRep2 ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">נציג משני</Label>
+                  <Select
+                    value={formData.rep2 || ''}
+                    onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={null}>ללא</SelectItem>
+                      {salesReps.map((rep) =>
+                        <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <RepCard
+                  label="נציג משני"
+                  rep={lead.rep2 ? salesReps.find((r) => r.email === lead.rep2) : null}
+                  isEmpty={!lead.rep2}
+                  canEdit={canEditLeadRep2}
+                  salesReps={salesReps}
+                  onAssign={handleQuickAssignRep2}
+                  isPending={updateLeadMutation.isPending}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* TASKS — leading, always visible. */}
+        {/* Upcoming sales task — sits between the customer details and
+            the task history: the rep reads who the lead is, then what
+            they need to do next, then what's already been done. */}
+        <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
+
+        {/* Detail tabs — customer details, marketing, deals/service and the
+            lead snapshot. Activity now lives in the left timeline rail. */}
+        <Tabs defaultValue="details" dir="rtl" className="w-full">
+          <TabsList className="bg-muted rounded-lg p-1 gap-1 h-auto flex flex-wrap justify-start">
+            <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">פרטי לקוח מלאים</TabsTrigger>
+            <TabsTrigger value="marketing" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">שיווק ומקור</TabsTrigger>
+            <TabsTrigger value="deals" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">הצעות / שירות</TabsTrigger>
+            <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">תמונת מצב</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="details" className="mt-4 space-y-4">
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
               <CardTitle className="text-sm font-semibold">פרטי לקוח</CardTitle>
@@ -991,217 +1147,68 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               )}
             </CardContent>
           </Card>
+          </TabsContent>
 
-          {/* Upcoming sales task — sits between the customer details and
-              the task history: the rep reads who the lead is, then what
-              they need to do next, then what's already been done. */}
-          <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
-
-          {/* Tasks */}
+          <TabsContent value="marketing" className="mt-4 space-y-4">
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
+            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                היסטוריית משימות ({historicalTasks.length})
+                <Tag className="h-4 w-4 text-muted-foreground" />
+                מידע שיווקי
               </CardTitle>
-              <Button variant="outline" size="sm" onClick={requestAddTask}>
-                <Plus className="h-4 w-4 me-2" />
-                הוסף משימה
-              </Button>
             </CardHeader>
-            <CardContent className="p-0">
-              {historicalTasks.length === 0 ? (
-                <div className="px-4 py-5 flex items-center justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">אין משימות סגורות/היסטוריות כרגע.</span>
-                  <Button size="sm" variant="outline" onClick={requestAddTask}>
-                    <Plus className="h-3.5 w-3.5 me-1" />
-                    משימה חדשה
-                  </Button>
-                </div>
+            <CardContent className="p-4">
+              {isEditing ? (
+                <LeadMarketingSection
+                  data={formData}
+                  onChange={(field, value) => setFormData({ ...formData, [field]: value })}
+                />
               ) : (
-                <Tabs defaultValue="completed" className="w-full" dir="rtl">
-                  <div className="border-b border-border/50 px-2 pt-2">
-                    <TabsList className="w-full h-auto p-1 gap-1 bg-muted/80 rounded-xl flex flex-row flex-nowrap overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                      <TabsTrigger value="completed" className="group flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-emerald-50 hover:text-emerald-700 data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-colors">
-                        <CheckCircle2 className="w-3.5 h-3.5 me-1.5 inline-block" /> בוצע
-                        <span className="ms-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none bg-muted text-muted-foreground group-data-[state=active]:bg-white/25 group-data-[state=active]:text-white">{historicalTasks.filter(t => t.task_status === 'completed').length}</span>
-                      </TabsTrigger>
-                      <TabsTrigger value="not_done" className="flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-red-50 hover:text-red-700 data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-sm transition-colors">
-                        <XCircle className="w-3.5 h-3.5 me-1.5 inline-block" /> לא בוצע
-                      </TabsTrigger>
-                      <TabsTrigger value="cancelled" className="flex-shrink-0 whitespace-nowrap h-9 px-3 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground data-[state=active]:bg-foreground/80 data-[state=active]:text-white data-[state=active]:shadow-sm transition-colors">
-                        <Ban className="w-3.5 h-3.5 me-1.5 inline-block" /> בוטל
-                      </TabsTrigger>
-                    </TabsList>
-                  </div>
-
-                  {['completed', 'not_done', 'cancelled'].map(statusKey => {
-                    const filteredTasks = historicalTasks
-                      .filter(t => t.task_status === statusKey)
-                      .sort((a, b) => {
-                        // Sort completed/not_done/cancelled by updated_date descending (most recent first)
-                        const dateA = a.updated_date ? new Date(a.updated_date).getTime() : new Date(a.created_date || 0).getTime();
-                        const dateB = b.updated_date ? new Date(b.updated_date).getTime() : new Date(b.created_date || 0).getTime();
-                        return dateB - dateA;
-                      });
-
-                    return (
-                      <TabsContent key={statusKey} value={statusKey} className="mt-3 p-2">
-                        {filteredTasks.length === 0 ? (
-                          <div className="flex flex-col items-center gap-2 py-8">
-                            <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center">
-                              <Clock className="h-5 w-5 text-muted-foreground/40" />
-                            </div>
-                            <p className="text-muted-foreground/70 text-sm">אין משימות</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {filteredTasks.map((task) => {
-                              const taskTypeLabel = ALL_TASK_TYPE_LABELS[task.task_type] || 'אחר';
-
-                              const dueDate = task.due_date ? new Date(task.due_date) : null;
-                              const isDone = task.task_status === 'completed';
-
-                              const taskStatusStyle = {
-                                not_completed: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-                                completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-                                not_done: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-                                cancelled: 'bg-muted text-muted-foreground ring-1 ring-border',
-                              }[task.task_status] || 'bg-muted/50 text-muted-foreground ring-1 ring-border';
-
-                              const taskStatusLabel = {
-                                not_completed: 'ממתין', completed: 'בוצע', not_done: 'לא בוצע', cancelled: 'בוטל',
-                              }[task.task_status] || task.task_status;
-
-                              const dueDateDisplay = dueDate
-                                ? formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM HH:mm')
-                                : '';
-
-                              const cardBgClass = {
-                                not_completed: 'bg-orange-50/60 hover:bg-orange-100/60 border-orange-100',
-                                completed: 'bg-green-50/60 hover:bg-green-100/60 border-green-100',
-                                not_done: 'bg-red-50/60 hover:bg-red-100/60 border-red-100',
-                                cancelled: 'bg-muted/50 hover:bg-muted border-border',
-                              }[task.task_status] || 'bg-card hover:bg-muted/50 border-border';
-
-                              const typeChip = TASK_TYPE_CHIP[task.task_type] || FALLBACK_TASK_TYPE_CHIP;
-                              const TypeIcon = typeChip.icon;
-                              const StatusIcon = { completed: CheckCircle2, not_done: XCircle, cancelled: Ban }[task.task_status] || Clock;
-                              const createdDisplay = formatInTimeZone(task.created_date || task.manual_created_date || new Date().toISOString(), 'Asia/Jerusalem', 'dd/MM HH:mm');
-                              const closedDisplay = task.updated_date ? formatInTimeZone(task.updated_date, 'Asia/Jerusalem', 'dd/MM HH:mm') : null;
-                              const isPending = task.task_status !== 'completed' && task.task_status !== 'cancelled';
-
-                              return (
-                                <div
-                                  key={task.id}
-                                  onClick={() => { setEditingTask(task); setShowEditTaskDialog(true); }}
-                                  className={`relative p-3.5 border rounded-xl shadow-sm cursor-pointer transition-all duration-150 hover:shadow-md ${cardBgClass} ${isDone ? 'opacity-80' : ''}`}
-                                >
-                                  {/* Top line: the verb (task type) on the start,
-                                      the outcome badge (בוצע / לא בוצע / בוטל) on
-                                      the end. One glance answers "what was it, and
-                                      how did it end?". */}
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${typeChip.tone}`}>
-                                      <TypeIcon className="h-3.5 w-3.5" />
-                                      {taskTypeLabel}
-                                    </span>
-                                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${taskStatusStyle}`}>
-                                      <StatusIcon className="h-3 w-3" />
-                                      {taskStatusLabel}
-                                    </span>
-                                  </div>
-
-                                  {/* Result line: the lead status this task moved
-                                      the lead into (the thing the rep actually cares
-                                      about) + who handled it. No truncation — the
-                                      full status label always shows. */}
-                                  <div className="mt-2.5 flex items-center gap-x-2 gap-y-1.5 flex-wrap text-xs">
-                                    {task.status ? (
-                                      <span className="inline-flex items-center gap-1.5">
-                                        <span className="text-muted-foreground">סטטוס שעודכן:</span>
-                                        <StatusBadge status={task.status} />
-                                      </span>
-                                    ) : (
-                                      <span className="text-muted-foreground/60">ללא עדכון סטטוס</span>
-                                    )}
-                                    <span className="text-border" aria-hidden>·</span>
-                                    <span className="inline-flex items-center gap-1 text-muted-foreground">
-                                      <User className="h-3 w-3 flex-shrink-0" />
-                                      {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
-                                    </span>
-                                  </div>
-
-                                  {/* Timeline line: created → due → (remaining or
-                                      closed-at), all inline and compact so the dates
-                                      never wrap into a tall cramped column. */}
-                                  <div className="mt-2 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-muted-foreground tabular-nums">
-                                    <span>נוצר <span dir="ltr" className="font-medium">{createdDisplay}</span></span>
-                                    <span className="text-border" aria-hidden>·</span>
-                                    <span>יעד <span dir="ltr" className="font-medium">{dueDateDisplay || 'ללא'}</span></span>
-                                    {isPending && dueDate && (
-                                      <>
-                                        <span className="text-border" aria-hidden>·</span>
-                                        <span className="font-semibold text-blue-700">בעוד {formatDistanceToNow(dueDate, { locale: he })}</span>
-                                      </>
-                                    )}
-                                    {(task.task_status === 'completed' || task.task_status === 'not_done') && closedDisplay && (
-                                      <>
-                                        <span className="text-border" aria-hidden>·</span>
-                                        <span className={`inline-flex items-center gap-1 font-semibold ${task.task_status === 'completed' ? 'text-emerald-700' : 'text-red-600'}`}>
-                                          {task.task_status === 'completed' ? 'נסגר' : 'סומן'} <span dir="ltr">{closedDisplay}</span>
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-
-                                  {/* Summary Row */}
-                                  {task.summary && (
-                                    <div className="mt-2.5 pt-2.5 border-t border-black/5 text-sm text-foreground/80 leading-relaxed">
-                                      {task.summary}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </TabsContent>
-                    );
-                  })}
-                </Tabs>
+                <LeadMarketingSection data={lead} readOnly />
               )}
             </CardContent>
           </Card>
+          </TabsContent>
 
-          {/* Communication History — temporarily hidden per product
-              decision. The card was almost always empty for new
-              leads, which made it dead visual weight. The
-              <CommunicationHistory /> component, the AddCommunication
-              dialog wiring, and the import above are all kept so
-              this is a one-line revert when we're ready to bring it
-              back. */}
-          {false && (
-            <Card className="rounded-xl border-border shadow-card overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                  היסטוריית תקשורת
-                </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAddCommunication(true)}>
-
-                  <Plus className="h-4 w-4 me-2" />
-                  הוסף
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <CommunicationHistory leadId={leadId} />
-              </CardContent>
-            </Card>
-          )}
+          <TabsContent value="deals" className="mt-4 space-y-4">
+          {/* Quotes */}
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                הצעות מחיר ({quotes.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {quotes.length === 0 ? (
+                <div className="py-4 flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">אין הצעות מחיר לליד זה.</span>
+                  <Button size="sm" variant="outline" onClick={() => openNewQuote({ leadId })}>
+                    <FileText className="h-3.5 w-3.5 me-1" />
+                    צור הצעה
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {quotes.map((quote) =>
+                    <Link
+                      key={quote.id}
+                      to={createPageUrl('QuoteDetails') + `?id=${quote.id}`}
+                      className="block p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium">#{quote.quote_number}</span>
+                        <StatusBadge status={quote.status} />
+                      </div>
+                      <p className="text-lg font-bold text-primary">
+                        ₪{quote.total?.toLocaleString()}
+                      </p>
+                    </Link>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Service section — always visible, no mode toggle.
               Replaces the old "switch to service mode" pattern with a
@@ -1270,47 +1277,37 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               )}
             </CardContent>
           </Card>
+          </TabsContent>
 
-          {/* Activity Log */}
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <History className="h-4 w-4 text-muted-foreground" />
-                לוג פעולות
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              <LeadActivityTimeline leadId={leadId} />
-            </CardContent>
-          </Card>
-        </div>
+          <TabsContent value="activity" className="mt-4 space-y-4">
+          {/* Communication History — temporarily hidden per product
+              decision. The card was almost always empty for new
+              leads, which made it dead visual weight. The
+              <CommunicationHistory /> component, the AddCommunication
+              dialog wiring, and the import above are all kept so
+              this is a one-line revert when we're ready to bring it
+              back. */}
+          {false && (
+            <Card className="rounded-xl border-border shadow-card overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-muted-foreground" />
+                  היסטוריית תקשורת
+                </CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddCommunication(true)}>
 
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {/* Lead Status */}
-          <Card className="rounded-xl border-blue-200 shadow-card overflow-hidden bg-blue-50/60">
-            <CardContent className="p-4 space-y-2">
-              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider">סטטוס ליד</span>
-              {canEdit ? (
-                // Status changes go through a task, so this opens the lead's
-                // most recent task instead of editing the status directly.
-                <button
-                  type="button"
-                  onClick={openLastTask}
-                  title="הסטטוס משתנה דרך משימה — לחץ לפתיחת המשימה האחרונה"
-                  className="w-full flex items-center justify-between gap-2 rounded-lg bg-white border border-blue-200 px-3 h-10 hover:bg-blue-50 transition-colors text-start"
-                >
-                  <StatusBadge status={lead.status} />
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 flex-shrink-0">
-                    <Clock className="h-3.5 w-3.5" />
-                    עדכן במשימה
-                  </span>
-                </button>
-              ) : (
-                <StatusBadge status={lead.status} />
-              )}
-            </CardContent>
-          </Card>
+                  <Plus className="h-4 w-4 me-2" />
+                  הוסף
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <CommunicationHistory leadId={leadId} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Lead Insights */}
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
@@ -1393,196 +1390,22 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               </div>
             </CardContent>
           </Card>
+          </TabsContent>
+        </Tabs>
+      </div>{/* end MAIN column */}
 
-          {/* The old conditional sidebar service-summary card was
-              removed — its content is now a permanent, full-detail
-              section in the main column (#lead-service-section). */}
-
-
-          {/* Assignment */}
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-                שיוך נציגים
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 p-4">
-              {isEditing && (canEditLeadRep1 || canEditLeadRep2) ? (
-                <div className="space-y-3">
-                  {canEditLeadRep1 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
-                      <Select
-                        value={formData.rep1 || ''}
-                        onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={null}>ללא שיוך</SelectItem>
-                          {salesReps.map((rep) =>
-                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  {canEditLeadRep2 && (
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">נציג משני</Label>
-                      <Select
-                        value={formData.rep2 || ''}
-                        onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
-                        <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={null}>ללא</SelectItem>
-                          {salesReps.map((rep) =>
-                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <RepCard
-                    label="נציג ראשי"
-                    rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: getRepDisplayName(lead.rep1, salesReps) }) : null}
-                    isEmpty={!lead.rep1 && !lead.pending_rep_email}
-                    canEdit={canEditLeadRep1}
-                    salesReps={salesReps}
-                    onAssign={handleQuickAssignRep1}
-                    isPending={updateLeadMutation.isPending}
-                  />
-                  {!lead.rep1 && lead.pending_rep_email && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-700 font-medium mb-1">נציג ממתין לשיוך:</p>
-                      <p className="text-sm text-amber-800">{lead.pending_rep_email}</p>
-                      {isAdmin && (
-                        <Button
-                          size="sm"
-                          className="mt-2 bg-amber-600 hover:bg-amber-700 h-7 text-xs w-full"
-                          onClick={async () => {
-                            const repName = salesReps.find(r => r.email === lead.pending_rep_email)?.full_name || lead.pending_rep_email;
-                            const openAssignmentTasks = tasks.filter(t =>
-                              t.task_status === 'not_completed' && (!t.rep1 || t.task_type === 'assignment')
-                            );
-
-                            if (openAssignmentTasks.length > 0) {
-                              await Promise.all(openAssignmentTasks.map(t =>
-                                base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                              ));
-                            } else {
-                              await base44.entities.SalesTask.create({
-                                lead_id: leadId,
-                                rep1: lead.pending_rep_email,
-                                task_type: 'assignment',
-                                task_status: 'completed',
-                                summary: `שיוך לנציג: ${repName}`,
-                                work_start_date: new Date().toISOString(),
-                              });
-                            }
-
-                            await createAuditLog({
-                              leadId,
-                              actionType: 'rep_assigned',
-                              description: `${user.full_name} שייך את הליד לנציג ${lead.pending_rep_email}`,
-                              user,
-                              fieldName: 'rep1',
-                              oldValue: 'לא משויך',
-                              newValue: lead.pending_rep_email,
-                            });
-                            updateLeadMutation.mutate({
-                              rep1: lead.pending_rep_email,
-                              pending_rep_email: null
-                            });
-                            queryClient.invalidateQueries(['tasks', leadId]);
-                            queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                          }}
-                          disabled={updateLeadMutation.isPending}
-                        >
-                          שייך נציג זה כראשי
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  <RepCard
-                    label="נציג משני"
-                    rep={lead.rep2 ? salesReps.find((r) => r.email === lead.rep2) : null}
-                    isEmpty={!lead.rep2}
-                    canEdit={canEditLeadRep2}
-                    salesReps={salesReps}
-                    onAssign={handleQuickAssignRep2}
-                    isPending={updateLeadMutation.isPending}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Quotes */}
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                הצעות מחיר ({quotes.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {quotes.length === 0 ? (
-                <div className="py-4 flex items-center justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">אין הצעות מחיר לליד זה.</span>
-                  <Link to={createPageUrl('NewQuote') + `?lead_id=${leadId}`}>
-                    <Button size="sm" variant="outline">
-                      <FileText className="h-3.5 w-3.5 me-1" />
-                      צור הצעה
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {quotes.map((quote) =>
-                    <Link
-                      key={quote.id}
-                      to={createPageUrl('QuoteDetails') + `?id=${quote.id}`}
-                      className="block p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium">#{quote.quote_number}</span>
-                        <StatusBadge status={quote.status} />
-                      </div>
-                      <p className="text-lg font-bold text-primary">
-                        ₪{quote.total?.toLocaleString()}
-                      </p>
-                    </Link>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Tag className="h-4 w-4 text-muted-foreground" />
-                מידע שיווקי
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              {isEditing ? (
-                <LeadMarketingSection
-                  data={formData}
-                  onChange={(field, value) => setFormData({ ...formData, [field]: value })}
-                />
-              ) : (
-                <LeadMarketingSection data={lead} readOnly />
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {/* LEFT column (left in RTL) — the unified activity timeline, full
+          height. Replaces the old task-history card + activity-log tab. */}
+      <div className={isModal ? 'lg:w-[380px] lg:shrink-0 lg:overflow-y-auto mt-4 lg:mt-0' : 'min-w-0'}>
+        <LeadUnifiedTimeline
+          leadId={leadId}
+          tasks={tasks}
+          users={users}
+          onOpenTask={(task) => { setEditingTask(task); setShowEditTaskDialog(true); }}
+        />
       </div>
 
-      </div>{/* end of scrollable body wrapper (see comment near opener above) */}
+      </div>{/* end of two-pane body wrapper */}
 
       {/* Add Communication Dialog */}
       <AddCommunication
