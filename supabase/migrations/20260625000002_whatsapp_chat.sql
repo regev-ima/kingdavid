@@ -224,6 +224,84 @@ BEGIN
   END IF;
 END$$;
 
+-- ── Per-rep performance view ────────────────────────────────────────────────
+-- Numbers the manager (and each rep) can act on: how many chats are waiting,
+-- how many were answered, and the average/median time it takes the rep to
+-- reply. Response time = from the FIRST message of an unanswered incoming run
+-- to the first outgoing reply, over the last 30 days, ignoring gaps > 3 days
+-- (those are new conversations, not replies).
+--
+-- security_invoker = true → the view runs with the querying user's RLS, so a
+-- rep only ever aggregates their own rows and an admin sees everyone.
+CREATE OR REPLACE VIEW public.whatsapp_rep_stats
+WITH (security_invoker = true) AS
+WITH base AS (
+  SELECT chat_ref, user_id, direction, msg_timestamp, id
+  FROM public.whatsapp_messages
+  WHERE msg_timestamp > now() - interval '30 days'
+),
+flagged AS (
+  SELECT b.*,
+    CASE WHEN direction IS DISTINCT FROM
+              LAG(direction) OVER (PARTITION BY chat_ref ORDER BY msg_timestamp, id)
+         THEN 1 ELSE 0 END AS new_run
+  FROM base b
+),
+runs AS (
+  SELECT f.*,
+    SUM(new_run) OVER (PARTITION BY chat_ref ORDER BY msg_timestamp, id ROWS UNBOUNDED PRECEDING) AS run_id
+  FROM flagged f
+),
+run_summary AS (
+  SELECT chat_ref, user_id, run_id,
+         MIN(direction) AS direction,
+         MIN(msg_timestamp) AS run_start
+  FROM runs
+  GROUP BY chat_ref, user_id, run_id
+),
+run_lead AS (
+  SELECT chat_ref, user_id, run_id, direction, run_start,
+    LEAD(direction)  OVER (PARTITION BY chat_ref ORDER BY run_id) AS next_dir,
+    LEAD(run_start)  OVER (PARTITION BY chat_ref ORDER BY run_id) AS next_start
+  FROM run_summary
+),
+responses AS (
+  SELECT user_id, EXTRACT(EPOCH FROM (next_start - run_start)) AS resp_seconds
+  FROM run_lead
+  WHERE direction = 'incoming' AND next_dir = 'outgoing'
+    AND next_start - run_start < interval '3 days'
+),
+resp_agg AS (
+  SELECT user_id,
+    AVG(resp_seconds)::numeric AS avg_response_seconds,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY resp_seconds) AS median_response_seconds,
+    COUNT(*) AS replies_count
+  FROM responses
+  GROUP BY user_id
+),
+chat_agg AS (
+  SELECT user_id,
+    COUNT(*) AS total_chats,
+    COUNT(*) FILTER (WHERE status = 'waiting')  AS waiting_count,
+    COUNT(*) FILTER (WHERE status = 'answered') AS answered_count,
+    MIN(last_message_at) FILTER (WHERE status = 'waiting') AS oldest_waiting_at
+  FROM public.whatsapp_chats
+  GROUP BY user_id
+)
+SELECT
+  c.user_id,
+  c.total_chats,
+  c.waiting_count,
+  c.answered_count,
+  c.oldest_waiting_at,
+  r.avg_response_seconds,
+  r.median_response_seconds,
+  COALESCE(r.replies_count, 0) AS replies_count
+FROM chat_agg c
+LEFT JOIN resp_agg r ON r.user_id = c.user_id;
+
+GRANT SELECT ON public.whatsapp_rep_stats TO authenticated;
+
 NOTIFY pgrst, 'reload schema';
 
 COMMIT;

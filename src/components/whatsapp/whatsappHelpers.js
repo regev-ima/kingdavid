@@ -66,6 +66,28 @@ export function dayLabel(value) {
   return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+// Human-friendly duration in Hebrew from a number of seconds.
+// 45 → "45 שנ׳", 150 → "2 דק׳", 5400 → "1ש׳ 30ד׳", 100000 → "1 ימים".
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  if (s < 60) return `${s} שנ׳`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} דק׳`;
+  const h = Math.floor(s / 3600);
+  const remM = Math.round((s % 3600) / 60);
+  if (h < 24) return remM ? `${h}ש׳ ${remM}ד׳` : `${h} ש׳`;
+  const d = Math.floor(s / 86400);
+  const remH = Math.round((s % 86400) / 3600);
+  return remH ? `${d}י׳ ${remH}ש׳` : `${d} ימים`;
+}
+
+// Elapsed seconds since an ISO/db timestamp (0 if invalid).
+export function elapsedSeconds(value) {
+  const d = parseDbTimestamp(value);
+  if (!d) return 0;
+  return Math.max(0, (Date.now() - d.getTime()) / 1000);
+}
+
 // Deterministic avatar colour from a string (so each contact keeps its colour).
 export function colorFromString(str) {
   const palette = [

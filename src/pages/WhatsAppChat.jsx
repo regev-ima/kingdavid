@@ -12,19 +12,22 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Search, MessageCircle, Loader2, Lock, ArrowRight, Phone, Users as UsersIcon,
-  Circle, Inbox, Check, UserCheck, UserPlus, CircleUserRound,
+  Circle, Inbox, Check, UserCheck, UserPlus, CircleUserRound, Timer, BarChart3,
 } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
 import WhatsAppContextPanel from '@/components/whatsapp/WhatsAppContextPanel';
+import WhatsAppRepStats from '@/components/whatsapp/WhatsAppRepStats';
 import { useWhatsAppContext } from '@/components/whatsapp/useWhatsAppContext';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import {
   chatStatusMeta, chatTitle, chatInitial, prettyPhone, listTime, dayLabel, colorFromString,
+  formatDuration,
 } from '@/components/whatsapp/whatsappHelpers';
 
 function localPhoneDigits(phone) {
@@ -57,6 +60,7 @@ export default function WhatsAppChat() {
   const { openLead } = useLeadModal();
   const [infoOpen, setInfoOpen] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
 
   // Conversations (RLS scopes: rep → own, admin → all).
   const { data: chats = [], isLoading: chatsLoading } = useQuery({
@@ -74,6 +78,17 @@ export default function WhatsAppChat() {
     staleTime: 10 * 60 * 1000,
   });
   const usersById = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
+
+  // The rep's own performance: average reply time over the last 30 days.
+  const { data: myStats } = useQuery({
+    queryKey: ['wa-my-stats'],
+    queryFn: () => base44.entities.WhatsAppRepStats.list(),
+    enabled: !!user && !isAdmin,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    retry: false,
+  });
+  const myAvgSeconds = (!isAdmin && myStats?.[0]?.replies_count > 0) ? myStats[0].avg_response_seconds : null;
 
   // Messages for the open conversation.
   const { data: messages = [], isLoading: msgsLoading } = useQuery({
@@ -196,12 +211,26 @@ export default function WhatsAppChat() {
             {isAdmin ? 'תיעוד כל שיחות הוואטסאפ של הנציגים' : 'תיעוד שיחות הוואטסאפ שלך'} · תצוגה בלבד
           </p>
         </div>
-        {waitingCount > 0 && (
-          <Badge className="bg-red-100 text-red-700 hover:bg-red-100 gap-1.5">
-            <Circle className="h-2 w-2 fill-current" />
-            {waitingCount} ממתינים לתשובה
-          </Badge>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {myAvgSeconds != null && (
+            <Badge variant="secondary" className="gap-1.5">
+              <Timer className="h-3.5 w-3.5" />
+              זמן תגובה ממוצע: {formatDuration(myAvgSeconds)}
+            </Badge>
+          )}
+          {waitingCount > 0 && (
+            <Badge className="bg-red-100 text-red-700 hover:bg-red-100 gap-1.5">
+              <Circle className="h-2 w-2 fill-current" />
+              {waitingCount} ממתינים לתשובה
+            </Badge>
+          )}
+          {isAdmin && (
+            <Button size="sm" variant="outline" onClick={() => setStatsOpen(true)} className="gap-1.5">
+              <BarChart3 className="h-4 w-4" />
+              מדדי נציגים
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className={`flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr] ${selectedChat ? 'xl:grid-cols-[320px_1fr_340px]' : ''} gap-0 rounded-xl border bg-card overflow-hidden`}>
@@ -317,6 +346,18 @@ export default function WhatsAppChat() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Manager: per-rep performance numbers */}
+      {isAdmin && (
+        <Dialog open={statsOpen} onOpenChange={setStatsOpen}>
+          <DialogContent dir="rtl" className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />מדדי נציגים — וואטסאפ</DialogTitle>
+            </DialogHeader>
+            <WhatsAppRepStats usersById={usersById} />
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Open a service ticket for this contact (reuses the Service Center dialog) */}
       {ticketOpen && (
