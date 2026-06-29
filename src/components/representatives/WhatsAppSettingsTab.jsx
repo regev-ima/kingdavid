@@ -6,8 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
+  AlertDialogFooter, AlertDialogTitle, AlertDialogDescription,
+  AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import {
   Loader2, Save, Eye, EyeOff, Plug, RefreshCw, CheckCircle2,
-  AlertTriangle, MessageCircle, KeyRound, Copy, Activity,
+  AlertTriangle, MessageCircle, KeyRound, Copy, Activity, Trash2,
 } from 'lucide-react';
 
 // Per-rep Green API (WhatsApp) connection. The api_token is a secret stored
@@ -85,6 +90,19 @@ export default function WhatsAppSettingsTab({ rep }) {
       queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
     },
     onError: (err) => toast.error(`האבחון נכשל: ${err?.message || 'שגיאה'}`),
+  });
+
+  const purgeMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'purge', user_id: userId }),
+    onSuccess: () => {
+      toast.success('היסטוריית ההודעות נמחקה');
+      setDiag(null);
+      queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-rep-stats'] });
+    },
+    onError: (err) => toast.error(`המחיקה נכשלה: ${err?.message || 'שגיאה'}`),
   });
 
   if (isLoading) {
@@ -278,6 +296,44 @@ export default function WhatsAppSettingsTab({ rep }) {
           </p>
         </div>
       )}
+
+      {/* Danger zone — wipe recorded history (admin) */}
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+        <div className="flex items-center gap-2 text-destructive">
+          <Trash2 className="h-4 w-4" />
+          <p className="text-sm font-medium">מחיקת היסטוריה</p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          מחיקה לצמיתות של כל השיחות וההודעות שתועדו עבור חשבון זה. הקודים והחיבור יישארו —
+          רק ההיסטוריה תימחק, ותיעוד הודעות חדשות יימשך. שימושי כשמחברים מספר אישי ולא רוצים
+          לשמור הודעות פרטיות.
+        </p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive" size="sm" className="gap-2" disabled={purgeMutation.isPending}>
+              {purgeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              מחק את כל היסטוריית ההודעות
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>למחוק את כל ההיסטוריה?</AlertDialogTitle>
+              <AlertDialogDescription>
+                כל השיחות וההודעות שתועדו עבור חשבון זה יימחקו לצמיתות ולא ניתן יהיה לשחזר אותן.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ביטול</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => purgeMutation.mutate()}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                כן, מחק הכל
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }

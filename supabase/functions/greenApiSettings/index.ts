@@ -179,6 +179,32 @@ Deno.serve(async (req) => {
       }, { headers: cors });
     }
 
+    if (action === 'purge') {
+      // Delete ALL recorded chats + messages for this account. Admin-only on
+      // purpose: a rep must not be able to wipe their own history to hide poor
+      // service — that defeats the whole point of the mirror. The Green API
+      // credentials and the account row are kept, so recording continues for
+      // new messages going forward.
+      if (!isAdmin) {
+        return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
+      }
+      const acc = await loadAccount();
+      if (!acc) {
+        return Response.json({ ok: false, error: 'not_found' }, { status: 404, headers: cors });
+      }
+      const { error: mErr } = await svc.from('whatsapp_messages').delete().eq('account_id', acc.id);
+      if (mErr) {
+        console.error('[greenApiSettings] purge messages failed', mErr);
+        return Response.json({ ok: false, error: mErr.message }, { status: 500, headers: cors });
+      }
+      const { error: cErr } = await svc.from('whatsapp_chats').delete().eq('account_id', acc.id);
+      if (cErr) {
+        console.error('[greenApiSettings] purge chats failed', cErr);
+        return Response.json({ ok: false, error: cErr.message }, { status: 500, headers: cors });
+      }
+      return Response.json({ ok: true, purged: true }, { headers: cors });
+    }
+
     if (action === 'diagnose') {
       // Show what Green API ACTUALLY has configured, so we can confirm the
       // webhook URL + notification flags match ours (key when nothing arrives).
