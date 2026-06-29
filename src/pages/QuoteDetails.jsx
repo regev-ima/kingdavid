@@ -7,6 +7,7 @@ import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
+import WhatsAppSendDialog from '@/components/shared/WhatsAppSendDialog';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -81,7 +82,7 @@ const statusTransitions = {
 export default function QuoteDetails() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [statusConfirm, setStatusConfirm] = useState(null); // { targetStatus }
-  const [waLoading, setWaLoading] = useState(false);
+  const [waState, setWaState] = useState(null); // null | {status:'preparing'|'ready'|'error', url?, msg?}
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { openNewOrder } = useCreationModal();
@@ -231,9 +232,10 @@ export default function QuoteDetails() {
     }
   };
 
-  // Generate (or reuse) the quote PDF link and open WhatsApp Web with a message
-  // that includes it. The PDF travels as a tappable link — WhatsApp click-to-chat
-  // can't carry a real file attachment.
+  // Prepare a WhatsApp message that links to the quote PDF, shown via a small
+  // status modal (the PDF render is slow + briefly reflows the page, so we mask
+  // it and let the user open WhatsApp from a fresh click to dodge popup blocks).
+  // Reuses the stored pdf_url when present so repeat sends are instant.
   const handleWhatsApp = async () => {
     const digits = (quote?.customer_phone || '').replace(/[^0-9]/g, '');
     if (!digits) {
@@ -241,9 +243,15 @@ export default function QuoteDetails() {
       return;
     }
     const intl = digits.startsWith('972') ? digits : `972${digits.startsWith('0') ? digits.slice(1) : digits}`;
-    setWaLoading(true);
+    setWaState({ status: 'preparing' });
+    // Let the modal paint before the heavy html2canvas render blocks the thread.
+    await new Promise((r) => setTimeout(r, 50));
     try {
-      const pdfUrl = quote.pdf_url || (await QuotePdfGenerator(quote));
+      let pdfUrl = quote.pdf_url;
+      if (!pdfUrl) {
+        pdfUrl = await QuotePdfGenerator(quote);
+        if (pdfUrl) updateQuoteMutation.mutate({ pdf_url: pdfUrl }); // cache for next time
+      }
       const lines = [
         `שלום ${quote.customer_name || ''}`.trim() + ',',
         `מצורפת הצעת מחיר מס' ${quote.quote_number} מבית קינג דיוויד.`,
@@ -252,11 +260,9 @@ export default function QuoteDetails() {
         'נשמח לעמוד לרשותך 🙏',
       ].filter(Boolean);
       const text = encodeURIComponent(lines.join('\n'));
-      window.open(`https://web.whatsapp.com/send?phone=${intl}&text=${text}`, '_blank');
+      setWaState({ status: 'ready', url: `https://web.whatsapp.com/send?phone=${intl}&text=${text}` });
     } catch (err) {
-      toast.error(`הכנת ההודעה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
-    } finally {
-      setWaLoading(false);
+      setWaState({ status: 'error', msg: err?.message || 'שגיאה לא ידועה' });
     }
   };
 
@@ -312,8 +318,8 @@ export default function QuoteDetails() {
             <Phone className="h-4 w-4 me-2" />
             התקשר
           </Button>
-          <Button variant="outline" onClick={handleWhatsApp} disabled={waLoading} className="[&_svg]:text-green-600">
-            {waLoading ? <Loader2 className="h-4 w-4 me-2 animate-spin" /> : <MessageCircle className="h-4 w-4 me-2" />}
+          <Button variant="outline" onClick={handleWhatsApp} disabled={waState?.status === 'preparing'} className="[&_svg]:text-green-600">
+            {waState?.status === 'preparing' ? <Loader2 className="h-4 w-4 me-2 animate-spin" /> : <MessageCircle className="h-4 w-4 me-2" />}
             WhatsApp
           </Button>
           {quote.pdf_url && (
@@ -631,6 +637,8 @@ export default function QuoteDetails() {
           )}
         </div>
       </div>
+
+      <WhatsAppSendDialog state={waState} onClose={() => setWaState(null)} />
 
       {/* Status change confirmation dialog */}
       <AlertDialog open={!!statusConfirm} onOpenChange={(open) => !open && setStatusConfirm(null)}>

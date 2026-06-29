@@ -54,6 +54,7 @@ import { canViewOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac'
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
+import WhatsAppSendDialog from '@/components/shared/WhatsAppSendDialog';
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -76,7 +77,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
-  const [waLoading, setWaLoading] = useState(false);
+  const [waState, setWaState] = useState(null); // null | {status:'preparing'|'ready'|'error', url?, msg?}
   const [showServiceTicket, setShowServiceTicket] = useState(false);
   const [newPayment, setNewPayment] = useState({
     amount: '',
@@ -212,10 +213,10 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     }
   };
 
-  // Build the order PDF (uploaded → public link), compose a message that
-  // includes that link, and open WhatsApp Web with it pre-filled. WhatsApp
-  // click-to-chat can't carry a real file attachment, so the PDF travels as a
-  // tappable link the customer opens.
+  // Prepare a WhatsApp message linking to the order PDF, via a small status
+  // modal. The PDF render is slow and briefly reflows the page, so the modal
+  // gives feedback + masks it, and the user opens WhatsApp from a fresh click
+  // (so it isn't popup-blocked). Reuses a cached pdf_url when present.
   const handleWhatsApp = async () => {
     const digits = (order?.customer_phone || '').replace(/[^0-9]/g, '');
     if (!digits) {
@@ -223,9 +224,10 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
       return;
     }
     const intl = digits.startsWith('972') ? digits : `972${digits.startsWith('0') ? digits.slice(1) : digits}`;
-    setWaLoading(true);
+    setWaState({ status: 'preparing' });
+    await new Promise((r) => setTimeout(r, 50)); // let the modal paint first
     try {
-      const pdfUrl = await OrderPdfGenerator(order);
+      const pdfUrl = order.pdf_url || (await OrderPdfGenerator(order));
       const lines = [
         `שלום ${order.customer_name || ''}`.trim() + ',',
         `מצורפת ההזמנה שלך #${order.order_number} מבית קינג דיוויד.`,
@@ -234,11 +236,9 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
         'נשמח לעמוד לרשותך 🙏',
       ].filter(Boolean);
       const text = encodeURIComponent(lines.join('\n'));
-      window.open(`https://web.whatsapp.com/send?phone=${intl}&text=${text}`, '_blank');
+      setWaState({ status: 'ready', url: `https://web.whatsapp.com/send?phone=${intl}&text=${text}` });
     } catch (err) {
-      toast.error(`הכנת ההודעה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
-    } finally {
-      setWaLoading(false);
+      setWaState({ status: 'error', msg: err?.message || 'שגיאה לא ידועה' });
     }
   };
 
@@ -288,8 +288,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           <Phone className="h-3.5 w-3.5 me-1.5" />
           התקשר
         </Button>
-        <Button variant="outline" size="sm" onClick={handleWhatsApp} disabled={waLoading} className="h-8 text-xs [&_svg]:text-green-600">
-          {waLoading ? (
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} disabled={waState?.status === 'preparing'} className="h-8 text-xs [&_svg]:text-green-600">
+          {waState?.status === 'preparing' ? (
             <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
           ) : (
             <MessageCircle className="h-3.5 w-3.5 me-1.5" />
@@ -894,6 +894,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           </Card>
         </div>
       </div>
+
+      <WhatsAppSendDialog state={waState} onClose={() => setWaState(null)} />
 
       {/* Service Ticket Dialog — opens a rich ticket in the new Service Center
           (problem photos + warranty classification). Opening a ticket never
