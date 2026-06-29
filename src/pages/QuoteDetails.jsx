@@ -7,6 +7,7 @@ import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +81,7 @@ const statusTransitions = {
 export default function QuoteDetails() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [statusConfirm, setStatusConfirm] = useState(null); // { targetStatus }
+  const [waLoading, setWaLoading] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { openNewOrder } = useCreationModal();
@@ -229,11 +231,32 @@ export default function QuoteDetails() {
     }
   };
 
-  const handleWhatsApp = () => {
-    const phone = (quote?.customer_phone || '').replace(/[^0-9]/g, '');
-    if (phone) {
-      const message = encodeURIComponent(`שלום ${quote.customer_name}, מצורפת הצעת מחיר מס' ${quote.quote_number} מקינג דוד.`);
-      window.open(`https://wa.me/972${phone.startsWith('0') ? phone.slice(1) : phone}?text=${message}`, '_blank');
+  // Generate (or reuse) the quote PDF link and open WhatsApp Web with a message
+  // that includes it. The PDF travels as a tappable link — WhatsApp click-to-chat
+  // can't carry a real file attachment.
+  const handleWhatsApp = async () => {
+    const digits = (quote?.customer_phone || '').replace(/[^0-9]/g, '');
+    if (!digits) {
+      toast.error('אין מספר טלפון ללקוח');
+      return;
+    }
+    const intl = digits.startsWith('972') ? digits : `972${digits.startsWith('0') ? digits.slice(1) : digits}`;
+    setWaLoading(true);
+    try {
+      const pdfUrl = quote.pdf_url || (await QuotePdfGenerator(quote));
+      const lines = [
+        `שלום ${quote.customer_name || ''}`.trim() + ',',
+        `מצורפת הצעת מחיר מס' ${quote.quote_number} מבית קינג דיוויד.`,
+        quote.total ? `סכום: ₪${Number(quote.total).toLocaleString('he-IL')}` : '',
+        `לצפייה והורדת ההצעה: ${pdfUrl}`,
+        'נשמח לעמוד לרשותך 🙏',
+      ].filter(Boolean);
+      const text = encodeURIComponent(lines.join('\n'));
+      window.open(`https://web.whatsapp.com/send?phone=${intl}&text=${text}`, '_blank');
+    } catch (err) {
+      toast.error(`הכנת ההודעה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+    } finally {
+      setWaLoading(false);
     }
   };
 
@@ -289,8 +312,8 @@ export default function QuoteDetails() {
             <Phone className="h-4 w-4 me-2" />
             התקשר
           </Button>
-          <Button variant="outline" onClick={handleWhatsApp} className="[&_svg]:text-green-600">
-            <MessageCircle className="h-4 w-4 me-2" />
+          <Button variant="outline" onClick={handleWhatsApp} disabled={waLoading} className="[&_svg]:text-green-600">
+            {waLoading ? <Loader2 className="h-4 w-4 me-2 animate-spin" /> : <MessageCircle className="h-4 w-4 me-2" />}
             WhatsApp
           </Button>
           {quote.pdf_url && (

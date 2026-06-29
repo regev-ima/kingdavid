@@ -76,6 +76,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
+  const [waLoading, setWaLoading] = useState(false);
   const [showServiceTicket, setShowServiceTicket] = useState(false);
   const [newPayment, setNewPayment] = useState({
     amount: '',
@@ -211,10 +212,33 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     }
   };
 
-  const handleWhatsApp = () => {
-    const phone = (order?.customer_phone || '').replace(/[^0-9]/g, '');
-    if (phone) {
-      window.open(`https://wa.me/972${phone.startsWith('0') ? phone.slice(1) : phone}`, '_blank');
+  // Build the order PDF (uploaded → public link), compose a message that
+  // includes that link, and open WhatsApp Web with it pre-filled. WhatsApp
+  // click-to-chat can't carry a real file attachment, so the PDF travels as a
+  // tappable link the customer opens.
+  const handleWhatsApp = async () => {
+    const digits = (order?.customer_phone || '').replace(/[^0-9]/g, '');
+    if (!digits) {
+      toast.error('אין מספר טלפון ללקוח');
+      return;
+    }
+    const intl = digits.startsWith('972') ? digits : `972${digits.startsWith('0') ? digits.slice(1) : digits}`;
+    setWaLoading(true);
+    try {
+      const pdfUrl = await OrderPdfGenerator(order);
+      const lines = [
+        `שלום ${order.customer_name || ''}`.trim() + ',',
+        `מצורפת ההזמנה שלך #${order.order_number} מבית קינג דיוויד.`,
+        order.total ? `סכום ההזמנה: ₪${Number(order.total).toLocaleString('he-IL')}` : '',
+        `לצפייה והורדת המסמך: ${pdfUrl}`,
+        'נשמח לעמוד לרשותך 🙏',
+      ].filter(Boolean);
+      const text = encodeURIComponent(lines.join('\n'));
+      window.open(`https://web.whatsapp.com/send?phone=${intl}&text=${text}`, '_blank');
+    } catch (err) {
+      toast.error(`הכנת ההודעה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+    } finally {
+      setWaLoading(false);
     }
   };
 
@@ -264,8 +288,12 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           <Phone className="h-3.5 w-3.5 me-1.5" />
           התקשר
         </Button>
-        <Button variant="outline" size="sm" onClick={handleWhatsApp} className="h-8 text-xs [&_svg]:text-green-600">
-          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} disabled={waLoading} className="h-8 text-xs [&_svg]:text-green-600">
+          {waLoading ? (
+            <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+          ) : (
+            <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          )}
           WhatsApp
         </Button>
         <Button
