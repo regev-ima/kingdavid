@@ -1,14 +1,14 @@
 import React, { useMemo } from 'react';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import UserAvatar from '@/components/shared/UserAvatar';
-import { Clock, Timer, MessageSquare } from 'lucide-react';
+import { Users, Timer, Clock } from 'lucide-react';
 import { formatDuration } from './whatsappHelpers';
 
 const PERIODS = [
   { value: 'today', label: 'היום' },
   { value: '7d', label: '7 ימים' },
   { value: '30d', label: '30 ימים' },
-  { value: 'all', label: 'הכל' },
+  { value: 'all', label: 'כל הזמנים' },
 ];
 
 function periodStartMs(period, now) {
@@ -19,142 +19,175 @@ function periodStartMs(period, now) {
   return 0;
 }
 
-// Urgency colour for a wait duration (seconds).
+// Urgency colour for how long the oldest waiting customer has waited (seconds).
 function waitChipClass(seconds) {
   if (seconds < 15 * 60) return 'bg-amber-100 text-amber-700';
   if (seconds < 60 * 60) return 'bg-orange-100 text-orange-700';
   return 'bg-red-600 text-white';
 }
 
-function MiniStat({ label, value, tone = 'default', active, onClick }) {
-  const toneCls = {
-    default: 'text-foreground',
-    waiting: value > 0 ? 'text-red-600' : 'text-muted-foreground',
-    answered: 'text-green-600',
-    muted: 'text-muted-foreground',
-  }[tone];
-  const clickable = !!onClick;
+// One rep card — same visual language as the "עומס לפי נציג" cards on
+// /LeadManagement: a bordered card, a clickable header, a 2×2 grid of soft
+// coloured buckets, and a total / "פנוי" line at the bottom.
+function RepWaCard({ id, label, avatar, stats, repActive, activeStatus, onFilter, avgSeconds, repliesCount, oldestWaitSec }) {
+  const headerActive = repActive && activeStatus === 'all';
+  const cardCls = repActive ? 'border-primary bg-primary/5 ring-2 ring-primary/40' : 'border-border bg-card hover:border-foreground/30';
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!clickable}
-      className={`flex flex-col items-center justify-center rounded-md px-1.5 py-1 transition-colors ${
-        clickable ? 'hover:bg-muted cursor-pointer' : 'cursor-default'
-      } ${active ? 'ring-2 ring-primary bg-primary/5' : ''}`}
-    >
-      <span className={`text-base font-bold leading-none ${toneCls}`}>{value}</span>
-      <span className="text-[10px] text-muted-foreground mt-0.5">{label}</span>
-    </button>
+    <div className={`rounded-xl border-2 p-2.5 shadow-card transition-all ${cardCls}`}>
+      <button
+        type="button"
+        onClick={() => onFilter(id, 'all')}
+        className={`w-full text-right flex items-center gap-2 mb-2 min-w-0 rounded-lg px-1 py-0.5 transition-colors hover:bg-muted/40 ${headerActive ? 'bg-muted/40' : ''}`}
+        title={`סנן לפי ${label}`}
+      >
+        {avatar}
+        <span className="text-xs font-semibold truncate flex-1" title={label}>{label}</span>
+      </button>
+
+      <div className="grid grid-cols-2 gap-1.5 text-xs">
+        {stats.map((s) => {
+          const active = repActive && activeStatus === s.status;
+          const clickable = !!s.status;
+          return (
+            <button
+              key={s.key}
+              type="button"
+              disabled={!clickable}
+              onClick={clickable ? () => onFilter(id, s.status) : undefined}
+              title={s.title}
+              className={`${s.box} rounded p-1.5 text-center border transition-all ${
+                active ? `ring-2 ${s.ring}` : 'border-transparent'
+              } ${clickable ? 'hover:brightness-95 cursor-pointer' : 'cursor-default'}`}
+            >
+              <p className={`text-[10px] leading-tight ${s.sub}`}>{s.label}</p>
+              <p className={`text-base font-bold tabular-nums leading-tight ${s.text}`}>{s.value}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 mt-1.5">
+        <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+          <Timer className="h-3 w-3" />
+          {repliesCount > 0 && avgSeconds != null ? formatDuration(avgSeconds) : '—'}
+        </span>
+        {oldestWaitSec != null ? (
+          <span className={`text-[10px] font-semibold inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${waitChipClass(oldestWaitSec)}`}>
+            <Clock className="h-3 w-3" />ממתין {formatDuration(oldestWaitSec)}
+          </span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">פנוי</span>
+        )}
+      </div>
+    </div>
   );
 }
 
-// Manager bird's-eye view: one card per rep with their numbers for the chosen
-// period, plus a live "longest waiting" timer. Clicking a number filters the
-// chat list (e.g. a rep's "ממתינים" → just their waiting conversations).
+// Manager bird's-eye view above the chat: per-rep numbers for the chosen period,
+// click-to-filter, and a live "longest waiting" timer.
 export default function WhatsAppManagerOverview({
   chats = [], usersById = {}, viewStatsById = {}, period, setPeriod,
   now, activeRep, activeStatus, onFilter,
 }) {
   const startMs = useMemo(() => periodStartMs(period, now), [period, now]);
 
-  const reps = useMemo(() => {
+  const { reps, team } = useMemo(() => {
     const map = {};
+    const t = { total: 0, waiting: 0, answeredPeriod: 0, activePeriod: 0, oldestWaitingMs: null };
     for (const c of chats) {
       const uid = c.user_id;
       if (!uid) continue;
       if (!map[uid]) map[uid] = { user_id: uid, total: 0, waiting: 0, answeredPeriod: 0, activePeriod: 0, oldestWaitingMs: null };
       const m = map[uid];
-      m.total += 1;
       const lastMs = parseDbTimestamp(c.last_message_at)?.getTime() ?? 0;
+      m.total += 1; t.total += 1;
       if (lastMs >= startMs) {
-        m.activePeriod += 1;
-        if (c.status === 'answered') m.answeredPeriod += 1;
+        m.activePeriod += 1; t.activePeriod += 1;
+        if (c.status === 'answered') { m.answeredPeriod += 1; t.answeredPeriod += 1; }
       }
       if (c.status === 'waiting') {
-        m.waiting += 1;
-        if (lastMs && (m.oldestWaitingMs == null || lastMs < m.oldestWaitingMs)) m.oldestWaitingMs = lastMs;
+        m.waiting += 1; t.waiting += 1;
+        if (lastMs) {
+          if (m.oldestWaitingMs == null || lastMs < m.oldestWaitingMs) m.oldestWaitingMs = lastMs;
+          if (t.oldestWaitingMs == null || lastMs < t.oldestWaitingMs) t.oldestWaitingMs = lastMs;
+        }
       }
     }
-    return Object.values(map).sort((a, b) => b.waiting - a.waiting || b.activePeriod - a.activePeriod);
+    const reps = Object.values(map).sort((a, b) => b.waiting - a.waiting || b.activePeriod - a.activePeriod);
+    return { reps, team: t };
   }, [chats, startMs]);
 
-  const teamWaiting = reps.reduce((s, r) => s + r.waiting, 0);
-  const teamActive = reps.reduce((s, r) => s + r.activePeriod, 0);
+  const buckets = (m) => [
+    { key: 'active', label: 'פעילות', value: m.activePeriod, status: 'all', title: 'שיחות עם פעילות בתקופה', box: 'bg-sky-50', text: 'text-sky-700', sub: 'text-sky-700/80', ring: 'ring-sky-400 border-sky-500' },
+    { key: 'waiting', label: 'ממתינים', value: m.waiting, status: 'waiting', title: 'שיחות שממתינות לתשובה', box: 'bg-rose-50', text: 'text-rose-700', sub: 'text-rose-700/80', ring: 'ring-rose-400 border-rose-500' },
+    { key: 'answered', label: 'טופלו', value: m.answeredPeriod, status: 'answered', title: 'שיחות שטופלו בתקופה', box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80', ring: 'ring-emerald-400 border-emerald-500' },
+    { key: 'total', label: 'סה״כ', value: m.total, status: null, title: 'סך השיחות שהנציג מנהל', box: 'bg-slate-100', text: 'text-slate-700', sub: 'text-slate-600/80', ring: 'ring-slate-400 border-slate-500' },
+  ];
+
+  const teamOldestSec = team.oldestWaitingMs ? Math.max(0, (now - team.oldestWaitingMs) / 1000) : null;
 
   return (
-    <div className="shrink-0 border-b bg-muted/20 px-3 py-2.5 space-y-2">
-      {/* Period filter + team summary */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="inline-flex items-center rounded-lg bg-background border p-0.5">
-          {PERIODS.map((p) => (
+    <div className="shrink-0 border-b bg-muted/20 px-3 py-2.5 space-y-2.5">
+      {/* Period filter — matches the date-range pills on /LeadManagement */}
+      <div className="flex items-center gap-2 flex-wrap bg-card border border-border rounded-xl p-2 shadow-card">
+        <span className="text-xs font-medium text-muted-foreground ms-1">טווח זמן:</span>
+        {PERIODS.map((p) => {
+          const active = period === p.value;
+          return (
             <button
               key={p.value}
+              type="button"
               onClick={() => setPeriod(p.value)}
-              className={`text-xs px-2.5 py-1 rounded-md transition-colors ${
-                period === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${
+                active ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               {p.label}
             </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />{teamActive} פעילות</span>
-          <span className={`inline-flex items-center gap-1 ${teamWaiting > 0 ? 'text-red-600 font-medium' : ''}`}>
-            <Clock className="h-3.5 w-3.5" />{teamWaiting} ממתינים
-          </span>
-        </div>
-      </div>
-
-      {/* Per-rep cards */}
-      <div className="flex gap-2.5 overflow-x-auto pb-1">
-        {reps.length === 0 && (
-          <p className="text-xs text-muted-foreground py-3">אין עדיין נתונים להצגה.</p>
-        )}
-        {reps.map((r) => {
-          const u = usersById[r.user_id];
-          const avg = viewStatsById[r.user_id]?.avg_response_seconds;
-          const repliesCount = viewStatsById[r.user_id]?.replies_count || 0;
-          const oldestWaitSec = r.oldestWaitingMs ? Math.max(0, (now - r.oldestWaitingMs) / 1000) : null;
-          const isActiveRep = activeRep === r.user_id;
-          return (
-            <div
-              key={r.user_id}
-              className={`shrink-0 w-[230px] rounded-xl border bg-card p-2.5 space-y-2 ${isActiveRep ? 'ring-2 ring-primary' : ''}`}
-            >
-              <button
-                type="button"
-                onClick={() => onFilter(r.user_id, 'all')}
-                className="flex items-center gap-2 w-full text-right min-w-0"
-                title="הצג את כל השיחות של הנציג"
-              >
-                <UserAvatar user={u} size="sm" />
-                <span className="font-medium text-sm truncate flex-1">{u?.full_name || u?.email || '—'}</span>
-              </button>
-
-              <div className="grid grid-cols-4 gap-1 bg-muted/40 rounded-lg p-1">
-                <MiniStat label="פעילות" value={r.activePeriod} onClick={() => onFilter(r.user_id, 'all')} active={isActiveRep && activeStatus === 'all'} />
-                <MiniStat label="ממתינים" value={r.waiting} tone="waiting" onClick={() => onFilter(r.user_id, 'waiting')} active={isActiveRep && activeStatus === 'waiting'} />
-                <MiniStat label="טופלו" value={r.answeredPeriod} tone="answered" onClick={() => onFilter(r.user_id, 'answered')} active={isActiveRep && activeStatus === 'answered'} />
-                <MiniStat label="סה״כ" value={r.total} tone="muted" />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <Timer className="h-3 w-3" />
-                  {repliesCount > 0 && avg != null ? formatDuration(avg) : '—'}
-                </span>
-                {oldestWaitSec != null && (
-                  <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${waitChipClass(oldestWaitSec)}`}>
-                    <Clock className="h-3 w-3" />
-                    ממתין {formatDuration(oldestWaitSec)}
-                  </span>
-                )}
-              </div>
-            </div>
           );
         })}
+      </div>
+
+      <p className="text-xs font-semibold text-muted-foreground px-1 flex items-center gap-2">
+        <Users className="h-3.5 w-3.5" />
+        מבט-על לפי נציג ({reps.length} בצוות)
+      </p>
+
+      <div className="max-h-[40vh] overflow-y-auto">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+          {/* All-team card first */}
+          <RepWaCard
+            id="all"
+            label="כל הצוות"
+            avatar={<span className="h-8 w-8 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shrink-0">כל</span>}
+            stats={buckets(team)}
+            repActive={activeRep == null}
+            activeStatus={activeStatus}
+            onFilter={onFilter}
+            avgSeconds={null}
+            repliesCount={0}
+            oldestWaitSec={teamOldestSec}
+          />
+          {reps.map((r) => {
+            const u = usersById[r.user_id];
+            const oldestWaitSec = r.oldestWaitingMs ? Math.max(0, (now - r.oldestWaitingMs) / 1000) : null;
+            return (
+              <RepWaCard
+                key={r.user_id}
+                id={r.user_id}
+                label={u?.full_name || u?.email || '—'}
+                avatar={<UserAvatar user={u} size="sm" />}
+                stats={buckets(r)}
+                repActive={activeRep === r.user_id}
+                activeStatus={activeStatus}
+                onFilter={onFilter}
+                avgSeconds={viewStatsById[r.user_id]?.avg_response_seconds}
+                repliesCount={viewStatsById[r.user_id]?.replies_count || 0}
+                oldestWaitSec={oldestWaitSec}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );
