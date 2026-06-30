@@ -55,6 +55,7 @@ import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialo
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
 import WhatsAppSendDialog from '@/components/shared/WhatsAppSendDialog';
+import { getShareLink } from '@/lib/shortLinks';
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -228,11 +229,15 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     await new Promise((r) => setTimeout(r, 50)); // let the modal paint first
     try {
       const pdfUrl = order.pdf_url || (await OrderPdfGenerator(order));
+      const shareUrl = await getShareLink(pdfUrl, {
+        title: `הזמנה #${order.order_number} — קינג דיוויד`,
+        subtitle: 'לצפייה בהזמנה',
+      });
       const lines = [
         `שלום ${order.customer_name || ''}`.trim() + ',',
         `מצורפת ההזמנה שלך #${order.order_number} מבית קינג דיוויד.`,
         order.total ? `סכום ההזמנה: ₪${Number(order.total).toLocaleString('he-IL')}` : '',
-        `לצפייה והורדת המסמך: ${pdfUrl}`,
+        `לצפייה והורדת המסמך: ${shareUrl}`,
         'נשמח לעמוד לרשותך 🙏',
       ].filter(Boolean);
       const text = encodeURIComponent(lines.join('\n'));

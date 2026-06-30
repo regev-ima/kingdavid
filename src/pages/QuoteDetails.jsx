@@ -8,6 +8,7 @@ import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import WhatsAppSendDialog from '@/components/shared/WhatsAppSendDialog';
+import { getShareLink } from '@/lib/shortLinks';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -252,11 +253,15 @@ export default function QuoteDetails() {
         pdfUrl = await QuotePdfGenerator(quote);
         if (pdfUrl) updateQuoteMutation.mutate({ pdf_url: pdfUrl }); // cache for next time
       }
+      const shareUrl = await getShareLink(pdfUrl, {
+        title: `הצעת מחיר ${quote.quote_number} — קינג דיוויד`,
+        subtitle: 'לצפייה בהצעת המחיר',
+      });
       const lines = [
         `שלום ${quote.customer_name || ''}`.trim() + ',',
         `מצורפת הצעת מחיר מס' ${quote.quote_number} מבית קינג דיוויד.`,
         quote.total ? `סכום: ₪${Number(quote.total).toLocaleString('he-IL')}` : '',
-        `לצפייה והורדת ההצעה: ${pdfUrl}`,
+        `לצפייה והורדת ההצעה: ${shareUrl}`,
         'נשמח לעמוד לרשותך 🙏',
       ].filter(Boolean);
       const text = encodeURIComponent(lines.join('\n'));
