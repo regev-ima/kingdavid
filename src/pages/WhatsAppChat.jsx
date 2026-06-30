@@ -12,17 +12,18 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Search, MessageCircle, Loader2, Lock, ArrowRight, Phone, Users as UsersIcon,
   Circle, Inbox, Check, UserCheck, UserPlus, CircleUserRound, Timer, BarChart3,
+  ChevronUp, ChevronDown, Clock,
 } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
 import WhatsAppContextPanel from '@/components/whatsapp/WhatsAppContextPanel';
-import WhatsAppRepStats from '@/components/whatsapp/WhatsAppRepStats';
+import WhatsAppManagerOverview from '@/components/whatsapp/WhatsAppManagerOverview';
 import { useWhatsAppContext } from '@/components/whatsapp/useWhatsAppContext';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import {
@@ -34,6 +35,13 @@ function localPhoneDigits(phone) {
   const norm = normalizeIsraeliPhone(phone);
   if (norm && norm.startsWith('972')) return '0' + norm.slice(3);
   return String(phone || '').replace(/\D/g, '');
+}
+
+// Urgency colour for how long a customer has been waiting (seconds).
+function waitChipClass(seconds) {
+  if (seconds < 15 * 60) return 'bg-amber-100 text-amber-700';
+  if (seconds < 60 * 60) return 'bg-orange-100 text-orange-700';
+  return 'bg-red-600 text-white';
 }
 
 const STATUS_FILTERS = [
@@ -60,7 +68,15 @@ export default function WhatsAppChat() {
   const { openLead } = useLeadModal();
   const [infoOpen, setInfoOpen] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
-  const [statsOpen, setStatsOpen] = useState(false);
+  const [overviewOpen, setOverviewOpen] = useState(true);
+  const [period, setPeriod] = useState('today');
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick every minute so the "waiting for…" timers stay current.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, []);
 
   // Conversations (RLS scopes: rep → own, admin → all).
   const { data: chats = [], isLoading: chatsLoading } = useQuery({
@@ -89,6 +105,18 @@ export default function WhatsAppChat() {
     retry: false,
   });
   const myAvgSeconds = (!isAdmin && myStats?.[0]?.replies_count > 0) ? myStats[0].avg_response_seconds : null;
+
+  // Per-rep response-time numbers for the manager overview cards.
+  const { data: repStatsRows = [] } = useQuery({
+    queryKey: ['wa-rep-stats'],
+    queryFn: () => base44.entities.WhatsAppRepStats.list(),
+    enabled: !!user && isAdmin,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+    retry: false,
+  });
+  const viewStatsById = useMemo(() => Object.fromEntries(repStatsRows.map((r) => [r.user_id, r])), [repStatsRows]);
+  const applyRepFilter = (uid, status) => { setRepFilter(uid); setStatusFilter(status || 'all'); };
 
   // Messages for the open conversation.
   const { data: messages = [], isLoading: msgsLoading } = useQuery({
@@ -233,13 +261,29 @@ export default function WhatsAppChat() {
             </Badge>
           )}
           {isAdmin && (
-            <Button size="sm" variant="outline" onClick={() => setStatsOpen(true)} className="gap-1.5">
+            <Button size="sm" variant="outline" onClick={() => setOverviewOpen((v) => !v)} className="gap-1.5">
               <BarChart3 className="h-4 w-4" />
-              מדדי נציגים
+              מבט-על
+              {overviewOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             </Button>
           )}
         </div>
       </div>
+
+      {/* Manager bird's-eye overview — per-rep numbers + click-to-filter */}
+      {isAdmin && overviewOpen && (
+        <WhatsAppManagerOverview
+          chats={chats}
+          usersById={usersById}
+          viewStatsById={viewStatsById}
+          period={period}
+          setPeriod={setPeriod}
+          now={now}
+          activeRep={repFilter === 'all' ? null : repFilter}
+          activeStatus={statusFilter}
+          onFilter={applyRepFilter}
+        />
+      )}
 
       <div className={`flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr] ${selectedChat ? 'xl:grid-cols-[320px_1fr_340px]' : ''} gap-0 rounded-xl border bg-card overflow-hidden`}>
         {/* ── Conversation list ── */}
@@ -292,6 +336,7 @@ export default function WhatsAppChat() {
                   chat={chat}
                   active={chat.id === selectedId}
                   rep={isAdmin ? usersById[chat.user_id] : null}
+                  now={now}
                   onClick={() => setSelectedId(chat.id)}
                 />
               ))
@@ -355,18 +400,6 @@ export default function WhatsAppChat() {
         </SheetContent>
       </Sheet>
 
-      {/* Manager: per-rep performance numbers */}
-      {isAdmin && (
-        <Dialog open={statsOpen} onOpenChange={setStatsOpen}>
-          <DialogContent dir="rtl" className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" />מדדי נציגים — וואטסאפ</DialogTitle>
-            </DialogHeader>
-            <WhatsAppRepStats usersById={usersById} />
-          </DialogContent>
-        </Dialog>
-      )}
-
       {/* Open a service ticket for this contact (reuses the Service Center dialog) */}
       {ticketOpen && (
         <OpenServiceTicketDialog
@@ -385,9 +418,12 @@ export default function WhatsAppChat() {
   );
 }
 
-function ChatRow({ chat, active, rep, onClick }) {
+function ChatRow({ chat, active, rep, now, onClick }) {
   const meta = chatStatusMeta(chat.status);
   const title = chatTitle(chat);
+  const waitSec = chat.status === 'waiting' && chat.last_message_at
+    ? Math.max(0, ((now || Date.now()) - (parseDbTimestamp(chat.last_message_at)?.getTime() ?? (now || Date.now()))) / 1000)
+    : null;
   return (
     <button
       onClick={onClick}
@@ -410,11 +446,16 @@ function ChatRow({ chat, active, rep, onClick }) {
           <span className="text-xs text-muted-foreground truncate">
             {chat.last_message_direction === 'outgoing' ? 'את/ה: ' : ''}{chat.last_message_text || '—'}
           </span>
-          {chat.unread_count > 0 && (
+          {waitSec != null ? (
+            <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${waitChipClass(waitSec)}`}>
+              <Clock className="h-2.5 w-2.5" />
+              {formatDuration(waitSec)}
+            </span>
+          ) : chat.unread_count > 0 ? (
             <span className="shrink-0 bg-green-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
               {chat.unread_count}
             </span>
-          )}
+          ) : null}
         </div>
         {rep && (
           <span className="inline-block mt-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
