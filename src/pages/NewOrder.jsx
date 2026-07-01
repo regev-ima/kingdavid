@@ -381,6 +381,25 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       if (asDialog && onDialogClose) { onDialogClose(order); return; }
       navigate(createPageUrl('OrderDetails') + `?id=${order.id}`);
     },
+    // Without this, a failed insert (RLS denial, a rejected column, or a failing
+    // shipment/commission/customer sub-insert) left "צור הזמנה" doing nothing —
+    // the mutation rejected and no feedback surfaced. Mirror NewQuote: surface
+    // the real PostgREST error parts so the rep sees exactly what broke.
+    onError: (err) => {
+      const parts = [err?.message, err?.details, err?.hint, err?.code]
+        .map((p) => (p == null || p === '' ? null : String(p)))
+        .filter(Boolean);
+      const description = parts.length ? parts.join(' — ') : (typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה');
+      console.error('Order.create failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      const isDuplicateKey = err?.code === '23505' || /duplicate key|unique constraint/i.test(description);
+      if (isDuplicateKey) {
+        toast.error('מספר ההזמנה כבר תפוס (ייתכן שנוצרה הזמנה נוספת באותו רגע). אנא רענן את הדף ונסה שוב.', {
+          duration: Infinity,
+        });
+        return;
+      }
+      toast.error(`יצירת ההזמנה נכשלה: ${description}`, { duration: Infinity });
+    },
   });
 
   // Mirrors NewQuote.calculateTotals so an order "speaks the same language" as
