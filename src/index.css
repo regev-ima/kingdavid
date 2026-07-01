@@ -7,10 +7,16 @@
  * Google appends this to <body> with z-index: 1000 — below Radix Dialog's
  * overlay (~50) but, in nested portals, can render BEHIND the dialog content.
  * Force it to the very top so suggestions are always clickable.
+ *
+ * A modal Radix Dialog also sets `pointer-events: none` on <body>; because the
+ * dropdown lives on <body> it inherits that and the suggestions LOOK visible
+ * but swallow every click (picking one does nothing, only the typed text
+ * stays). Force pointer events back on so a selection registers inside popups.
  * RTL alignment + Hebrew font tweaks while we're here.
  * -------------------------------------------------------------------------- */
 .pac-container {
   z-index: 99999 !important;
+  pointer-events: auto !important;
   font-family: inherit !important;
   border-radius: 0.5rem;
   box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.15);
