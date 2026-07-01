@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowRight, Save, Loader2 } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -24,10 +25,12 @@ import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
 
-export default function NewLead() {
+export default function NewLead({ asDialog = false, dialogPhone = null, onDialogClose = null }) {
   const navigate = useNavigate();
   const { user, effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const initialPhone = new URLSearchParams(window.location.search).get('phone') || '';
+  // In dialog mode the phone is seeded from a prop (e.g. "no match — create
+  // this number") and on success we hand the new lead back instead of navigating.
+  const initialPhone = dialogPhone || new URLSearchParams(window.location.search).get('phone') || '';
   const [formData, setFormData] = useState({
     full_name: '',
     phone: initialPhone,
@@ -67,7 +70,18 @@ export default function NewLead() {
       return lead;
     },
     onSuccess: (lead) => {
+      if (asDialog && onDialogClose) { onDialogClose(lead); return; }
       navigate(createPageUrl('LeadDetails') + `?id=${lead.id}`);
+    },
+    // Without this a failed insert (RLS denial, a rejected column) left "שמור
+    // ליד" doing nothing. Surface the real PostgREST error so the rep sees it.
+    onError: (err) => {
+      const parts = [err?.message, err?.details, err?.hint, err?.code]
+        .map((p) => (p == null || p === '' ? null : String(p)))
+        .filter(Boolean);
+      const description = parts.length ? parts.join(' — ') : (typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה');
+      console.error('Lead.create failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      toast.error(`יצירת הליד נכשלה: ${description}`, { duration: Infinity });
     },
   });
 
@@ -100,18 +114,20 @@ export default function NewLead() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Link to={createPageUrl('Leads')}>
-          <Button variant="ghost" size="icon">
-            <ArrowRight className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">ליד חדש</h1>
-          <p className="text-muted-foreground">הוסף ליד חדש למערכת</p>
+    <div className={asDialog ? 'space-y-6' : 'max-w-3xl mx-auto space-y-6'}>
+      {!asDialog && (
+        <div className="flex items-center gap-4">
+          <Link to={createPageUrl('Leads')}>
+            <Button variant="ghost" size="icon">
+              <ArrowRight className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">ליד חדש</h1>
+            <p className="text-muted-foreground">הוסף ליד חדש למערכת</p>
+          </div>
         </div>
-      </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <Card>
@@ -238,10 +254,14 @@ export default function NewLead() {
         </Card>
 
         <div className="flex justify-end gap-3 mt-6">
-          <Link to={createPageUrl('Leads')}>
-            <Button type="button" variant="outline">ביטול</Button>
-          </Link>
-          <Button 
+          {asDialog ? (
+            <Button type="button" variant="outline" onClick={() => onDialogClose?.(null)}>ביטול</Button>
+          ) : (
+            <Link to={createPageUrl('Leads')}>
+              <Button type="button" variant="outline">ביטול</Button>
+            </Link>
+          )}
+          <Button
             type="submit" 
             className=""
             disabled={createLeadMutation.isPending}

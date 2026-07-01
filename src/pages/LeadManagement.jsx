@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/use-toast';
 import UserAvatar from '@/components/shared/UserAvatar';
 import {
   Users, UserPlus, UserCheck, Calendar as CalendarIcon,
-  Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
+  Filter, X as XIcon, FileSpreadsheet, ArrowRightLeft, Sparkles,
   Moon, Sun, Hourglass, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -28,6 +28,7 @@ import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
+import LeadQuickActions from '@/components/lead/LeadQuickActions';
 
 // State for this page lives mostly in the URL so navigation back from a
 // lead-details page restores exactly where the manager left off (filters,
@@ -649,9 +650,13 @@ export default function LeadManagement() {
               <FileSpreadsheet className="h-4 w-4" /> ייבוא מ-Sheets
             </Button>
           ) : null}
-          <Button onClick={() => navigate(createPageUrl('NewLead'))} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" /> ליד חדש
-          </Button>
+          <LeadQuickActions
+            currentUser={effectiveUser}
+            onLeadCreated={() => {
+              queryClient.invalidateQueries({ queryKey: ['leadMgmt-leads'] });
+              queryClient.invalidateQueries({ queryKey: ['leadMgmt-kpis'] });
+            }}
+          />
         </div>
       </div>
 
