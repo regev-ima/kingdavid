@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -36,7 +35,7 @@ import {
 } from "lucide-react";
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canViewCustomer, canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
+import { buildLeadsById, canEditCustomer, canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
 import { createCustomerAuditLog } from '@/utils/auditLog';
 
 export default function CustomerDetails() {
@@ -159,22 +158,17 @@ export default function CustomerDetails() {
     );
   }
 
-  if (!canViewCustomer(effectiveUser, customer, {
+  // Reps reach OTHER reps' customers through the phone lookup — they may view
+  // but not edit. canEditCustomer mirrors the old canViewCustomer ownership
+  // check, so a non-owning sales rep is downgraded to read-only (banner +
+  // hidden edit/assign controls below).
+  const canEdit = canEditCustomer(effectiveUser, customer, {
     leadsById: buildLeadsById(lead ? [lead] : []),
     ordersByCustomerId: customer ? { [customer.id]: orders } : {},
-  })) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה לצפות בלקוח זה</p>
-        <Link to={createPageUrl('Customers')}>
-          <Button className="mt-4">חזור לרשימת הלקוחות</Button>
-        </Link>
-      </div>
-    );
-  }
+  });
 
-  const canEditRep1 = canEditPrimaryRep(effectiveUser);
-  const canEditRep2 = canEditSecondaryRep(effectiveUser, customer);
+  const canEditRep1 = canEdit && canEditPrimaryRep(effectiveUser);
+  const canEditRep2 = canEdit && canEditSecondaryRep(effectiveUser, customer);
   const salesReps = users.filter((u) => u.role === 'user' || u.role === 'admin');
 
   const handleQuickAssignRep1 = async (email) => {
@@ -234,6 +228,12 @@ export default function CustomerDetails() {
 
   return (
     <div className="space-y-6">
+      {!canEdit && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm px-4 py-2">
+          <Info className="h-4 w-4 flex-shrink-0" />
+          צפייה בלבד — הלקוח משויך לנציג אחר.
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -314,9 +314,11 @@ export default function CustomerDetails() {
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>פרטי לקוח</CardTitle>
               {!isEditing ? (
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                  ערוך
-                </Button>
+                canEdit ? (
+                  <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                    ערוך
+                  </Button>
+                ) : null
               ) : (
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => setIsEditing(false)}>

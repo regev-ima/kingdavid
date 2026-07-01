@@ -299,6 +299,30 @@ export function filterCustomersForUser(user, customers = [], context = {}) {
   return customers.filter((customer) => canViewCustomer(user, customer, context));
 }
 
+// ── Editing an order / quote / customer ──────────────────────────────────────
+// Reps may now VIEW any record they reach through a phone lookup, but they may
+// only EDIT records they own. These mirror the canView* ownership checks, so
+// everyone who can edit today keeps their access; the only new behaviour is
+// that a sales rep who reached someone else's record via search is downgraded
+// to read-only. Detail screens gate their edit controls on these.
+export function canEditOrder(user, order) {
+  return canViewOrder(user, order);
+}
+export function canEditQuote(user, quote, leadsById = {}) {
+  return canViewQuote(user, quote, leadsById);
+}
+export function canEditCustomer(user, customer, context = {}) {
+  return canViewCustomer(user, customer, context);
+}
+
+// A list search counts as a "phone lookup" once it carries enough digits to be
+// a real number fragment (>= 5). Reps' list searches surface OTHER reps'
+// records (view-only) only for phone lookups — name/email searches stay scoped
+// to the rep's own records so they can't browse the whole book by common names.
+export function isPhoneLookupTerm(term) {
+  return String(term || '').replace(/\D/g, '').length >= 5;
+}
+
 export function canViewSupportTicket(user, ticket) {
   if (!ticket || !canAccessSupportWorkspace(user)) return false;
   if (isAdmin(user) || isFactoryUser(user)) return true;
