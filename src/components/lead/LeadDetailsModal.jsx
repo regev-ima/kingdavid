@@ -9,12 +9,13 @@ export default function LeadDetailsModal({ leadId, mode = 'sales', onClose }) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose?.(); }}>
       {/* Narrower than the full viewport so the dimmed list is clearly
-          framed on the sides — popup, not page. Caps at 1100px on wide
-          monitors (comfortable single-column reading width for the
-          lead detail layout) and uses 80vw on narrower screens so it
-          stays generous on laptops without overflowing on tablets.
-          Height stays at 95vh so vertical scrolling inside the lead
-          stays comfortable.
+          framed on the sides — popup, not page. Caps at 1280px on wide
+          monitors (room for the main column + the activity rail) and
+          uses 94vw on narrower screens so it stays generous on laptops
+          without overflowing on tablets. Height is max-h-[92vh] (not a
+          fixed height) so a light lead sizes to its content instead of
+          stretching to a tall, mostly-empty box; only a content-heavy
+          lead reaches 92vh and scrolls internally.
 
           dir="rtl" is REQUIRED here: Radix Dialog portals to
           document.body, which sits outside the dir="rtl" wrapper in
@@ -23,7 +24,7 @@ export default function LeadDetailsModal({ leadId, mode = 'sales', onClose }) {
           other DialogContent in this codebase. */}
       <DialogContent
         dir="rtl"
-        className="w-[94vw] max-w-[1280px] h-[92vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl
+        className="w-[94vw] max-w-[1280px] max-h-[92vh] p-0 gap-0 overflow-hidden flex flex-col rounded-2xl
                    [&>button.absolute]:right-auto [&>button.absolute]:left-4"
       >
         <DialogTitle className="sr-only">פרטי ליד</DialogTitle>

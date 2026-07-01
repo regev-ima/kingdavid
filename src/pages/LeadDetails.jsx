@@ -612,7 +612,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
        fixed instead of relying on sticky inside a portal/transform
        context where sticky was unreliable. Full-page mode keeps the
        original space-y-6 vertical flow. */
-    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+    <div className={isModal ? 'flex flex-col min-h-0 overflow-hidden' : 'space-y-6'}>
       {/* Status accent bar — purely decorative thin strip at the very
           top of the rendered tree. */}
       <div className="h-1.5 w-full bg-blue-500 shrink-0" />
@@ -781,7 +781,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           full-page mode this is a passive wrapper that preserves the
           original space-y-6 rhythm. */}
       <div className={isModal
-        ? 'flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row lg:gap-4 p-4 lg:p-6'
+        ? 'flex-auto min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row lg:gap-4 p-4 lg:p-6'
         : 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start'}>
 
       {/* MAIN column — first in the DOM so RTL places it on the RIGHT:
@@ -964,7 +964,12 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           <TabsList className="bg-muted rounded-lg p-1 gap-1 h-auto flex flex-wrap justify-start">
             <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">פרטי לקוח מלאים</TabsTrigger>
             <TabsTrigger value="marketing" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">שיווק ומקור</TabsTrigger>
-            <TabsTrigger value="deals" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">הצעות / שירות</TabsTrigger>
+            <TabsTrigger value="deals" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
+              הצעות / שירות
+              <span className="ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
+                {quotes.length + orders.length}
+              </span>
+            </TabsTrigger>
             <TabsTrigger value="activity" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">תמונת מצב</TabsTrigger>
           </TabsList>
 
