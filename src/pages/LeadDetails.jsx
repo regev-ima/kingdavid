@@ -71,12 +71,13 @@ import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import { useCreationModal } from '@/components/shared/CreationModalContext';
 import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
+import LeadSourceIcon from '@/components/lead/LeadSourceIcon';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import NewOrder from '@/pages/NewOrder';
-import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
@@ -644,8 +645,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             {(lead.phone || lead.source) && (
               <div className="flex items-center gap-2 mt-0.5 text-sm text-muted-foreground flex-wrap">
                 {lead.phone ? <span dir="ltr">{lead.phone}</span> : null}
-                {lead.phone && (lead.source || lead.source_form) ? <span className="text-muted-foreground/40">·</span> : null}
-                {(SOURCE_LABELS[lead.source] || lead.source) ? <span>{SOURCE_LABELS[lead.source] || lead.source}</span> : null}
+                {lead.phone && lead.source ? <span className="text-muted-foreground/40">·</span> : null}
+                {lead.source ? <LeadSourceIcon source={lead.source} className="h-[18px] w-[18px]" /> : null}
               </div>
             )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -1085,7 +1086,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                     { label: 'אימייל',     value: lead.email,                                           icon: Mail },
                     { label: 'עיר',        value: lead.city,                                            icon: MapPin },
                     { label: 'כתובת',      value: lead.address,                                         icon: Home },
-                    { label: 'מקור',       value: SOURCE_LABELS[lead.source] || lead.source,            icon: Globe },
+                    { label: 'מקור',       value: lead.source ? <LeadSourceIcon source={lead.source} className="h-5 w-5" /> : null, icon: Globe },
                     { label: 'טופס מקור',  value: lead.source_form,                                     icon: FileText },
                     { label: 'נושא הפנייה', value: lead.subject,                                        icon: MessageSquare },
                     { label: 'הערות',      value: lead.notes, whitespace: 'pre-wrap',                   icon: StickyNote },

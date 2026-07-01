@@ -11,7 +11,8 @@ import { Phone, Users, FileText, ShoppingCart, MessageCircle, UserPlus } from 'l
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
-import { ALL_TASK_TYPE_LABELS, SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { ALL_TASK_TYPE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import LeadSourceIcon from '@/components/lead/LeadSourceIcon';
 
 // Lead table for the lead-management page. Desktop renders a DataTable (via
 // ResponsiveLeadsTable); on a phone the same component swaps to stacked cards
@@ -162,11 +163,11 @@ export default function LeadListTable({
     },
     {
       header: 'מקור',
-      width: '120px',
+      width: '70px',
       render: (row) => (
-        <p className="text-xs text-muted-foreground truncate" title={row.source ? (SOURCE_LABELS[row.source] || row.source) : ''}>
-          {row.source ? (SOURCE_LABELS[row.source] || row.source) : '—'}
-        </p>
+        <div className="flex justify-center">
+          <LeadSourceIcon source={row.source} className="h-5 w-5" />
+        </div>
       ),
     },
     {
