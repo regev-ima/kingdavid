@@ -12,6 +12,7 @@ import { ImpersonationProvider } from '@/components/shared/ImpersonationContext'
 import { LeadModalProvider } from '@/components/lead/LeadModalContext';
 import { OrderModalProvider } from '@/components/order/OrderModalContext';
 import { CreationModalProvider } from '@/components/shared/CreationModalContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
 const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
@@ -77,6 +78,7 @@ const AuthenticatedApp = () => {
       <LeadModalProvider>
         <OrderModalProvider>
         <CreationModalProvider>
+        <TooltipProvider delayDuration={150}>
         <Suspense fallback={<PageLoadingFallback />}>
           <Routes>
             <Route path="/" element={
@@ -102,6 +104,7 @@ const AuthenticatedApp = () => {
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Suspense>
+        </TooltipProvider>
         </CreationModalProvider>
         </OrderModalProvider>
       </LeadModalProvider>

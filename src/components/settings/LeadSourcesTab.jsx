@@ -28,7 +28,9 @@ export default function LeadSourcesTab() {
   // Distinct sources from recent leads (source column only → tiny payload).
   const { data: leadSources = [], isLoading } = useQuery({
     queryKey: ['lead-source-list'],
-    queryFn: () => base44.entities.Lead.filter({}, '-effective_sort_date', 5000, undefined, ['source']),
+    // columns is a PostgREST select STRING (not an array) — fetch just the
+    // source column of recent leads so distinct sources are cheap to derive.
+    queryFn: () => base44.entities.Lead.filter({}, '-effective_sort_date', 5000, undefined, 'source'),
     staleTime: 300000,
   });
 
