@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import { useCreationModal } from '@/components/shared/CreationModalContext';
+import { useQuoteModal } from '@/components/quote/QuoteModalContext';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,8 +31,8 @@ const filterOptions = [
 ];
 
 export default function Quotes() {
-  const navigate = useNavigate();
   const { openNewQuote } = useCreationModal();
+  const { openQuote } = useQuoteModal();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending', 'draft', 'expiring'].includes(initialTab) ? initialTab : 'all');
@@ -208,7 +207,7 @@ export default function Quotes() {
         <QuickActions 
           type="quote" 
           data={row}
-          onView={() => navigate(createPageUrl('QuoteDetails') + `?id=${row.id}`)}
+          onView={() => openQuote(row.id)}
         />
       )
     }
@@ -334,7 +333,7 @@ export default function Quotes() {
         data={filteredQuotes}
         isLoading={isLoading}
         emptyMessage="לא נמצאו הצעות מחיר"
-        onRowClick={(row) => navigate(createPageUrl('QuoteDetails') + `?id=${row.id}`)}
+        onRowClick={(row) => openQuote(row.id)}
       />
     </div>
   );
