@@ -11,6 +11,7 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import { ImpersonationProvider } from '@/components/shared/ImpersonationContext';
 import { LeadModalProvider } from '@/components/lead/LeadModalContext';
 import { OrderModalProvider } from '@/components/order/OrderModalContext';
+import { QuoteModalProvider } from '@/components/quote/QuoteModalContext';
 import { CreationModalProvider } from '@/components/shared/CreationModalContext';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
@@ -76,6 +77,7 @@ const AuthenticatedApp = () => {
     <ImpersonationProvider>
       <LeadModalProvider>
         <OrderModalProvider>
+        <QuoteModalProvider>
         <CreationModalProvider>
         <Suspense fallback={<PageLoadingFallback />}>
           <Routes>
@@ -103,6 +105,7 @@ const AuthenticatedApp = () => {
           </Routes>
         </Suspense>
         </CreationModalProvider>
+        </QuoteModalProvider>
         </OrderModalProvider>
       </LeadModalProvider>
     </ImpersonationProvider>

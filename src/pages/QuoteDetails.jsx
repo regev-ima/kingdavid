@@ -42,11 +42,14 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Info,
+  User
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canEditQuote } from '@/lib/rbac';
+import { getRepDisplayName } from '@/lib/repDisplay';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -77,7 +80,7 @@ const statusTransitions = {
   expired: [],
 };
 
-export default function QuoteDetails() {
+export default function QuoteDetails({ id: idProp, isModal = false, onClose }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [statusConfirm, setStatusConfirm] = useState(null); // { targetStatus }
   const queryClient = useQueryClient();
@@ -85,7 +88,8 @@ export default function QuoteDetails() {
   const { openNewOrder } = useCreationModal();
 
   const urlParams = new URLSearchParams(window.location.search);
-  const quoteId = urlParams.get('id');
+  // In modal mode the id arrives as a prop and the URL is left untouched.
+  const quoteId = idProp ?? urlParams.get('id');
 
   const { data: quote, isLoading } = useQuery({
     queryKey: ['quote', quoteId],
@@ -97,6 +101,13 @@ export default function QuoteDetails() {
     queryKey: ['quote-access-lead', quote?.lead_id],
     queryFn: () => base44.entities.Lead.filter({ id: quote.lead_id }).then(res => res[0] || null),
     enabled: !!quote?.lead_id,
+  });
+
+  // For resolving the creating rep's email → display name.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 300000,
   });
 
   const updateQuoteMutation = useMutation({
@@ -172,9 +183,13 @@ export default function QuoteDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">ההצעה לא נמצאה</p>
-        <Link to={createPageUrl('Quotes')}>
-          <Button className="mt-4">חזור לרשימת ההצעות</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Quotes')}>
+            <Button className="mt-4">חזור לרשימת ההצעות</Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -238,8 +253,10 @@ export default function QuoteDetails() {
     openNewOrder({ quoteId });
   };
 
+  const createdByName = getRepDisplayName(quote.created_by_rep, users);
+
   return (
-    <div className="space-y-6">
+    <div className={isModal ? 'space-y-6 p-6' : 'space-y-6'}>
       {!isOwner && (
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm px-4 py-2">
           <Info className="h-4 w-4 flex-shrink-0" />
@@ -249,17 +266,27 @@ export default function QuoteDetails() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link to={createPageUrl('Quotes')}>
-            <Button variant="ghost" size="icon">
+          {isModal ? (
+            <Button variant="ghost" size="icon" onClick={onClose} title="סגור">
               <ArrowRight className="h-5 w-5" />
             </Button>
-          </Link>
+          ) : (
+            <Link to={createPageUrl('Quotes')}>
+              <Button variant="ghost" size="icon">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
           <div>
             <h1 className="text-2xl font-bold text-foreground">הצעת מחיר #{quote.quote_number}</h1>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex items-center gap-3 mt-1 flex-wrap">
               <StatusBadge status={quote.status} />
               <span className="text-sm text-muted-foreground">
                 {format(new Date(quote.created_date), 'dd/MM/yyyy HH:mm')}
+              </span>
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <User className="h-3.5 w-3.5" />
+                נוצר ע״י: <span className="font-medium text-foreground">{createdByName || 'לא ידוע'}</span>
               </span>
             </div>
           </div>

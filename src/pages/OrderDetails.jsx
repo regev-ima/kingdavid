@@ -244,6 +244,10 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               <StatusBadge status={order.payment_status} />
               <StatusBadge status={order.production_status} />
               <StatusBadge status={order.delivery_status} />
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <User className="h-3.5 w-3.5" />
+                נציג: <span className="font-medium text-foreground">{getRepDisplayName(order.rep1, users) || 'לא ידוע'}</span>
+              </span>
             </div>
           </div>
         </div>
