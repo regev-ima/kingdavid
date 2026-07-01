@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canViewQuote } from '@/lib/rbac';
+import { buildLeadsById, canEditQuote } from '@/lib/rbac';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -179,22 +179,19 @@ export default function QuoteDetails() {
     );
   }
 
-  if (!canViewQuote(effectiveUser, quote, buildLeadsById(lead ? [lead] : []))) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה לצפות בהצעת מחיר זו</p>
-        <Link to={createPageUrl('Quotes')}>
-          <Button className="mt-4">חזור לרשימת ההצעות</Button>
-        </Link>
-      </div>
-    );
-  }
+  // Reps reach OTHER reps' quotes through the phone lookup — they may view but
+  // not edit. canEditQuote mirrors the old canViewQuote ownership check, so
+  // everyone who could act before still can; a non-owning sales rep is
+  // downgraded to read-only (banner + hidden actions below).
+  const isOwner = canEditQuote(effectiveUser, quote, buildLeadsById(lead ? [lead] : []));
 
   const isExpired = quote.valid_until && new Date(quote.valid_until) < new Date();
-  const canEdit = quote.status === 'draft' && !isExpired;
-  const allowedTransitions = isExpired && quote.status !== 'expired'
-    ? ['expired']
-    : (statusTransitions[quote.status] || []);
+  const canEdit = isOwner && quote.status === 'draft' && !isExpired;
+  const allowedTransitions = !isOwner
+    ? []
+    : (isExpired && quote.status !== 'expired'
+      ? ['expired']
+      : (statusTransitions[quote.status] || []));
 
   const handleStatusChange = (targetStatus) => {
     setStatusConfirm({ targetStatus });
@@ -243,6 +240,12 @@ export default function QuoteDetails() {
 
   return (
     <div className="space-y-6">
+      {!isOwner && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm px-4 py-2">
+          <Info className="h-4 w-4 flex-shrink-0" />
+          צפייה בלבד — הצעת המחיר משויכת לנציג אחר.
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -271,7 +274,7 @@ export default function QuoteDetails() {
               </Button>
             </Link>
           )}
-          {(isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
+          {isOwner && (isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
             <Button
               variant="outline"
               onClick={() => duplicateQuoteMutation.mutate()}
@@ -311,9 +314,9 @@ export default function QuoteDetails() {
             )}
             {quote.pdf_url ? 'צור PDF מחדש' : 'צור PDF'}
           </Button>
-          {quote.customer_email && (
-            <Button 
-              variant="outline" 
+          {isOwner && quote.customer_email && (
+            <Button
+              variant="outline"
               onClick={() => sendEmailMutation.mutate()}
               disabled={sendEmailMutation.isPending}
               className="text-primary"
@@ -326,7 +329,7 @@ export default function QuoteDetails() {
               שלח במייל
             </Button>
           )}
-          {(quote.status === 'sent' || quote.status === 'approved') && (
+          {isOwner && (quote.status === 'sent' || quote.status === 'approved') && (
             <Button className="bg-primary hover:bg-primary/90" onClick={handleConvertToOrder}>
               <ShoppingCart className="h-4 w-4 me-2" />
               המר להזמנה

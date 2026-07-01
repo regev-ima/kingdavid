@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, X } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canViewOrdersWorkspace, filterQuotesForUser, isAdmin } from '@/lib/rbac';
+import { buildLeadsById, canViewOrdersWorkspace, filterQuotesForUser, canViewQuote, isPhoneLookupTerm, isAdmin } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 const filterOptions = [
@@ -67,6 +67,12 @@ export default function Quotes() {
 
   const leadsById = buildLeadsById(leads);
   const scopedQuotes = filterQuotesForUser(effectiveUser, quotes, leadsById);
+  // A phone search lets a rep find OTHER reps' quotes too (view-only); counts
+  // and the per-rep drilldown keep using the rep's own scopedQuotes.
+  const phoneSearch = isPhoneLookupTerm(filters.search);
+  const searchableQuotes = phoneSearch
+    ? quotes.map((q) => ({ ...q, _readOnly: !canViewQuote(effectiveUser, q, leadsById) }))
+    : scopedQuotes;
   let filteredQuotes;
 
   if (repFilter) {
@@ -78,7 +84,7 @@ export default function Quotes() {
       return rep === repFilterLower && (q.status === 'draft' || q.status === 'sent');
     });
   } else {
-    filteredQuotes = scopedQuotes;
+    filteredQuotes = searchableQuotes;
 
     if (activeTab === 'pending') {
       filteredQuotes = filteredQuotes.filter(q => q.status === 'sent');
@@ -96,7 +102,8 @@ export default function Quotes() {
       const searchLower = filters.search.toLowerCase();
       filteredQuotes = filteredQuotes.filter(q =>
         q.quote_number?.toLowerCase().includes(searchLower) ||
-        q.customer_name?.toLowerCase().includes(searchLower)
+        q.customer_name?.toLowerCase().includes(searchLower) ||
+        q.customer_phone?.includes(filters.search)
       );
     }
     if (filters.status && filters.status !== 'all') {
@@ -154,7 +161,10 @@ export default function Quotes() {
       header: 'לקוח',
       render: (row) => (
         <div>
-          <p className="font-medium">{row.customer_name}</p>
+          <p className="font-medium">
+            {row.customer_name}
+            {row._readOnly && <span className="ms-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">צפייה בלבד</span>}
+          </p>
           <p className="text-sm text-muted-foreground">{row.customer_phone}</p>
         </div>
       )
@@ -294,7 +304,7 @@ export default function Quotes() {
         values={filters}
         onChange={(key, value) => { setFilters(prev => ({ ...prev, [key]: value })); setRepFilter(''); }}
         onClear={() => { setFilters({ search: '', status: 'all' }); setRepFilter(''); }}
-        searchPlaceholder="חפש לפי מספר הצעה או שם לקוח..."
+        searchPlaceholder="חפש לפי מספר הצעה, שם או טלפון..."
       />
 
       {repFilter && (

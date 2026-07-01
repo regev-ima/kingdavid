@@ -50,7 +50,7 @@ import {
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canViewOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
+import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
@@ -190,20 +190,11 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     );
   }
 
-  if (!canViewOrder(effectiveUser, order)) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה לצפות בהזמנה זו</p>
-        {isModal ? (
-          <Button className="mt-4" onClick={onClose}>סגור</Button>
-        ) : (
-          <Link to={createPageUrl('Orders')}>
-            <Button className="mt-4">חזור לרשימת ההזמנות</Button>
-          </Link>
-        )}
-      </div>
-    );
-  }
+  // Reps reach OTHER reps' orders through the phone lookup — they may view but
+  // not edit. canEditOrder mirrors the old canViewOrder ownership check, so
+  // everyone who could edit before still can; only a non-owning sales rep is
+  // downgraded to read-only (a banner + disabled controls below).
+  const canEdit = canEditOrder(effectiveUser, order);
 
   const handleCall = () => {
     if (order?.customer_phone) {
@@ -220,6 +211,12 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
 
   return (
     <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {!canEdit && (
+        <div className="flex-shrink-0 flex items-center gap-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-6 py-2">
+          <Info className="h-4 w-4 flex-shrink-0" />
+          צפייה בלבד — ההזמנה משויכת לנציג אחר.
+        </div>
+      )}
       {/* Header — order number + the 3 status badges. Fixed (flex-shrink-0) in
           popup mode so it never scrolls; pe-12 reserves room for the dialog's
           close-X. Mirrors the lead / service-ticket header. */}
@@ -440,6 +437,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   value={order.notes_sales || ''}
                   onChange={(e) => updateOrderMutation.mutate({ notes_sales: e.target.value })}
                   rows={2}
+                  disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
@@ -457,6 +455,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   value={order.notes_logistics || ''}
                   onChange={(e) => updateOrderMutation.mutate({ notes_logistics: e.target.value })}
                   rows={2}
+                  disabled={!canEdit}
                 />
               </div>
             </CardContent>
@@ -547,6 +546,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={!canEdit}
                           className="h-7 w-7 text-red-400 hover:text-red-600 shrink-0"
                           onClick={() => {
                             const updatedPayments = order.payments.filter((_, i) => i !== idx);
@@ -663,7 +663,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     size="sm"
                     className="w-full"
                     onClick={() => setShowHypPayment(true)}
-                    disabled={(order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
+                    disabled={!canEdit || (order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
                   >
                     <CreditCard className="h-3.5 w-3.5 me-1.5" />
                     תשלום באשראי (Hyp)
@@ -673,6 +673,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     size="sm"
                     className="w-full"
                     onClick={() => setShowAddPayment(true)}
+                    disabled={!canEdit}
                   >
                     <Plus className="h-3.5 w-3.5 me-1.5" />
                     הוסף תשלום ידני
@@ -686,6 +687,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 <Select
                   value={order.payment_status}
                   onValueChange={(val) => updateOrderMutation.mutate({ payment_status: val })}
+                  disabled={!canEdit}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
@@ -742,6 +744,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               <Select
                 value={order.delivery_status}
                 onValueChange={(val) => updateOrderMutation.mutate({ delivery_status: val })}
+                disabled={!canEdit}
               >
                 <SelectTrigger>
                   <SelectValue />
