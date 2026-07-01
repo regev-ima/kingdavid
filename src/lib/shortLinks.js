@@ -1,9 +1,10 @@
 import { supabase } from '@/api/supabaseClient';
 
-// Branded short-link base, e.g. "https://doc.kingdavid4u.co.il" (set as a
-// Vercel env var VITE_SHORTLINK_BASE). When it's not configured we just return
-// the original URL, so sharing keeps working before the domain is wired up.
-const BASE = (import.meta.env.VITE_SHORTLINK_BASE || '').replace(/\/+$/, '');
+// Branded short-link base. Resolved by a Cloudflare Worker on kingdavid.online
+// that reads the short_links row, serves the document straight from this domain
+// (no external redirect, so nothing ever exposes supabase), and renders a branded
+// Open-Graph preview for social scrapers. Overridable via VITE_SHORTLINK_BASE.
+const BASE = (import.meta.env.VITE_SHORTLINK_BASE || 'https://kingdavid.online').replace(/\/+$/, '');
 
 // Unambiguous alphabet (no 0/O/1/l/I) so the code is easy to read/dictate.
 const ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789';
@@ -17,7 +18,7 @@ function randomCode(len = 7) {
 }
 
 // Create a branded short link that points at `targetUrl`. The optional title /
-// subtitle drive the Open-Graph preview the redirect Worker renders. Falls back
+// subtitle drive the Open-Graph preview the Worker renders. Falls back
 // to `targetUrl` itself if no branded domain is configured or creation fails —
 // so a share action never breaks.
 export async function getShareLink(targetUrl, { title, subtitle } = {}) {
