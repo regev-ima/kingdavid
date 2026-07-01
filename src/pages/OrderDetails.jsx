@@ -54,6 +54,8 @@ import { canViewOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac'
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
+import WhatsAppSendDialog from '@/components/shared/WhatsAppSendDialog';
+import { getShareLink } from '@/lib/shortLinks';
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -76,6 +78,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
+  const [waState, setWaState] = useState(null); // null | {status:'preparing'|'ready'|'error', url?, msg?}
   const [showServiceTicket, setShowServiceTicket] = useState(false);
   const [newPayment, setNewPayment] = useState({
     amount: '',
@@ -211,10 +214,36 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     }
   };
 
-  const handleWhatsApp = () => {
-    const phone = (order?.customer_phone || '').replace(/[^0-9]/g, '');
-    if (phone) {
-      window.open(`https://wa.me/972${phone.startsWith('0') ? phone.slice(1) : phone}`, '_blank');
+  // Prepare a WhatsApp message linking to the order PDF, via a small status
+  // modal. The PDF render is slow and briefly reflows the page, so the modal
+  // gives feedback + masks it, and the user opens WhatsApp from a fresh click
+  // (so it isn't popup-blocked). Reuses a cached pdf_url when present.
+  const handleWhatsApp = async () => {
+    const digits = (order?.customer_phone || '').replace(/[^0-9]/g, '');
+    if (!digits) {
+      toast.error('אין מספר טלפון ללקוח');
+      return;
+    }
+    const intl = digits.startsWith('972') ? digits : `972${digits.startsWith('0') ? digits.slice(1) : digits}`;
+    setWaState({ status: 'preparing' });
+    await new Promise((r) => setTimeout(r, 50)); // let the modal paint first
+    try {
+      const pdfUrl = order.pdf_url || (await OrderPdfGenerator(order));
+      const shareUrl = await getShareLink(pdfUrl, {
+        title: `הזמנה #${order.order_number} — קינג דיוויד`,
+        subtitle: 'לצפייה בהזמנה',
+      });
+      const lines = [
+        `שלום ${order.customer_name || ''}`.trim() + ',',
+        `מצורפת ההזמנה שלך #${order.order_number} מבית קינג דיוויד.`,
+        order.total ? `סכום ההזמנה: ₪${Number(order.total).toLocaleString('he-IL')}` : '',
+        `לצפייה והורדת המסמך: ${shareUrl}`,
+        'נשמח לעמוד לרשותך 🙏',
+      ].filter(Boolean);
+      const text = encodeURIComponent(lines.join('\n'));
+      setWaState({ status: 'ready', url: `https://web.whatsapp.com/send?phone=${intl}&text=${text}` });
+    } catch (err) {
+      setWaState({ status: 'error', msg: err?.message || 'שגיאה לא ידועה' });
     }
   };
 
@@ -264,8 +293,12 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           <Phone className="h-3.5 w-3.5 me-1.5" />
           התקשר
         </Button>
-        <Button variant="outline" size="sm" onClick={handleWhatsApp} className="h-8 text-xs [&_svg]:text-green-600">
-          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} disabled={waState?.status === 'preparing'} className="h-8 text-xs [&_svg]:text-green-600">
+          {waState?.status === 'preparing' ? (
+            <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+          ) : (
+            <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          )}
           WhatsApp
         </Button>
         <Button
@@ -866,6 +899,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           </Card>
         </div>
       </div>
+
+      <WhatsAppSendDialog state={waState} onClose={() => setWaState(null)} />
 
       {/* Service Ticket Dialog — opens a rich ticket in the new Service Center
           (problem photos + warranty classification). Opening a ticket never
