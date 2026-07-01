@@ -9,17 +9,21 @@ import { CalendarDays, ChevronRight, ChevronLeft, Plus, X, Check, Lock, Loader2,
 import { startOfWeek, addDays, addWeeks, format } from '@/lib/safe-date-fns';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canEditSchedule } from '@/lib/rbac';
+import { useCompanyClosures } from '@/hooks/useCompanyClosures';
+import { useIsraeliHolidays } from '@/hooks/useIsraeliHolidays';
+import { evaluateDate } from '@/lib/companyClosures';
 
 // ── Static config ─────────────────────────────────────────────────
-// Israeli work week: Sunday → Friday (6 columns).
+// Israeli work week: Sunday → Friday (6 columns). We show TWO weeks at once.
 const DAY_LABELS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי'];
+const WEEKS_SHOWN = 2;
 
 // The three shift rows from the manager's spreadsheet. Colours echo the Excel
 // (cyan morning / purple evening / amber day-off).
 const SHIFTS = [
-  { key: 'morning', label: 'בוקר', time: '8:45 – 17:00', head: 'bg-cyan-100 text-cyan-900 border-cyan-200' },
-  { key: 'evening', label: 'ערב',  time: '12:00 – 20:00', head: 'bg-purple-100 text-purple-900 border-purple-200' },
-  { key: 'off',     label: 'חופש', time: '',              head: 'bg-amber-100 text-amber-900 border-amber-200' },
+  { key: 'morning', label: 'בוקר', time: '8:45 – 17:00', head: 'bg-cyan-100 text-cyan-900' },
+  { key: 'evening', label: 'ערב',  time: '12:00 – 20:00', head: 'bg-purple-100 text-purple-900' },
+  { key: 'off',     label: 'חופש', time: '',              head: 'bg-amber-100 text-amber-900' },
 ];
 
 // Stable pastel per rep so the same person looks the same across every cell.
@@ -48,17 +52,21 @@ export default function Schedule() {
   const canEdit = canEditSchedule(effectiveUser);
   const myEmail = effectiveUser?.email || '';
 
-  // Which week is shown — anchored to its Sunday.
+  // First Sunday shown; the board covers WEEKS_SHOWN consecutive weeks.
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 0 }));
-  const days = useMemo(
-    () => Array.from({ length: 6 }, (_, i) => {
-      const date = addDays(weekStart, i);
+
+  // Build the weeks (each = 6 days Sun–Fri).
+  const weeks = useMemo(() => Array.from({ length: WEEKS_SHOWN }, (_, w) => {
+    const wStart = addDays(weekStart, w * 7);
+    const days = Array.from({ length: 6 }, (_, i) => {
+      const date = addDays(wStart, i);
       return { date, key: iso(date), dayLabel: DAY_LABELS[i], dateLabel: format(date, 'd.M') };
-    }),
-    [weekStart],
-  );
-  const weekKey = iso(weekStart);
-  const rangeLabel = `${format(days[0].date, 'd.M')} – ${format(days[5].date, 'd.M.yy')}`;
+    });
+    return { days, rangeLabel: `${format(days[0].date, 'd.M')} – ${format(days[5].date, 'd.M')}` };
+  }), [weekStart]);
+  const spanStart = weeks[0].days[0];
+  const spanEnd = weeks[WEEKS_SHOWN - 1].days[5];
+  const spanLabel = `${format(spanStart.date, 'd.M')} – ${format(spanEnd.date, 'd.M.yy')}`;
 
   // Reps available for assignment (active users), for the picker + name lookup.
   const { data: users = [] } = useQuery({
@@ -78,16 +86,22 @@ export default function Schedule() {
     return m;
   }, [users]);
 
-  // Assignments for the visible week.
+  // Company closures + Israeli holidays, so the date headers show חגים / ימי סגירה
+  // exactly as configured in Settings → "ימי סגירה".
+  const { config: closureConfig } = useCompanyClosures();
+  const holidaysByDate = useIsraeliHolidays(spanStart.date, spanEnd.date);
+  const verdictFor = (date) => evaluateDate(date, closureConfig, holidaysByDate);
+
+  // Assignments for the whole visible span (both weeks in one query).
+  const queryKey = ['shift-assignments', spanStart.key, spanEnd.key];
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['shift-assignments', weekKey],
+    queryKey,
     queryFn: () => base44.entities.ShiftAssignment.filter({
-      work_date: { $gte: days[0].key, $lte: days[5].key },
+      work_date: { $gte: spanStart.key, $lte: spanEnd.key },
     }),
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   });
-  // Map "date|shift" → { id, rep_emails }.
   const cells = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
@@ -98,12 +112,10 @@ export default function Schedule() {
   }, [rows]);
   const getCell = (dateKey, shift) => cells.get(`${dateKey}|${shift}`) || { id: null, rep_emails: [] };
 
-  // Save a single cell (create / update / delete). Optimistic so toggles feel
-  // instant; reconciled on settle.
-  const queryKey = ['shift-assignments', weekKey];
+  // Save one cell (create / update / delete) with an optimistic update.
   const saveCell = useMutation({
     mutationFn: async ({ dateKey, shift, repEmails, existingId }) => {
-      if (existingId) {
+      if (existingId && !String(existingId).startsWith('temp-')) {
         if (repEmails.length === 0) return base44.entities.ShiftAssignment.delete(existingId);
         return base44.entities.ShiftAssignment.update(existingId, { rep_emails: repEmails, updated_by: myEmail });
       }
@@ -128,9 +140,9 @@ export default function Schedule() {
       });
       return { prev };
     },
-    onError: (_e, _v, ctx) => {
+    onError: (err, _v, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(queryKey, ctx.prev);
-      toast.error('שמירת השיבוץ נכשלה');
+      toast.error(`שמירת השיבוץ נכשלה: ${err?.message || 'שגיאה'}`);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey }),
   });
@@ -143,9 +155,11 @@ export default function Schedule() {
     saveCell.mutate({ dateKey, shift, repEmails, existingId: cell.id });
   };
 
+  const shared = { getCell, canEdit, reps, toggleRep, nameByEmail, myEmail, verdictFor };
+
   return (
     <div className="space-y-4" dir="rtl">
-      {/* Header + week navigation */}
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
@@ -156,26 +170,24 @@ export default function Schedule() {
             {canEdit ? 'שבץ נציגים למשמרות — הנציגים רואים את הלוח בזמן אמת.' : 'לוח המשמרות השבועי של הצוות.'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {canEdit ? (
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
-              <Check className="h-3 w-3" /> מצב עריכה
-            </span>
-          ) : (
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-              <Lock className="h-3 w-3" /> צפייה בלבד
-            </span>
-          )}
-        </div>
+        {canEdit ? (
+          <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+            <Check className="h-3 w-3" /> מצב עריכה
+          </span>
+        ) : (
+          <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            <Lock className="h-3 w-3" /> צפייה בלבד
+          </span>
+        )}
       </div>
 
-      {/* Week switcher */}
+      {/* Fortnight switcher — moves one week at a time */}
       <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card p-2 shadow-card">
         <Button variant="outline" size="sm" className="gap-1" onClick={() => setWeekStart((w) => addWeeks(w, 1))}>
-          <ChevronLeft className="h-4 w-4" /> שבוע הבא
+          <ChevronLeft className="h-4 w-4" /> קדימה
         </Button>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-foreground tabular-nums">{rangeLabel}</span>
+          <span className="text-sm font-semibold text-foreground tabular-nums">{spanLabel}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -187,24 +199,60 @@ export default function Schedule() {
           {saveCell.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
         </div>
         <Button variant="outline" size="sm" className="gap-1" onClick={() => setWeekStart((w) => addWeeks(w, -1))}>
-          שבוע קודם <ChevronRight className="h-4 w-4" />
+          אחורה <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* The board */}
-      <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-card">
-        <table className="w-full min-w-[820px] border-collapse">
+      {/* Two week boards */}
+      {weeks.map((week, i) => (
+        <WeekGrid key={week.days[0].key} title={i === 0 ? 'השבוע' : 'שבוע הבא'} rangeLabel={week.rangeLabel} days={week.days} {...shared} />
+      ))}
+
+      {isLoading && rows.length === 0 ? (
+        <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : null}
+
+      {!canEdit ? (
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+          <Lock className="h-3 w-3" /> רק מנהל (או נציג עם הרשאת "עריכת שיבוץ משמרות") יכול לשבץ. אתה רואה את הלוח בלבד.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ── One week's board ──────────────────────────────────────────────
+function WeekGrid({ title, rangeLabel, days, getCell, canEdit, reps, toggleRep, nameByEmail, myEmail, verdictFor }) {
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/40">
+        <span className="text-sm font-semibold text-foreground">{title}</span>
+        <span className="text-xs text-muted-foreground tabular-nums">{rangeLabel}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] border-collapse">
           <thead>
             <tr>
-              <th className="sticky right-0 z-10 bg-card w-28 border-b border-l border-border p-2 text-xs font-semibold text-muted-foreground">
-                משמרת
-              </th>
+              <th className="sticky right-0 z-10 bg-card w-24 border-b border-l border-border p-2 text-xs font-semibold text-muted-foreground">משמרת</th>
               {days.map((d) => {
                 const isToday = d.key === todayIso();
+                const v = verdictFor(d.date);
+                const closed = v.status === 'closed';
+                const half = v.status === 'half_day';
+                const badge = (closed || half) ? v.label : '';
+                const headBg = isToday ? 'bg-emerald-500 text-white'
+                  : closed ? 'bg-rose-50 text-rose-900'
+                  : half ? 'bg-amber-50 text-amber-900'
+                  : 'bg-emerald-50 text-emerald-900';
                 return (
-                  <th key={d.key} className={`border-b border-l border-border p-2 text-center ${isToday ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-900'}`}>
+                  <th key={d.key} className={`border-b border-l border-border p-2 text-center ${headBg}`}>
                     <div className="text-sm font-bold">{d.dayLabel}</div>
-                    <div className={`text-[11px] tabular-nums ${isToday ? 'text-white/90' : 'text-emerald-700/80'}`}>{d.dateLabel}</div>
+                    <div className={`text-[11px] tabular-nums ${isToday ? 'text-white/90' : 'opacity-70'}`}>{d.dateLabel}</div>
+                    {badge ? (
+                      <div className={`mt-0.5 inline-block rounded px-1 text-[10px] font-medium leading-tight truncate max-w-[92px] ${closed ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'}`} title={badge}>
+                        {badge}
+                      </div>
+                    ) : null}
                   </th>
                 );
               })}
@@ -213,14 +261,14 @@ export default function Schedule() {
           <tbody>
             {SHIFTS.map((shift) => (
               <tr key={shift.key} className="align-top">
-                <th className={`sticky right-0 z-10 w-28 border-b border-l border-border p-2 text-right ${shift.head}`}>
+                <th className={`sticky right-0 z-10 w-24 border-b border-l border-border p-2 text-right ${shift.head}`}>
                   <div className="text-sm font-bold">{shift.label}</div>
                   {shift.time ? <div className="text-[10px] opacity-80 tabular-nums" dir="ltr">{shift.time}</div> : null}
                 </th>
                 {days.map((d) => {
                   const cell = getCell(d.key, shift.key);
                   return (
-                    <td key={d.key} className="border-b border-l border-border p-1.5 min-w-[120px]">
+                    <td key={d.key} className="border-b border-l border-border p-1.5 min-w-[116px]">
                       <div className="flex flex-wrap gap-1">
                         {cell.rep_emails.map((email) => {
                           const mine = email === myEmail;
@@ -232,12 +280,7 @@ export default function Schedule() {
                             >
                               {nameByEmail.get(email) || email}
                               {canEdit ? (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleRep(d.key, shift.key, email)}
-                                  className="opacity-60 hover:opacity-100"
-                                  aria-label="הסר"
-                                >
+                                <button type="button" onClick={() => toggleRep(d.key, shift.key, email)} className="opacity-60 hover:opacity-100" aria-label="הסר">
                                   <X className="h-3 w-3" />
                                 </button>
                               ) : null}
@@ -246,11 +289,7 @@ export default function Schedule() {
                         })}
 
                         {canEdit ? (
-                          <RepPicker
-                            reps={reps}
-                            selected={cell.rep_emails}
-                            onToggle={(email) => toggleRep(d.key, shift.key, email)}
-                          />
+                          <RepPicker reps={reps} selected={cell.rep_emails} onToggle={(email) => toggleRep(d.key, shift.key, email)} />
                         ) : cell.rep_emails.length === 0 ? (
                           <span className="text-xs text-muted-foreground/40">—</span>
                         ) : null}
@@ -262,16 +301,7 @@ export default function Schedule() {
             ))}
           </tbody>
         </table>
-        {isLoading && rows.length === 0 ? (
-          <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-        ) : null}
       </div>
-
-      {!canEdit ? (
-        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-          <Lock className="h-3 w-3" /> רק מנהל (או נציג עם הרשאת "עריכת שיבוץ משמרות") יכול לשבץ. אתה רואה את הלוח בלבד.
-        </p>
-      ) : null}
     </div>
   );
 }

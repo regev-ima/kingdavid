@@ -51,7 +51,7 @@ CREATE POLICY "shift_assignments_insert"
   TO authenticated
   WITH CHECK (EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.email = (auth.jwt() ->> 'email')
+    WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
       AND (u.role = 'admin' OR (u.extra_permissions ->> 'edit_schedule') = 'true')
   ));
 
@@ -61,12 +61,12 @@ CREATE POLICY "shift_assignments_update"
   TO authenticated
   USING (EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.email = (auth.jwt() ->> 'email')
+    WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
       AND (u.role = 'admin' OR (u.extra_permissions ->> 'edit_schedule') = 'true')
   ))
   WITH CHECK (EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.email = (auth.jwt() ->> 'email')
+    WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
       AND (u.role = 'admin' OR (u.extra_permissions ->> 'edit_schedule') = 'true')
   ));
 
@@ -76,7 +76,7 @@ CREATE POLICY "shift_assignments_delete"
   TO authenticated
   USING (EXISTS (
     SELECT 1 FROM public.users u
-    WHERE u.email = (auth.jwt() ->> 'email')
+    WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
       AND (u.role = 'admin' OR (u.extra_permissions ->> 'edit_schedule') = 'true')
   ));
 
