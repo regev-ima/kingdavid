@@ -163,6 +163,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   }, [phoneMatchesData]);
 
   const showPhoneMatches = phoneLookupEnabled && phoneMatches.length > 0;
+  // Feedback while the lookup runs — covers BOTH the debounce window (the typed
+  // phone hasn't propagated to the query yet) and the request in flight — so the
+  // rep can SEE a search is happening instead of staring at a static field.
+  const normalizedTypedPhone = normalizePhoneForLookup(formData.customer_phone);
+  const phoneSearching =
+    !leadId && !linkedRecord && canAccessSales &&
+    normalizedTypedPhone.length >= 4 &&
+    (isPhoneLookupFetching || normalizedTypedPhone !== debouncedPhone);
 
   const applyPhoneMatch = (match) => {
     setFormData((prev) => ({
@@ -547,27 +555,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     });
   };
 
-  const handleAddonsSelect = (index, addons) => {
-    setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
-        if (idx !== index) return item;
-        
-        const addonsTotal = addons.reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = item.quantity * (item.unit_price + addonsTotal);
-        const discount = itemTotal * (item.discount_percent / 100);
-        
-        return {
-          ...item,
-          selected_addons: addons,
-          total: itemTotal - discount
-        };
-      });
-      
-      const totals = calculateTotals(newItems, prev.extras);
-      return { ...prev, items: newItems, ...totals };
-    });
-  };
-
   const handleSubmit = (e) => {
     e.preventDefault();
     // Catch the obvious "user reached step 3 with empty form" case before
@@ -936,7 +923,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             ) : null}
             {showPhoneMatches ? (
               <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2">
-                <p className="text-xs text-blue-800 font-medium">נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההצעה:</p>
+                <p className="text-xs text-blue-800 font-medium flex items-center gap-1.5">
+                  {phoneSearching && <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />}
+                  נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההצעה:
+                </p>
                 <div className="space-y-1.5">
                   {phoneMatches.map((m) => (
                     <button
@@ -960,6 +950,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     </button>
                   ))}
                 </div>
+              </div>
+            ) : phoneSearching ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 flex items-center gap-2 text-xs text-blue-800">
+                <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" />
+                מחפש רשומות עם טלפון תואם…
               </div>
             ) : null}
           </CardContent>
