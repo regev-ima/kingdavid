@@ -38,6 +38,7 @@ import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
+import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -355,6 +356,15 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
       if (leadId) {
         await base44.entities.Lead.update(leadId, { status: 'followup_after_quote' });
+        // Cross-rep policy: a rep who doesn't own this lead just produced a
+        // quote → become secondary if the lead has an order, else take over as
+        // primary. Logged to the lead history. Admins exempt.
+        await applyCrossRepReassignment({
+          leadId,
+          actingUser: effectiveUser,
+          isAdminActor: isAdmin(effectiveUser),
+          sourceLabel: 'הצעת מחיר',
+        });
       }
 
       // Generate and upload PDF

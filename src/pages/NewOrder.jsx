@@ -25,6 +25,7 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
+import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -377,12 +378,23 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
       // Update lead status and link customer if exists
       if (data.lead_id) {
-        await base44.entities.Lead.update(data.lead_id, { 
+        await base44.entities.Lead.update(data.lead_id, {
           status: 'deal_closed',
-          customer_id: customerId 
+          customer_id: customerId
+        });
+        // Cross-rep policy: a rep who doesn't own this lead just created an
+        // order → become secondary if the lead already had an order, else take
+        // over as primary. excludeOrderId ignores the order we just created so
+        // the FIRST order still counts as "no prior order". Admins exempt.
+        await applyCrossRepReassignment({
+          leadId: data.lead_id,
+          actingUser: effectiveUser,
+          isAdminActor: isAdmin(effectiveUser),
+          sourceLabel: 'הזמנה',
+          excludeOrderId: order.id,
         });
       }
-      
+
       return order;
     },
     onSuccess: (order) => {
