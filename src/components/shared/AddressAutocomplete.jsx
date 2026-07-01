@@ -107,13 +107,9 @@ export default function AddressAutocomplete({
 
         autocompleteRef.current = ac;
         setLoading(false);
-        // Diagnostic — remove once verified in production
-        // eslint-disable-next-line no-console
-        console.log('[AddressAutocomplete] attached to input', inputRef.current);
       })
       .catch((err) => {
         if (cancelled) return;
-        // eslint-disable-next-line no-console
         console.warn('[AddressAutocomplete] load failed:', err.message);
         setError(err.message);
         setLoading(false);
@@ -131,6 +127,30 @@ export default function AddressAutocomplete({
       }
     };
   }, [configured, inputType, restrictToIsrael]); // ← onChange intentionally NOT here
+
+  // Google appends the suggestions dropdown (.pac-container) to <body>, which
+  // is OUTSIDE any Radix Dialog. Radix's focus-trap / dismissable-layer listen
+  // on `document`, and on pointer-down they yank focus back into the dialog —
+  // which makes Google abort the pick, so selecting a suggestion appears to do
+  // nothing (place_changed fires with no address_components). Stop the
+  // dropdown's own pointer/mouse events from bubbling to those document-level
+  // listeners so the selection can complete. Harmless outside a dialog.
+  useEffect(() => {
+    if (!configured) return undefined;
+    const stop = (e) => e.stopPropagation();
+    const guard = () => {
+      document.querySelectorAll('.pac-container').forEach((el) => {
+        if (el.dataset.dialogSafe === '1') return;
+        el.dataset.dialogSafe = '1';
+        el.addEventListener('pointerdown', stop);
+        el.addEventListener('mousedown', stop);
+      });
+    };
+    const observer = new MutationObserver(guard);
+    observer.observe(document.body, { childList: true });
+    guard();
+    return () => observer.disconnect();
+  }, [configured]);
 
   const handleChange = (e) => {
     onChangeRef.current?.(e.target.value, null);
