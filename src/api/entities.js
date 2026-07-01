@@ -45,6 +45,7 @@ const TABLE_MAP = {
   ClubSignup: 'club_signups',
   QuoteDefaults: 'quote_defaults',
   CompanyClosures: 'company_closures',
+  ShiftAssignment: 'shift_assignments',
 };
 
 /**

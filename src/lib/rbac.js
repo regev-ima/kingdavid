@@ -32,6 +32,11 @@ export const GRANTABLE_PERMISSIONS = [
     label: 'עדכון מרוכז',
     description: 'שימוש בכלי העדכון המרוכז (Bulk Update) לעריכת לידים בכמות.',
   },
+  {
+    key: 'edit_schedule',
+    label: 'עריכת שיבוץ משמרות',
+    description: 'שיבוץ נציגים למשמרות בעמוד "שיבוץ משמרות". שאר הנציגים רק צופים.',
+  },
 ];
 
 // True when `key` is switched on in the rep's extra_permissions blob.
@@ -93,6 +98,12 @@ export function canViewFinanceWorkspace(user) {
 // `bulk_update` extra permission opens it for a specific rep.
 export function canUseBulkUpdate(user) {
   return isAdmin(user) || hasExtraPermission(user, 'bulk_update');
+}
+
+// Shift schedule ("שיבוץ משמרות"). Everyone authenticated can VIEW the weekly
+// board; admins — or a rep granted `edit_schedule` — may assign reps to shifts.
+export function canEditSchedule(user) {
+  return isAdmin(user) || hasExtraPermission(user, 'edit_schedule');
 }
 
 export function canAccessSupportWorkspace(user) {

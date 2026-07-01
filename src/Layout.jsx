@@ -40,7 +40,8 @@ import {
   Megaphone,
   LayoutTemplate,
   PlusCircle,
-  Pin
+  Pin,
+  CalendarDays
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
 
@@ -62,6 +63,7 @@ export const navigationByRole = {
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
     { name: 'מפעל', href: 'Factory', icon: Factory },
@@ -82,6 +84,7 @@ export const navigationByRole = {
   ],
   sales_user: [
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לידים', href: 'LeadManagement', icon: Users },
     { name: 'לקוחות', href: 'Customers', icon: Contact },
@@ -91,6 +94,7 @@ export const navigationByRole = {
   ],
   factory_user: [
     { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'מפעל', href: 'Factory', icon: Factory },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
