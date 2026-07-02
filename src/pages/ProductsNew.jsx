@@ -468,7 +468,10 @@ export default function ProductsNew() {
   };
 
   const getProductVariations = (productId) => {
-    return variations.filter((v) => v.product_id === productId);
+    // Sizes ascending — by width, then length — so the group reads small → large.
+    return variations
+      .filter((v) => v.product_id === productId)
+      .sort((a, b) => (a.width_cm || 0) - (b.width_cm || 0) || (a.length_cm || 0) - (b.length_cm || 0));
   };
 
   const filteredProducts = products.filter((p) => {
@@ -944,7 +947,7 @@ export default function ProductsNew() {
                     <SelectItem value="none">ללא ברירת מחדל</SelectItem>
                     {getProductVariations(editingProduct.id).map((v) =>
                       <SelectItem key={v.id} value={v.id}>
-                        {v.sku} - {v.length_cm}×{v.width_cm}×{v.height_cm}
+                        {v.sku} - <span dir="ltr">{v.width_cm}×{v.length_cm}×{v.height_cm}</span>
                       </SelectItem>
                       )}
                   </SelectContent>
@@ -1350,7 +1353,7 @@ export default function ProductsNew() {
                                   <TableHeader>
                                     <TableRow>
                                       <TableHead className="text-right">מק"ט</TableHead>
-                                      <TableHead className="text-right">מידות</TableHead>
+                                      <TableHead className="text-right" dir="ltr">רוחב × אורך</TableHead>
                                       <TableHead className="text-right">לפני מע״מ</TableHead>
                                       <TableHead className="text-right">כולל מע״מ</TableHead>
                                       <TableHead className="text-right">מלאי</TableHead>
@@ -1369,7 +1372,7 @@ export default function ProductsNew() {
                                         </TableCell>
                                         <TableCell className="font-medium">
                                           {variation.width_cm && variation.length_cm ?
-                                        `${variation.width_cm}×${variation.length_cm}` :
+                                        <span dir="ltr" className="tabular-nums">{variation.width_cm} × {variation.length_cm}</span> :
                                         '-'}
                                         </TableCell>
                                         <TableCell>
