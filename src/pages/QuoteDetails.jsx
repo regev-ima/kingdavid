@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCreationModal } from '@/components/shared/CreationModalContext';
+import { useQuoteModal } from '@/components/quote/QuoteModalContext';
 import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -86,6 +87,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { openNewOrder } = useCreationModal();
+  const { openQuote } = useQuoteModal();
 
   const urlParams = new URLSearchParams(window.location.search);
   // In modal mode the id arrives as a prop and the URL is left untouched.
@@ -167,6 +169,9 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose }) {
       return newQuote;
     },
     onSuccess: (newQuote) => {
+      // In the popup, swap it to show the freshly-duplicated quote instead of
+      // navigating away to a full page — the rep stays in the same overlay.
+      if (isModal) { openQuote(newQuote.id); return; }
       navigate(createPageUrl('QuoteDetails') + `?id=${newQuote.id}`);
     },
   });
