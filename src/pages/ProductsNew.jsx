@@ -124,6 +124,7 @@ export default function ProductsNew() {
     is_active: true,
     manager_notes: '',
     has_trial_period: false,
+    trial_period_days: '',
     website_categories: '',
     is_on_sale: false,
     discount_type: 'percentage',
@@ -261,6 +262,7 @@ export default function ProductsNew() {
       is_active: true,
       manager_notes: '',
       has_trial_period: false,
+      trial_period_days: '',
       website_categories: '',
       is_on_sale: false,
       discount_type: 'percentage',
@@ -339,7 +341,8 @@ export default function ProductsNew() {
         ? productForm.default_variation_id
         : null,
       manager_notes: productForm.manager_notes || '',
-      has_trial_period: !!productForm.has_trial_period,
+      has_trial_period: !!productForm.trial_period_days,
+      trial_period_days: productForm.trial_period_days ? Number(productForm.trial_period_days) : null,
       bed_type: isBedTypeRelevant && bedTypesArray.length > 0 ? bedTypesArray : null,
       website_categories: websiteCategoriesArray,
       is_on_sale: !!productForm.is_on_sale,
@@ -417,6 +420,7 @@ export default function ProductsNew() {
       is_active: product.is_active !== false,
       manager_notes: product.manager_notes || '',
       has_trial_period: product.has_trial_period || false,
+      trial_period_days: product.trial_period_days ?? (product.has_trial_period ? 30 : ''),
       website_categories: Array.isArray(product.website_categories)
         ? product.website_categories.join(', ')
         : (product.website_categories || ''),
@@ -970,13 +974,20 @@ export default function ProductsNew() {
                 <Label>פעיל</Label>
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={productForm.has_trial_period}
-                  onChange={(e) => setProductForm({ ...productForm, has_trial_period: e.target.checked })}
-                  className="h-4 w-4"
-                />
-                <Label>30 ימי נסיון</Label>
+                <Label className="whitespace-nowrap">תקופת ניסיון</Label>
+                <Select
+                  value={productForm.trial_period_days ? String(productForm.trial_period_days) : 'none'}
+                  onValueChange={(v) => setProductForm({ ...productForm, trial_period_days: v === 'none' ? '' : Number(v) })}
+                >
+                  <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">ללא ניסיון</SelectItem>
+                    <SelectItem value="30">30 יום</SelectItem>
+                    <SelectItem value="60">60 יום</SelectItem>
+                    <SelectItem value="90">90 יום</SelectItem>
+                    <SelectItem value="180">180 יום</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -1297,9 +1308,9 @@ export default function ProductsNew() {
                           <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums">{productVariations.length}</span>
                         </TableCell>
                         <TableCell>
-                          {product.has_trial_period ? (
+                          {(product.trial_period_days || product.has_trial_period) ? (
                             <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-[11px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap">
-                              <Clock className="h-3 w-3" /> 30 ימים
+                              <Clock className="h-3 w-3" /> {product.trial_period_days || 30} ימי ניסיון
                             </span>
                           ) : <span className="text-muted-foreground/40 text-sm">—</span>}
                         </TableCell>
