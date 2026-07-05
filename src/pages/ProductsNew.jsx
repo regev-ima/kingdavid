@@ -35,7 +35,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, ChevronLeft, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import { Slider } from "@/components/ui/slider";
@@ -65,6 +65,37 @@ const bedTypeLabels = {
   designed: 'מעוצבת'
 };
 
+// Compact "on sale" chip for the catalog table, with discount + date-range tooltip.
+function SaleBadge({ product }) {
+  const fmt = (d) => {
+    if (!d) return null;
+    try { return new Date(d).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
+    catch { return String(d); }
+  };
+  const starts = fmt(product.sale_starts_at);
+  const ends = fmt(product.sale_ends_at);
+  const dv = product.discount_value;
+  const dt = product.discount_type;
+  const short = dv != null && dv !== '' ? (dt === 'amount' ? `₪${Number(dv).toLocaleString()}-` : `${Number(dv)}%-`) : '';
+  const full = dv != null && dv !== '' ? (dt === 'amount' ? `₪${Number(dv).toLocaleString()} הנחה` : `${Number(dv)}% הנחה`) : 'מבצע פעיל';
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[11px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap cursor-help">
+            <Tag className="h-3 w-3" /> מבצע{short ? ` ${short}` : ''}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="text-right" dir="rtl">
+          <p className="font-semibold mb-1">{full}</p>
+          {starts && <p>תחילה: {starts}</p>}
+          {ends && <p>סיום: {ends}</p>}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export default function ProductsNew() {
   const [expandedProducts, setExpandedProducts] = useState({});
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
@@ -93,6 +124,7 @@ export default function ProductsNew() {
     is_active: true,
     manager_notes: '',
     has_trial_period: false,
+    trial_period_days: '',
     website_categories: '',
     is_on_sale: false,
     discount_type: 'percentage',
@@ -230,6 +262,7 @@ export default function ProductsNew() {
       is_active: true,
       manager_notes: '',
       has_trial_period: false,
+      trial_period_days: '',
       website_categories: '',
       is_on_sale: false,
       discount_type: 'percentage',
@@ -308,7 +341,8 @@ export default function ProductsNew() {
         ? productForm.default_variation_id
         : null,
       manager_notes: productForm.manager_notes || '',
-      has_trial_period: !!productForm.has_trial_period,
+      has_trial_period: !!productForm.trial_period_days,
+      trial_period_days: productForm.trial_period_days ? Number(productForm.trial_period_days) : null,
       bed_type: isBedTypeRelevant && bedTypesArray.length > 0 ? bedTypesArray : null,
       website_categories: websiteCategoriesArray,
       is_on_sale: !!productForm.is_on_sale,
@@ -386,6 +420,7 @@ export default function ProductsNew() {
       is_active: product.is_active !== false,
       manager_notes: product.manager_notes || '',
       has_trial_period: product.has_trial_period || false,
+      trial_period_days: product.trial_period_days ?? (product.has_trial_period ? 30 : ''),
       website_categories: Array.isArray(product.website_categories)
         ? product.website_categories.join(', ')
         : (product.website_categories || ''),
@@ -433,7 +468,10 @@ export default function ProductsNew() {
   };
 
   const getProductVariations = (productId) => {
-    return variations.filter((v) => v.product_id === productId);
+    // Sizes ascending — by width, then length — so the group reads small → large.
+    return variations
+      .filter((v) => v.product_id === productId)
+      .sort((a, b) => (a.width_cm || 0) - (b.width_cm || 0) || (a.length_cm || 0) - (b.length_cm || 0));
   };
 
   const filteredProducts = products.filter((p) => {
@@ -909,7 +947,7 @@ export default function ProductsNew() {
                     <SelectItem value="none">ללא ברירת מחדל</SelectItem>
                     {getProductVariations(editingProduct.id).map((v) =>
                       <SelectItem key={v.id} value={v.id}>
-                        {v.sku} - {v.length_cm}×{v.width_cm}×{v.height_cm}
+                        {v.sku} - <span dir="ltr">{v.width_cm}×{v.length_cm}×{v.height_cm}</span>
                       </SelectItem>
                       )}
                   </SelectContent>
@@ -939,13 +977,20 @@ export default function ProductsNew() {
                 <Label>פעיל</Label>
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={productForm.has_trial_period}
-                  onChange={(e) => setProductForm({ ...productForm, has_trial_period: e.target.checked })}
-                  className="h-4 w-4"
-                />
-                <Label>30 ימי נסיון</Label>
+                <Label className="whitespace-nowrap">תקופת ניסיון</Label>
+                <Select
+                  value={productForm.trial_period_days ? String(productForm.trial_period_days) : 'none'}
+                  onValueChange={(v) => setProductForm({ ...productForm, trial_period_days: v === 'none' ? '' : Number(v) })}
+                >
+                  <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">ללא ניסיון</SelectItem>
+                    <SelectItem value="30">30 יום</SelectItem>
+                    <SelectItem value="60">60 יום</SelectItem>
+                    <SelectItem value="90">90 יום</SelectItem>
+                    <SelectItem value="180">180 יום</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -1198,236 +1243,210 @@ export default function ProductsNew() {
             </Select>
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {filteredProducts.map((product) => {
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[900px]" dir="rtl">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead className="text-right">מוצר</TableHead>
+                  <TableHead className="text-right">קטגוריה</TableHead>
+                  <TableHead className="text-right">סוג</TableHead>
+                  <TableHead className="text-center">מידות</TableHead>
+                  <TableHead className="text-right">ניסיון</TableHead>
+                  <TableHead className="text-right">מבצע</TableHead>
+                  <TableHead className="text-right">סטטוס</TableHead>
+                  <TableHead className="text-right">פעולות</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProducts.map((product) => {
                   const productVariations = getProductVariations(product.id);
                   const isExpanded = expandedProducts[product.id];
-
+                  const bedTypes = Array.isArray(product.bed_type)
+                    ? product.bed_type
+                    : (product.bed_type ? [product.bed_type] : []);
                   return (
-                    <div key={product.id} className={`border rounded-xl overflow-hidden transition-shadow ${isExpanded ? 'shadow-md' : 'hover:shadow-sm'}`}>
-                  <button
-                    type="button"
-                    dir="rtl"
-                    className="w-full flex items-center justify-between p-4 bg-white hover:bg-muted/30 transition-colors"
-                    onClick={() => toggleExpand(product.id)}
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className={`w-2 h-10 rounded-full flex-shrink-0 ${product.is_active ? 'bg-emerald-400' : 'bg-gray-300'}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <h3 className="font-bold text-base text-foreground">{product.name}</h3>
-                          <Badge variant="outline" className="text-[10px]">{categoryLabels[product.category]}</Badge>
-                          {(() => {
-                            const bedTypes = Array.isArray(product.bed_type)
-                              ? product.bed_type
-                              : (product.bed_type ? [product.bed_type] : []);
-                            return bedTypes.map((bt) => (
-                              <Badge key={bt} className={`text-[10px] ${bt === 'double' ? 'bg-purple-100 text-purple-700' : 'bg-cyan-100 text-cyan-700'}`}>
-                                {bedTypeLabels[bt] || bt}
-                              </Badge>
-                            ));
-                          })()}
-                          <TooltipProvider delayDuration={200}>
-                          {product.is_on_sale && (() => {
-                            const fmt = (d) => {
-                              if (!d) return null;
-                              try {
-                                return new Date(d).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-                              } catch { return String(d); }
-                            };
-                            const starts = fmt(product.sale_starts_at);
-                            const ends = fmt(product.sale_ends_at);
-                            const dv = product.discount_value;
-                            const dt = product.discount_type;
-                            const discountText = dv != null && dv !== ''
-                              ? (dt === 'amount' ? `₪${Number(dv).toLocaleString()} הנחה` : `${Number(dv)}% הנחה`)
-                              : 'מבצע';
-                            return (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md">
-                                    <Tag className="h-3 w-3" /> במבצע
-                                    {dv != null && dv !== '' && (
-                                      <span className="ms-1">
-                                        {dt === 'amount' ? `₪${Number(dv).toLocaleString()}-` : `${Number(dv)}%-`}
-                                      </span>
+                    <React.Fragment key={product.id}>
+                      <TableRow className="cursor-pointer hover:bg-muted/30" onClick={() => toggleExpand(product.id)}>
+                        <TableCell className="w-8 text-center align-middle">
+                          <ChevronDown className={`h-4 w-4 text-muted-foreground inline transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-1.5 h-6 rounded-full flex-shrink-0 ${product.is_active ? 'bg-emerald-400' : 'bg-gray-300'}`} />
+                            <span className="font-semibold text-foreground">{product.name}</span>
+                            {product.manager_notes ? (
+                              <TooltipProvider delayDuration={200}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span onClick={(e) => e.stopPropagation()} className="cursor-help">
+                                      <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs text-right" dir="rtl">
+                                    <p className="font-semibold mb-1">הערת מנהל:</p>
+                                    <p>{product.manager_notes}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-[11px] whitespace-nowrap">{categoryLabels[product.category] || product.category}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          {bedTypes.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {bedTypes.map((bt) => (
+                                <Badge key={bt} className={`text-[10px] ${bt === 'double' ? 'bg-purple-100 text-purple-700' : 'bg-cyan-100 text-cyan-700'}`}>
+                                  {bedTypeLabels[bt] || bt}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : <span className="text-muted-foreground/40 text-sm">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium tabular-nums">{productVariations.length}</span>
+                        </TableCell>
+                        <TableCell>
+                          {(product.trial_period_days || product.has_trial_period) ? (
+                            <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-[11px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap">
+                              <Clock className="h-3 w-3" /> {product.trial_period_days || 30} ימי ניסיון
+                            </span>
+                          ) : <span className="text-muted-foreground/40 text-sm">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {product.is_on_sale ? <SaleBadge product={product} /> : <span className="text-muted-foreground/40 text-sm">—</span>}
+                        </TableCell>
+                        <TableCell>
+                          {product.is_active
+                            ? <Badge className="bg-green-100 text-green-800">פעיל</Badge>
+                            : <Badge variant="secondary">לא פעיל</Badge>}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="sm" className="whitespace-nowrap h-7 text-xs" onClick={() => handleAddVariation(product.id)}>
+                              <Plus className="h-3 w-3 me-1" /> מידה
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditProduct(product)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                              if (confirm('האם אתה בטוח? פעולה זו תמחק גם את כל הוריאציות')) {
+                                deleteProductMutation.mutate(product.id);
+                              }
+                            }}>
+                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+
+                      {isExpanded ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={9} className="p-0 bg-muted/10">
+                            <div className="px-4 pb-4 pt-2 overflow-x-auto border-t border-border/30">
+                              {productVariations.length > 0 ?
+                                <Table className="min-w-[600px]" dir="rtl">
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="text-right">מק"ט</TableHead>
+                                      <TableHead className="text-right" dir="ltr">רוחב × אורך</TableHead>
+                                      <TableHead className="text-right">לפני מע״מ</TableHead>
+                                      <TableHead className="text-right">כולל מע״מ</TableHead>
+                                      <TableHead className="text-right">מלאי</TableHead>
+                                      <TableHead className="text-right">סטטוס</TableHead>
+                                      <TableHead className="text-right">פעולות</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {productVariations.map((variation) =>
+                                    <TableRow key={variation.id} className={variation.id === product.default_variation_id ? 'bg-primary/5' : ''}>
+                                        <TableCell className="font-mono">
+                                          {variation.sku}
+                                          {variation.id === product.default_variation_id &&
+                                        <Badge className="ms-2 bg-primary">ברירת מחדל</Badge>
+                                        }
+                                        </TableCell>
+                                        <TableCell className="font-medium">
+                                          {variation.width_cm && variation.length_cm ?
+                                        <span dir="ltr" className="tabular-nums">{variation.width_cm} × {variation.length_cm}</span> :
+                                        '-'}
+                                        </TableCell>
+                                        <TableCell>
+                                          <div>
+                                            <div className="font-semibold">₪{variation.final_price?.toLocaleString()}</div>
+                                            {variation.discount_percent > 0 &&
+                                          <div className="text-xs text-muted-foreground line-through">
+                                                ₪{variation.base_price?.toLocaleString()}
+                                              </div>
+                                          }
+                                          </div>
+                                        </TableCell>
+                                        <TableCell>
+                                          <div className="font-semibold text-muted-foreground">
+                                            ₪{variation.final_price ? Math.round(variation.final_price * 1.18).toLocaleString() : '-'}
+                                          </div>
+                                        </TableCell>
+                                        <TableCell className="bg-transparent text-foreground p-2 align-middle [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]">
+                                          <Badge
+                                          variant={variation.stock_quantity > (variation.min_stock_threshold || 0) ? "default" : "destructive"} className="bg-primary text-primary-foreground px-2.5 py-0.5 text-xs font-semibold rounded-md inline-flex items-center border transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent shadow hover:bg-primary/80">
+
+                                            {variation.stock_quantity}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                          {variation.is_active ?
+                                        <Badge className="bg-green-100 text-green-800">פעיל</Badge> :
+
+                                        <Badge variant="secondary">לא פעיל</Badge>
+                                        }
+                                        </TableCell>
+                                        <TableCell>
+                                          <div className="flex gap-2">
+                                            <Button variant="ghost" size="icon" onClick={() => handleEditVariation(variation)}>
+                                              <Pencil className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => {
+                                              if (confirm('האם אתה בטוח שברצונך למחוק וריאציה זו?')) {
+                                                deleteVariationMutation.mutate(variation.id);
+                                              }
+                                            }}>
+
+                                              <Trash2 className="h-4 w-4 text-red-600" />
+                                            </Button>
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
                                     )}
-                                  </span>
-                                </TooltipTrigger>
-                                <TooltipContent className="text-right" dir="rtl">
-                                  <p className="font-semibold mb-1">{discountText}</p>
-                                  {starts && <p>תחילה: {starts}</p>}
-                                  {ends && <p>סיום: {ends}</p>}
-                                </TooltipContent>
-                              </Tooltip>
-                            );
-                          })()}
-                          {product.is_on_sale && (product.sale_starts_at || product.sale_ends_at) && (() => {
-                            const fmtShort = (d) => {
-                              if (!d) return null;
-                              try {
-                                return new Date(d).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
-                              } catch { return String(d); }
-                            };
-                            const s = fmtShort(product.sale_starts_at);
-                            const e = fmtShort(product.sale_ends_at);
-                            return (
-                              <span className="text-[10px] text-rose-600/80 font-medium">
-                                {s && e ? `${s} – ${e}` : (s ? `מ-${s}` : `עד ${e}`)}
-                              </span>
-                            );
-                          })()}
-                          {product.has_trial_period && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md">
-                                  <Clock className="h-3 w-3" /> 30 ימי נסיון
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>למוצר זה יש 30 ימי נסיון</TooltipContent>
-                            </Tooltip>
-                          )}
-                          {product.manager_notes && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-md cursor-help">
-                                  <AlertTriangle className="h-3 w-3" /> הערה
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent className="max-w-xs text-right" dir="rtl">
-                                <p className="font-semibold mb-1">הערת מנהל:</p>
-                                <p>{product.manager_notes}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                          </TooltipProvider>
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-muted-foreground">{productVariations.length} מידות</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="whitespace-nowrap h-8 text-xs"
-                        onClick={(e) => { e.stopPropagation(); handleAddVariation(product.id); }}
-                      >
-                        <Plus className="h-3 w-3 me-1" /> מידה
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => { e.stopPropagation(); handleEditProduct(product); }}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm('האם אתה בטוח? פעולה זו תמחק גם את כל הוריאציות')) {
-                          deleteProductMutation.mutate(product.id);
-                        }
-                      }}>
-                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                      </Button>
-                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
-                    </div>
-                  </button>
+                                  </TableBody>
+                                </Table> :
 
-                  {isExpanded &&
-                      <div className="px-4 pb-4 pt-2 overflow-x-auto border-t border-border/30 bg-muted/10">
-                      {productVariations.length > 0 ?
-                        <Table className="min-w-[600px]" dir="rtl">
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-right">מק"ט</TableHead>
-                              <TableHead className="text-right">מידות</TableHead>
-                              <TableHead className="text-right">לפני מע״מ</TableHead>
-                              <TableHead className="text-right">כולל מע״מ</TableHead>
-                              <TableHead className="text-right">מלאי</TableHead>
-                              <TableHead className="text-right">סטטוס</TableHead>
-                              <TableHead className="text-right">פעולות</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {productVariations.map((variation) =>
-                            <TableRow key={variation.id} className={variation.id === product.default_variation_id ? 'bg-primary/5' : ''}>
-                                <TableCell className="font-mono">
-                                  {variation.sku}
-                                  {variation.id === product.default_variation_id &&
-                                <Badge className="ms-2 bg-primary">ברירת מחדל</Badge>
+                                <div className="text-center py-6 text-muted-foreground text-sm">
+                                  אין מידות למוצר זה. לחץ על "מידה" כדי להוסיף.
+                                </div>
                                 }
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {variation.width_cm && variation.length_cm ?
-                                `${variation.width_cm}×${variation.length_cm}` :
-                                '-'}
-                                </TableCell>
-                                <TableCell>
-                                  <div>
-                                    <div className="font-semibold">₪{variation.final_price?.toLocaleString()}</div>
-                                    {variation.discount_percent > 0 &&
-                                  <div className="text-xs text-muted-foreground line-through">
-                                        ₪{variation.base_price?.toLocaleString()}
-                                      </div>
-                                  }
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="font-semibold text-muted-foreground">
-                                    ₪{variation.final_price ? Math.round(variation.final_price * 1.18).toLocaleString() : '-'}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="bg-transparent text-foreground p-2 align-middle [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]">
-                                  <Badge
-                                  variant={variation.stock_quantity > (variation.min_stock_threshold || 0) ? "default" : "destructive"} className="bg-primary text-primary-foreground px-2.5 py-0.5 text-xs font-semibold rounded-md inline-flex items-center border transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent shadow hover:bg-primary/80">
-
-                                    {variation.stock_quantity}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  {variation.is_active ?
-                                <Badge className="bg-green-100 text-green-800">פעיל</Badge> :
-
-                                <Badge variant="secondary">לא פעיל</Badge>
-                                }
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex gap-2">
-                                    <Button variant="ghost" size="icon" onClick={() => handleEditVariation(variation)}>
-                                      <Pencil className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => {
-                                      if (confirm('האם אתה בטוח שברצונך למחוק וריאציה זו?')) {
-                                        deleteVariationMutation.mutate(variation.id);
-                                      }
-                                    }}>
-
-                                      <Trash2 className="h-4 w-4 text-red-600" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                        </Table> :
-
-                        <div className="text-center py-8 text-muted-foreground">
-                          אין וריאציות למוצר זה. לחץ על "הוסף וריאציה" כדי להתחיל.
-                        </div>
-                        }
-                    </div>
-                      }
-                </div>);
-
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </React.Fragment>);
                 })}
-            
-            {filteredProducts.length === 0 &&
-                <div className="text-center py-12 text-muted-foreground">
-                לא נמצאו מוצרים
-              </div>
+
+                {filteredProducts.length === 0 &&
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                      לא נמצאו מוצרים
+                    </TableCell>
+                  </TableRow>
                 }
+              </TableBody>
+            </Table>
           </div>
           </CardContent>
         </Card>
