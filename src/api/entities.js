@@ -46,6 +46,8 @@ const TABLE_MAP = {
   QuoteDefaults: 'quote_defaults',
   CompanyClosures: 'company_closures',
   ShiftAssignment: 'shift_assignments',
+  BedOptionGroup: 'bed_option_groups',
+  BedOptionValue: 'bed_option_values',
 };
 
 /**
