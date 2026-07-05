@@ -44,9 +44,10 @@ INSERT INTO public.bed_option_groups (key, label, sort_order, skippable, depends
   ('leg_height',      'גובה רגל',   6, true, NULL,          NULL)
 ON CONFLICT (key) DO NOTHING;
 
--- Seed the choices (price 0 by default — the admin fills real prices + images).
-INSERT INTO public.bed_option_values (group_id, key, label, sort_order)
-SELECT g.id, v.vkey, v.label, v.sort_order
+-- Seed the choices with a placeholder price of ₪1 each (the admin edits real
+-- prices + images later from "תצורת מיטות").
+INSERT INTO public.bed_option_values (group_id, key, label, price, sort_order)
+SELECT g.id, v.vkey, v.label, 1, v.sort_order
 FROM (VALUES
   ('storage_box',     'without',   'בלי ארגז',            1),
   ('storage_box',     'with',      'עם ארגז',             2),
