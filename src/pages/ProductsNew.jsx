@@ -38,6 +38,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
+import BedConfigManager from "../components/product/BedConfigManager";
 import { Slider } from "@/components/ui/slider";
 import { compressImage } from "@/lib/imageCompression";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -495,10 +496,11 @@ export default function ProductsNew() {
         </Button>
       </div>
 
-      <Tabs defaultValue="products" className="w-full">
+      <Tabs defaultValue="products" className="w-full" dir="rtl">
         <TabsList className="w-full h-auto flex flex-col sm:flex-row">
           <TabsTrigger value="products" className="w-full sm:w-auto">מוצרים ווריאציות</TabsTrigger>
           <TabsTrigger value="addons" className="w-full sm:w-auto">תוספות</TabsTrigger>
+          <TabsTrigger value="bed-config" className="w-full sm:w-auto">תצורת מיטות</TabsTrigger>
         </TabsList>
 
         <TabsContent value="products" className="space-y-6">
@@ -1461,6 +1463,10 @@ export default function ProductsNew() {
               <ProductAddonsManager />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="bed-config">
+          <BedConfigManager />
         </TabsContent>
       </Tabs>
     </div>);
