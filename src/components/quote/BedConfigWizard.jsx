@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,7 +16,7 @@ const fmt = (n) => `₪${(Number(n) || 0).toLocaleString()}`;
 // exact same shape a "תוספות למוצר" click produces — so the host just splices
 // them in under the bed line. Prices come from the linked add-on (single source
 // of truth) or, for pure choices (בלי ארגז), the value's own flat price.
-export default function BedConfigWizard({ open, onOpenChange, product, variation, onConfirm }) {
+export default function BedConfigWizard({ open, onOpenChange, product, variation, token, initialLines = [], onConfirm }) {
   const { data: groups = [], isLoading: gL } = useQuery({
     queryKey: ['bed-option-groups'],
     queryFn: () => base44.entities.BedOptionGroup.list('sort_order'),
@@ -42,11 +42,7 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
   // answers: group.id -> selected value object | 'skip' | undefined
   const [answers, setAnswers] = useState({});
   const [step, setStep] = useState(0);
-
-  // Reset whenever the wizard is (re)opened for a product.
-  useEffect(() => {
-    if (open) { setAnswers({}); setStep(0); }
-  }, [open, product?.id, variation?.id]);
+  const seededRef = useRef(null);
 
   const valuesByGroup = useMemo(() => {
     const m = new Map();
@@ -61,6 +57,30 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
 
   const groupByKey = useMemo(() => new Map(groups.map((g) => [g.key, g])), [groups]);
   const addonById = useMemo(() => new Map(addons.map((a) => [a.id, a])), [addons]);
+
+  // Prefill from previously-saved config lines (edit mode): rebuild the chosen
+  // value per group from the persisted group/value keys.
+  const initialAnswers = useMemo(() => {
+    const map = {};
+    for (const line of initialLines || []) {
+      const g = groups.find((gg) => gg.key === line.bed_config_group_key);
+      if (!g) continue;
+      const v = (valuesByGroup.get(g.id) || []).find((vv) => vv.key === line.bed_config_value_key);
+      if (v) map[g.id] = v;
+    }
+    return map;
+  }, [initialLines, groups, valuesByGroup]);
+
+  // Seed the answers once per open, after groups/values have loaded.
+  const seedKey = open ? `${product?.id || ''}:${variation?.id || ''}:${token || ''}` : null;
+  useEffect(() => {
+    if (!open) { seededRef.current = null; return; }
+    if (gL || vL) return; // wait for data
+    if (seededRef.current === seedKey) return;
+    setAnswers(initialAnswers);
+    setStep(0);
+    seededRef.current = seedKey;
+  }, [open, seedKey, gL, vL, initialAnswers]);
 
   // A choice's price: from the linked add-on (variation → product → size → base),
   // else the value's own flat price. Pre-VAT, like the add-on line.
@@ -136,6 +156,9 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
         discount_percent: 0,
         total: price,
         selected_addons: [],
+        bed_config_owner: token || '',
+        bed_config_group_key: g.key,
+        bed_config_value_key: a.key,
       });
     }
     onConfirm(lines);

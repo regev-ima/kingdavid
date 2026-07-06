@@ -32,6 +32,7 @@ import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
+import { genBedConfigToken } from '@/lib/bedConfig';
 import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -353,6 +354,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             fabric_color: item.fabric_color || '',
             fabric_supplier: item.fabric_supplier || '',
             fabric_supplier_other: item.fabric_supplier_other || '',
+            bed_config_token: item.bed_config_token || null,
+            bed_config_owner: item.bed_config_owner || null,
+            bed_config_group_key: item.bed_config_group_key || null,
+            bed_config_value_key: item.bed_config_value_key || null,
           })),
         }),
       });
@@ -542,7 +547,21 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     }
   };
 
+  // Ensure the bed line has a stable token, then open its configurator wizard.
+  const openBedWizard = (index) => {
+    setFormData(prev => {
+      const items = prev.items.map((it, i) => {
+        if (i !== index || it.bed_config_token) return it;
+        return { ...it, bed_config_token: genBedConfigToken() };
+      });
+      return { ...prev, items };
+    });
+    setBedWizardIndex(index);
+  };
+
   const handleVariationSelect = (index, variation) => {
+    const targetProduct = products.find(p => p.id === formData.items[index]?.product_id);
+    const isBed = targetProduct?.category === 'bed';
     setFormData(prev => {
       const newItems = prev.items.map((item, idx) => {
         if (idx !== index) return item;
@@ -566,6 +585,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       const totals = calculateTotals(newItems, prev.extras);
       return { ...prev, items: newItems, ...totals };
     });
+    // For beds, jump straight into the configurator right after the size step.
+    if (isBed) openBedWizard(index);
   };
 
   const handleSubmit = (e) => {
@@ -1086,7 +1107,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => setBedWizardIndex(index)}
+                          onClick={() => openBedWizard(index)}
                           className="gap-1.5 h-8 text-xs bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
                         >
                           <BedDouble className="w-3.5 h-3.5" />
@@ -1170,17 +1191,25 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               if (!it) return null;
               const product = products.find(p => p.id === it.product_id);
               const variation = variations.find(v => v.id === it.variation_id);
+              const token = it.bed_config_token;
+              const initialLines = token ? formData.items.filter(l => l.bed_config_owner === token) : [];
               return (
                 <BedConfigWizard
                   open={bedWizardIndex != null}
                   onOpenChange={(o) => { if (!o) setBedWizardIndex(null); }}
                   product={product}
                   variation={variation}
+                  token={token}
+                  initialLines={initialLines}
                   onConfirm={(lines) => {
-                    if (!lines.length) return;
                     setFormData(prev => {
-                      const newItems = [...prev.items];
-                      newItems.splice(bedWizardIndex + 1, 0, ...lines);
+                      const bedItem = prev.items[bedWizardIndex];
+                      const t = bedItem?.bed_config_token;
+                      // Drop this bed's previous config lines, then insert the new set right after it.
+                      const kept = prev.items.filter(l => !(t && l.bed_config_owner === t));
+                      const bedIdx = t ? kept.findIndex(l => l.bed_config_token === t) : bedWizardIndex;
+                      const at = bedIdx >= 0 ? bedIdx + 1 : Math.min(bedWizardIndex + 1, kept.length);
+                      const newItems = [...kept.slice(0, at), ...lines, ...kept.slice(at)];
                       const totals = calculateTotals(newItems, prev.extras);
                       return { ...prev, items: newItems, ...totals };
                     });
