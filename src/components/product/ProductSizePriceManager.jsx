@@ -44,9 +44,10 @@ export default function ProductSizePriceManager() {
 
   const queryClient = useQueryClient();
 
-  // Fetch products
+  // Fetch products (ProductCatalog entity — keep off the ['products'] key used
+  // by the real Product list, to avoid cache-shape collisions).
   const { data: products = [] } = useQuery({
-    queryKey: ['products'],
+    queryKey: ['product-catalogs'],
     queryFn: () => base44.entities.ProductCatalog.list(),
   });
 

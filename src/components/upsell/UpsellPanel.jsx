@@ -19,9 +19,10 @@ export default function UpsellPanel({ quote, onAddItem }) {
     queryFn: () => base44.entities.UpsellRule.filter({ is_active: true }),
   });
 
-  // Fetch product catalog
+  // Fetch product catalog (ProductCatalog entity — distinct from the Product
+  // list keyed ['products']; sharing that key polluted the quote ProductSelector).
   const { data: products = [] } = useQuery({
-    queryKey: ['products'],
+    queryKey: ['product-catalogs'],
     queryFn: () => base44.entities.ProductCatalog.list(),
   });
 
