@@ -22,6 +22,12 @@ export default function BedConfigManager() {
     queryKey: ['bed-option-values'],
     queryFn: () => base44.entities.BedOptionValue.list('sort_order'),
   });
+  // Existing product add-ons a value can link to for its price (single source of
+  // truth). Same key as the quote flow → deduped.
+  const { data: addons = [] } = useQuery({
+    queryKey: ['product-addons'],
+    queryFn: () => base44.entities.ProductAddon.filter({ is_active: true }),
+  });
 
   const valuesByGroup = useMemo(() => {
     const m = new Map();
@@ -111,7 +117,7 @@ export default function BedConfigManager() {
             </CardHeader>
             <CardContent className="space-y-2">
               {gVals.map((v) => (
-                <ValueRow key={v.id} value={v} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
+                <ValueRow key={v.id} value={v} addons={addons} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
               ))}
               <Button variant="outline" size="sm" className="gap-1" onClick={() => addValue.mutate(g)} disabled={addValue.isPending}>
                 <Plus className="h-3.5 w-3.5" /> אפשרות
@@ -124,9 +130,12 @@ export default function BedConfigManager() {
   );
 }
 
-function ValueRow({ value, onUpdate, onDelete }) {
+function ValueRow({ value, addons = [], onUpdate, onDelete }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
+
+  const linkedAddon = value.addon_id ? addons.find((a) => a.id === value.addon_id) : null;
+  const addonPrice = linkedAddon ? (linkedAddon.base_price ?? linkedAddon.price ?? 0) : null;
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
@@ -164,15 +173,36 @@ function ValueRow({ value, onUpdate, onDelete }) {
         className="h-9 flex-1 min-w-0"
         placeholder="תווית האפשרות"
       />
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-muted-foreground text-sm">₪</span>
-        <Input
-          type="number"
-          defaultValue={value.price ?? 0}
-          onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== Number(value.price)) onUpdate({ price: n }); }}
-          className="h-9 w-24 tabular-nums"
-        />
-      </div>
+
+      {/* Price source: link an existing add-on (price comes from it) or type a flat price */}
+      <select
+        value={value.addon_id || ''}
+        onChange={(e) => onUpdate({ addon_id: e.target.value || null })}
+        className="h-9 w-40 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+        title="מקור המחיר"
+      >
+        <option value="">מחיר ידני</option>
+        {addons.map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </select>
+
+      {linkedAddon ? (
+        <div className="flex items-center gap-1 shrink-0 w-24 justify-end" title="המחיר מגיע מהתוספת המקושרת">
+          <span className="text-sm font-medium tabular-nums">₪{Number(addonPrice).toLocaleString()}</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-muted-foreground text-sm">₪</span>
+          <Input
+            type="number"
+            defaultValue={value.price ?? 0}
+            onBlur={(e) => { const n = Number(e.target.value) || 0; if (n !== Number(value.price)) onUpdate({ price: n }); }}
+            className="h-9 w-24 tabular-nums"
+          />
+        </div>
+      )}
+
       <Switch checked={value.is_active !== false} onCheckedChange={(v) => onUpdate({ is_active: v })} title="פעיל" />
       <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 shrink-0" onClick={onDelete}>
         <Trash2 className="h-4 w-4" />

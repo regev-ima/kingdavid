@@ -20,12 +20,13 @@ import {
 } from "@/components/ui/select";
 
 
-import { ArrowRight, Save, Loader2, Plus, Check } from "lucide-react";
+import { ArrowRight, Save, Loader2, Plus, Check, BedDouble } from "lucide-react";
 import { hasBedType, productMatchesBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
+import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -71,6 +72,8 @@ export default function EditQuote() {
   // Two-phase save: handleSubmit only validates and opens the preview dialog;
   // the mutation runs from the dialog's confirm button.
   const [showConfirm, setShowConfirm] = useState(false);
+  // Index of the bed line whose configurator wizard is open (null = closed).
+  const [bedWizardIndex, setBedWizardIndex] = useState(null);
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -704,6 +707,26 @@ export default function EditQuote() {
                     );
                   })()}
 
+                  {/* Bed configurator — guided, priced, single-choice questions for beds */}
+                  {item.variation_id && (() => {
+                    const product = products.find(p => p.id === item.product_id);
+                    if (product?.category !== 'bed') return null;
+                    return (
+                      <div className="px-3 pb-3 border-t border-border/40 pt-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setBedWizardIndex(index)}
+                          className="gap-1.5 h-8 text-xs bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
+                        >
+                          <BedDouble className="w-3.5 h-3.5" />
+                          תצורת מיטה (אשף)
+                        </Button>
+                      </div>
+                    );
+                  })()}
+
                   {/* Addons */}
                   {item.variation_id && (() => {
                     const variation = variations.find(v => v.id === item.variation_id);
@@ -771,6 +794,31 @@ export default function EditQuote() {
                 </div>
               ))}
             </div>
+
+            {/* Bed configurator wizard — opens for the bed line at bedWizardIndex */}
+            {bedWizardIndex != null && (() => {
+              const it = formData.items[bedWizardIndex];
+              if (!it) return null;
+              const product = products.find(p => p.id === it.product_id);
+              const variation = variations.find(v => v.id === it.variation_id);
+              return (
+                <BedConfigWizard
+                  open={bedWizardIndex != null}
+                  onOpenChange={(o) => { if (!o) setBedWizardIndex(null); }}
+                  product={product}
+                  variation={variation}
+                  onConfirm={(lines) => {
+                    if (!lines.length) return;
+                    setFormData(prev => {
+                      const newItems = [...prev.items];
+                      newItems.splice(bedWizardIndex + 1, 0, ...lines);
+                      const totals = calculateTotals(newItems, prev.extras);
+                      return { ...prev, items: newItems, ...totals };
+                    });
+                  }}
+                />
+              );
+            })()}
 
             {/* Totals */}
             <div className="mt-6 border border-border rounded-xl overflow-hidden">

@@ -25,12 +25,13 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ArrowRight, Save, Loader2, Plus, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
+import { ArrowRight, Save, Loader2, Plus, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock, BedDouble } from "lucide-react";
 import { hasBedType, productMatchesBedType } from '@/utils/bedType';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
+import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -102,6 +103,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // the actual mutation runs from the dialog's confirm button. Hook stays at
   // the top of the component to satisfy Rules of Hooks across early returns.
   const [showConfirm, setShowConfirm] = useState(false);
+  // Index of the bed line whose configurator wizard is open (null = closed).
+  const [bedWizardIndex, setBedWizardIndex] = useState(null);
 
   // Phone-based lookup so a quote started from "create new quote" (no
   // existing lead context) can still snap to an existing customer / lead.
@@ -1073,6 +1076,26 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     );
                   })()}
 
+                  {/* Bed configurator — guided, priced, single-choice questions for beds */}
+                  {item.variation_id && (() => {
+                    const product = products.find(p => p.id === item.product_id);
+                    if (product?.category !== 'bed') return null;
+                    return (
+                      <div className="border-t border-border/40 pt-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setBedWizardIndex(index)}
+                          className="gap-1.5 h-8 text-xs bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
+                        >
+                          <BedDouble className="w-3.5 h-3.5" />
+                          תצורת מיטה (אשף)
+                        </Button>
+                      </div>
+                    );
+                  })()}
+
                   {/* Addons */}
                   {item.variation_id && (() => {
                     const variation = variations.find(v => v.id === item.variation_id);
@@ -1140,6 +1163,31 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 </div>
               ))}
             </div>
+
+            {/* Bed configurator wizard — opens for the bed line at bedWizardIndex */}
+            {bedWizardIndex != null && (() => {
+              const it = formData.items[bedWizardIndex];
+              if (!it) return null;
+              const product = products.find(p => p.id === it.product_id);
+              const variation = variations.find(v => v.id === it.variation_id);
+              return (
+                <BedConfigWizard
+                  open={bedWizardIndex != null}
+                  onOpenChange={(o) => { if (!o) setBedWizardIndex(null); }}
+                  product={product}
+                  variation={variation}
+                  onConfirm={(lines) => {
+                    if (!lines.length) return;
+                    setFormData(prev => {
+                      const newItems = [...prev.items];
+                      newItems.splice(bedWizardIndex + 1, 0, ...lines);
+                      const totals = calculateTotals(newItems, prev.extras);
+                      return { ...prev, items: newItems, ...totals };
+                    });
+                  }}
+                />
+              );
+            })()}
 
             {/* Totals */}
             <div className="mt-6 border border-border rounded-xl overflow-hidden">

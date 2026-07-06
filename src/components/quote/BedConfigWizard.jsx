@@ -1,0 +1,260 @@
+import React, { useMemo, useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Check, BedDouble, Loader2, SkipForward } from 'lucide-react';
+
+const VAT = 1.18;
+const withVat = (n) => Math.round((Number(n) || 0) * VAT);
+const fmt = (n) => `₪${(Number(n) || 0).toLocaleString()}`;
+
+// Guided bed configurator shown when a rep adds a bed to a quote. Steps through
+// the option groups (ארגז מצעים → סוג ארגז → מסגרת → …) as single-choice
+// questions with images, respecting dependencies and skippable steps, and a
+// running total. On confirm it returns one priced line per chosen value — the
+// exact same shape a "תוספות למוצר" click produces — so the host just splices
+// them in under the bed line. Prices come from the linked add-on (single source
+// of truth) or, for pure choices (בלי ארגז), the value's own flat price.
+export default function BedConfigWizard({ open, onOpenChange, product, variation, onConfirm }) {
+  const { data: groups = [], isLoading: gL } = useQuery({
+    queryKey: ['bed-option-groups'],
+    queryFn: () => base44.entities.BedOptionGroup.list('sort_order'),
+    enabled: open,
+  });
+  const { data: values = [], isLoading: vL } = useQuery({
+    queryKey: ['bed-option-values'],
+    queryFn: () => base44.entities.BedOptionValue.list('sort_order'),
+    enabled: open,
+  });
+  // Same query keys as NewQuote/EditQuote → react-query dedupes, no extra fetch.
+  const { data: addons = [] } = useQuery({
+    queryKey: ['product-addons'],
+    queryFn: () => base44.entities.ProductAddon.filter({ is_active: true }),
+    enabled: open,
+  });
+  const { data: addonPrices = [] } = useQuery({
+    queryKey: ['product-addon-prices'],
+    queryFn: () => base44.entities.ProductAddonPrice.list(),
+    enabled: open,
+  });
+
+  // answers: group.id -> selected value object | 'skip' | undefined
+  const [answers, setAnswers] = useState({});
+  const [step, setStep] = useState(0);
+
+  // Reset whenever the wizard is (re)opened for a product.
+  useEffect(() => {
+    if (open) { setAnswers({}); setStep(0); }
+  }, [open, product?.id, variation?.id]);
+
+  const valuesByGroup = useMemo(() => {
+    const m = new Map();
+    for (const v of values) {
+      if (v.is_active === false) continue;
+      if (!m.has(v.group_id)) m.set(v.group_id, []);
+      m.get(v.group_id).push(v);
+    }
+    for (const arr of m.values()) arr.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    return m;
+  }, [values]);
+
+  const groupByKey = useMemo(() => new Map(groups.map((g) => [g.key, g])), [groups]);
+  const addonById = useMemo(() => new Map(addons.map((a) => [a.id, a])), [addons]);
+
+  // A choice's price: from the linked add-on (variation → product → size → base),
+  // else the value's own flat price. Pre-VAT, like the add-on line.
+  const priceOf = (value) => {
+    if (value?.addon_id) {
+      const addon = addonById.get(value.addon_id);
+      if (addon) {
+        const specific = addonPrices.find(
+          (ap) => ap.addon_id === addon.id && ap.product_id === product?.id && ap.product_variation_id === variation?.id
+        );
+        const productP = addonPrices.find(
+          (ap) => ap.addon_id === addon.id && ap.product_id === product?.id && !ap.product_variation_id
+        );
+        const sizeP = addon.size_prices?.find(
+          (sp) => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
+        );
+        return specific?.price ?? productP?.price ?? sizeP?.price ?? addon.base_price ?? addon.price ?? 0;
+      }
+    }
+    return Number(value?.price) || 0;
+  };
+
+  // A group is shown only if it has no dependency, or the depended group's chosen
+  // value matches the required key.
+  const depSatisfied = (g) => {
+    if (!g.depends_on_group_key) return true;
+    const dep = groupByKey.get(g.depends_on_group_key);
+    if (!dep) return true;
+    const ans = answers[dep.id];
+    return ans && ans !== 'skip' && ans.key === g.depends_on_value_key;
+  };
+
+  const visibleGroups = useMemo(
+    () => groups.filter((g) => g.is_active !== false && depSatisfied(g)),
+    [groups, answers, groupByKey]
+  );
+
+  // Keep the step pointer valid as dependencies add/remove groups.
+  useEffect(() => {
+    if (step > visibleGroups.length - 1) setStep(Math.max(0, visibleGroups.length - 1));
+  }, [visibleGroups.length, step]);
+
+  const current = visibleGroups[step];
+  const isLast = step >= visibleGroups.length - 1;
+  const answered = current ? answers[current.id] : undefined;
+  const canProceed = !current || current.skippable !== false || (answered && answered !== 'skip');
+
+  const runningTotal = useMemo(() => {
+    let sum = 0;
+    for (const g of visibleGroups) {
+      const a = answers[g.id];
+      if (a && a !== 'skip') sum += priceOf(a);
+    }
+    return sum;
+  }, [visibleGroups, answers, addonPrices, addons, product, variation]);
+
+  const select = (value) => setAnswers((p) => ({ ...p, [current.id]: value }));
+  const skip = () => setAnswers((p) => ({ ...p, [current.id]: 'skip' }));
+
+  const finish = () => {
+    const lines = [];
+    for (const g of visibleGroups) {
+      const a = answers[g.id];
+      if (!a || a === 'skip') continue;
+      const price = priceOf(a);
+      lines.push({
+        product_id: '',
+        variation_id: '',
+        sku: '',
+        name: `${g.label} — ${a.label}`,
+        quantity: 1,
+        unit_price: price,
+        discount_percent: 0,
+        total: price,
+        selected_addons: [],
+      });
+    }
+    onConfirm(lines);
+    onOpenChange(false);
+  };
+
+  const loading = gL || vL;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BedDouble className="h-5 w-5 text-primary" />
+            תצורת מיטה{product?.name ? ` — ${product.name}` : ''}
+          </DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : visibleGroups.length === 0 ? (
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            לא הוגדרו שאלות תצורה פעילות. אפשר להגדיר אותן ב"קטלוג מוצרים → תצורת מיטות".
+          </div>
+        ) : (
+          <>
+            {/* Progress */}
+            <div className="flex items-center gap-2">
+              {visibleGroups.map((g, i) => (
+                <div
+                  key={g.id}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${
+                    i < step ? 'bg-primary' : i === step ? 'bg-primary/60' : 'bg-muted'
+                  }`}
+                />
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">שאלה {step + 1} מתוך {visibleGroups.length}</p>
+
+            {/* Question */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">{current.label}</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {(valuesByGroup.get(current.id) || []).map((v) => {
+                  const selected = answered && answered !== 'skip' && answered.id === v.id;
+                  const price = priceOf(v);
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => select(v)}
+                      className={`relative flex flex-col rounded-xl border-2 overflow-hidden text-right transition-all ${
+                        selected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'
+                      }`}
+                    >
+                      {selected && (
+                        <span className="absolute top-2 start-2 z-10 rounded-full bg-primary text-primary-foreground p-1">
+                          <Check className="h-3.5 w-3.5" />
+                        </span>
+                      )}
+                      <div className="aspect-[4/3] w-full bg-muted flex items-center justify-center">
+                        {v.image_url ? (
+                          <img src={v.image_url} alt={v.label} className="h-full w-full object-cover" />
+                        ) : (
+                          <BedDouble className="h-8 w-8 text-muted-foreground/40" />
+                        )}
+                      </div>
+                      <div className="p-2.5">
+                        <div className="text-sm font-medium leading-tight">{v.label}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {price > 0 ? `${fmt(withVat(price))} כולל מע״מ` : 'ללא תוספת מחיר'}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {current.skippable !== false && (
+                  <button
+                    type="button"
+                    onClick={skip}
+                    className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed text-muted-foreground transition-all min-h-[7rem] ${
+                      answered === 'skip' ? 'border-primary/60 text-primary' : 'border-border hover:border-primary/40'
+                    }`}
+                  >
+                    <SkipForward className="h-6 w-6 mb-1" />
+                    <span className="text-sm">דלג על שלב זה</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-4 mt-2">
+              <div className="text-sm">
+                <span className="text-muted-foreground">סה״כ תוספות: </span>
+                <span className="font-semibold">{fmt(withVat(runningTotal))}</span>
+                <span className="text-muted-foreground text-xs"> כולל מע״מ</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {step > 0 && (
+                  <Button type="button" variant="outline" onClick={() => setStep((s) => Math.max(0, s - 1))}>
+                    חזור
+                  </Button>
+                )}
+                {isLast ? (
+                  <Button type="button" onClick={finish} disabled={!canProceed}>
+                    הוסף להצעה
+                  </Button>
+                ) : (
+                  <Button type="button" onClick={() => setStep((s) => s + 1)} disabled={!canProceed}>
+                    המשך
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
