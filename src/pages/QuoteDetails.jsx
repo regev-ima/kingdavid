@@ -81,7 +81,7 @@ const statusTransitions = {
   expired: [],
 };
 
-export default function QuoteDetails({ id: idProp, isModal = false, onClose }) {
+export default function QuoteDetails({ id: idProp, isModal = false, onClose, onEdit }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [statusConfirm, setStatusConfirm] = useState(null); // { targetStatus }
   const queryClient = useQueryClient();
@@ -299,12 +299,19 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose }) {
         
         <div className="flex flex-wrap gap-2">
           {canEdit && (
-            <Link to={createPageUrl('EditQuote') + `?id=${quoteId}`}>
-              <Button variant="outline" className="text-primary">
+            isModal ? (
+              <Button variant="outline" className="text-primary" onClick={() => onEdit?.()}>
                 <Pencil className="h-4 w-4 me-2" />
                 ערוך הצעה
               </Button>
-            </Link>
+            ) : (
+              <Link to={createPageUrl('EditQuote') + `?id=${quoteId}`}>
+                <Button variant="outline" className="text-primary">
+                  <Pencil className="h-4 w-4 me-2" />
+                  ערוך הצעה
+                </Button>
+              </Link>
+            )
           )}
           {isOwner && (isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
             <Button
