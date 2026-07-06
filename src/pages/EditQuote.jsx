@@ -73,8 +73,10 @@ export default function EditQuote() {
   // Two-phase save: handleSubmit only validates and opens the preview dialog;
   // the mutation runs from the dialog's confirm button.
   const [showConfirm, setShowConfirm] = useState(false);
-  // Index of the bed line whose configurator wizard is open (null = closed).
+  // Index of the bed line whose configurator wizard is open (null = closed), and
+  // a snapshot of its prior config lines for prefill after a resize strips them.
   const [bedWizardIndex, setBedWizardIndex] = useState(null);
+  const [bedWizardSnapshot, setBedWizardSnapshot] = useState(null);
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -358,7 +360,8 @@ export default function EditQuote() {
     }
   };
 
-  // Ensure the bed line has a stable token, then open its configurator wizard.
+  // Open the configurator wizard for an already-set bed line (the "edit" button):
+  // ensure a token, use the bed's current config lines for prefill.
   const openBedWizard = (index) => {
     setFormData(prev => {
       const items = prev.items.map((it, i) => {
@@ -367,14 +370,19 @@ export default function EditQuote() {
       });
       return { ...prev, items };
     });
+    setBedWizardSnapshot(null);
     setBedWizardIndex(index);
   };
 
   const handleVariationSelect = (index, variation) => {
-    const targetProduct = products.find(p => p.id === formData.items[index]?.product_id);
+    const bedItem = formData.items[index];
+    const targetProduct = products.find(p => p.id === bedItem?.product_id);
     const isBed = targetProduct?.category === 'bed';
+    const token = isBed ? (bedItem?.bed_config_token || genBedConfigToken()) : undefined;
+    // Snapshot prior choices (for prefill) before we strip the now-stale lines.
+    const snapshot = token ? formData.items.filter(l => l.bed_config_owner === token) : [];
     setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
+      let newItems = prev.items.map((item, idx) => {
         if (idx !== index) return item;
 
         const itemTotal = item.quantity * (variation.final_price || 0);
@@ -389,15 +397,22 @@ export default function EditQuote() {
           height_cm: variation.height_cm,
           unit_price: variation.final_price || 0,
           selected_addons: [],
+          ...(token ? { bed_config_token: token } : {}),
           total: itemTotal - discount
         };
       });
-
+      // Drop this bed's now-stale config lines (old-size prices); the auto-opened
+      // wizard re-adds them at the new size on confirm. If the rep dismisses the
+      // wizard, the bed is simply left unconfigured — never with stale prices.
+      if (token) newItems = newItems.filter(l => l.bed_config_owner !== token);
       const totals = calculateTotals(newItems, prev.extras);
       return { ...prev, items: newItems, ...totals };
     });
     // For beds, jump straight into the configurator right after the size step.
-    if (isBed) openBedWizard(index);
+    if (isBed) {
+      setBedWizardSnapshot(snapshot);
+      setBedWizardIndex(index);
+    }
   };
 
   const handleAddonsSelect = (index, addons) => {
@@ -823,11 +838,13 @@ export default function EditQuote() {
               const product = products.find(p => p.id === it.product_id);
               const variation = variations.find(v => v.id === it.variation_id);
               const token = it.bed_config_token;
-              const initialLines = token ? formData.items.filter(l => l.bed_config_owner === token) : [];
+              const initialLines = bedWizardSnapshot != null
+                ? bedWizardSnapshot
+                : (token ? formData.items.filter(l => l.bed_config_owner === token) : []);
               return (
                 <BedConfigWizard
                   open={bedWizardIndex != null}
-                  onOpenChange={(o) => { if (!o) setBedWizardIndex(null); }}
+                  onOpenChange={(o) => { if (!o) { setBedWizardIndex(null); setBedWizardSnapshot(null); } }}
                   product={product}
                   variation={variation}
                   token={token}

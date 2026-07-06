@@ -4,8 +4,9 @@ import { base44 } from '@/api/base44Client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Check, BedDouble, Loader2, SkipForward } from 'lucide-react';
+import { getBedNoteType, BED_VAT_RATE } from '@/lib/bedConfig';
 
-const VAT = 1.18;
+const VAT = BED_VAT_RATE;
 const withVat = (n) => Math.round((Number(n) || 0) * VAT);
 const fmt = (n) => `₪${(Number(n) || 0).toLocaleString()}`;
 
@@ -100,7 +101,9 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
         return specific?.price ?? productP?.price ?? sizeP?.price ?? addon.base_price ?? addon.price ?? 0;
       }
     }
-    return Number(value?.price) || 0;
+    // Manual prices are entered incl-VAT (final price to the customer); the quote
+    // line stores pre-VAT and re-adds VAT, so convert back here.
+    return (Number(value?.price) || 0) / VAT;
   };
 
   // A group is shown only if it has no dependency, or the depended group's chosen
@@ -231,6 +234,14 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {price > 0 ? `${fmt(withVat(price))} כולל מע״מ` : 'ללא תוספת מחיר'}
                         </div>
+                        {v.note ? (() => {
+                          const nt = getBedNoteType(v.note_type);
+                          return (
+                            <div className={`mt-1.5 text-[11px] leading-snug rounded border px-1.5 py-1 ${nt.badge}`}>
+                              <span className="font-semibold">{nt.label}: </span>{v.note}
+                            </div>
+                          );
+                        })() : null}
                       </div>
                     </button>
                   );
