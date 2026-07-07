@@ -747,10 +747,13 @@ export default function LeadManagement() {
         ))}
         {isAdmin ? (
           <NewLeadsCube
-            total={(fromIso && toIso) ? arrivals.total : kpiCounts.totalCount}
+            // Total always from the plain count (works everywhere, matches the
+            // filter summary). The night/day split comes from the RPC and only
+            // shows once it returns data (i.e. after the migration is deployed).
+            total={kpiCounts.totalCount}
             nightCount={arrivals.night}
             dayCount={arrivals.day}
-            hasSplit={!!(fromIso && toIso)}
+            hasSplit={arrivals.total > 0}
           />
         ) : null}
       </div>
@@ -1235,6 +1238,9 @@ function ActiveFilterSummary({
       onClear: null, // date is cleared via the preset bar above
     },
   ].filter(Boolean);
+  // A date range on its own isn't really a "filter" — it's just the period.
+  // Only rep/status/source/scope/search count as an actual filter.
+  const hasNonDateFilter = chips.some((c) => c.key !== 'date');
   const pct = totalCount > 0 && filteredCount != null
     ? Math.round((Number(filteredCount) / Number(totalCount)) * 1000) / 10
     : null;
@@ -1246,16 +1252,18 @@ function ActiveFilterSummary({
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
               <Filter className="h-3.5 w-3.5" />
             </span>
-            <span className="text-sm font-semibold text-foreground">תוצאות הסינון</span>
+            <span className="text-sm font-semibold text-foreground">{hasNonDateFilter ? 'תוצאות הסינון' : 'לידים בטווח שנבחר'}</span>
           </div>
           <span className="text-3xl font-bold text-primary tabular-nums whitespace-nowrap">
             {filteredCount === null ? '...' : fmt(filteredCount)}
           </span>
-          {pct != null ? (
+          {hasNonDateFilter && pct != null ? (
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               ({pct}% מתוך {fmt(totalCount)} בטווח)
             </span>
-          ) : null}
+          ) : (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">כל הלידים שנכנסו בתאריך הנבחר (= קוביית "לידים שנכנסו")</span>
+          )}
         </div>
         <button
           type="button"
