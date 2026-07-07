@@ -1330,8 +1330,13 @@ export default function SalesTasks() {
           state — the user thinks of "stale" as one concept. */}
       {(() => {
         const onAssignmentTab = activeTab === 'assignment';
+        // Lead-cube / funnel tabs (leads_* / cat_*) intentionally SKIP stale-hiding
+        // — an unhandled lead must show regardless of age, or the cube says 30 and
+        // the list shows 17. So the "hide N stale" toggle does nothing there; don't
+        // show it (clicking it looked broken because it genuinely had no effect).
+        const isLeadDrivenTab = activeTab.startsWith('leads_') || activeTab.startsWith('cat_');
         const staleCount = onAssignmentTab ? counts.staleAssignmentHidden : hiddenStaleCount;
-        const showStaleHint = staleCount > 0;
+        const showStaleHint = staleCount > 0 && !isLeadDrivenTab;
         const showAssignmentHint = assignmentTaskCount > 0 && !showAssignmentTasks && !onAssignmentTab;
         if (!showStaleHint && !showAssignmentHint) return null;
         const staleLabel = onAssignmentTab ? 'משימות שיוך ישנות' : 'משימות ישנות';

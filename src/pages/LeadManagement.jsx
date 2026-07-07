@@ -291,48 +291,53 @@ export default function LeadManagement() {
   );
 
   // ───────────────────────────────────────────────────────────────
-  // Category KPI tiles. The three assignment/status buckets respect the
-  // date range; the two "new leads" shift buckets use their own fixed
-  // night/day windows (see israelShiftWindows).
+  // Category KPI tiles. All buckets respect the selected date range.
   // ───────────────────────────────────────────────────────────────
   const EMPTY_KPI = {
-    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0,
-    newNightCount: 0, newDayCount: 0, totalCount: 0,
+    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0,
   };
   const { data: kpiCounts = EMPTY_KPI } = useQuery({
-    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso, windows.night.from, windows.day.from],
+    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso],
     enabled: !!effectiveUser && !!userEmail,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      // base(extra, { range }) builds a count filter. `extra` may be a single
-      // condition or an array of them. `range` defaults to true (honor the
-      // page date range); pass false for the shift windows that bring their own.
-      const base = (extra, { range = true } = {}) => {
+      // base(extra) builds a count filter honoring the page date range.
+      const base = (extra) => {
         const conditions = [];
         if (!isAdmin) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
-        if (range && fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
         if (Array.isArray(extra)) conditions.push(...extra);
         else if (extra) conditions.push(extra);
         if (conditions.length === 0) return {};
         if (conditions.length === 1) return conditions[0];
         return { $and: conditions };
       };
-      const [
-        assignedUnhandledCount, unassignedCount, handlingCount,
-        newNightCount, newDayCount, totalCount,
-      ] = await Promise.all([
+      const [assignedUnhandledCount, unassignedCount, handlingCount, totalCount] = await Promise.all([
         base44.entities.Lead.count(base([{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }])),
         base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
         base44.entities.Lead.count(base({ status: { $nin: HANDLING_EXCLUDED_STATUSES } })),
-        base44.entities.Lead.count(base([windowCond(windows.night)], { range: false })),
-        base44.entities.Lead.count(base([windowCond(windows.day)], { range: false })),
         base44.entities.Lead.count(base()),
       ]);
-      return {
-        assignedUnhandledCount, unassignedCount, handlingCount,
-        newNightCount, newDayCount, totalCount,
-      };
+      return { assignedUnhandledCount, unassignedCount, handlingCount, totalCount };
+    },
+  });
+
+  // Arrivals split by work shift (day 08–20 / night 20–08) over the WHOLE
+  // selected range, via a SQL RPC so day + night == total for any range and the
+  // cube reconciles with the list (a fixed single-day window showed one day's
+  // cycle even when a week was selected). Admin-only, like the cube.
+  const EMPTY_ARRIVALS = { total: 0, day: 0, night: 0 };
+  const { data: arrivals = EMPTY_ARRIVALS } = useQuery({
+    queryKey: ['leadMgmt-arrivals', fromIso, toIso],
+    enabled: !!effectiveUser && isAdmin && !!fromIso && !!toIso,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: async () => {
+      const { data, error } = await base44.supabase.rpc('lead_arrivals_by_shift', { p_start: fromIso, p_end: toIso });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return { total: Number(row?.total || 0), day: Number(row?.day_count || 0), night: Number(row?.night_count || 0) };
     },
   });
 
@@ -742,10 +747,10 @@ export default function LeadManagement() {
         ))}
         {isAdmin ? (
           <NewLeadsCube
-            nightCount={kpiCounts.newNightCount}
-            dayCount={kpiCounts.newDayCount}
-            scope={scope}
-            onSelect={toggleScope}
+            total={(fromIso && toIso) ? arrivals.total : kpiCounts.totalCount}
+            nightCount={arrivals.night}
+            dayCount={arrivals.day}
+            hasSplit={!!(fromIso && toIso)}
           />
         ) : null}
       </div>
@@ -1032,62 +1037,43 @@ function CategoryTile({ label, value, tone, icon: Icon, desc, isActive, onClick 
   );
 }
 
-// Arrivals cube — one tile holding the full 20:00→20:00 cycle total on top,
-// split below into the night and day shifts. Counts every lead that ENTERED
-// the window (any current status). The cube is a plain container (not a
-// button) so its three click targets — total / night / day — don't nest
-// buttons; each toggles its own scope on the list.
-function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
-  // Night and day are a half-open partition of the cycle, so the total is
-  // exactly their sum — no extra count query needed.
-  const total = (nightCount || 0) + (dayCount || 0);
-  const cycleActive = scope === 'new_cycle';
-  const cardCls = cycleActive ? TILE_TONES.violet.active : 'border-border bg-muted/30';
+// Arrivals cube — total leads that ENTERED within the selected date range (so it
+// always reconciles with the list/filter), split below by work shift: day
+// (08:00–20:00) vs night (20:00–08:00), summed across the whole range via the
+// lead_arrivals_by_shift RPC so day + night == total for any range. Informational
+// (the date picker above is what drives filtering) — no separate window that
+// could disagree with the rest of the screen.
+function NewLeadsCube({ total, nightCount, dayCount, hasSplit }) {
   const sub = [
-    { id: 'new_night', label: 'לילה', range: '20:00–08:00', value: nightCount, icon: Moon, tone: 'violet' },
-    { id: 'new_day',   label: 'יום',  range: '08:00–20:00', value: dayCount,   icon: Sun,  tone: 'sky' },
+    { id: 'night', label: 'לילה', range: '20:00–08:00', value: nightCount, icon: Moon },
+    { id: 'day',   label: 'יום',  range: '08:00–20:00', value: dayCount,   icon: Sun },
   ];
   return (
-    <div className={`rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}>
-      {/* Total — click to filter the whole 20:00→20:00 cycle */}
-      <button
-        type="button"
-        onClick={() => onSelect('new_cycle')}
-        className="w-full text-right rounded-lg px-1 py-0.5 transition-colors hover:bg-muted/40"
-      >
+    <div className="rounded-xl border-2 border-border bg-muted/30 p-3 shadow-card">
+      <div className="px-1 py-0.5">
         <div className="flex items-center justify-between mb-0.5">
-          <p className={`text-xs font-medium ${cycleActive ? 'text-foreground' : 'text-muted-foreground'}`}>
-            לידים שנכנסו <span className="text-[10px] opacity-70">(20:00–20:00)</span>
-          </p>
-          <Sparkles className={`h-4 w-4 ${cycleActive ? 'text-violet-700 opacity-100' : 'text-muted-foreground opacity-50'}`} />
+          <p className="text-xs font-medium text-muted-foreground">לידים שנכנסו <span className="text-[10px] opacity-70">בטווח שנבחר</span></p>
+          <Sparkles className="h-4 w-4 text-muted-foreground opacity-50" />
         </div>
-        <p className={`text-3xl font-bold tabular-nums ${cycleActive ? 'text-violet-700' : 'text-muted-foreground'}`}>{fmt(total)}</p>
-      </button>
-      {/* Night / day split */}
-      <div className="grid grid-cols-2 gap-2 mt-2">
-        {sub.map((s) => {
-          const active = scope === s.id;
-          const tones = TILE_TONES[s.tone];
-          const Icon = s.icon;
-          const cls = active ? tones.active : 'border-border bg-card hover:bg-muted/50';
-          const valueCls = active ? tones.value : 'text-foreground';
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onSelect(s.id)}
-              className={`text-right rounded-lg border p-2 transition-all ${cls}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className={`text-[11px] font-medium ${active ? 'text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
-                <Icon className={`h-3.5 w-3.5 ${valueCls} ${active ? 'opacity-100' : 'opacity-60'}`} />
-              </div>
-              <p className={`text-xl font-bold tabular-nums leading-tight ${valueCls}`}>{fmt(s.value)}</p>
-              <p className="text-[9px] text-muted-foreground" dir="ltr">{s.range}</p>
-            </button>
-          );
-        })}
+        <p className="text-3xl font-bold tabular-nums text-muted-foreground">{fmt(total)}</p>
       </div>
+      {hasSplit ? (
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          {sub.map((s) => {
+            const Icon = s.icon;
+            return (
+              <div key={s.id} className="text-right rounded-lg border border-border bg-card p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-muted-foreground">{s.label}</span>
+                  <Icon className="h-3.5 w-3.5 text-foreground opacity-60" />
+                </div>
+                <p className="text-xl font-bold tabular-nums leading-tight text-foreground">{fmt(s.value)}</p>
+                <p className="text-[9px] text-muted-foreground" dir="ltr">{s.range}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
