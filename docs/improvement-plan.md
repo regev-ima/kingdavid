@@ -153,17 +153,73 @@ CREATE INDEX IF NOT EXISTS idx_shipments_status         ON public.delivery_shipm
 
 ---
 
+# חלק D — אחידות עיצובית ("שפה אחת")
+
+> **עוגן:** טבלת הלידים — `LeadListTable.jsx` → `ResponsiveLeadsTable.jsx` → `DataTable.jsx` המשותף — **לא נוגעים בה**; היא הרפרנס: מספור שורות, סקלטון בטעינה, מצב-ריק (Inbox), שורות לחיצות ונגישות-מקלדת, StatusBadge וצ'יפים צבעוניים, RTL, מעטפת `rounded-xl border shadow-card`, מצב dense, ורספונסיביות טבלה⇄כרטיסים במובייל.
+
+### D1. תגי סטטוס — StatusBadge בכל מקום — M (להתחיל מכאן)
+כ-50 תגי `<span class="px-2 … bg-*-100">` ידניים ב-20 קבצים + שימושי `<Badge>` לסטטוס ישות (LandingPages, ProductsNew, OperationalReports, CustomerDetails, Customers, LeadDetails, FactoryDashboard, ExtraCharges). לנתב כל סטטוס-ישות דרך `StatusBadge` המשותף; `ui/badge` נשאר לתגיות שאינן סטטוס.
+
+### D2. טבלאות גולמיות → DataTable — M–L
+להסב ל-DataTable (columns array, showRowNumbers, onRowClick, isLoading, emptyMessage): `ProductsNew` (הקטלוג), `ExtraCharges`, `LandingPages`, `Marketing` (מקורות/קמפיינים), `Representatives`, `DashboardMarketingTab`. אגב ההסבה נעלמים ה-badges הידניים והספינרים המקומיים (חופף ל-D1 — לבצע יחד פר-דף). טבלאות line-items בדפי פרטים (OrderDetails/QuoteDetails) ולוח המשמרות — להשאיר.
+
+### D3. השלמות בדפים שכבר על DataTable — S
+`onRowClick` חסר: Inventory, ClubSignups, CallAnalytics, Finance, CustomerDetails-orders. `isLoading` חסר (אין סקלטון): כל טבלאות Finance, CustomerDetails.
+
+### D4. בורר תאריכים אחד — M
+קיימים 4+ מימושים. לתקנן על `Dashboard2DateRange` (לשנות שם ל-`DateRangePicker` ניטרלי) ולהסב: Finance (Select+2 inputs), OperationalReports (2 inputs), SalesTasks (input בודד), ואת פס-הפריסטים של LeadManagement (אם רוצים אחידות מלאה — אחרת להשאיר, הוא כבר תואם ויזואלית).
+
+### D5. קומפוננטת PageHeader משותפת — M
+סחף כיום: h1 בגדלים text-xl עד text-4xl, תתי-כותרת בשלושה גוונים, פס-גרדיאנט רק ב-2 מסכים, אייקונים לא עקביים. ליצור `<PageHeader title subtitle icon actions>` (בסיס: h1 text-2xl font-bold + subtitle text-muted-foreground, כמו ניהול לידים) ולהסב את כל הדפים.
+
+### D6. איחוד כרטיסי KPI — M–L
+5 מערכות מקבילות (KPICard, StatCube, MiniKpi של Marketing, כרטיסי border-l-4 של OperationalReports, קוביות מותאמות). לתקנן: `KPICard` לכרטיס-מדד לחיץ, `StatCube` לסנאפשוט קומפקטי; להחליף את MiniKpi/accent-cards/קוביות Marketing.
+
+### D7. דיאלוגים — סקאלת רוחב + כפתור-סגירה RTL — S–M
+ליישר: `NewOrderDialog` מ-max-w-4xl ל-**1100px** (כמו NewQuoteDialog/QuoteDetailsModal/OrderDetailsModal); `LeadDetailsModal` 1280px — להשאיר או ליישר ל-1100. כפתור סגירה בצד שמאל (RTL) בכל הדיאלוגים (כיום רק ב-Representatives/RepManageDialog).
+
+### D8. דפוס טעינה אחיד לעמוד — S
+כיום חצי מהדפים "טוען..." טקסט וחצי Loader2. לבחור אחד (Loader2 ממורכז) ולהסב.
+
+---
+
+# חלק E — מוכנות למסירה + סדר קוד
+
+### E1. חובה לפני מסירה (Must-fix)
+1. **שמירות שנכשלות בשקט** — להוסיף onError (+טוסט הצלחה איפה שחסר): `EditQuote.jsx:168` (עדכון הצעה — אין שום פידבק!), `LeadDetails.jsx:283,300` (עדכון ליד + המרה ללקוח — אפס טוסטים בקובץ), `QuoteDetails.jsx:115,122,159` (עדכון/מייל/שכפול), `NewReturn.jsx:62`.
+2. **console.log עם נתוני תשלום** — להסיר: `HypReturn.jsx:40`, `HypPaymentDialog.jsx:59,70`, `RoutesManager.jsx:185`, `googleMapsLoader.js:69`.
+3. **"בקרוב" בדשבורד הראשי** — `Dashboard2.jsx:267,275,298` (3 אריחים) + `Bookkeeping.jsx:324` — להסתיר עד שקיים.
+4. **README** — בוילרפלייט של Base44 (מתעד env לא נכון). לכתוב מחדש: התקנה, env של Supabase, פריסה.
+5. **alert() נטיביים** — `ProductsNew.jsx:182,312,817,928` → toast.error.
+
+### E2. מומלץ לפני מסירה (Should-fix)
+1. **ErrorBoundary לראוטים ציבוריים** — Login / HypReturn / service-request (`App.jsx:121-138`) — קריסה שם = מסך לבן.
+2. **index.html** — `lang="he" dir="rtl"` (כיום lang="en"), meta description + theme-color.
+3. **confirm() נטיביים → AlertDialog** — Settings:448, ExtraCharges:242,311, ProductsNew:1339,1418, SmartScheduler:226, RoutesManager:390, BedConfigManager:143, ProductAddonsManager:381.
+4. **ניטור שגיאות** — אין Sentry/דומה; לסכם עם הלקוח או להוסיף.
+5. **NotificationBell** — subscribe הוא no-op; לחבר Realtime או polling עדין.
+6. **אייקוני PWA** — manifest.json מפנה ל-URL חיצוני (kingdavid4u.co.il); לארוז PNG מקומיים 192/512.
+7. **מובייל** — טבלאות min-w קשיח (SalesTasks 1280, Bookkeeping 1320, ProductsNew 900) — לוודא overflow-x-auto תקין או כרטיסים.
+
+### E3. סדר קוד (Nice-to-have, אחרי הכל)
+1. **מחיקת קוד מת (0 הפניות):** עץ הדשבורד הישן — 15 קבצים ב-`components/dashboard/` (להשאיר PendingQuotesCard, MyCommissionsCard שבשימוש); אשכול מוצרים ישן — `ProductSizesManager, ProductPricingManager, GlobalSizesList, ProductAddonsList, GlobalPricingManager, ProductAddonPriceManager, ProductSizePriceManager, ProductSizeSelector`; וגם `AgentChatWidget, AIInsights, LeadBulkUpload, ScheduledShipmentsView, CallLogger, UserNotRegisteredError, lib/NavigationTracker.jsx, lib/app-params.js, utils/dateUtils.js, src/pages.config.js`. לאמת 0-הפניות לפני כל מחיקה.
+2. **קבצי ענק (לפצל בהזדמנות):** LeadDetails 1784, SalesTasks 1528, ProductsNew 1473, SalesTaskDialog 1351, LeadManagement 1296, Representatives 1279, NewOrder 1147, NewQuote 1120, EditQuote 1110.
+3. robots.txt (disallow-all), הסרת `getWhatsAppConnectURL` המת.
+
+---
+
 # סדר ביצוע מומלץ
 
 | שלב | סעיפים | הערות |
 |---|---|---|
-| 1 | B2, B3, B4 | תיקוני אבטחה קטנים ומיידיים (מיגרציה + 2 פונקציות) |
+| 1 | E1 (חובה למסירה), B2, B3, B4 | פידבק-שמירות, לוגים של תשלום, אבטחה קטנה |
 | 2 | A1, A2, A3, A4 | ליבת הביצועים של מרכז השליטה/שיווק |
 | 3 | C1 (כל ההתנגשויות), C2 (בזהירות, לפי הסדר המחייב) | נכונות נתונים |
 | 4 | A5–A9 | ביצועים המשך |
 | 5 | C5 | אחידות הצעה/הזמנה (שלב ב׳) |
-| 6 | B1 (אחרי החלטה), B5, B6 | RLS מדורג + הקשחות |
-| 7 | A10–A11, C3, C4 | ניקיונות ושיפורים משניים |
+| 6 | D1–D8 | אחידות עיצובית (לפי סדר הסעיפים; D1+D2 יחד פר-דף) |
+| 7 | B1 (נעילת כתיבה בלבד), B6, E2 | הקשחות + מומלץ-למסירה |
+| 8 | A10–A11, C3, C4, E3 | ניקיונות: SalesDashboard, קוד מת, קבצי ענק |
 
 לאחר כל שלב: lint + build + push ל-`claude/keen-johnson-a46i71` (PR #276) + בדיקה ב-preview. מיגרציות/פונקציות — תוקף רק במיזוג.
 
