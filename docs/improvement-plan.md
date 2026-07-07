@@ -90,24 +90,25 @@ CREATE INDEX IF NOT EXISTS idx_shipments_status         ON public.delivery_shipm
 
 # חלק B — אבטחה (חלקו קריטי — דורש החלטות מוצר, ראה "שאלות פתוחות")
 
-### B1. אין RLS אמיתי על טבלאות הליבה — CRITICAL
-`leads / orders / quotes / customers / sales_tasks` — אין להן ENABLE RLS באף מיגרציה; ו-32 טבלאות נוספות (`20240202000001_enable_rls_all_tables.sql`) קיבלו `USING (true)` ל-SELECT/INSERT/UPDATE — כלומר **כל נציג מחובר יכול לקרוא/לכתוב הכל** (כולל `commissions`, `call_logs`, `audit_logs`) ישירות מול ה-API, בלי קשר להרשאות ה-UI. `base44Client.js` אף מציין זאת ("RLS is disabled on tables").
-**מה לעשות (בשלבים, לא בבת אחת):**
-1. שלב מיידי — לנעול **כתיבה** בטבלאות רגישות שאין להן סיבה להיכתב מהדפדפן ע"י לא-אדמין: `commissions`, `audit_logs`, `marketing_costs` (policy כתיבה אדמין-בלבד בתבנית התקנית).
-2. שלב שני — החלטת מוצר (שאלה פתוחה 1): האם נציג רשאי *לקרוא* לידים/הזמנות של אחרים? כיום ה-UI מסתיר אבל ה-API חושף. אם לא — לבנות policies מבוססי rep1/rep2/pending_rep_email + helper `is_admin()`, טבלה-טבלה, עם בדיקות רגרסיה מלאות (חיפוש טלפון חוצה-נציגים, מסך מפעל, הנה"ח — יש זרימות לגיטימיות חוצות-בעלים!).
-3. אזהרה: אכיפת RLS על leads/orders עלולה לשבור זרימות קיימות (איתור ליד, שיוך חוצה-נציגים, מרכז שירות). לבצע רק עם רשימת תרחישים ובדיקות.
+### B1. אין RLS אמיתי על טבלאות הליבה — **הוכרע (7.7)**
+`leads / orders / quotes / customers / sales_tasks` — אין להן ENABLE RLS; 32 טבלאות נוספות (`20240202000001_enable_rls_all_tables.sql`) עם `USING (true)`.
+**הכרעת בעלים:** מודל "קריאה פתוחה" מקובל בכתב — נציג רשאי *לקרוא* כל ליד (זה מכוון: לקוח נכנס לחנות והנציג האחראי לא נמצא → הנציג מאתר את הליד ב"איתור ליד" וממשיך את הטיפול). ה-UI ממשיך להציג לכל נציג רק את שלו כברירת מחדל.
+**מה נותר לבצע:**
+1. לנעול **כתיבה** אדמין-בלבד בטבלאות הרגישות: `commissions`, `audit_logs`, `marketing_costs` (policy בתבנית התקנית). קריאה — כמצב הקיים.
+2. **לא** מיישמים RLS קריאה פר-נציג על leads/orders/quotes/customers — הוחלט במפורש שלא.
 
 ### B2. הסלמת הרשאות עצמית — HIGH, תיקון מיידי וקטן
 הטריגר ב-`20260517000002_users_privilege_escalation_lockdown.sql` חוסם שינוי `role/commission_rate/is_active/department/email/auth_id` — אבל **לא** את `extra_permissions` ו-`can_manage_service`. נציג יכול לעדכן לעצמו את כל ההרשאות הנתינות (view_finance, bulk_update, manage_service, edit_schedule). **מיגרציה:** להוסיף את שני השדות לרשימת החסימה בטריגר.
 
-### B3. `getVoicecenterCredentials` מדליף סיסמת מאסטר — HIGH
-`supabase/functions/getVoicecenterCredentials/index.ts:11-21` מחזיר את `VOICENTER_MASTER_USERNAME/PASSWORD` לכל משתמש מחובר. לתקן: להחזיר אך ורק אישורים סקופיים לשלוחה של המשתמש עצמו, או לפרוקסות את הפעולה בשרת. לא להחזיר סיסמת מאסטר לדפדפן לעולם.
+### B3. `getVoicecenterCredentials` מדליף סיסמת מאסטר — HIGH — **הוכרע (7.7)**
+`supabase/functions/getVoicecenterCredentials/index.ts:11-21` מחזיר את `VOICENTER_MASTER_USERNAME/PASSWORD` לכל משתמש מחובר.
+**הכרעת בעלים:** לכל נציג יש קוד שלוחה משלו. לתקן כך שהפונקציה מחזירה רק את פרטי **השלוחה של הנציג הקורא** (לפי הפרופיל שלו ב-users), לעולם לא את סיסמת המאסטר. אם ה-SDK מחייב אישורי מאסטר — לפרוקסות את הפעולה בפונקציית Edge (המאסטר נשאר בשרת בלבד). לבדוק מה `VoiceCenterCallPopup`/`clickToCall` באמת צריכים לפני השינוי.
 
 ### B4. `importProductsFromSheets` ללא בדיקת הרשאה — MEDIUM
 מייבא getUser אך לא קורא לו. להוסיף בדיקת אדמין (כמו `importUsersFromSheets:9`).
 
-### B5. משטחי עלות/שימוש-לרעה — MEDIUM
-`sendEmail`, `sendSms`, `invokeLLM`, `extractData`, `createNotification`, `exportDashboardCsv` — כל נציג מחובר יכול להפעיל בלי הגבלה. להוסיף בדיקת תפקיד היכן שמתאים (exportDashboardCsv → אדמין) ו/או rate-limit בסיסי לפונקציות השליחה.
+### B5. משטחי עלות/שימוש-לרעה — **הוכרע (7.7): בלי הגבלות**
+הכרעת בעלים: אין להגביל שליחת SMS/מייל לנציגים (ללא rate-limit). נשאר רק: `exportDashboardCsv` — לשקול גידור אדמין (ייצוא נתונים רוחבי), בעדיפות נמוכה.
 
 ### B6. מיגרציה שבורה לשחזור סביבה — MEDIUM
 `20240202000001_enable_rls_all_tables.sql:51-54` משתמש ב-`CREATE POLICY IF NOT EXISTS` — תחביר לא חוקי בפוסטגרס; `db reset`/סביבה חדשה ייכשלו. לתקן ל-`DROP POLICY IF EXISTS` + `CREATE POLICY` (המיגרציה כבר רצה בפרוד — התיקון הוא לרפרודוסביליות בלבד).
@@ -133,8 +134,8 @@ CREATE INDEX IF NOT EXISTS idx_shipments_status         ON public.delivery_shipm
 2. **salesTaskWorkbench:** `src/lib/…js` (קנוני) מול `src/components/shared/…jsx`. `SalesTasks.jsx` מייבא **משניהם** (שורות 62-63)! סטיות: `normalizeTaskStatus` (טיפול ב-'new'/'waiting'/'resolved' שונה → אי-התאמות ספירה), `compareSalesTasks`, צורת החזרה של `getTaskCounterMismatches`, סקאלת עדיפויות. למזג ל-lib ולהסב את SalesTasks + SalesDashboard.
 3. **useEffectiveCurrentUser:** `src/hooks/use-effective-current-user.jsx` (קנוני) מול `src/components/shared/useEffectiveCurrentUser.jsx`. להסב 3 מייבאים (`rawUser`→`user`).
 
-### C3. עמוד `SalesDashboard` ישן נגיש ב-URL — MEDIUM
-נרשם אוטומטית ע"י `pageRoutes.js`, משתמש במודולים הישנים (C2) ומציג מספרים לא-עקביים. הוחלט (שאלה פתוחה 2): למחוק או להחריג ב-pageRoutes.
+### C3. עמוד `SalesDashboard` ישן — **הוכרע (7.7): למחוק**
+למחוק את `src/pages/SalesDashboard.jsx` (נרשם אוטומטית ב-pageRoutes ומשתמש במודולים הישנים של C2). לוודא שאין ניווטים אליו (grep `SalesDashboard`) ולעדכן redirect אם קיים.
 
 ### C4. ניקיונות
 - למחוק `src/pages.config.js` (מת; אם ייובא בטעות — מנפח bundle).
@@ -168,9 +169,9 @@ CREATE INDEX IF NOT EXISTS idx_shipments_status         ON public.delivery_shipm
 
 ---
 
-# שאלות פתוחות (דורשות הכרעת בעלים)
+# הכרעות בעלים (7.7.26) — סגורות
 
-1. **מודל הרשאות נתונים (B1):** האם נציג רשאי לקרוא לידים/הזמנות/לקוחות של נציגים אחרים ברמת ה-DB? (כיום כן בפועל. אכיפה אמיתית = פרויקט RLS מדורג עם בדיקות; אי-אכיפה = לקבל זאת בכתב ולנעול רק טבלאות רגישות.)
-2. **SalesDashboard הישן (C3):** למחוק סופית?
-3. **טלפוניה (B3):** מה הזרימה הרצויה — אישורי שלוחה פר-נציג, או פרוקסי בשרת?
-4. **הגבלות שליחה (B5):** האם להגביל sendSms/sendEmail לנציגים (rate limit / תפקיד)?
+1. **B1:** קריאה פתוחה לכל נציג מקובלת (שירות לקוח נכנס דרך "איתור ליד"); ה-UI ממשיך להציג לכל נציג רק את שלו. נועלים רק כתיבה בטבלאות רגישות.
+2. **C3:** SalesDashboard — נמחק.
+3. **B3:** לכל נציג קוד שלוחה משלו — הפונקציה תחזיר רק את פרטי השלוחה של הקורא; המאסטר נשאר בשרת.
+4. **B5:** ללא הגבלות שליחה.
