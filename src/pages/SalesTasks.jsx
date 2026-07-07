@@ -198,7 +198,10 @@ export default function SalesTasks() {
   const applyUserScope = (q, { includeAssignment } = { includeAssignment: false }) => {
     if (!includeAssignment) q = q.neq('task_type', 'assignment');
     if (!isAdmin && userEmail) {
-      q = q.or(`rep1.eq.${userEmail},rep2.eq.${userEmail},pending_rep_email.eq.${userEmail}`);
+      // ilike (no wildcards) = case-insensitive equality, matching the
+      // client-side taskBelongsToUser which lowercases both sides. A rep whose
+      // task rows carry a different-cased email no longer loses rows/counts.
+      q = q.or(`rep1.ilike.${userEmail},rep2.ilike.${userEmail},pending_rep_email.ilike.${userEmail}`);
     }
     return q;
   };
@@ -314,7 +317,7 @@ export default function SalesTasks() {
   // ~8k rows on every page load; this brings it down to ≤ 1000.
   const TASKS_FETCH_LIMIT = 1000;
   const { data: allSalesTasks = [], isLoading } = useQuery({
-    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList, showStale],
+    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList, showStale, leadStatusFilter],
     enabled: canAccessSales,
     staleTime: 60_000,
     // Keep today's queue live without a manual refresh — newly scheduled or
@@ -345,13 +348,29 @@ export default function SalesTasks() {
         q = q.eq('task_status', activeTab);
       } else if (activeTab.startsWith('cat_') || activeTab.startsWith('leads_')) {
         // Category + header lead-cube tabs are partitions of the open queue
-        // driven by the related lead's state. Server-side we just narrow to
-        // open tasks; the lead-level check (status / first_action_at /
-        // created_date) happens client-side using `leadsById` so we don't
-        // have to .in() over a list of thousands of lead ids.
-        q = q.eq('task_status', 'not_completed');
+        // driven by the related lead's state, via the denormalised lead-status
+        // mirror on the task row. Push that predicate to the SERVER — filtering
+        // client-side over a 1000-row generic window silently dropped matching
+        // rows whenever the rep's open queue exceeded the fetch cap, which is
+        // exactly how a cube said 3 while the table showed 2.
+        q = q.eq('task_status', 'not_completed').not('lead_id', 'is', null);
+        if (activeTab === 'leads_unhandled') {
+          q = q.eq('status', 'new_lead');
+        } else if (activeTab === 'leads_new_today') {
+          q = q.eq('status', 'new_lead').gte('created_date', todayStartIso).lte('created_date', todayEndIso);
+        } else if (activeTab === 'leads_in_handling') {
+          q = q.not('status', 'is', null).neq('status', 'new_lead').not('status', 'in', `(${CLOSED_STATUSES.join(',')})`);
+        } else if (LEAD_STATUSES_BY_CATEGORY[activeTab]) {
+          q = q.in('status', LEAD_STATUSES_BY_CATEGORY[activeTab]);
+        }
       }
       // 'all' falls through with no filter.
+
+      // The lead-status dropdown filter also runs on the server, so picking a
+      // status actually searches the whole bucket — not just whichever rows
+      // happened to be inside the fetched window (that made valid filters
+      // return "no results" and look broken).
+      if (leadStatusFilter !== 'all') q = q.eq('status', leadStatusFilter);
 
       // Sort: closed tabs by most-recently-touched. Open tabs by due_date —
       // ascending for forward-looking buckets (today/upcoming/not_completed),
@@ -391,12 +410,22 @@ export default function SalesTasks() {
     staleTime: 60_000,
     refetchInterval: 60_000,
     queryFn: async () => {
-      const { data, error } = await applyUserScope(
-        base44.supabase.from('sales_tasks').select('lead_id, status, created_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
-        { includeAssignment: includeAssignmentInCounts },
-      ).limit(10_000);
-      if (error) throw error;
-      return data || [];
+      // Page through the FULL open-task set. A single request is silently
+      // truncated by PostgREST's server-side max-rows (1000) regardless of a
+      // larger .limit(), which quietly under-counted the cubes once a rep's
+      // open queue crossed 1000 rows — the "top numbers don't match" bug.
+      const out = [];
+      const PAGE = 1000;
+      for (let from = 0; from < 30_000; from += PAGE) {
+        const { data, error } = await applyUserScope(
+          base44.supabase.from('sales_tasks').select('lead_id, status, created_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
+          { includeAssignment: includeAssignmentInCounts },
+        ).order('id', { ascending: true }).range(from, from + PAGE - 1);
+        if (error) throw error;
+        out.push(...(data || []));
+        if (!data || data.length < PAGE) break;
+      }
+      return out;
     },
   });
 
@@ -445,10 +474,20 @@ export default function SalesTasks() {
       });
     }
     // The three header lead-cubes filter the task queue by the related lead's
-    // state, using the exact same predicate as the cube counts so the number
-    // on a cube equals the rows shown here.
+    // state, using the exact same predicate as the cube counts. The cube
+    // counts DISTINCT leads, so the table also collapses to one row per lead
+    // (first task in the current sort) — cube says 3 ⇒ exactly 3 rows.
     if (LEAD_CUBES.includes(activeTab)) {
-      return filtered.filter((t) => matchesLeadCube(t, activeTab, todayStart, todayEnd));
+      const matching = filtered.filter((t) => matchesLeadCube(t, activeTab, todayStart, todayEnd));
+      const seen = new Set();
+      const oneRowPerLead = [];
+      for (const t of matching) {
+        const key = t.lead_id || t.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        oneRowPerLead.push(t);
+      }
+      return oneRowPerLead;
     }
     return filtered;
   }, [effectiveUser, allSalesTasks, leadsById, activeTab, todayStart, todayEnd]);
@@ -550,6 +589,14 @@ export default function SalesTasks() {
       tasks = tasks.filter(t => t.summary?.toLowerCase().includes(searchLower));
     }
 
+    // Same predicate the server fetch applies — repeated here so the
+    // pagination totals ("מציג X מתוך Y") count the same rows the table
+    // actually renders (before, the count ignored this filter and the
+    // sentinel could claim 100 rows over an empty table).
+    if (leadStatusFilter !== 'all') {
+      tasks = tasks.filter(t => (t.status || null) === leadStatusFilter);
+    }
+
     tasks = sortSalesTasks(tasks, activeTab, now).sort((a, b) => {
       if (sortBy === 'priority') {
         return compareTasksByPriority(a, b, leadsById, now);
@@ -576,7 +623,7 @@ export default function SalesTasks() {
     const total = tasks.length;
     const paginated = tasks.slice(0, (tasksPage + 1) * TASKS_PER_PAGE);
     return { totalFilteredCount: total, paginatedTasks: paginated };
-  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now, leadsById]);
+  }, [scopedTasks, activeTab, dateFilter, search, sortBy, tasksPage, now, leadsById, leadStatusFilter]);
 
   // 3. Fetch leads ONLY for the paginated (visible) tasks
   const paginatedTaskLeadIds = useMemo(() => 
@@ -1356,17 +1403,33 @@ export default function SalesTasks() {
               <>
                 <div className="text-center">
                   <p className="text-muted-foreground font-medium text-sm">אין משימות להצגה</p>
-                  <p className="text-muted-foreground/70 text-xs mt-0.5">שנה את הפילטר או הוסף משימה חדשה</p>
+                  <p className="text-muted-foreground/70 text-xs mt-0.5">
+                    {(search || dateFilter || leadStatusFilter !== 'all')
+                      ? 'הסינון הפעיל לא מצא תוצאות — אפס אותו או שנה בחירה'
+                      : 'שנה את הפילטר או הוסף משימה חדשה'}
+                  </p>
                 </div>
-                <Button
-                  onClick={() => setShowNewTaskDialog(true)}
-                  size="sm"
-                  variant="outline"
-                  className="mt-1 text-xs h-8 border-primary/20 text-primary hover:bg-primary/5 gap-1"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  הוסף משימה
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+                  {(search || dateFilter || leadStatusFilter !== 'all') && (
+                    <Button
+                      onClick={() => { setSearch(''); setDateFilter(''); setLeadStatusFilter('all'); }}
+                      size="sm"
+                      className="text-xs h-8 gap-1"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      אפס סינון
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => setShowNewTaskDialog(true)}
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-8 border-primary/20 text-primary hover:bg-primary/5 gap-1"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    הוסף משימה
+                  </Button>
+                </div>
               </>
             )}
           </div>
@@ -1377,6 +1440,7 @@ export default function SalesTasks() {
             isLoading={isLoading}
             emptyMessage="לא נמצאו משימות"
             onRowClick={handleOpenTaskDetails}
+            dense
             tableClassName="table-fixed min-w-[1280px]"
             // "Due now" — task is open, has a due_date, and that time
             // falls in a ±60 min window of the current clock. Wrap the
@@ -1400,7 +1464,22 @@ export default function SalesTasks() {
             className="flex items-center justify-between px-4 py-3 bg-card rounded-xl border border-border shadow-card"
           >
             <span className="text-xs text-muted-foreground/70">
-              מציג {paginatedTasks.length} מתוך {totalFilteredCount} משימות · טוען עוד…
+              {(() => {
+                // When the server fetch hit its cap, totalFilteredCount only
+                // reflects the loaded window — use the exact server-side count
+                // for the active bucket instead, so "מתוך" matches reality.
+                const serverTabTotal = {
+                  today: counts.today, overdue: counts.overdue, upcoming: counts.upcoming,
+                  undated: counts.undated, not_completed: counts.open, completed: counts.completed,
+                  completed_today: counts.completedToday, all: counts.total, assignment: counts.assignmentOpen,
+                }[activeTab];
+                const hasClientFilters = !!search || !!dateFilter || leadStatusFilter !== 'all';
+                const capped = allSalesTasks.length >= TASKS_FETCH_LIMIT;
+                const displayTotal = !hasClientFilters && capped && serverTabTotal != null && serverTabTotal > totalFilteredCount
+                  ? serverTabTotal
+                  : totalFilteredCount;
+                return `מציג ${paginatedTasks.length.toLocaleString()} מתוך ${Number(displayTotal).toLocaleString()} משימות · טוען עוד…`;
+              })()}
             </span>
             <Button
               variant="outline"

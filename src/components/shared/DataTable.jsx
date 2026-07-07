@@ -27,7 +27,11 @@ export default function DataTable({
   showRowNumbers = true,
   rowNumberStart = 1,
   tableClassName = '',
+  // Compact vertical rhythm — halves the cell padding for dense screens
+  // (e.g. the sales-tasks queue) without affecting other tables.
+  dense = false,
 }) {
+  const cellPadY = dense ? 'py-2' : 'py-4';
   if (isLoading) {
     return (
       <div className="rounded-xl border border-black/[0.06] bg-card overflow-hidden shadow-card">
@@ -139,7 +143,7 @@ export default function DataTable({
                 role={onRowClick ? 'button' : undefined}
               >
                 {showRowNumbers ? (
-                  <TableCell className="text-center py-4 px-2 text-sm text-muted-foreground font-semibold tabular-nums w-14">
+                  <TableCell className={cn("text-center px-2 text-sm text-muted-foreground font-semibold tabular-nums w-14", cellPadY)}>
                     {rowNumberStart + rowIdx}
                   </TableCell>
                 ) : null}
@@ -148,7 +152,8 @@ export default function DataTable({
                     key={colIdx}
                     className={cn(
                       col.align === 'center' ? 'text-center' : 'text-right',
-                      "py-4 px-4 text-sm text-foreground/80",
+                      "px-4 text-sm text-foreground/80",
+                      cellPadY,
                       col.cellClassName
                     )}
                     style={col.width ? { width: col.width } : undefined}

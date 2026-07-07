@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import { fetchAllList } from '@/lib/base44Pagination';
+import { useOrderModal } from '@/components/order/OrderModalContext';
 
 export default function FactoryDashboard() {
   const { getEffectiveUser } = useImpersonation();
@@ -32,6 +33,8 @@ export default function FactoryDashboard() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const navigate = useNavigate();
+  // Open orders as a popup over the dashboard instead of navigating away.
+  const { openOrder } = useOrderModal();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -276,12 +279,10 @@ export default function FactoryDashboard() {
                     <div className="mt-2">
                       <StatusBadge status={order.production_status} />
                     </div>
-                    <Link to={createPageUrl('OrderDetails') + `?id=${order.id}`}>
-                      <Button size="sm" className="w-full mt-2">
-                        פרטים
-                        <ArrowRight className="h-3 w-3 mr-1" />
-                      </Button>
-                    </Link>
+                    <Button size="sm" className="w-full mt-2" onClick={() => openOrder(order.id)}>
+                      פרטים
+                      <ArrowRight className="h-3 w-3 mr-1" />
+                    </Button>
                   </div>
                 );
               })}

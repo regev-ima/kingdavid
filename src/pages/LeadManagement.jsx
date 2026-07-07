@@ -143,11 +143,14 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
     // בטיפול — past the new_lead stage and not yet closed.
     conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
   } else if (isShiftScope) {
-    // לידים חדשים (לילה/יום/מחזור) — new_lead leads that arrived in the window.
+    // לידים שנכנסו (לילה/יום/מחזור) — every lead that ARRIVED in the window,
+    // regardless of its current status. Counting only the ones still sitting
+    // at new_lead made the tile decay toward 0 as reps worked the queue
+    // ("נכנסו מעל 200 לידים" while the tile said 18) — arrivals is the number
+    // a manager actually means here.
     const w = scope === 'new_night' ? windows?.night
       : scope === 'new_day' ? windows?.day
         : windows?.cycle;
-    conditions.push({ status: 'new_lead' });
     if (w) conditions.push(windowCond(w));
   } else if (LIFECYCLE_SCOPES[scope]) {
     // Per-rep workload drill-down (חדשים/בטיפול/נסגרו/נאבדו). Combined with the
@@ -277,10 +280,15 @@ export default function LeadManagement() {
   const dateRange = useMemo(() => resolveDatePreset(datePresetId, customRange), [datePresetId, customRange]);
   const fromIso = dateRange?.from ? dateRange.from.toISOString() : '';
   const toIso = dateRange?.to ? dateRange.to.toISOString() : '';
-  // Fixed night/day shift windows, anchored to today's Israel date. Computed
-  // once per mount — the boundaries (20:00 / 08:00) don't move during a
-  // session, so the ISO strings stay stable and keep the query keys steady.
-  const windows = useMemo(() => israelShiftWindows(), []);
+  // Night/day shift windows. Anchored to the END of the selected date range
+  // (so picking a specific day shows THAT day's 20:00→20:00 cycle — the
+  // manager checking "כמה נכנסו ב-06.07" gets 06.07's cycle, not today's);
+  // with no range selected they anchor to today's Israel date. toIso keeps
+  // the ISO strings stable per selection so query keys stay steady.
+  const windows = useMemo(
+    () => israelShiftWindows(toIso ? new Date(toIso) : new Date()),
+    [toIso],
+  );
 
   // ───────────────────────────────────────────────────────────────
   // Category KPI tiles. The three assignment/status buckets respect the
@@ -317,8 +325,8 @@ export default function LeadManagement() {
         base44.entities.Lead.count(base([{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }])),
         base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
         base44.entities.Lead.count(base({ status: { $nin: HANDLING_EXCLUDED_STATUSES } })),
-        base44.entities.Lead.count(base([{ status: 'new_lead' }, windowCond(windows.night)], { range: false })),
-        base44.entities.Lead.count(base([{ status: 'new_lead' }, windowCond(windows.day)], { range: false })),
+        base44.entities.Lead.count(base([windowCond(windows.night)], { range: false })),
+        base44.entities.Lead.count(base([windowCond(windows.day)], { range: false })),
         base44.entities.Lead.count(base()),
       ]);
       return {
@@ -704,10 +712,15 @@ export default function LeadManagement() {
       </div>
 
       {/* Category tiles — clickable to filter the list. The three status
-          buckets follow the date range above; the "new leads" cube uses its
-          own fixed 20:00→20:00 cycle (total) split into night / day shifts. */}
+          buckets follow the date range above; the arrivals cube uses its
+          own 20:00→20:00 cycle (total) split into night / day shifts,
+          anchored to the selected date. For a rep the whole strip is scoped
+          to their own leads, and the manager-only tiles (unassigned pool,
+          night/day intake) are replaced with a personal summary tile —
+          a rep's view stays focused on the leads that belong to them. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
+          ...(!isAdmin ? [{ id: '__mine', label: 'הלידים שלי', value: kpiCounts.totalCount, tone: 'sky', icon: Users, desc: 'כל הלידים המשויכים אליי בטווח' }] : []),
           { id: 'assigned_unhandled', label: 'משויך ולא טופל', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
           // "לא משויכים" is a management-only pool — reps only handle leads
           // assigned to them, so the unassigned tile is hidden for them.
@@ -721,16 +734,20 @@ export default function LeadManagement() {
             tone={tile.tone}
             icon={tile.icon}
             desc={tile.desc}
-            isActive={scope === tile.id}
-            onClick={() => toggleScope(tile.id)}
+            isActive={tile.id === '__mine' ? scope === 'all' && !hasActiveFilter : scope === tile.id}
+            onClick={() => (tile.id === '__mine'
+              ? (setScope('all'), setFilters({ search: '', status: 'all', source: 'all', rep: 'all' }))
+              : toggleScope(tile.id))}
           />
         ))}
-        <NewLeadsCube
-          nightCount={kpiCounts.newNightCount}
-          dayCount={kpiCounts.newDayCount}
-          scope={scope}
-          onSelect={toggleScope}
-        />
+        {isAdmin ? (
+          <NewLeadsCube
+            nightCount={kpiCounts.newNightCount}
+            dayCount={kpiCounts.newDayCount}
+            scope={scope}
+            onSelect={toggleScope}
+          />
+        ) : null}
       </div>
 
       {/* Rep workload panel — admin only. Click the card header to filter the
@@ -1015,9 +1032,10 @@ function CategoryTile({ label, value, tone, icon: Icon, desc, isActive, onClick 
   );
 }
 
-// "New leads" cube — one tile holding the full 20:00→20:00 cycle total on top,
-// split below into the night and day shifts. The cube is a plain container (not
-// a button) so its three click targets — total / night / day — don't nest
+// Arrivals cube — one tile holding the full 20:00→20:00 cycle total on top,
+// split below into the night and day shifts. Counts every lead that ENTERED
+// the window (any current status). The cube is a plain container (not a
+// button) so its three click targets — total / night / day — don't nest
 // buttons; each toggles its own scope on the list.
 function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
   // Night and day are a half-open partition of the cycle, so the total is
@@ -1039,7 +1057,7 @@ function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
       >
         <div className="flex items-center justify-between mb-0.5">
           <p className={`text-xs font-medium ${cycleActive ? 'text-foreground' : 'text-muted-foreground'}`}>
-            לידים חדשים <span className="text-[10px] opacity-70">(20:00–20:00)</span>
+            לידים שנכנסו <span className="text-[10px] opacity-70">(20:00–20:00)</span>
           </p>
           <Sparkles className={`h-4 w-4 ${cycleActive ? 'text-violet-700 opacity-100' : 'text-muted-foreground opacity-50'}`} />
         </div>
