@@ -90,9 +90,9 @@ export default function Dashboard2() {
             navigate(createPageUrl('Bookkeeping'));
             return;
           }
-          // Reps no longer have the sales dashboard — land them on their
-          // task queue, their first nav item.
-          navigate(createPageUrl('SalesTasks'));
+          // Reps land on "לידים/משימות מכירה" (LeadManagement) — their main
+          // screen and first nav item.
+          navigate(createPageUrl('LeadManagement'));
           return;
         }
         setUser(userData);

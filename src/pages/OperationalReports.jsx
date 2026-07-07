@@ -7,21 +7,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Clock,
   Factory,
   Truck,
   Headphones,
-  TrendingUp,
-  TrendingDown,
   Calendar,
-  BarChart3,
   Download,
 } from "lucide-react";
 import { format, differenceInHours, differenceInDays, startOfMonth, endOfMonth } from '@/lib/safe-date-fns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { fetchAllList } from '@/lib/base44Pagination';
+import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
+import { canAccessFactoryWorkspace } from '@/lib/rbac';
 
 export default function OperationalReports() {
+  const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const now = new Date();
   const [dateFrom, setDateFrom] = useState(format(startOfMonth(now), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(format(endOfMonth(now), 'yyyy-MM-dd'));
@@ -215,6 +214,17 @@ export default function OperationalReports() {
   }, [filteredData.tickets]);
 
   const isLoading = ordersLoading || deliveriesLoading || ticketsLoading;
+
+  if (isLoadingUser) return <div className="text-center py-12">טוען...</div>;
+  // Operational reports are a management/factory view (orders, deliveries,
+  // tickets) — reps and bookkeepers shouldn't reach it, even by URL.
+  if (!canAccessFactoryWorkspace(effectiveUser)) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">אין לך הרשאה לגשת לדוחות התפעוליים</p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return <div className="text-center py-12">טוען נתונים...</div>;
