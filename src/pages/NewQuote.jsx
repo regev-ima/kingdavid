@@ -775,12 +775,21 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
       <div className={asDialog ? 'mb-4 mt-2' : 'mb-8 mt-6'}>
         <div className="flex items-center justify-center">
-          {steps.map((step, idx) => (
+          {steps.map((step, idx) => {
+            // Can't jump forward past an incomplete step (same rules as "המשך");
+            // going back to an earlier step is always allowed.
+            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone);
+            const step2Valid = formData.items.some(item => item.product_id);
+            const locked = step.id > currentStep && !(
+              (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
+            );
+            return (
             <React.Fragment key={step.id}>
               <button
                 type="button"
-                onClick={() => setCurrentStep(step.id)}
-                className="flex flex-col items-center gap-1.5 group relative"
+                onClick={() => { if (!locked) setCurrentStep(step.id); }}
+                disabled={locked}
+                className={`flex flex-col items-center gap-1.5 group relative ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`${asDialog ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-sm sm:text-base'} rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
                   currentStep > step.id
@@ -803,7 +812,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 </div>
               )}
             </React.Fragment>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -1084,17 +1094,27 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               )}
             </div>
 
-            <div>
+            <div className="flex items-center gap-3">
               {currentStep < 3 ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
-                  disabled={currentStep === 2 && !formData.items.some(item => item.product_id)}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
-                >
-                  המשך
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
+                    disabled={
+                      (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)))
+                      || (currentStep === 2 && !formData.items.some(item => item.product_id))
+                    }
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
+                  >
+                    המשך
+                  </Button>
+                  {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)) ? (
+                    <span className="text-[11px] text-muted-foreground">יש למלא שם וטלפון תקין כדי להמשיך</span>
+                  ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
+                    <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
+                  ) : null}
+                </>
               ) : (
                 <Button
                   type="submit"
