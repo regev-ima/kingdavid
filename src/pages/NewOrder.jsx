@@ -582,9 +582,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     // The required customer fields live on step 1; since steps are unmounted
     // (not CSS-hidden), the browser can't enforce `required` from step 3 — so
     // validate here and jump back so the rep sees exactly what's missing.
-    if (!formData.customer_name?.trim() || !formData.delivery_address?.trim()) {
+    if (!formData.customer_name?.trim() || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) {
       setCurrentStep(1);
-      toast.error('יש למלא שם לקוח וכתובת למשלוח');
+      toast.error('יש למלא שם לקוח, עיר וכתובת למשלוח');
       return;
     }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
@@ -616,7 +616,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         <div className="flex items-center justify-center">
           {steps.map((step, idx) => {
             // Can't jump forward past an incomplete step (same rules as "המשך").
-            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone);
+            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone) && !!formData.delivery_city?.trim() && !!formData.delivery_address?.trim();
             const step2Valid = formData.items.some(item => item.product_id);
             const locked = step.id > currentStep && !(
               (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
@@ -974,15 +974,15 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                   size="lg"
                   className="h-11 px-8 text-base font-semibold"
                   disabled={
-                    (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)))
+                    (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()))
                     || (currentStep === 2 && !formData.items.some(item => item.product_id))
                   }
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
                 >
                   המשך
                 </Button>
-                {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)) ? (
-                  <span className="text-[11px] text-muted-foreground">יש למלא שם וטלפון תקין כדי להמשיך</span>
+                {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) ? (
+                  <span className="text-[11px] text-muted-foreground">יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך</span>
                 ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
                   <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
                 ) : null}
