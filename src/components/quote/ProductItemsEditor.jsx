@@ -3,7 +3,7 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import DiscountPopover from '@/components/quote/DiscountPopover';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, BedDouble, Package, Settings2, CornerDownLeft } from 'lucide-react';
+import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft } from 'lucide-react';
 import { productMatchesBedType } from '@/utils/bedType';
 import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
 
@@ -24,6 +24,9 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
   const [expanded, setExpanded] = useState({}); // index -> bool
   const [bedWizardIndex, setBedWizardIndex] = useState(null);
   const [bedWizardSnapshot, setBedWizardSnapshot] = useState(null);
+  // Non-null while the picker is editing an existing row's product/size (pencil)
+  // rather than adding a new one.
+  const [editIndex, setEditIndex] = useState(null);
 
   const productById = (id) => products.find((p) => p.id === id);
 
@@ -47,12 +50,37 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
     onChange(next);
   };
 
+  // Pencil on a non-bed row → re-open the picker to change its product/size.
+  const editProduct = (index) => { setEditIndex(index); setSelectorOpen(true); };
+
   // Add a product line straight from the picker's product + size selection.
   const addFromSelection = (variation) => {
     const product = productById(variation.product_id);
     if (!product) return;
     const isBed = product.category === 'bed';
     const price = variation.final_price || 0;
+
+    // Edit mode: replace the row's product/size in place (keep qty + discount).
+    if (editIndex != null) {
+      const prev = items[editIndex] || {};
+      const sameProduct = prev.product_id === product.id;
+      onChange(items.map((it, i) => (i === editIndex ? withTotal({
+        ...prev,
+        product_id: product.id,
+        name: product.name,
+        sku: variation.sku || '',
+        variation_id: variation.id,
+        length_cm: variation.length_cm ?? null,
+        width_cm: variation.width_cm ?? null,
+        height_cm: variation.height_cm ?? null,
+        unit_price: price,
+        selected_addons: sameProduct ? (prev.selected_addons || []) : [],
+      }) : it)));
+      setSelectorOpen(false);
+      setEditIndex(null);
+      return;
+    }
+
     const line = {
       product_id: product.id,
       name: product.name,
@@ -223,18 +251,18 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                       <td className="text-center py-2.5 px-2 font-bold text-primary tabular-nums">{ils((item.total || 0) * VAT)}</td>
                       <td className="py-2.5 px-2">
                         <div className="flex items-center justify-center gap-0.5">
-                          {isBed ? (
-                            /* Beds: the config button opens the wizard straight
-                               away (choices + fabric + prices all live there). */
-                            <button
-                              type="button"
-                              onClick={() => openBedWizard(index)}
-                              title="תצורת מיטה (אשף)"
-                              className="p-1.5 rounded-md transition-colors text-primary hover:bg-primary/10"
-                            >
-                              <BedDouble className="h-4 w-4" />
-                            </button>
-                          ) : canExpand ? (
+                          {/* Pencil = edit this item. Beds open the config wizard
+                              (questions/fabric/prices); other rows re-open the
+                              product picker to change the product/size. */}
+                          <button
+                            type="button"
+                            onClick={() => (isBed ? openBedWizard(index) : editProduct(index))}
+                            title={isBed ? 'עריכת תצורת מיטה' : 'עריכת מוצר/מידה'}
+                            className="p-1.5 rounded-md transition-colors text-primary hover:bg-primary/10"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          {!isBed && canExpand ? (
                             <button
                               type="button"
                               onClick={() => setExpanded((e) => ({ ...e, [index]: !e[index] }))}
@@ -294,7 +322,7 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
         onSelect={() => {}}
         onVariationSelect={addFromSelection}
         open={selectorOpen}
-        onOpenChange={setSelectorOpen}
+        onOpenChange={(o) => { setSelectorOpen(o); if (!o) setEditIndex(null); }}
         hideTrigger
       />
 

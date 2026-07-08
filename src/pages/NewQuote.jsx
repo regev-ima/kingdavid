@@ -32,7 +32,6 @@ import { hasBedType } from '@/utils/bedType';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
-import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
@@ -93,10 +92,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     payment_terms_selection: [],
   });
 
-  // Two-phase save: handleSubmit only validates and opens the preview dialog;
-  // the actual mutation runs from the dialog's confirm button. Hook stays at
-  // the top of the component to satisfy Rules of Hooks across early returns.
-  const [showConfirm, setShowConfirm] = useState(false);
   // Phone-based lookup so a quote started from "create new quote" (no
   // existing lead context) can still snap to an existing customer / lead.
   // Skipped entirely once the form already has a hard lead_id (came from
@@ -512,13 +507,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       setCurrentStep(1);
       return;
     }
-    setShowConfirm(true);
-  };
-
-  const confirmSave = () => {
-    createQuoteMutation.mutate(formData, {
-      onSettled: () => setShowConfirm(false),
-    });
+    // Save directly — no summary/confirm screen.
+    createQuoteMutation.mutate(formData);
   };
 
   const mattressCount = formData.items.reduce((count, item) => {
@@ -557,10 +547,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     return true;
   });
 
-  // Loading screen while saving quote
+  // Loading screen while saving quote — fixed min height so switching from the
+  // form to this view doesn't make the dialog jump/expand.
   if (asDialog && createQuoteMutation.isPending) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-6">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
         <div className="relative">
           <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
         </div>
@@ -1134,17 +1125,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
         </div>
       </form>
-      <QuoteConfirmDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        formData={formData}
-        products={products}
-        variations={variations}
-        onConfirm={confirmSave}
-        isPending={createQuoteMutation.isPending}
-        title="אישור לפני שמירת ההצעה"
-        confirmLabel="אישור ושמירה"
-      />
     </div>
   );
 }
