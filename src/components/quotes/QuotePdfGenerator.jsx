@@ -538,43 +538,57 @@ const QuotePdfGenerator = async (quoteData) => {
 
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
-    pageCanvas.height = pageHeightPx;
     const ctx = pageCanvas.getContext("2d");
+
+    // Read all pixels once so a page break can be backed up to a BLANK row —
+    // slicing at an exact A4 boundary cut through a line of text / the footer,
+    // which is what made page 2 look garbled/doubled.
+    let fullData = null;
+    try {
+      fullData = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    } catch { fullData = null; }
+    const isBlankRow = (ry) => {
+      if (!fullData) return false;
+      const base = ry * canvas.width * 4;
+      for (let x = 0; x < canvas.width; x++) {
+        const i = base + x * 4;
+        if (fullData[i] < 250 || fullData[i + 1] < 250 || fullData[i + 2] < 250) return false;
+      }
+      return true;
+    };
+    // Nearest blank row at/above targetY (scan up to ~220px); fall back to the
+    // hard boundary if the page is genuinely full.
+    const cleanBreak = (targetY) => {
+      const limit = Math.max(targetY - 220, 0);
+      for (let ry = Math.min(targetY, canvas.height - 1); ry >= limit; ry--) {
+        if (isBlankRow(ry)) return ry + 1;
+      }
+      return targetY;
+    };
 
     let y = 0;
     let pageIndex = 0;
 
     while (y < canvas.height) {
-      const remainingHeight = canvas.height - y;
-      
-      // Skip creating a new page if remaining content is less than 100px (nearly empty)
-      if (remainingHeight < 100 && pageIndex > 0) {
-        break;
-      }
+      if (canvas.height - y < 8) break; // nothing meaningful left
 
+      let breakY = y + pageHeightPx;
+      breakY = breakY >= canvas.height ? canvas.height : cleanBreak(breakY);
+      const heightToRender = breakY - y;
+
+      // Each page's image is exactly its content height (placed at the top of
+      // the A4 page), so nothing gets stretched and the rest stays white.
+      pageCanvas.height = heightToRender;
       ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, heightToRender, 0, 0, canvas.width, heightToRender);
 
-      const heightToRender = Math.min(pageHeightPx, remainingHeight);
-      
-      ctx.drawImage(
-        canvas,
-        0,
-        y,
-        canvas.width,
-        heightToRender,
-        0,
-        0,
-        canvas.width,
-        heightToRender
-      );
-
-      const sliceHeightMm = Math.min(pdfHeight, heightToRender / pxPerMm);
+      const sliceHeightMm = heightToRender / pxPerMm;
       const imgData = pageCanvas.toDataURL("image/png", 1.0);
 
       if (pageIndex > 0) pdf.addPage();
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, sliceHeightMm, undefined, "FAST");
 
-      y += pageHeightPx;
+      y = breakY;
       pageIndex += 1;
     }
 
