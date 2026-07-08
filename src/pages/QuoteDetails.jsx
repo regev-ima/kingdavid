@@ -52,6 +52,7 @@ import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canEditQuote } from '@/lib/rbac';
 import { getRepDisplayName } from '@/lib/repDisplay';
+import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -123,8 +124,10 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
 
   const sendEmailMutation = useMutation({
     mutationFn: async () => {
-      if (!quote.pdf_url) {
-        const pdfUrl = await QuotePdfGenerator(quote);
+      // Use the freshly-generated URL (quote.pdf_url is stale until refetch).
+      let pdfUrl = quote.pdf_url;
+      if (!pdfUrl) {
+        pdfUrl = await QuotePdfGenerator(quote);
         await base44.entities.Quote.update(quoteId, { pdf_url: pdfUrl, status: 'sent' });
       }
 
@@ -135,7 +138,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
         quote_number: quote.quote_number,
         customer_name: quote.customer_name,
         total: quote.total?.toLocaleString(),
-        pdf_url: quote.pdf_url,
+        pdf_url: toShareablePdfUrl(pdfUrl),
         valid_until: quote.valid_until ? format(new Date(quote.valid_until), 'dd/MM/yyyy') : '',
       });
 

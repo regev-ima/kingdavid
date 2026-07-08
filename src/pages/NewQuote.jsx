@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
+import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
 
 // ₪ with two decimals (agorot) — keeps the totals consistent with the per-line
 // amounts, which now show agorot so the parts sum exactly to the total.
@@ -569,7 +570,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // Summary screen after quote saved in dialog mode
   if (asDialog && savedQuote) {
     const whatsappPhone = formatPhoneForWhatsApp(formData.customer_phone);
-    const whatsappText = encodeURIComponent(`שלום ${formData.customer_name}, מצורפת הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד.\n\nלצפייה בהצעה: ${savedQuote.pdf_url || ''}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה, צוות קינג דוד`);
+    const whatsappText = encodeURIComponent(`שלום ${formData.customer_name}, מצורפת הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד.\n\nלצפייה בהצעה: ${toShareablePdfUrl(savedQuote.pdf_url) || ''}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה, צוות קינג דוד`);
 
     // Payment screen for reserving quote
     if (showPaymentScreen) {
@@ -709,7 +710,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     quote_number: savedQuote.quote_number,
                     customer_name: formData.customer_name,
                     total: savedQuote.total?.toLocaleString(),
-                    pdf_url: savedQuote.pdf_url,
+                    pdf_url: toShareablePdfUrl(savedQuote.pdf_url),
                     valid_until: formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : '',
                   });
                   await base44.entities.Quote.update(savedQuote.id, { status: 'sent' });
