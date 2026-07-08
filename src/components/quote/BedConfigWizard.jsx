@@ -204,8 +204,11 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
-        <DialogHeader>
+      {/* Fixed, roomy size — the dialog stays the same width/height for every
+          question; only the middle question area scrolls, so it never jumps
+          between steps. */}
+      <DialogContent className="max-w-3xl w-[95vw] h-[85vh] flex flex-col overflow-hidden" dir="rtl">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <BedDouble className="h-5 w-5 text-primary" />
             תצורת מיטה{product?.name ? ` — ${product.name}` : ''}
@@ -213,15 +216,15 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
         </DialogHeader>
 
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : visibleGroups.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">
+          <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-6">
             לא הוגדרו שאלות תצורה פעילות. אפשר להגדיר אותן ב"קטלוג מוצרים → תצורת מיטות".
           </div>
         ) : (
           <>
             {/* Progress */}
-            <div className="flex items-center gap-2">
+            <div className="shrink-0 flex items-center gap-2">
               {visibleGroups.map((g, i) => (
                 <div
                   key={g.id}
@@ -231,10 +234,10 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                 />
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">שאלה {step + 1} מתוך {visibleGroups.length}</p>
+            <p className="shrink-0 text-xs text-muted-foreground">שאלה {step + 1} מתוך {visibleGroups.length}</p>
 
-            {/* Question */}
-            <div>
+            {/* Question — the only scrolling region, so the dialog size is constant */}
+            <div className="flex-1 min-h-0 overflow-y-auto pe-1">
               <h3 className="text-lg font-semibold mb-3">{current.label}</h3>
               {isTextGroup ? (
                 <div className="space-y-3">
@@ -345,7 +348,7 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between gap-3 border-t border-border pt-4 mt-2">
+            <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border pt-4">
               <div className="text-sm">
                 <span className="text-muted-foreground">סה״כ תוספות: </span>
                 <span className="font-semibold">{fmt(withVat(runningTotal))}</span>

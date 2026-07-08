@@ -150,9 +150,17 @@ export default function BedConfigManager() {
                   className="h-9 max-w-[16rem] font-semibold"
                   placeholder="שם השאלה"
                 />
-                <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${isText ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                  {isText ? <><Type className="h-3 w-3" /> טקסט</> : 'בחירה'}
-                </span>
+                {/* Per-question type — editable: switch between an options
+                    (choice) question and a free-text question at any time. */}
+                <select
+                  value={isText ? 'text' : 'choice'}
+                  onChange={(e) => updateGroup.mutate({ id: g.id, data: { input_type: e.target.value } })}
+                  className={`h-8 shrink-0 rounded-md border px-2 text-xs font-medium ${isText ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                  title="סוג השאלה"
+                >
+                  <option value="choice">אפשרויות (בחירה)</option>
+                  <option value="text">טקסט חופשי</option>
+                </select>
                 <div className="flex items-center gap-3 ms-auto">
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
                     ניתן לדלג
