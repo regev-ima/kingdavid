@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
@@ -43,8 +44,16 @@ export default function Dashboard2() {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
 
-  const [user, setUser] = useState(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  // Shares Layout's cached ['currentUser'] query instead of running a THIRD
+  // auth.me() round-trip that used to gate every dashboard query behind it
+  // (the data fetches couldn't even start until it finished).
+  const { data: user, isLoading: isCheckingAuth } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => base44.auth.me(),
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: 1,
+  });
   const [rangeKey, setRangeKey] = useState('today');
   const [customRange, setCustomRange] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -73,36 +82,22 @@ export default function Dashboard2() {
 
   // Same gating as Dashboard 1: admins only. Other roles bounce to their
   // home dashboard so they don't see an "Access denied" flash.
+  const effectiveUserForGate = user ? getEffectiveUser(user) : null;
+  const isAdminUser = effectiveUserForGate ? canAccessAdminOnly(effectiveUserForGate) : false;
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const userData = await base44.auth.me();
-        if (cancelled) return;
-        const effectiveUser = getEffectiveUser(userData);
-        if (!canAccessAdminOnly(effectiveUser)) {
-          if (isFactoryUser(effectiveUser)) {
-            navigate(createPageUrl('FactoryDashboard'));
-            return;
-          }
-          if (isBookkeeperUser(effectiveUser)) {
-            navigate(createPageUrl('Bookkeeping'));
-            return;
-          }
-          // Reps land on "לידים/משימות מכירה" (LeadManagement) — their main
-          // screen and first nav item.
-          navigate(createPageUrl('LeadManagement'));
-          return;
-        }
-        setUser(userData);
-      } finally {
-        if (!cancelled) setIsCheckingAuth(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [getEffectiveUser, navigate]);
+    if (!effectiveUserForGate || isAdminUser) return;
+    if (isFactoryUser(effectiveUserForGate)) {
+      navigate(createPageUrl('FactoryDashboard'));
+      return;
+    }
+    if (isBookkeeperUser(effectiveUserForGate)) {
+      navigate(createPageUrl('Bookkeeping'));
+      return;
+    }
+    // Reps land on "לידים/משימות מכירה" (LeadManagement) — their main
+    // screen and first nav item.
+    navigate(createPageUrl('LeadManagement'));
+  }, [effectiveUserForGate, isAdminUser, navigate]);
 
   const { start, end } = useMemo(
     () => getDateRange(rangeKey, customRange?.from, customRange?.to),
@@ -118,7 +113,7 @@ export default function Dashboard2() {
   // Range-INDEPENDENT live counts + the slow inventory scan are cached on their
   // own keys, so switching the date range only refetches the range-dependent
   // query below — not the whole dashboard.
-  const liveEnabled = !!user && !isCheckingAuth && !demoMode;
+  const liveEnabled = !!user && !isCheckingAuth && !demoMode && isAdminUser;
   const liveQuery = useDashboard2Live({ enabled: liveEnabled });
   const lowStockQuery = useDashboard2LowStock({ enabled: liveEnabled });
   const currentQuery = useDashboard2Data({ start, end, enabled: liveEnabled });
