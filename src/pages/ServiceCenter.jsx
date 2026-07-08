@@ -303,7 +303,10 @@ export default function ServiceCenter() {
   ];
 
   if (isLoadingUser) return <div className="text-center py-12">טוען...</div>;
-  if (!canAccess) {
+  // The Service Center screen is the management view (see all tickets, assign to
+  // any rep, run imports) — gate it on the "ניהול מרכז שירות" permission, not the
+  // broad support-access check. Reps without it still open tickets from an order.
+  if (!canManage) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">אין לך הרשאה לגשת למרכז השירות</p>

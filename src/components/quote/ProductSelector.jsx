@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Check, Search, Bed, Armchair, Layers, Package, X, ChevronLeft, Ruler, Clock, AlertTriangle } from 'lucide-react';
+import { Check, Search, Bed, Layers, Package, ChevronLeft, Ruler, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,9 +40,18 @@ export default function ProductSelector({
   selectedVariationId,
   onSelect,
   onVariationSelect,
-  placeholder = "בחר מוצר"
+  placeholder = "בחר מוצר",
+  // Controlled-open mode: when `open`/`onOpenChange` are passed the dialog is
+  // driven from outside and (with hideTrigger) the built-in button is omitted —
+  // lets "הוסף פריט" open the picker straight into a fresh selection.
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (v) => { if (isControlled) onOpenChange?.(v); else setUncontrolledOpen(v); };
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedBedType, setSelectedBedType] = useState(null);
   const [selectedProductId, setSelectedProductId] = useState(null);
@@ -119,6 +128,7 @@ export default function ProductSelector({
 
   return (
     <>
+      {!hideTrigger && (
       <Button
         type="button"
         variant="outline"
@@ -144,6 +154,7 @@ export default function ProductSelector({
         )}
         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </Button>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col p-0" dir="rtl">

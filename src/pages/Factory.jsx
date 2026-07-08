@@ -5,9 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
-import StatusBadge from '@/components/shared/StatusBadge';
 import KPICard from '@/components/shared/KPICard';
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -16,10 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Factory as FactoryIcon, Package, Clock, CheckCircle, AlertTriangle, List, LayoutGrid } from "lucide-react";
+import { Factory as FactoryIcon, Clock, CheckCircle, AlertTriangle, List, LayoutGrid } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import FactoryKanban from '@/components/factory/FactoryKanban';
 import FactoryCalendarBoard from '@/components/factory/FactoryCalendarBoard';
+import { useOrderModal } from '@/components/order/OrderModalContext';
 
 const filterOptions = [
   {
@@ -39,10 +38,29 @@ export default function Factory() {
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'kanban' | 'list'
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Orders open as a popup over the board (no navigation), like everywhere
+  // else in the app — clicking a row used to throw the user to another page.
+  const { openOrder } = useOrderModal();
 
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['orders'],
-    queryFn: () => base44.entities.Order.list('-created_date'),
+  const { data: orders = [], isLoading, isError: ordersError } = useQuery({
+    // Own key (was the shared ['orders'], which FactoryDashboard seeds with a
+    // differently-fetched set) + server-side filter to the paid orders the
+    // factory actually handles, paged past PostgREST's 1000-row cap so late
+    // orders don't silently vanish from the board and the counters.
+    queryKey: ['factory-orders'],
+    queryFn: async () => {
+      const out = [];
+      const PAGE = 1000;
+      for (let skip = 0; skip < 20_000; skip += PAGE) {
+        const page = await base44.entities.Order.filter(
+          { payment_status: { $in: ['paid', 'deposit_paid'] } },
+          '-created_date', PAGE, skip,
+        );
+        out.push(...(page || []));
+        if (!page || page.length < PAGE) break;
+      }
+      return out;
+    },
   });
 
   const { data: inventory = [] } = useQuery({
@@ -70,6 +88,7 @@ export default function Factory() {
   const updateOrderMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.Order.update(id, data),
     onSuccess: () => {
+      queryClient.invalidateQueries(['factory-orders']);
       queryClient.invalidateQueries(['orders']);
     },
   });
@@ -249,27 +268,37 @@ export default function Factory() {
         </div>
       </div>
 
+      {ordersError ? (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm px-4 py-2">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          שגיאה בטעינת ההזמנות — הנתונים למטה עשויים להיות חלקיים. רענן את העמוד.
+        </div>
+      ) : null}
+
+      {/* KPI cards drill into the LIST view — the tab filter they set only
+          renders there, so on the default calendar view they used to change
+          hidden state and visibly do nothing. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           title="בתור לייצור"
           value={queueCount}
           icon={Clock}
           color="amber"
-          onClick={() => setActiveTab('queue')}
+          onClick={() => { setViewMode('list'); setActiveTab('queue'); }}
         />
         <KPICard
           title="ייצור"
           value={inProductionCount}
           icon={FactoryIcon}
           color="indigo"
-          onClick={() => setActiveTab('in_production')}
+          onClick={() => { setViewMode('list'); setActiveTab('in_production'); }}
         />
         <KPICard
           title="מוכן למשלוח"
           value={readyCount}
           icon={CheckCircle}
           color="emerald"
-          onClick={() => setActiveTab('ready')}
+          onClick={() => { setViewMode('list'); setActiveTab('ready'); }}
         />
         <KPICard
           title="חוסרים במלאי"
@@ -342,7 +371,7 @@ export default function Factory() {
         data={filteredOrders}
         isLoading={isLoading}
         emptyMessage="לא נמצאו הזמנות לייצור"
-        onRowClick={(row) => navigate(createPageUrl('OrderDetails') + `?id=${row.id}`)}
+        onRowClick={(row) => openOrder(row.id)}
       />
       </>
       )}

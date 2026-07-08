@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAllFiltered } from '@/lib/base44Pagination';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -122,15 +121,18 @@ export default function Marketing() {
   const repNameByEmail = useMemo(() => new Map(users.map((u) => [u.email, u.full_name || u.email])), [users]);
 
   // Lead-level rows for the "לידים" tab + source drill-down. Fetched only for
-  // the selected range (not the whole table) and only when that tab is open.
+  // the selected range and only when that tab is open. The table renders at
+  // most 500 rows, so ONE capped page is enough — the previous fetchAllFiltered
+  // paged the entire range into the browser (with a 150ms pause per page) just
+  // to throw everything past 500 away, which is why this tab crawled.
   const { data: rangeLeads = [], isFetching: leadsFetching } = useQuery({
     queryKey: ['marketingLeads', startIso, endIso],
     enabled: isAdmin && activeTab === 'leads',
     staleTime: 60 * 1000,
-    queryFn: () => fetchAllFiltered(
-      base44.entities.Lead,
+    queryFn: () => base44.entities.Lead.filter(
       { created_date: { $gte: startIso, $lte: endIso } },
       '-created_date',
+      1000,
     ),
   });
 

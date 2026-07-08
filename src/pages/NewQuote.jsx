@@ -13,8 +13,6 @@ function normalizePhoneForLookup(raw) {
   return digits;
 }
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { QUOTE_DEFAULTS_FALLBACK } from '@/constants/quoteDefaultsFallback';
 import { Link, useNavigate } from 'react-router-dom';
@@ -25,13 +23,11 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ArrowRight, Save, Loader2, Plus, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
-import { hasBedType, productMatchesBedType } from '@/utils/bedType';
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
+import { hasBedType } from '@/utils/bedType';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
-import ProductSelector from '@/components/quote/ProductSelector';
-import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
+import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
@@ -76,7 +72,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -93,16 +89,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     payment_terms_selection: [],
   });
 
-  // NOTE: this useState used to live below the early-return branches at line ~305,
-  // which violated the Rules of Hooks (different hook count between renders →
-  // Minified React error #310). Moved up here so it runs unconditionally on
-  // every render.
-  const [emptyItemIndex, setEmptyItemIndex] = useState(null);
   // Two-phase save: handleSubmit only validates and opens the preview dialog;
   // the actual mutation runs from the dialog's confirm button. Hook stays at
   // the top of the component to satisfy Rules of Hooks across early returns.
   const [showConfirm, setShowConfirm] = useState(false);
-
   // Phone-based lookup so a quote started from "create new quote" (no
   // existing lead context) can still snap to an existing customer / lead.
   // Skipped entirely once the form already has a hard lead_id (came from
@@ -350,6 +340,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             fabric_color: item.fabric_color || '',
             fabric_supplier: item.fabric_supplier || '',
             fabric_supplier_other: item.fabric_supplier_other || '',
+            bed_config_token: item.bed_config_token || null,
+            bed_config_owner: item.bed_config_owner || null,
+            bed_config_group_key: item.bed_config_group_key || null,
+            bed_config_value_key: item.bed_config_value_key || null,
           })),
         }),
       });
@@ -435,23 +429,9 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     return { subtotal, discount_total, vat_amount, total };
   };
 
-  const updateItem = (index, field, value) => {
-    setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
-        if (idx !== index) return item;
-        
-        const updatedItem = { ...item, [field]: value };
-        const addonsPrices = (updatedItem.selected_addons || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = updatedItem.quantity * (updatedItem.unit_price + addonsPrices);
-        const discount = itemTotal * (updatedItem.discount_percent / 100);
-        updatedItem.total = itemTotal - discount;
-        
-        return updatedItem;
-      });
-      
-      const totals = calculateTotals(newItems, prev.extras);
-      return { ...prev, items: newItems, ...totals };
-    });
+  // ProductItemsEditor hands back a fresh items array; recompute grand totals.
+  const handleItemsChange = (newItems) => {
+    setFormData(prev => ({ ...prev, items: newItems, ...calculateTotals(newItems, prev.extras) }));
   };
 
   const addExtra = (extraChargeId) => {
@@ -495,76 +475,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // untouched; credit for the quote goes to the rep who built it
   // (created_by_rep above). Only non-sales users are turned away (canAccessSales).
 
-  const addItem = () => {
-    const emptyIdx = formData.items.findIndex(item => !item.product_id && !item.name);
-    if (emptyIdx !== -1) {
-      setEmptyItemIndex(emptyIdx);
-      setTimeout(() => setEmptyItemIndex(null), 2000);
-      return;
-    }
-    setFormData(prev => ({
-      ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [] }]
-    }));
-  };
-
-  const removeItem = (index) => {
-    const newItems = formData.items.filter((_, i) => i !== index);
-    const totals = calculateTotals(newItems, formData.extras);
-    setFormData(prev => ({ ...prev, items: newItems, ...totals }));
-  };
-
   const addUpsellItem = (item) => {
     const newItems = [...formData.items, item];
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
 
-  const selectProduct = (index, productId) => {
-    const product = products.find(p => p.id === productId);
-    if (product) {
-      const newItems = [...formData.items];
-      newItems[index] = {
-        ...newItems[index],
-        product_id: productId,
-        name: product.name,
-        sku: '',
-        variation_id: '',
-        unit_price: 0,
-        total: 0,
-        selected_addons: []
-      };
-      const totals = calculateTotals(newItems, formData.extras);
-      setFormData(prev => ({ ...prev, items: newItems, ...totals }));
-    }
-  };
-
-  const handleVariationSelect = (index, variation) => {
-    setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
-        if (idx !== index) return item;
-        
-        const itemTotal = item.quantity * (variation.final_price || 0);
-        const discount = itemTotal * (item.discount_percent / 100);
-        
-        return {
-          ...item,
-          variation_id: variation.id,
-          sku: variation.sku,
-          length_cm: variation.length_cm,
-          width_cm: variation.width_cm,
-          height_cm: variation.height_cm,
-          unit_price: variation.final_price || 0,
-          selected_addons: [],
-          total: itemTotal - discount
-        };
-      });
-
-      const totals = calculateTotals(newItems, prev.extras);
-      return { ...prev, items: newItems, ...totals };
-    });
-  };
-
+  // Open the configurator wizard for an already-set bed line (the "edit" button):
+  // ensure a token, use the bed's current config lines for prefill.
   const handleSubmit = (e) => {
     e.preventDefault();
     // Catch the obvious "user reached step 3 with empty form" case before
@@ -974,172 +892,17 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
         {currentStep === 2 && (
           <div className="space-y-6">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>פריטים</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 me-2" />
-              הוסף פריט
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {formData.items.map((item, index) => (
-                <div key={index} className={`rounded-xl overflow-hidden bg-white shadow-card border-2 transition-colors ${emptyItemIndex === index ? 'border-red-400 animate-pulse' : 'border-border'}`}>
-                  <TooltipProvider delayDuration={300}>
-                  {/* Top: Product selector full width */}
-                  <div className="px-3 pt-3 pb-2">
-                    {item.name && !item.product_id ? (
-                      <div className="px-3 py-2 border rounded-lg bg-muted/60 text-foreground font-semibold h-10 flex items-center text-sm">
-                        {item.name}
-                      </div>
-                    ) : (
-                      <ProductSelector
-                        products={products}
-                        variations={variations}
-                        value={item.product_id}
-                        selectedVariationId={item.variation_id}
-                        onSelect={(val) => selectProduct(index, val)}
-                        onVariationSelect={(variation) => handleVariationSelect(index, variation)}
-                        placeholder="בחר מוצר ומידות"
-                      />
-                    )}
-                  </div>
-
-                  {/* Bottom: labelled details bar (qty / unit price / discount / totals) */}
-                  <QuoteItemDetailsBar
-                    item={item}
-                    onUpdateQuantity={(qty) => updateItem(index, 'quantity', qty)}
-                    onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                    onRemove={() => removeItem(index)}
-                  />
-                  </TooltipProvider>
-
-                  {/* Bed-only fabric catalog block — appears for items whose
-                      selected product is in the bed category. Stored as free-
-                      text alongside the supplier dropdown; renders to the PDF. */}
-                  {(() => {
-                    const product = products.find(p => p.id === item.product_id);
-                    if (product?.category !== 'bed') return null;
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <Input
-                            placeholder="שם קטלוג"
-                            value={item.fabric_catalog_name || ''}
-                            onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="מס׳ צבע"
-                            value={item.fabric_color_number || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="צבע"
-                            value={item.fabric_color || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Select
-                            value={item.fabric_supplier || ''}
-                            onValueChange={(val) => {
-                              updateItem(index, 'fabric_supplier', val);
-                              if (val !== FABRIC_SUPPLIER_OTHER) {
-                                updateItem(index, 'fabric_supplier_other', '');
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="ספק" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FABRIC_SUPPLIERS.map((s) => (
-                                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
-                          <Input
-                            placeholder="שם הספק"
-                            value={item.fabric_supplier_other || ''}
-                            onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Addons */}
-                  {item.variation_id && (() => {
-                    const variation = variations.find(v => v.id === item.variation_id);
-                    const product = products.find(p => p.id === item.product_id);
-                    const applicableAddons = addons.filter(addon => {
-                      const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
-                      if (!matchesCategory) return false;
-                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
-                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
-                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
-                      return true;
-                    });
-                    if (applicableAddons.length === 0) return null;
-                    return (
-                      <div className="border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">תוספות למוצר</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {applicableAddons.map(addon => {
-                            const sizePrice = addon.size_prices?.find(
-                              sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
-                            );
-                            const specificPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
-                            );
-                            const productPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
-                            );
-                            const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
-                            return (
-                              <Button
-                                key={addon.id}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const newItem = {
-                                    product_id: '',
-                                    variation_id: '',
-                                    sku: '',
-                                    name: addon.name,
-                                    quantity: 1,
-                                    unit_price: finalAddonPrice,
-                                    discount_percent: 0,
-                                    total: finalAddonPrice,
-                                    selected_addons: []
-                                  };
-                                  setFormData(prev => {
-                                    const newItems = [...prev.items];
-                                    newItems.splice(index + 1, 0, newItem);
-                                    const totals = calculateTotals(newItems, prev.extras);
-                                    return { ...prev, items: newItems, ...totals };
-                                  });
-                                }}
-                                className="text-xs h-8 bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
-                              >
-                                <Plus className="w-3 h-3 me-1" />
-                                הוסף {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
+              <CardContent className="pt-5">
+                <ProductItemsEditor
+                  items={formData.items}
+                  onChange={handleItemsChange}
+                  products={products}
+                  variations={variations}
+                  addons={addons}
+                  addonPrices={addonPrices}
+                />
+              </CardContent>
+            </Card>
 
             {/* Totals */}
             <div className="mt-6 border border-border rounded-xl overflow-hidden">
@@ -1164,8 +927,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
+import { canManageService, canViewFinanceWorkspace } from '@/lib/rbac';
 import { Button } from "@/components/ui/button";
 import { useImpersonation } from "@/components/shared/ImpersonationContext";
 import {
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   LayoutDashboard,
-  Users,
   FileText,
   ShoppingCart,
   Truck,
@@ -83,14 +83,17 @@ export const navigationByRole = {
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
   sales_user: [
-    { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
+    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: CheckSquare },
     { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לידים', href: 'LeadManagement', icon: Users },
     { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    // Finance is only for reps granted "צפייה באזור פיננסי" (or admins).
+    { name: 'כספים', href: 'Finance', icon: DollarSign, can: canViewFinanceWorkspace },
+    // Service Center is a management screen — only reps granted "ניהול מרכז
+    // שירות" (or admins) see it. Reps still open tickets from an order.
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
   ],
   factory_user: [
     { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
@@ -101,7 +104,7 @@ export const navigationByRole = {
     { name: 'מלאי', href: 'Inventory', icon: Boxes },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],
   bookkeeper: [
@@ -235,6 +238,10 @@ function LayoutContent({ children, currentPageName }) {
   const filteredNav = user
     ? applyMenuOrder(navigationByRole[userRole] || navigationByRole.sales_user, menuOrder)
         .filter((item) => !hiddenMenuItems.includes(item.href))
+        // Permission gate: items carrying a `can(user)` predicate only show for
+        // users who actually hold that grantable permission (admins always do).
+        // Without this, a permission could be OFF yet its screen stayed reachable.
+        .filter((item) => !item.can || item.can(effectiveUser))
     : [];
 
   return (
