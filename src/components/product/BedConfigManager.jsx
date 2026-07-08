@@ -6,9 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Trash2, Loader2, Upload, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Loader2, Upload, ChevronUp, ChevronDown, Type } from 'lucide-react';
 import { compressImage } from '@/lib/imageCompression';
-import { genBedConfigToken, BED_NOTE_TYPES, BED_VAT_RATE } from '@/lib/bedConfig';
+import { genBedConfigToken, BED_NOTE_TYPES, BED_VAT_RATE, BED_FIELD_TYPES } from '@/lib/bedConfig';
 
 const inclVat = (preVat) => Math.round((Number(preVat) || 0) * BED_VAT_RATE);
 
@@ -54,13 +54,24 @@ export default function BedConfigManager() {
   const updateValue = useMutation({ mutationFn: ({ id, data }) => base44.entities.BedOptionValue.update(id, data), onSuccess: invalidate, onError: onErr('שמירה') });
   const addGroup = useMutation({
     // key is required: the wizard's prefill + the question dependency both match
-    // by key, so every group/value needs a stable, unique one.
-    mutationFn: () => base44.entities.BedOptionGroup.create({ key: `g_${genBedConfigToken()}`, label: 'שאלה חדשה', sort_order: (groups.length ? Math.max(...groups.map((g) => g.sort_order || 0)) : 0) + 1, skippable: true, is_active: true }),
+    // by key, so every group/value needs a stable, unique one. input_type is
+    // 'choice' (image cards → priced lines) or 'text' (free-text fields).
+    mutationFn: (inputType = 'choice') => base44.entities.BedOptionGroup.create({
+      key: `g_${genBedConfigToken()}`,
+      label: inputType === 'text' ? 'שאלת טקסט חדשה' : 'שאלה חדשה',
+      sort_order: (groups.length ? Math.max(...groups.map((g) => g.sort_order || 0)) : 0) + 1,
+      skippable: true, is_active: true, input_type: inputType,
+    }),
     onSuccess: () => { invalidate(); toast.success('שאלה נוספה'); }, onError: onErr('הוספה'),
   });
   const deleteGroup = useMutation({ mutationFn: (id) => base44.entities.BedOptionGroup.delete(id), onSuccess: () => { invalidate(); toast.success('נמחק'); }, onError: onErr('מחיקה') });
   const addValue = useMutation({
-    mutationFn: (group) => base44.entities.BedOptionValue.create({ key: `v_${genBedConfigToken()}`, group_id: group.id, label: 'אפשרות', price: 0, sort_order: (valuesByGroup.get(group.id) || []).length + 1, is_active: true }),
+    // A choice group's value is a priced option; a text group's value is a field.
+    mutationFn: (group) => base44.entities.BedOptionValue.create(
+      group.input_type === 'text'
+        ? { key: `v_${genBedConfigToken()}`, group_id: group.id, label: 'שדה חדש', field_type: 'text', sort_order: (valuesByGroup.get(group.id) || []).length + 1, is_active: true }
+        : { key: `v_${genBedConfigToken()}`, group_id: group.id, label: 'אפשרות', price: 0, sort_order: (valuesByGroup.get(group.id) || []).length + 1, is_active: true }
+    ),
     onSuccess: invalidate, onError: onErr('הוספה'),
   });
   const deleteValue = useMutation({ mutationFn: (id) => base44.entities.BedOptionValue.delete(id), onSuccess: invalidate, onError: onErr('מחיקה') });
@@ -95,12 +106,19 @@ export default function BedConfigManager() {
             <CardDescription>
               השאלות, האפשרויות, המחירים והתמונות שהנציג רואה כשמוסיף מיטה להצעה.
               סדרו את השאלות, קשרו ביניהן (שאלה שמופיעה רק לפי תשובה קודמת), והוסיפו הערה לכל אפשרות.
-              המחירים הם המחיר הסופי ללקוח (כולל מע״מ). כל אפשרות שנבחרת הופכת לשורה בהצעה.
+              <br />
+              <span className="font-medium">שאלת בחירה</span> — כרטיסי אפשרויות עם מחיר ותמונה; כל בחירה הופכת לשורה בהצעה (מחיר כולל מע״מ).
+              <span className="font-medium"> שאלת טקסט</span> — שדות שהנציג ממלא (למשל קטלוג בד: שם קטלוג / מס׳ צבע / צבע / ספק); מוצגים בהצעה ובהזמנה, ללא מחיר.
             </CardDescription>
           </div>
-          <Button size="sm" className="shrink-0 gap-1" onClick={() => addGroup.mutate()} disabled={addGroup.isPending}>
-            <Plus className="h-4 w-4" /> שאלה חדשה
-          </Button>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button size="sm" variant="outline" className="gap-1" onClick={() => addGroup.mutate('choice')} disabled={addGroup.isPending}>
+              <Plus className="h-4 w-4" /> שאלת בחירה
+            </Button>
+            <Button size="sm" className="gap-1" onClick={() => addGroup.mutate('text')} disabled={addGroup.isPending}>
+              <Type className="h-4 w-4" /> שאלת טקסט
+            </Button>
+          </div>
         </CardHeader>
       </Card>
 
@@ -108,6 +126,7 @@ export default function BedConfigManager() {
         <p className="text-sm text-muted-foreground text-center py-8">אין עדיין שאלות. לחץ "שאלה חדשה" כדי להתחיל.</p>
       ) : groups.map((g, idx) => {
         const gVals = valuesByGroup.get(g.id) || [];
+        const isText = g.input_type === 'text';
         const depGroup = g.depends_on_group_key ? groupByKey.get(g.depends_on_group_key) : null;
         const depValues = depGroup ? (valuesByGroup.get(depGroup.id) || []) : [];
         return (
@@ -131,6 +150,9 @@ export default function BedConfigManager() {
                   className="h-9 max-w-[16rem] font-semibold"
                   placeholder="שם השאלה"
                 />
+                <span className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${isText ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                  {isText ? <><Type className="h-3 w-3" /> טקסט</> : 'בחירה'}
+                </span>
                 <div className="flex items-center gap-3 ms-auto">
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
                     ניתן לדלג
@@ -155,7 +177,8 @@ export default function BedConfigManager() {
                   className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                 >
                   <option value="">תמיד</option>
-                  {groups.filter((x) => x.id !== g.id).map((x) => (
+                  {/* Only CHOICE questions have a single answer to depend on. */}
+                  {groups.filter((x) => x.id !== g.id && x.input_type !== 'text').map((x) => (
                     <option key={x.id} value={x.key}>רק אם "{x.label}"</option>
                   ))}
                 </select>
@@ -178,10 +201,12 @@ export default function BedConfigManager() {
             </CardHeader>
             <CardContent className="space-y-2">
               {gVals.map((v) => (
-                <ValueRow key={v.id} value={v} addons={addons} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
+                isText
+                  ? <FieldRow key={v.id} value={v} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
+                  : <ValueRow key={v.id} value={v} addons={addons} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
               ))}
               <Button variant="outline" size="sm" className="gap-1" onClick={() => addValue.mutate(g)} disabled={addValue.isPending}>
-                <Plus className="h-3.5 w-3.5" /> אפשרות
+                <Plus className="h-3.5 w-3.5" /> {isText ? 'שדה' : 'אפשרות'}
               </Button>
             </CardContent>
           </Card>
@@ -296,6 +321,54 @@ function ValueRow({ value, addons = [], onUpdate, onDelete }) {
           placeholder="הערה לנציג (למשל: 'מסגרת שלמה חזקה יותר אך יקרה יותר')"
         />
       </div>
+    </div>
+  );
+}
+
+// A field inside a TEXT question: a label + a type (free text / dropdown). For a
+// dropdown, the options are edited as a comma-separated list. No price/image/note
+// (those are choice-question concepts).
+function FieldRow({ value, onUpdate, onDelete }) {
+  const isSelect = value.field_type === 'select';
+  const optionsText = Array.isArray(value.options) ? value.options.join(', ') : '';
+  return (
+    <div className={`rounded-lg border border-border p-2 space-y-2 ${value.is_active === false ? 'opacity-60' : ''}`}>
+      <div className="flex items-center gap-2">
+        <Input
+          defaultValue={value.label}
+          key={`flabel-${value.id}`}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== value.label) onUpdate({ label: v }); }}
+          className="h-9 flex-1 min-w-0"
+          placeholder="שם השדה (למשל: שם קטלוג)"
+        />
+        <select
+          value={value.field_type || 'text'}
+          onChange={(e) => onUpdate({ field_type: e.target.value })}
+          className="h-9 w-36 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+          title="סוג השדה"
+        >
+          {BED_FIELD_TYPES.map((t) => (
+            <option key={t.key} value={t.key}>{t.label}</option>
+          ))}
+        </select>
+        <Switch checked={value.is_active !== false} onCheckedChange={(v) => onUpdate({ is_active: v })} title="פעיל" />
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 shrink-0" onClick={onDelete}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {isSelect ? (
+        <Input
+          defaultValue={optionsText}
+          key={`fopts-${value.id}`}
+          onBlur={(e) => {
+            const arr = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+            onUpdate({ options: arr.length ? arr : null });
+          }}
+          className="h-8 text-xs"
+          placeholder="אפשרויות מופרדות בפסיק (למשל: פרחי, ארוטקס, בד U, אחר)"
+        />
+      ) : null}
     </div>
   );
 }

@@ -27,6 +27,7 @@ import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { bedConfigFieldLines } from '@/lib/bedConfig';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
@@ -847,10 +848,24 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                   />
                   </TooltipProvider>
 
-                  {/* Bed-only fabric catalog block */}
+                  {/* Bed-only fabric catalog block. Orders converted from a quote
+                      carry the wizard-collected bed_config_fields — show those
+                      read-only instead of the manual grid so fabric isn't entered
+                      twice. Manual entry stays for orders created from scratch. */}
                   {(() => {
                     const product = products.find(p => p.id === item.product_id);
                     if (product?.category !== 'bed') return null;
+                    const fieldLines = bedConfigFieldLines(item);
+                    if (fieldLines.length) {
+                      return (
+                        <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-1">
+                          <Label className="text-xs font-medium text-muted-foreground">קטלוג בד ושדות נוספים</Label>
+                          {fieldLines.map((ln, i) => (
+                            <div key={i} className="text-xs text-foreground/80">{ln}</div>
+                          ))}
+                        </div>
+                      );
+                    }
                     return (
                       <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
                         <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
