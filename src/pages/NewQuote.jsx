@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
 import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 
 // ₪ with two decimals (agorot) — keeps the totals consistent with the per-line
 // amounts, which now show agorot so the parts sum exactly to the total.
@@ -916,28 +917,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             </Card>
 
             {/* Totals */}
-            <div className="mt-6 border border-border rounded-xl overflow-hidden">
-              <div className="p-4 space-y-3 bg-muted/40">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">סכום לפני מע״מ</span>
-                  <span className="font-medium">{money2(formData.subtotal)}</span>
-                </div>
-                {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-sm text-red-600">
-                    <span>הנחה כולל מע״מ</span>
-                    <span className="font-medium">-{money2(formData.discount_total * 1.18)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">מע״מ (18%)</span>
-                  <span className="font-medium">{money2(formData.vat_amount)}</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
-                <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
-                <span className="text-xl font-bold text-primary">{money2(formData.total)}</span>
-              </div>
-            </div>
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
 
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (
