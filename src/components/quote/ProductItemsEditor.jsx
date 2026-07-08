@@ -180,8 +180,9 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                 }
                 const product = productById(item.product_id);
                 const isBed = product?.category === 'bed';
-                const canExpand = isBed || applicableAddonsFor(item).length > 0;
-                const isOpen = !!expanded[index];
+                const canExpand = !isBed && applicableAddonsFor(item).length > 0;
+                const isOpen = !isBed && !!expanded[index];
+                const fieldLines = isBed ? bedConfigFieldLines(item) : [];
                 return (
                   <React.Fragment key={index}>
                     <tr className="hover:bg-muted/20 transition-colors">
@@ -190,6 +191,15 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                         <div className="font-medium text-foreground leading-tight">{item.name}</div>
                         {product?.category ? (
                           <span className="text-[10px] text-muted-foreground">{CATEGORY_LABELS[product.category] || product.category}</span>
+                        ) : null}
+                        {/* קטלוג בד ושדות טקסט — תצוגה מהירה מתחת לשם; לעריכה
+                            פותחים את האשף בכפתור התצורה. */}
+                        {fieldLines.length ? (
+                          <div className="mt-1 space-y-0.5">
+                            {fieldLines.map((ln, i) => (
+                              <div key={i} className="text-[10px] text-muted-foreground leading-snug">{ln}</div>
+                            ))}
+                          </div>
                         ) : null}
                       </td>
                       <td className="text-center py-2.5 px-2 text-xs text-muted-foreground tabular-nums" dir="ltr">
@@ -211,11 +221,22 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                       <td className="text-center py-2.5 px-2 font-bold text-primary tabular-nums">{ils((item.total || 0) * VAT)}</td>
                       <td className="py-2.5 px-2">
                         <div className="flex items-center justify-center gap-0.5">
-                          {canExpand ? (
+                          {isBed ? (
+                            /* Beds: the config button opens the wizard straight
+                               away (choices + fabric + prices all live there). */
+                            <button
+                              type="button"
+                              onClick={() => openBedWizard(index)}
+                              title="תצורת מיטה (אשף)"
+                              className="p-1.5 rounded-md transition-colors text-primary hover:bg-primary/10"
+                            >
+                              <BedDouble className="h-4 w-4" />
+                            </button>
+                          ) : canExpand ? (
                             <button
                               type="button"
                               onClick={() => setExpanded((e) => ({ ...e, [index]: !e[index] }))}
-                              title="תוספות ותצורה"
+                              title="תוספות"
                               className={`p-1.5 rounded-md transition-colors ${isOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
                             >
                               <Settings2 className="h-4 w-4" />
@@ -228,50 +249,30 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                       </td>
                     </tr>
 
+                    {/* Non-bed add-ons live in an expander. Beds have no expander —
+                        their config (incl. add-on-like choices) is in the wizard. */}
                     {isOpen ? (
                       <tr>
                         <td colSpan={8} className="bg-muted/20 px-4 py-3 border-t border-border/40">
-                          <div className="space-y-3">
-                            {isBed ? (
-                              <div>
-                                <Button type="button" variant="outline" size="sm" onClick={() => openBedWizard(index)} className="gap-1.5 h-8 text-xs bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
-                                  <BedDouble className="h-3.5 w-3.5" /> תצורת מיטה (אשף)
-                                </Button>
-                              </div>
-                            ) : null}
-
-                            {(() => {
-                              const apps = applicableAddonsFor(item);
-                              if (!apps.length) return null;
-                              return (
-                                <div className="space-y-1.5">
-                                  <span className="text-[11px] font-medium text-muted-foreground">תוספות למוצר</span>
-                                  <div className="flex flex-wrap gap-2">
-                                    {apps.map((addon) => {
-                                      const price = resolveAddonPrice(addon, item);
-                                      return (
-                                        <Button key={addon.id} type="button" variant="outline" size="sm" onClick={() => insertAddon(index, addon, price)} className="text-xs h-8 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
-                                          <Plus className="w-3 h-3 me-1" /> {addon.name} ({ils(price * VAT)})
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
+                          {(() => {
+                            const apps = applicableAddonsFor(item);
+                            if (!apps.length) return null;
+                            return (
+                              <div className="space-y-1.5">
+                                <span className="text-[11px] font-medium text-muted-foreground">תוספות למוצר</span>
+                                <div className="flex flex-wrap gap-2">
+                                  {apps.map((addon) => {
+                                    const price = resolveAddonPrice(addon, item);
+                                    return (
+                                      <Button key={addon.id} type="button" variant="outline" size="sm" onClick={() => insertAddon(index, addon, price)} className="text-xs h-8 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
+                                        <Plus className="w-3 h-3 me-1" /> {addon.name} ({ils(price * VAT)})
+                                      </Button>
+                                    );
+                                  })}
                                 </div>
-                              );
-                            })()}
-
-                            {/* קטלוג בד ושדות טקסט נוספים — נמלאים באשף המיטה
-                                (שאלות טקסט), כאן מוצגת תצוגה בלבד. */}
-                            {isBed && bedConfigFieldLines(item).length ? (
-                              <div className="space-y-1">
-                                <span className="text-[11px] font-medium text-muted-foreground">קטלוג בד ושדות נוספים</span>
-                                {bedConfigFieldLines(item).map((ln, i) => (
-                                  <div key={i} className="text-xs text-foreground/80">{ln}</div>
-                                ))}
-                                <p className="text-[10px] text-muted-foreground">לעריכה — פתחו את אשף תצורת המיטה.</p>
                               </div>
-                            ) : null}
-                          </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     ) : null}

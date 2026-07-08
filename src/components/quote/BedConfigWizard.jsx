@@ -58,6 +58,9 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
   const [answers, setAnswers] = useState({});
   // fieldValues: group.id -> { valueKey -> string } (text groups)
   const [fieldValues, setFieldValues] = useState({});
+  // textGroupPrice: group.id -> string — optional extra charge (incl VAT) the rep
+  // types for a text answer (e.g. a fabric that isn't free). Empty = no charge.
+  const [textGroupPrice, setTextGroupPrice] = useState({});
   const [step, setStep] = useState(0);
   const seededRef = useRef(null);
 
@@ -101,6 +104,18 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
     return map;
   }, [initialFields, groups]);
 
+  // Prefill the optional text-answer charge (edit mode) from the saved priced
+  // line we tagged with the '__text_charge__' sentinel. Stored incl-VAT.
+  const initialTextPrices = useMemo(() => {
+    const map = {};
+    for (const line of initialLines || []) {
+      if (line.bed_config_value_key !== '__text_charge__') continue;
+      const g = groups.find((gg) => gg.key === line.bed_config_group_key);
+      if (g) map[g.id] = String(Math.round((Number(line.total) || 0) * VAT));
+    }
+    return map;
+  }, [initialLines, groups]);
+
   // Seed the answers once per open, after groups/values have loaded.
   const seedKey = open ? `${product?.id || ''}:${variation?.id || ''}:${token || ''}` : null;
   useEffect(() => {
@@ -109,9 +124,10 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
     if (seededRef.current === seedKey) return;
     setAnswers(initialAnswers);
     setFieldValues(initialFieldValues);
+    setTextGroupPrice(initialTextPrices);
     setStep(0);
     seededRef.current = seedKey;
-  }, [open, seedKey, gL, vL, initialAnswers, initialFieldValues]);
+  }, [open, seedKey, gL, vL, initialAnswers, initialFieldValues, initialTextPrices]);
 
   // A choice's price: from the linked add-on (variation → product → size → base),
   // else the value's own flat price. Pre-VAT, like the add-on line.
@@ -164,31 +180,75 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
   // when they're mandatory (not skippable) and still unanswered.
   const canProceed = !current || isTextGroup || current.skippable !== false || (answered && answered !== 'skip');
 
+  // Non-empty text field values for a group, in field order.
+  const textValuesOf = (g) => {
+    const gv = fieldValues[g.id] || {};
+    return (valuesByGroup.get(g.id) || [])
+      .map((v) => ({ key: v.key, label: v.label, value: String(gv[v.key] ?? '').trim() }))
+      .filter((v) => v.value !== '');
+  };
+
   const runningTotal = useMemo(() => {
     let sum = 0;
     for (const g of visibleGroups) {
+      if (g.input_type === 'text') {
+        sum += (Number(textGroupPrice[g.id]) || 0) / VAT;
+        continue;
+      }
       const a = answers[g.id];
       if (a && a !== 'skip') sum += priceOf(a);
     }
     return sum;
-  }, [visibleGroups, answers, addonPrices, addons, product, variation]);
+  }, [visibleGroups, answers, textGroupPrice, addonPrices, addons, product, variation]);
 
   const select = (value) => setAnswers((p) => ({ ...p, [current.id]: value }));
   const skip = () => setAnswers((p) => ({ ...p, [current.id]: 'skip' }));
   const setField = (groupId, key, val) =>
     setFieldValues((p) => ({ ...p, [groupId]: { ...(p[groupId] || {}), [key]: val } }));
+  const setTextPrice = (groupId, val) =>
+    setTextGroupPrice((p) => ({ ...p, [groupId]: val }));
+
+  // Per-step status + a short answer summary, for the sidebar.
+  const stepInfo = (g) => {
+    if (g.input_type === 'text') {
+      const vals = textValuesOf(g);
+      const price = Number(textGroupPrice[g.id]) || 0;
+      const parts = vals.map((v) => v.value);
+      if (price > 0) parts.push(`+${fmt(price)}`);
+      return { done: vals.length > 0 || price > 0, answer: parts.join(' · ') || '—' };
+    }
+    const a = answers[g.id];
+    if (a === 'skip') return { done: true, answer: 'דולג' };
+    if (a) {
+      const p = priceOf(a);
+      return { done: true, answer: p > 0 ? `${a.label} (+${fmt(withVat(p))})` : a.label };
+    }
+    return { done: false, answer: '—' };
+  };
 
   const finish = () => {
     const lines = [];
     const fields = [];
     for (const g of visibleGroups) {
       if (g.input_type === 'text') {
-        // Collect the non-empty fields into one group entry on the bed item.
-        const gv = fieldValues[g.id] || {};
-        const values = (valuesByGroup.get(g.id) || [])
-          .map((v) => ({ key: v.key, label: v.label, value: String(gv[v.key] ?? '').trim() }))
-          .filter((v) => v.value !== '');
+        // Text fields ride on the bed item as metadata (bed_config_fields).
+        const values = textValuesOf(g);
         if (values.length) fields.push({ group_key: g.key, group_label: g.label, values });
+        // An optional charge the rep typed becomes a normal priced line, tagged
+        // so we can re-read it into the price box on edit.
+        const priceInc = Number(textGroupPrice[g.id]) || 0;
+        if (priceInc > 0) {
+          const summary = values.map((v) => v.value).join(' · ');
+          lines.push({
+            product_id: '', variation_id: '', sku: '',
+            name: `${g.label}${summary ? ` — ${summary}` : ''}`,
+            quantity: 1, unit_price: priceInc / VAT, discount_percent: 0, total: priceInc / VAT,
+            selected_addons: [],
+            bed_config_owner: token || '',
+            bed_config_group_key: g.key,
+            bed_config_value_key: '__text_charge__',
+          });
+        }
         continue;
       }
       const a = answers[g.id];
@@ -217,12 +277,11 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Fixed, roomy size — the dialog stays the same width/height for every
-          question; only the middle question area scrolls, so it never jumps
-          between steps. */}
-      <DialogContent className="max-w-3xl w-[95vw] h-[85vh] flex flex-col overflow-hidden" dir="rtl">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
+      {/* Fixed, roomy size with a step sidebar — same width/height for every
+          question, only the question area scrolls, so it never jumps. */}
+      <DialogContent className="max-w-4xl w-[95vw] h-[85vh] p-0 gap-0 flex flex-col overflow-hidden" dir="rtl">
+        <DialogHeader className="shrink-0 px-5 py-3.5 border-b border-border bg-muted/30 space-y-0 text-right">
+          <DialogTitle className="flex items-center gap-2 text-base">
             <BedDouble className="h-5 w-5 text-primary" />
             תצורת מיטה{product?.name ? ` — ${product.name}` : ''}
           </DialogTitle>
@@ -235,160 +294,226 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
             לא הוגדרו שאלות תצורה פעילות. אפשר להגדיר אותן ב"קטלוג מוצרים → תצורת מיטות".
           </div>
         ) : (
-          <>
-            {/* Progress */}
-            <div className="shrink-0 flex items-center gap-2">
-              {visibleGroups.map((g, i) => (
-                <div
-                  key={g.id}
-                  className={`h-1.5 flex-1 rounded-full transition-colors ${
-                    i < step ? 'bg-primary' : i === step ? 'bg-primary/60' : 'bg-muted'
-                  }`}
-                />
-              ))}
-            </div>
-            <p className="shrink-0 text-xs text-muted-foreground">שאלה {step + 1} מתוך {visibleGroups.length}</p>
-
-            {/* Question — the only scrolling region, so the dialog size is
-                constant. my-auto centers short questions; tall ones scroll from
-                the top (auto margins collapse to 0 when content overflows). */}
-            <div className="flex-1 min-h-0 overflow-y-auto pe-1 flex flex-col">
-              <div className="my-auto w-full">
-              <h3 className="text-lg font-semibold mb-3">{current.label}</h3>
-              {isTextGroup ? (
-                <div className="space-y-3">
-                  {(valuesByGroup.get(current.id) || []).map((f) => {
-                    const val = fieldValues[current.id]?.[f.key] ?? '';
-                    const opts = Array.isArray(f.options) ? f.options : [];
-                    if (f.field_type === 'select' && opts.length) {
-                      // 'אחר' is the sentinel for "type your own": when the stored
-                      // value isn't one of the listed options, show the free-text box.
-                      const isOther = val === BED_FIELD_OTHER || (val !== '' && !opts.includes(val));
-                      const selectValue = opts.includes(val) ? val : (val !== '' ? BED_FIELD_OTHER : '');
-                      return (
-                        <div key={f.id} className="space-y-1.5">
-                          <label className="text-sm font-medium">{f.label}</label>
-                          <select
-                            value={selectValue}
-                            onChange={(e) => setField(current.id, f.key, e.target.value)}
-                            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                          >
-                            <option value="">בחר…</option>
-                            {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-                          </select>
-                          {isOther ? (
-                            <Input
-                              value={val === BED_FIELD_OTHER ? '' : val}
-                              onChange={(e) => setField(current.id, f.key, e.target.value || BED_FIELD_OTHER)}
-                              placeholder={`${f.label} — פרט`}
-                              className="h-9"
-                            />
-                          ) : null}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={f.id} className="space-y-1.5">
-                        <label className="text-sm font-medium">{f.label}</label>
-                        <Input
-                          value={val}
-                          onChange={(e) => setField(current.id, f.key, e.target.value)}
-                          placeholder={f.label}
-                          className="h-9"
-                        />
-                      </div>
-                    );
-                  })}
-                  {(valuesByGroup.get(current.id) || []).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">לא הוגדרו שדות לשאלה זו.</p>
-                  ) : null}
-                </div>
-              ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {(valuesByGroup.get(current.id) || []).map((v) => {
-                  const selected = answered && answered !== 'skip' && answered.id === v.id;
-                  const price = priceOf(v);
+          <div className="flex-1 min-h-0 flex">
+            {/* Sidebar (right in RTL): every question, its status and answer,
+                clickable to jump. Turns the wizard into a clear checklist. */}
+            <aside className="hidden sm:flex w-64 shrink-0 flex-col border-s border-border bg-muted/20">
+              <div className="px-3 pt-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                שלבים ({visibleGroups.length})
+              </div>
+              <ol className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
+                {visibleGroups.map((g, i) => {
+                  const info = stepInfo(g);
+                  const isCur = i === step;
                   return (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => select(v)}
-                      className={`relative flex flex-col rounded-xl border-2 overflow-hidden text-right transition-all ${
-                        selected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'
-                      }`}
-                    >
-                      {selected && (
-                        <span className="absolute top-2 start-2 z-10 rounded-full bg-primary text-primary-foreground p-1">
-                          <Check className="h-3.5 w-3.5" />
+                    <li key={g.id}>
+                      <button
+                        type="button"
+                        onClick={() => setStep(i)}
+                        className={`w-full text-right flex items-start gap-2.5 rounded-lg px-2.5 py-2 transition-colors ${
+                          isCur ? 'bg-primary/10' : 'hover:bg-muted'
+                        }`}
+                      >
+                        <span className={`mt-0.5 shrink-0 flex items-center justify-center h-5 w-5 rounded-full text-[11px] font-bold ${
+                          isCur ? 'bg-primary text-primary-foreground'
+                            : info.done ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-background text-muted-foreground border border-border'
+                        }`}>
+                          {info.done && !isCur ? <Check className="h-3 w-3" /> : i + 1}
                         </span>
-                      )}
-                      <div className="aspect-[4/3] w-full bg-muted flex items-center justify-center">
-                        {v.image_url ? (
-                          <img src={v.image_url} alt={v.label} className="h-full w-full object-cover" />
-                        ) : (
-                          <BedDouble className="h-8 w-8 text-muted-foreground/40" />
-                        )}
-                      </div>
-                      <div className="p-2.5">
-                        <div className="text-sm font-medium leading-tight">{v.label}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {price > 0 ? `${fmt(withVat(price))} כולל מע״מ` : 'ללא תוספת מחיר'}
-                        </div>
-                        {v.note ? (() => {
-                          const nt = getBedNoteType(v.note_type);
-                          return (
-                            <div className={`mt-1.5 text-[11px] leading-snug rounded border px-1.5 py-1 ${nt.badge}`}>
-                              <span className="font-semibold">{nt.label}: </span>{v.note}
-                            </div>
-                          );
-                        })() : null}
-                      </div>
-                    </button>
+                        <span className="min-w-0 flex-1">
+                          <span className={`block text-xs font-medium leading-tight ${isCur ? 'text-primary' : 'text-foreground'}`}>{g.label}</span>
+                          <span className={`block text-[11px] leading-tight truncate ${info.done ? 'text-muted-foreground' : 'text-muted-foreground/50'}`}>{info.answer}</span>
+                        </span>
+                      </button>
+                    </li>
                   );
                 })}
-
-                {current.skippable !== false && (
-                  <button
-                    type="button"
-                    onClick={skip}
-                    className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed text-muted-foreground transition-all min-h-[7rem] ${
-                      answered === 'skip' ? 'border-primary/60 text-primary' : 'border-border hover:border-primary/40'
-                    }`}
-                  >
-                    <SkipForward className="h-6 w-6 mb-1" />
-                    <span className="text-sm">דלג על שלב זה</span>
-                  </button>
-                )}
-              </div>
-              )}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border pt-4">
-              <div className="text-sm">
+              </ol>
+              <div className="shrink-0 border-t border-border px-3 py-2.5 text-xs">
                 <span className="text-muted-foreground">סה״כ תוספות: </span>
-                <span className="font-semibold">{fmt(withVat(runningTotal))}</span>
-                <span className="text-muted-foreground text-xs"> כולל מע״מ</span>
+                <span className="font-bold text-primary">{fmt(withVat(runningTotal))}</span>
+                <span className="text-muted-foreground"> כולל מע״מ</span>
               </div>
-              <div className="flex items-center gap-2">
-                {step > 0 && (
-                  <Button type="button" variant="outline" onClick={() => setStep((s) => Math.max(0, s - 1))}>
-                    חזור
-                  </Button>
-                )}
-                {isLast ? (
-                  <Button type="button" onClick={finish} disabled={!canProceed}>
-                    הוסף להצעה
-                  </Button>
+            </aside>
+
+            {/* Main column */}
+            <div className="flex-1 min-w-0 flex flex-col">
+              {/* Compact progress bar (mobile fallback for the sidebar) */}
+              <div className="sm:hidden shrink-0 px-4 pt-3 flex items-center gap-1.5">
+                {visibleGroups.map((g, i) => (
+                  <div key={g.id} className={`h-1.5 flex-1 rounded-full ${i < step ? 'bg-primary' : i === step ? 'bg-primary/60' : 'bg-muted'}`} />
+                ))}
+              </div>
+
+              {/* Question — the only scrolling region */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+                <div className="flex items-baseline justify-between gap-2 mb-4">
+                  <h3 className="text-lg font-semibold">{current.label}</h3>
+                  <span className="text-xs text-muted-foreground shrink-0">שאלה {step + 1}/{visibleGroups.length}</span>
+                </div>
+
+                {isTextGroup ? (
+                  <div className="space-y-4 max-w-lg">
+                    <div className="space-y-3">
+                      {(valuesByGroup.get(current.id) || []).map((f) => {
+                        const val = fieldValues[current.id]?.[f.key] ?? '';
+                        const opts = Array.isArray(f.options) ? f.options : [];
+                        if (f.field_type === 'select' && opts.length) {
+                          // 'אחר' is the sentinel for "type your own": when the stored
+                          // value isn't one of the listed options, show the free-text box.
+                          const isOther = val === BED_FIELD_OTHER || (val !== '' && !opts.includes(val));
+                          const selectValue = opts.includes(val) ? val : (val !== '' ? BED_FIELD_OTHER : '');
+                          return (
+                            <div key={f.id} className="space-y-1.5">
+                              <label className="text-sm font-medium">{f.label}</label>
+                              <select
+                                value={selectValue}
+                                onChange={(e) => setField(current.id, f.key, e.target.value)}
+                                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                              >
+                                <option value="">בחר…</option>
+                                {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                              {isOther ? (
+                                <Input
+                                  value={val === BED_FIELD_OTHER ? '' : val}
+                                  onChange={(e) => setField(current.id, f.key, e.target.value || BED_FIELD_OTHER)}
+                                  placeholder={`${f.label} — פרט`}
+                                  className="h-9"
+                                />
+                              ) : null}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={f.id} className="space-y-1.5">
+                            <label className="text-sm font-medium">{f.label}</label>
+                            <Input
+                              value={val}
+                              onChange={(e) => setField(current.id, f.key, e.target.value)}
+                              placeholder={f.label}
+                              className="h-9"
+                            />
+                          </div>
+                        );
+                      })}
+                      {(valuesByGroup.get(current.id) || []).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">לא הוגדרו שדות לשאלה זו.</p>
+                      ) : null}
+                    </div>
+
+                    {/* Optional extra charge for this text answer (e.g. a fabric
+                        that isn't free). Left blank = no charge. */}
+                    <div className="rounded-xl border border-dashed border-border bg-muted/20 p-3 space-y-1.5">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        תוספת מחיר
+                        <span className="text-[11px] font-normal text-muted-foreground">(אופציונלי)</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground text-sm">₪</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          inputMode="numeric"
+                          value={textGroupPrice[current.id] ?? ''}
+                          onChange={(e) => setTextPrice(current.id, e.target.value)}
+                          placeholder="0"
+                          className="h-9 w-36"
+                        />
+                        <span className="text-xs text-muted-foreground">כולל מע״מ</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">אם הבד כרוך בתוספת תשלום — הזינו את המחיר; אחרת השאירו ריק.</p>
+                    </div>
+                  </div>
                 ) : (
-                  <Button type="button" onClick={() => setStep((s) => s + 1)} disabled={!canProceed}>
-                    המשך
-                  </Button>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                    {(valuesByGroup.get(current.id) || []).map((v) => {
+                      const selected = answered && answered !== 'skip' && answered.id === v.id;
+                      const price = priceOf(v);
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => select(v)}
+                          className={`relative flex flex-col rounded-xl border-2 overflow-hidden text-right transition-all ${
+                            selected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'
+                          }`}
+                        >
+                          {selected && (
+                            <span className="absolute top-2 start-2 z-10 rounded-full bg-primary text-primary-foreground p-1">
+                              <Check className="h-3.5 w-3.5" />
+                            </span>
+                          )}
+                          <div className="aspect-[4/3] w-full bg-muted flex items-center justify-center">
+                            {v.image_url ? (
+                              <img src={v.image_url} alt={v.label} className="h-full w-full object-cover" />
+                            ) : (
+                              <BedDouble className="h-8 w-8 text-muted-foreground/40" />
+                            )}
+                          </div>
+                          <div className="p-2.5">
+                            <div className="text-sm font-medium leading-tight">{v.label}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {price > 0 ? `${fmt(withVat(price))} כולל מע״מ` : 'ללא תוספת מחיר'}
+                            </div>
+                            {v.note ? (() => {
+                              const nt = getBedNoteType(v.note_type);
+                              return (
+                                <div className={`mt-1.5 text-[11px] leading-snug rounded border px-1.5 py-1 ${nt.badge}`}>
+                                  <span className="font-semibold">{nt.label}: </span>{v.note}
+                                </div>
+                              );
+                            })() : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {current.skippable !== false && (
+                      <button
+                        type="button"
+                        onClick={skip}
+                        className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed text-muted-foreground transition-all min-h-[7rem] ${
+                          answered === 'skip' ? 'border-primary/60 text-primary' : 'border-border hover:border-primary/40'
+                        }`}
+                      >
+                        <SkipForward className="h-6 w-6 mb-1" />
+                        <span className="text-sm">דלג על שלב זה</span>
+                      </button>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              {/* Footer */}
+              <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+                <div className="text-sm sm:hidden">
+                  <span className="text-muted-foreground">סה״כ: </span>
+                  <span className="font-semibold">{fmt(withVat(runningTotal))}</span>
+                </div>
+                <div className="hidden sm:block text-xs text-muted-foreground">
+                  שלב {step + 1} מתוך {visibleGroups.length}
+                </div>
+                <div className="flex items-center gap-2">
+                  {step > 0 && (
+                    <Button type="button" variant="outline" onClick={() => setStep((s) => Math.max(0, s - 1))}>
+                      חזור
+                    </Button>
+                  )}
+                  {isLast ? (
+                    <Button type="button" onClick={finish} disabled={!canProceed}>
+                      הוסף להצעה
+                    </Button>
+                  ) : (
+                    <Button type="button" onClick={() => setStep((s) => s + 1)} disabled={!canProceed}>
+                      המשך
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
-          </>
+          </div>
         )}
       </DialogContent>
     </Dialog>
