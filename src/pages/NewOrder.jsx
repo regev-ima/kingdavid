@@ -592,7 +592,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
-    createOrderMutation.mutate(formData);
+    // Trial flag is derived from the products on the order, not a manual toggle.
+    const trial_30d_enabled = formData.items.some((it) => {
+      const p = products.find((pp) => pp.id === it.product_id);
+      return Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
+    });
+    createOrderMutation.mutate({ ...formData, trial_30d_enabled });
   };
 
   return (
@@ -890,13 +895,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             <CardTitle>אפשרויות</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={formData.trial_30d_enabled}
-                onCheckedChange={(v) => setFormData({...formData, trial_30d_enabled: v})}
-              />
-              <Label>ניסיון 30 יום</Label>
-            </div>
+            {/* 30-day trial is a property of the product (shown on its row in the
+                items step), not a manual order-level toggle. */}
             <div className="space-y-2">
               <Label>הערות</Label>
               <Textarea

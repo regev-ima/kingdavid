@@ -12,6 +12,7 @@ const VAT = 1.18;
 // total — whole-₪ rounding per line drifted by up to ₪0.50 each.
 const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const CATEGORY_LABELS = { bed: 'מיטה', mattress: 'מזרון', topper: 'תוספת', accessory: 'נלווה' };
+const hasTrialPeriod = (p) => Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
 
 // The items step, shared by NewQuote / NewOrder so the two are identical. One
 // clean table (headers once), and "הוסף פריט" opens the product picker straight
@@ -221,7 +222,14 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                     <tr className="hover:bg-muted/20 transition-colors">
                       <td className="text-center py-2.5 px-2 text-muted-foreground tabular-nums">{index + 1}</td>
                       <td className="py-2.5 px-3">
-                        <div className="font-medium text-foreground leading-tight">{item.name}</div>
+                        <div className="font-medium text-foreground leading-tight flex items-center gap-1.5 flex-wrap">
+                          {item.name}
+                          {/* 30-day trial comes from the product itself, shown on
+                              its row (not a manual order-level toggle). */}
+                          {hasTrialPeriod(product) ? (
+                            <span className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-700 text-[9px] font-semibold px-1.5 py-0.5 rounded">30 ימי נסיון</span>
+                          ) : null}
+                        </div>
                         {product?.category ? (
                           <span className="text-[10px] text-muted-foreground">{CATEGORY_LABELS[product.category] || product.category}</span>
                         ) : null}
