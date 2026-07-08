@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
@@ -15,7 +16,6 @@ import LeadsTab from '@/components/dashboard2/tabs/LeadsTab';
 import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
 import TeamTab from '@/components/dashboard2/tabs/TeamTab';
 import MarketingTab from '@/components/dashboard2/tabs/MarketingTab';
-import PlaceholderTab from '@/components/dashboard2/tabs/PlaceholderTab';
 import useDashboard2Data, { useDashboard2Live, useDashboard2LowStock, useDashboard2Previous } from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData, getDemoPrevious } from '@/components/dashboard2/demoData';
 
@@ -44,8 +44,16 @@ export default function Dashboard2() {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
 
-  const [user, setUser] = useState(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  // Shares Layout's cached ['currentUser'] query instead of running a THIRD
+  // auth.me() round-trip that used to gate every dashboard query behind it
+  // (the data fetches couldn't even start until it finished).
+  const { data: user, isLoading: isCheckingAuth } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => base44.auth.me(),
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: 1,
+  });
   const [rangeKey, setRangeKey] = useState('today');
   const [customRange, setCustomRange] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -74,36 +82,22 @@ export default function Dashboard2() {
 
   // Same gating as Dashboard 1: admins only. Other roles bounce to their
   // home dashboard so they don't see an "Access denied" flash.
+  const effectiveUserForGate = user ? getEffectiveUser(user) : null;
+  const isAdminUser = effectiveUserForGate ? canAccessAdminOnly(effectiveUserForGate) : false;
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const userData = await base44.auth.me();
-        if (cancelled) return;
-        const effectiveUser = getEffectiveUser(userData);
-        if (!canAccessAdminOnly(effectiveUser)) {
-          if (isFactoryUser(effectiveUser)) {
-            navigate(createPageUrl('FactoryDashboard'));
-            return;
-          }
-          if (isBookkeeperUser(effectiveUser)) {
-            navigate(createPageUrl('Bookkeeping'));
-            return;
-          }
-          // Reps land on "לידים/משימות מכירה" (LeadManagement) — their main
-          // screen and first nav item.
-          navigate(createPageUrl('LeadManagement'));
-          return;
-        }
-        setUser(userData);
-      } finally {
-        if (!cancelled) setIsCheckingAuth(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [getEffectiveUser, navigate]);
+    if (!effectiveUserForGate || isAdminUser) return;
+    if (isFactoryUser(effectiveUserForGate)) {
+      navigate(createPageUrl('FactoryDashboard'));
+      return;
+    }
+    if (isBookkeeperUser(effectiveUserForGate)) {
+      navigate(createPageUrl('Bookkeeping'));
+      return;
+    }
+    // Reps land on "לידים/משימות מכירה" (LeadManagement) — their main
+    // screen and first nav item.
+    navigate(createPageUrl('LeadManagement'));
+  }, [effectiveUserForGate, isAdminUser, navigate]);
 
   const { start, end } = useMemo(
     () => getDateRange(rangeKey, customRange?.from, customRange?.to),
@@ -119,7 +113,7 @@ export default function Dashboard2() {
   // Range-INDEPENDENT live counts + the slow inventory scan are cached on their
   // own keys, so switching the date range only refetches the range-dependent
   // query below — not the whole dashboard.
-  const liveEnabled = !!user && !isCheckingAuth && !demoMode;
+  const liveEnabled = !!user && !isCheckingAuth && !demoMode && isAdminUser;
   const liveQuery = useDashboard2Live({ enabled: liveEnabled });
   const lowStockQuery = useDashboard2LowStock({ enabled: liveEnabled });
   const currentQuery = useDashboard2Data({ start, end, enabled: liveEnabled });
@@ -241,12 +235,11 @@ export default function Dashboard2() {
             >
               <TabsTrigger value="overview" className="text-xs">סקירה כללית</TabsTrigger>
               <TabsTrigger value="leads" className="text-xs">לידים</TabsTrigger>
+              {/* שירות/מפעל/מלאי היו אריחי "בקרוב" — הוסרו עד שיהיה בהם תוכן
+                  אמיתי; המסכים הייעודיים נגישים מהתפריט. */}
               <TabsTrigger value="orders" className="text-xs">הזמנות</TabsTrigger>
-              <TabsTrigger value="service" className="text-xs">שירות</TabsTrigger>
-              <TabsTrigger value="factory" className="text-xs">מפעל</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">צוות</TabsTrigger>
               <TabsTrigger value="marketing" className="text-xs">שיווק</TabsTrigger>
-              <TabsTrigger value="inventory" className="text-xs">מלאי</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="m-0">
@@ -259,22 +252,6 @@ export default function Dashboard2() {
 
             <TabsContent value="orders" className="m-0">
               <OrdersTab current={current} dateRange={dateRange} />
-            </TabsContent>
-
-            <TabsContent value="service" className="m-0">
-              <PlaceholderTab
-                title="שירות לקוחות"
-                description="בקרוב: פירוט מלא של כרטיסים פתוחים לפי קטגוריה, דחיפות וזמן טיפול ממוצע."
-                drillToPage="ServiceCenter"
-              />
-            </TabsContent>
-
-            <TabsContent value="factory" className="m-0">
-              <PlaceholderTab
-                title="מפעל וייצור"
-                description="בקרוב: תור הייצור המלא, זמני ייצור ממוצעים, הזמנות מאחרות."
-                drillToPage="Factory"
-              />
             </TabsContent>
 
             <TabsContent value="team" className="m-0">
@@ -290,14 +267,6 @@ export default function Dashboard2() {
                   fold — the standalone /Marketing route is one click
                   away for the deep-dive. */}
               <MarketingTab current={current} previous={previous} dateRange={dateRange} />
-            </TabsContent>
-
-            <TabsContent value="inventory" className="m-0">
-              <PlaceholderTab
-                title="מלאי ומשלוחים"
-                description="בקרוב: רשימת פריטים מתחת לסף, משלוחים מתוזמנים, מסלולי משלוח."
-                drillToPage="Inventory"
-              />
             </TabsContent>
           </Tabs>
         </>

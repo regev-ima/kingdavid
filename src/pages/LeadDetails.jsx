@@ -294,7 +294,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         cancelOpenTasksForClosedDeal(leadId).catch(() => {});
         navigate(`${createPageUrl('NewOrder')}?leadId=${leadId}`);
       }
-    }
+    },
+    onError: (err) => toast({ title: 'עדכון הליד נכשל', description: err?.message || 'שגיאה לא צפויה', variant: 'destructive' }),
   });
 
   const convertToCustomerMutation = useMutation({
@@ -333,9 +334,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       return customer;
     },
     onSuccess: (customer) => {
+      toast({ title: 'הליד הומר ללקוח' });
       queryClient.invalidateQueries(['lead', leadId]);
       navigate(createPageUrl('CustomerDetails') + `?id=${customer.id}`);
-    }
+    },
+    onError: (err) => toast({ title: 'ההמרה ללקוח נכשלה', description: err?.message || 'שגיאה לא צפויה', variant: 'destructive' }),
   });
 
   const isAdmin = effectiveUser?.role === 'admin';

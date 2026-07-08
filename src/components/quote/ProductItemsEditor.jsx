@@ -3,12 +3,9 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import DiscountPopover from '@/components/quote/DiscountPopover';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, BedDouble, Package, Settings2, CornerDownLeft } from 'lucide-react';
 import { productMatchesBedType } from '@/utils/bedType';
-import { genBedConfigToken } from '@/lib/bedConfig';
-import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
 
 const VAT = 1.18;
 const ils = (n) => `₪${Math.round((n || 0)).toLocaleString()}`;
@@ -67,8 +64,7 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
       discount_percent: 0,
       total: price,
       selected_addons: [],
-      fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '',
-      ...(isBed ? { bed_config_token: genBedConfigToken() } : {}),
+      ...(isBed ? { bed_config_token: genBedConfigToken(), bed_config_fields: [] } : {}),
     };
     const next = [...items, line];
     onChange(next);
@@ -264,23 +260,15 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                               );
                             })()}
 
-                            {isBed ? (
-                              <div className="space-y-1.5">
-                                <span className="text-[11px] font-medium text-muted-foreground">קטלוג בד</span>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                  <Input placeholder="שם קטלוג" value={item.fabric_catalog_name || ''} onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)} className="h-8 text-xs" />
-                                  <Input placeholder="מס׳ צבע" value={item.fabric_color_number || ''} onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)} className="h-8 text-xs" />
-                                  <Input placeholder="צבע" value={item.fabric_color || ''} onChange={(e) => updateItem(index, 'fabric_color', e.target.value)} className="h-8 text-xs" />
-                                  <Select value={item.fabric_supplier || ''} onValueChange={(val) => { updateItem(index, 'fabric_supplier', val); if (val !== FABRIC_SUPPLIER_OTHER) updateItem(index, 'fabric_supplier_other', ''); }}>
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="ספק" /></SelectTrigger>
-                                    <SelectContent>
-                                      {FABRIC_SUPPLIERS.map((s) => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                {item.fabric_supplier === FABRIC_SUPPLIER_OTHER ? (
-                                  <Input placeholder="שם הספק" value={item.fabric_supplier_other || ''} onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)} className="h-8 text-xs" />
-                                ) : null}
+                            {/* קטלוג בד ושדות טקסט נוספים — נמלאים באשף המיטה
+                                (שאלות טקסט), כאן מוצגת תצוגה בלבד. */}
+                            {isBed && bedConfigFieldLines(item).length ? (
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-medium text-muted-foreground">קטלוג בד ושדות נוספים</span>
+                                {bedConfigFieldLines(item).map((ln, i) => (
+                                  <div key={i} className="text-xs text-foreground/80">{ln}</div>
+                                ))}
+                                <p className="text-[10px] text-muted-foreground">לעריכה — פתחו את אשף תצורת המיטה.</p>
                               </div>
                             ) : null}
                           </div>
@@ -316,11 +304,16 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
           variation={bedVariation}
           token={bedToken}
           initialLines={bedInitialLines}
-          onConfirm={(lines) => {
+          initialFields={bedItem?.bed_config_fields || []}
+          onConfirm={(lines, fields) => {
             const kept = items.filter((l) => !(bedToken && l.bed_config_owner === bedToken));
             const bedIdx = bedToken ? kept.findIndex((l) => l.bed_config_token === bedToken) : bedWizardIndex;
+            // Attach the text-field answers (e.g. fabric catalog) to the bed line.
+            const withFields = bedIdx >= 0
+              ? kept.map((l, i) => (i === bedIdx ? { ...l, bed_config_fields: fields } : l))
+              : kept;
             const at = bedIdx >= 0 ? bedIdx + 1 : Math.min(bedWizardIndex + 1, kept.length);
-            onChange([...kept.slice(0, at), ...lines, ...kept.slice(at)]);
+            onChange([...withFields.slice(0, at), ...lines, ...withFields.slice(at)]);
           }}
         />
       ) : null}

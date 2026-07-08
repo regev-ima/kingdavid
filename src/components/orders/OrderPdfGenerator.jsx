@@ -2,6 +2,7 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
+import { bedConfigFieldLines } from "@/lib/bedConfig";
 
 const PAYMENT_METHOD_LABELS = {
   cash: "מזומן",
@@ -70,17 +71,24 @@ const OrderPdfGenerator = async (orderData) => {
         .join(", ");
       extraInfo.push(`תוספות: ${addonsText}`);
     }
-    // Fabric catalog details — only present on bed items where the rep filled them in.
-    const fabricParts = [];
-    if (item?.fabric_catalog_name) fabricParts.push(`קטלוג: ${safe(item.fabric_catalog_name)}`);
-    if (item?.fabric_color_number) fabricParts.push(`מס׳ צבע: ${safe(item.fabric_color_number)}`);
-    if (item?.fabric_color) fabricParts.push(`צבע: ${safe(item.fabric_color)}`);
-    const supplier = item?.fabric_supplier === 'אחר'
-      ? (item?.fabric_supplier_other || 'אחר')
-      : item?.fabric_supplier;
-    if (supplier) fabricParts.push(`ספק: ${safe(supplier)}`);
-    if (fabricParts.length) {
-      extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
+    // Bed text-question answers (fabric catalog etc.) — the generic path (esc()
+    // is applied to the whole extraInfo join below). Falls back to legacy
+    // fabric_* columns for orders saved before the feature.
+    const fieldLines = bedConfigFieldLines(item);
+    if (fieldLines.length) {
+      fieldLines.forEach((ln) => extraInfo.push(ln));
+    } else {
+      const fabricParts = [];
+      if (item?.fabric_catalog_name) fabricParts.push(`קטלוג: ${safe(item.fabric_catalog_name)}`);
+      if (item?.fabric_color_number) fabricParts.push(`מס׳ צבע: ${safe(item.fabric_color_number)}`);
+      if (item?.fabric_color) fabricParts.push(`צבע: ${safe(item.fabric_color)}`);
+      const supplier = item?.fabric_supplier === 'אחר'
+        ? (item?.fabric_supplier_other || 'אחר')
+        : item?.fabric_supplier;
+      if (supplier) fabricParts.push(`ספק: ${safe(supplier)}`);
+      if (fabricParts.length) {
+        extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
+      }
     }
     return {
       idx: idx + 1,

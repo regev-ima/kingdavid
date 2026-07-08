@@ -179,7 +179,7 @@ export default function ProductsNew() {
     },
     onError: (err) => {
       console.error('Product update failed:', err);
-      alert('שגיאה בעדכון המוצר: ' + (err.message || 'שגיאה לא ידועה'));
+      toast.error('שגיאה בעדכון המוצר: ' + (err.message || 'שגיאה לא ידועה'));
     }
   });
 
@@ -309,7 +309,7 @@ export default function ProductsNew() {
     if (productForm.hardness !== '' && productForm.hardness != null) {
       const n = Number(productForm.hardness);
       if (!Number.isInteger(n) || n < 1 || n > 10) {
-        alert('דרגת קושי חייבת להיות מספר שלם בין 1 ל-10');
+        toast.error('דרגת קושי חייבת להיות מספר שלם בין 1 ל-10');
         return;
       }
       hardnessValue = n;
@@ -814,7 +814,7 @@ export default function ProductsNew() {
                         }
                       } catch (err) {
                         console.error('Cover upload failed:', err);
-                        alert('שגיאה בהעלאת תמונת שער: ' + (err.message || 'שגיאה לא ידועה'));
+                        toast.error('שגיאה בהעלאת תמונת שער: ' + (err.message || 'שגיאה לא ידועה'));
                       } finally {
                         setUploadingCover(false);
                       }
@@ -925,7 +925,7 @@ export default function ProductsNew() {
                         }));
                       } catch (err) {
                         console.error('Image upload failed:', err);
-                        alert('שגיאה בהעלאת תמונה: ' + (err.message || 'שגיאה לא ידועה'));
+                        toast.error('שגיאה בהעלאת תמונה: ' + (err.message || 'שגיאה לא ידועה'));
                       } finally {
                         setUploadingImages(false);
                       }

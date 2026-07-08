@@ -37,7 +37,6 @@ export default function HypReturn() {
 
   useEffect(() => {
     // Keep a copy of everything for support / devtools.
-    console.log('[HypReturn] params from Hyp:', allParams);
     if (typeof window === 'undefined' || !window.parent || window.parent === window) {
       return;
     }

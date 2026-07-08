@@ -1,39 +1,60 @@
-**Welcome to your Base44 project** 
+# King David CRM
 
-**About**
+מערכת CRM בעברית (RTL) לניהול לידים, משימות מכירה, הצעות מחיר, הזמנות, ייצור (מפעל), משלוחים, מלאי, שירות לקוחות והנהלת חשבונות — עבור עסק המזרונים/מיטות King David.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## סטאק
 
-This project contains everything you need to run your app locally.
+- **Frontend:** React 18 + Vite, TailwindCSS, shadcn/ui (Radix), react-query, react-router. נפרס ב-**Vercel**.
+- **Backend:** **Supabase** — PostgreSQL (PostgREST), Auth, Storage, Edge Functions (Deno).
+- שכבת הגישה לנתונים: `src/api/entities.js` (עטיפה בסגנון base44: `base44.entities.X.list/filter/create/update/delete`) מעל `src/api/supabaseClient.js`.
 
-**Edit the code in your local development environment**
+## הרצה מקומית
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
-
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+```bash
+npm install
+cp .env.example .env.local   # ולמלא ערכים אמיתיים
+npm run dev
 ```
 
-Run the app: `npm run dev`
+משתני סביבה (`.env.local`):
 
-**Publish your changes**
+```
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
+```
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+בדיקות איכות: `npm run lint` · בילד: `npm run build`.
 
-**Docs & Support**
+## פריסה
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+- **Frontend:** כל push נפרס ב-Vercel (preview לברנץ', production ל-`main`).
+- **מיגרציות DB:** קבצי SQL תחת `supabase/migrations/` מיושמים **רק במיזוג ל-`main`**, כל אחד ע"י GitHub Action ייעודי (`.github/workflows/*-migrate.yml`) שמריץ את הקובץ דרך ה-Supabase Management API. מיגרציה חדשה = קובץ SQL אידמפוטנטי + workflow תואם (העתיקו תבנית קיימת).
+- **Edge Functions:** תחת `supabase/functions/`, נפרסות במיזוג ל-`main` ע"י `deploy-functions.yml` (שימו לב: רשימת הפונקציות בקובץ ה-workflow מפורשת — פונקציה חדשה חייבת להתווסף לרשימה).
+- **Secrets נדרשים ב-GitHub:** `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` (+ סודות הפונקציות מוגדרים ב-Supabase).
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+## מבנה הפרויקט (עיקרי)
+
+```
+src/
+  api/           # supabase client + עטיפת entities (TABLE_MAP)
+  pages/         # דף לכל route (נטען lazy דרך src/lib/pageRoutes.js)
+  components/    # לפי תחום: lead/, quote/, order/, product/, factory/, shared/, ui/ (shadcn)
+  lib/           # rbac.js (הרשאות), utilities
+  hooks/
+supabase/
+  migrations/    # SQL אידמפוטנטי; רץ במיזוג דרך ה-workflows
+  functions/     # Edge Functions (Deno)
+docs/
+  improvement-plan.md   # תוכנית עבודה מתמשכת
+```
+
+## הרשאות (RBAC)
+
+תפקידים: `admin`, `sales_user` (נציג), `factory_user`, `bookkeeper` — קובעים תפריט ומסכים (`src/Layout.jsx`, `src/lib/rbac.js`). בנוסף, הרשאות נתינות פר-נציג (`users.extra_permissions`): ניהול מרכז שירות, צפייה בפיננסי, עדכון מרוכז, עריכת שיבוץ משמרות — מנוהלות מ"הגדרות → נציגים → נהל נציג → הרשאות".
+
+## ניהול שוטף (אדמין)
+
+- **משתמשים והרשאות:** הגדרות → נציגים.
+- **SMS (019):** הגדרות → SMS — הטוקן נשמר צד-שרת בלבד.
+- **ימי סגירה/חגים:** הגדרות → ימי סגירה.
+- **קטלוג:** קטלוג מוצרים (מוצרים/וריאציות, תוספות, תצורת מיטות).

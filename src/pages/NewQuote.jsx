@@ -344,6 +344,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             bed_config_owner: item.bed_config_owner || null,
             bed_config_group_key: item.bed_config_group_key || null,
             bed_config_value_key: item.bed_config_value_key || null,
+            // Text-question answers (e.g. fabric catalog) collected in the wizard.
+            bed_config_fields: item.bed_config_fields || null,
           })),
         }),
       });

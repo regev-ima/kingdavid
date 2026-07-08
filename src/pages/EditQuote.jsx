@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
-import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -27,7 +26,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
-import { genBedConfigToken } from '@/lib/bedConfig';
+import { genBedConfigToken, bedConfigFieldLines, legacyFabricToFields } from '@/lib/bedConfig';
 import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
 import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -131,13 +130,21 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     if (quote && variations.length > 0) {
       // Enrich items with product_id from variations
       const enrichedItems = (quote.items || []).map(item => {
-        if (!item.product_id && item.variation_id) {
-          const variation = variations.find(v => v.id === item.variation_id);
-          if (variation) {
-            return { ...item, product_id: variation.product_id };
+        let it = item;
+        if (!it.product_id && it.variation_id) {
+          const variation = variations.find(v => v.id === it.variation_id);
+          if (variation) it = { ...it, product_id: variation.product_id };
+        }
+        // Migrate legacy fabric_* (quotes saved before text-questions) into the
+        // unified bed_config_fields so it's editable in the wizard and renders
+        // through one path — clear the old columns to avoid a duplicate line.
+        if (!it.bed_config_fields?.length) {
+          const fabric = legacyFabricToFields(it);
+          if (fabric) {
+            it = { ...it, bed_config_fields: [fabric], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' };
           }
         }
-        return item;
+        return it;
       });
 
       setFormData({
@@ -194,7 +201,9 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
           bed_config_token: item.bed_config_token || null,
           bed_config_owner: item.bed_config_owner || null,
           bed_config_group_key: item.bed_config_group_key || null,
-          bed_config_value_key: item.bed_config_value_key || null
+          bed_config_value_key: item.bed_config_value_key || null,
+          // Text-question answers (e.g. fabric catalog) collected in the wizard.
+          bed_config_fields: item.bed_config_fields || null
         }))
       };
 
@@ -212,10 +221,14 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
       return quoteId;
     },
     onSuccess: () => {
+      toast.success('ההצעה עודכנה');
       // Refresh the detail view (same query key) so the popup shows the update.
       queryClient.invalidateQueries({ queryKey: ['quote', quoteId] });
       if (isModal) { onSaved?.(quoteId); return; }
       navigate(createPageUrl('QuoteDetails') + `?id=${quoteId}`);
+    },
+    onError: (err) => {
+      toast.error(`שמירת ההצעה נכשלה: ${err?.message || 'שגיאה לא צפויה'}`);
     },
   });
 
@@ -712,60 +725,20 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                   />
                   </TooltipProvider>
 
-                  {/* Bed-only fabric catalog block — appears for items whose
-                      selected product is in the bed category. */}
+                  {/* קטלוג בד ושדות טקסט — נמלאים באשף המיטה (שאלות טקסט);
+                      כאן תצוגה בלבד. */}
                   {(() => {
                     const product = products.find(p => p.id === item.product_id);
                     if (product?.category !== 'bed') return null;
+                    const lines = bedConfigFieldLines(item);
+                    if (!lines.length) return null;
                     return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <Input
-                            placeholder="שם קטלוג"
-                            value={item.fabric_catalog_name || ''}
-                            onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="מס׳ צבע"
-                            value={item.fabric_color_number || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="צבע"
-                            value={item.fabric_color || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Select
-                            value={item.fabric_supplier || ''}
-                            onValueChange={(val) => {
-                              updateItem(index, 'fabric_supplier', val);
-                              if (val !== FABRIC_SUPPLIER_OTHER) {
-                                updateItem(index, 'fabric_supplier_other', '');
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="ספק" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FABRIC_SUPPLIERS.map((s) => (
-                                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
-                          <Input
-                            placeholder="שם הספק"
-                            value={item.fabric_supplier_other || ''}
-                            onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        )}
+                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-1">
+                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד ושדות נוספים</Label>
+                        {lines.map((ln, i) => (
+                          <div key={i} className="text-xs text-foreground/80">{ln}</div>
+                        ))}
+                        <p className="text-[10px] text-muted-foreground">לעריכה — פתחו את אשף תצורת המיטה.</p>
                       </div>
                     );
                   })()}
@@ -876,15 +849,20 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                   variation={variation}
                   token={token}
                   initialLines={initialLines}
-                  onConfirm={(lines) => {
+                  initialFields={it.bed_config_fields || []}
+                  onConfirm={(lines, fields) => {
                     setFormData(prev => {
                       const bedItem = prev.items[bedWizardIndex];
                       const t = bedItem?.bed_config_token;
                       // Drop this bed's previous config lines, then insert the new set right after it.
                       const kept = prev.items.filter(l => !(t && l.bed_config_owner === t));
                       const bedIdx = t ? kept.findIndex(l => l.bed_config_token === t) : bedWizardIndex;
+                      // Attach the text-field answers (e.g. fabric catalog) to the bed line.
+                      const withFields = bedIdx >= 0
+                        ? kept.map((l, i) => (i === bedIdx ? { ...l, bed_config_fields: fields } : l))
+                        : kept;
                       const at = bedIdx >= 0 ? bedIdx + 1 : Math.min(bedWizardIndex + 1, kept.length);
-                      const newItems = [...kept.slice(0, at), ...lines, ...kept.slice(at)];
+                      const newItems = [...withFields.slice(0, at), ...lines, ...withFields.slice(at)];
                       const totals = calculateTotals(newItems, prev.extras);
                       return { ...prev, items: newItems, ...totals };
                     });

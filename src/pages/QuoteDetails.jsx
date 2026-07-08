@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCreationModal } from '@/components/shared/CreationModalContext';
@@ -117,6 +118,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
     onSuccess: () => {
       queryClient.invalidateQueries(['quote', quoteId]);
     },
+    onError: (err) => toast.error(`עדכון ההצעה נכשל: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   const sendEmailMutation = useMutation({
@@ -140,8 +142,10 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
       await base44.entities.Quote.update(quoteId, { status: 'sent' });
     },
     onSuccess: () => {
+      toast.success('ההצעה נשלחה במייל ללקוח');
       queryClient.invalidateQueries(['quote', quoteId]);
     },
+    onError: (err) => toast.error(`שליחת המייל נכשלה: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   const generatePdfMutation = useMutation({
@@ -154,6 +158,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
       queryClient.invalidateQueries(['quote', quoteId]);
       window.open(pdfUrl, '_blank');
     },
+    onError: (err) => toast.error(`יצירת ה-PDF נכשלה: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   const duplicateQuoteMutation = useMutation({
@@ -174,6 +179,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
       if (isModal) { openQuote(newQuote.id); return; }
       navigate(createPageUrl('QuoteDetails') + `?id=${newQuote.id}`);
     },
+    onError: (err) => toast.error(`שכפול ההצעה נכשל: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   if (isLoadingUser || isLoading) {

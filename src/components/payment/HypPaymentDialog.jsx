@@ -56,7 +56,6 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.source !== 'hyp-return') return;
-      console.log('[HypPaymentDialog] received from HypReturn:', data);
       lastResultRef.current = data;
       if (data.status === 'success' && data.transaction_id) {
         // Browser said success — confirm with Hyp's own VERIFY endpoint
@@ -67,7 +66,6 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             transaction_id: data.transaction_id,
             hyp_params: data.all_params || null,
           });
-          console.log('[HypPaymentDialog] hyp-verify result:', verifyResult);
           if (verifyResult?.verified) {
             onPaid?.({ ...data, ...verifyResult });
           } else {
