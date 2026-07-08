@@ -16,22 +16,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import QuoteItemDetailsBar from "@/components/quote/QuoteItemDetailsBar";
-import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X, Check } from "lucide-react";
-import { productMatchesBedType } from '@/utils/bedType';
+import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
-import ProductSelector from '@/components/quote/ProductSelector';
+import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
-import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
-import { bedConfigFieldLines } from '@/lib/bedConfig';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
+
+// ₪ with two decimals (agorot) so totals match the per-line amounts.
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Strip everything but digits, then drop a leading country prefix so
 // "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
@@ -73,7 +72,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -444,10 +443,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-    const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = Math.round(itemsSubtotal * 0.18);
-    const total = Math.round(subtotal + vat_amount);
-    return { subtotal, discount_total, vat_amount, total };
+    // Round to agorot (2 decimals) so the total matches the sum of line totals.
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const subtotal = round2(itemsSubtotal + extrasTotal);
+    const vat_amount = round2(itemsSubtotal * 0.18);
+    const total = round2(subtotal + vat_amount);
+    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
+  };
+
+  // ProductItemsEditor hands back a fresh items array; recompute grand totals.
+  const handleItemsChange = (newItems) => {
+    setFormData(prev => ({ ...prev, items: newItems, ...calculateTotals(newItems, prev.extras) }));
   };
 
   const updateItem = (index, field, value) => {
@@ -576,9 +582,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     // The required customer fields live on step 1; since steps are unmounted
     // (not CSS-hidden), the browser can't enforce `required` from step 3 — so
     // validate here and jump back so the rep sees exactly what's missing.
-    if (!formData.customer_name?.trim() || !formData.delivery_address?.trim()) {
+    if (!formData.customer_name?.trim() || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) {
       setCurrentStep(1);
-      toast.error('יש למלא שם לקוח וכתובת למשלוח');
+      toast.error('יש למלא שם לקוח, עיר וכתובת למשלוח');
       return;
     }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
@@ -586,7 +592,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
-    createOrderMutation.mutate(formData);
+    // Trial flag is derived from the products on the order, not a manual toggle.
+    const trial_30d_enabled = formData.items.some((it) => {
+      const p = products.find((pp) => pp.id === it.product_id);
+      return Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
+    });
+    createOrderMutation.mutate({ ...formData, trial_30d_enabled });
   };
 
   return (
@@ -608,12 +619,20 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       {/* Step indicator — mirrors NewQuote */}
       <div className={asDialog ? 'mb-4 mt-2' : 'mb-8 mt-6'}>
         <div className="flex items-center justify-center">
-          {steps.map((step, idx) => (
+          {steps.map((step, idx) => {
+            // Can't jump forward past an incomplete step (same rules as "המשך").
+            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone) && !!formData.delivery_city?.trim() && !!formData.delivery_address?.trim();
+            const step2Valid = formData.items.some(item => item.product_id);
+            const locked = step.id > currentStep && !(
+              (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
+            );
+            return (
             <React.Fragment key={step.id}>
               <button
                 type="button"
-                onClick={() => setCurrentStep(step.id)}
-                className="flex flex-col items-center gap-1.5 group relative"
+                onClick={() => { if (!locked) setCurrentStep(step.id); }}
+                disabled={locked}
+                className={`flex flex-col items-center gap-1.5 group relative ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`${asDialog ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-sm sm:text-base'} rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
                   currentStep > step.id
@@ -636,7 +655,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 </div>
               )}
             </React.Fragment>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -808,196 +828,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
         {currentStep === 2 && (
         <Card className="mt-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>פריטים</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 me-2" />
-              הוסף פריט
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {formData.items.map((item, index) => (
-                <div key={index} className="rounded-xl overflow-hidden bg-white shadow-card border-2 border-border transition-colors">
-                  <TooltipProvider delayDuration={300}>
-                  {/* Top: Product selector full width */}
-                  <div className="px-3 pt-3 pb-2">
-                    {item.name && !item.product_id ? (
-                      <div className="px-3 py-2 border rounded-lg bg-muted/60 text-foreground font-semibold h-10 flex items-center text-sm">
-                        {item.name}
-                      </div>
-                    ) : (
-                      <ProductSelector
-                        products={products}
-                        variations={variations}
-                        value={item.product_id}
-                        selectedVariationId={item.variation_id}
-                        onSelect={(val) => selectProduct(index, val)}
-                        onVariationSelect={(variation) => handleVariationSelect(index, variation)}
-                        placeholder="בחר מוצר ומידות"
-                      />
-                    )}
-                  </div>
+          <CardContent className="pt-5">
+            <ProductItemsEditor
+              items={formData.items}
+              onChange={handleItemsChange}
+              products={products}
+              variations={variations}
+              addons={addons}
+              addonPrices={addonPrices}
+            />
 
-                  {/* Labelled qty / unit price / discount / totals bar — shared with quotes */}
-                  <QuoteItemDetailsBar
-                    item={item}
-                    onUpdateQuantity={(qty) => updateItem(index, 'quantity', qty)}
-                    onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                    onRemove={() => removeItem(index)}
-                  />
-                  </TooltipProvider>
-
-                  {/* Bed-only fabric catalog block. Orders converted from a quote
-                      carry the wizard-collected bed_config_fields — show those
-                      read-only instead of the manual grid so fabric isn't entered
-                      twice. Manual entry stays for orders created from scratch. */}
-                  {(() => {
-                    const product = products.find(p => p.id === item.product_id);
-                    if (product?.category !== 'bed') return null;
-                    const fieldLines = bedConfigFieldLines(item);
-                    if (fieldLines.length) {
-                      return (
-                        <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-1">
-                          <Label className="text-xs font-medium text-muted-foreground">קטלוג בד ושדות נוספים</Label>
-                          {fieldLines.map((ln, i) => (
-                            <div key={i} className="text-xs text-foreground/80">{ln}</div>
-                          ))}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <Input
-                            placeholder="שם קטלוג"
-                            value={item.fabric_catalog_name || ''}
-                            onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="מס׳ צבע"
-                            value={item.fabric_color_number || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="צבע"
-                            value={item.fabric_color || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Select
-                            value={item.fabric_supplier || ''}
-                            onValueChange={(val) => {
-                              updateItem(index, 'fabric_supplier', val);
-                              if (val !== FABRIC_SUPPLIER_OTHER) {
-                                updateItem(index, 'fabric_supplier_other', '');
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="ספק" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FABRIC_SUPPLIERS.map((s) => (
-                                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
-                          <Input
-                            placeholder="שם הספק"
-                            value={item.fabric_supplier_other || ''}
-                            onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Addons — toggle into the line item's selected_addons */}
-                  {item.variation_id && (() => {
-                    const variation = variations.find(v => v.id === item.variation_id);
-                    const product = products.find(p => p.id === item.product_id);
-                    const applicableAddons = addons.filter(addon => {
-                      const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
-                      if (!matchesCategory) return false;
-                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
-                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
-                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
-                      return true;
-                    });
-                    if (applicableAddons.length === 0) return null;
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">תוספות למוצר</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {applicableAddons.map(addon => {
-                            const sizePrice = addon.size_prices?.find(
-                              sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
-                            );
-                            const specificPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
-                            );
-                            const productPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
-                            );
-                            const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
-                            const isSelected = (item.selected_addons || []).some(sa => sa.addon_id === addon.id);
-                            return (
-                              <Button
-                                key={addon.id}
-                                type="button"
-                                variant={isSelected ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => {
-                                  const currentAddons = item.selected_addons || [];
-                                  const newSelectedAddons = isSelected
-                                    ? currentAddons.filter(sa => sa.addon_id !== addon.id)
-                                    : [...currentAddons, { addon_id: addon.id, name: addon.name, price: finalAddonPrice }];
-                                  handleAddonsSelect(index, newSelectedAddons);
-                                }}
-                                className={`text-xs h-8 ${isSelected ? '' : 'bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary'}`}
-                              >
-                                {isSelected ? <Check className="w-3 h-3 me-1" /> : <Plus className="w-3 h-3 me-1" />}
-                                {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 border border-border rounded-xl overflow-hidden">
-              <div className="p-4 space-y-3 bg-muted/40">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">סכום לפני מע״מ</span>
-                  <span className="font-medium">₪{Math.round(formData.subtotal).toLocaleString()}</span>
-                </div>
-                {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-sm text-red-600">
-                    <span>הנחה כולל מע״מ</span>
-                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">מע״מ (18%)</span>
-                  <span className="font-medium">₪{Math.round(formData.vat_amount).toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
-                <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
-                <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
-              </div>
-            </div>
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
           </CardContent>
         </Card>
         )}
@@ -1054,13 +895,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             <CardTitle>אפשרויות</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={formData.trial_30d_enabled}
-                onCheckedChange={(v) => setFormData({...formData, trial_30d_enabled: v})}
-              />
-              <Label>ניסיון 30 יום</Label>
-            </div>
+            {/* 30-day trial is a property of the product (shown on its row in the
+                items step), not a manual order-level toggle. */}
             <div className="space-y-2">
               <Label>הערות</Label>
               <Textarea
@@ -1130,17 +966,27 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             )}
           </div>
 
-          <div>
+          <div className="flex items-center gap-3">
             {currentStep < 3 ? (
-              <Button
-                type="button"
-                size="lg"
-                className="h-11 px-8 text-base font-semibold"
-                disabled={currentStep === 2 && !formData.items.some(item => item.product_id)}
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
-              >
-                המשך
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  size="lg"
+                  className="h-11 px-8 text-base font-semibold"
+                  disabled={
+                    (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()))
+                    || (currentStep === 2 && !formData.items.some(item => item.product_id))
+                  }
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
+                >
+                  המשך
+                </Button>
+                {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) ? (
+                  <span className="text-[11px] text-muted-foreground">יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך</span>
+                ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
+                  <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
+                ) : null}
+              </>
             ) : (
               <Button
                 type="submit"

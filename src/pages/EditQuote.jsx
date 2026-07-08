@@ -19,21 +19,21 @@ import {
 } from "@/components/ui/select";
 
 
-import { ArrowRight, Save, Loader2, Plus, Check, BedDouble } from "lucide-react";
-import { hasBedType, productMatchesBedType } from '@/utils/bedType';
+import { ArrowRight, Save, Loader2, Check } from "lucide-react";
+import { hasBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
-import { TooltipProvider } from "@/components/ui/tooltip";
 import UpsellPanel from '@/components/upsell/UpsellPanel';
-import ProductSelector from '@/components/quote/ProductSelector';
-import BedConfigWizard from '@/components/quote/BedConfigWizard';
-import { genBedConfigToken, bedConfigFieldLines, legacyFabricToFields } from '@/lib/bedConfig';
-import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
-import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
+import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+import { genBedConfigToken, legacyFabricToFields } from '@/lib/bedConfig';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewQuote } from '@/lib/rbac';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
+
+// ₪ with two decimals (agorot) so totals match the per-line amounts.
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved }) {
   const navigate = useNavigate();
@@ -71,9 +71,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     special_requests: '',
     payment_terms_selection: [],
   });
-  // Two-phase save: handleSubmit only validates and opens the preview dialog;
-  // the mutation runs from the dialog's confirm button.
-  const [showConfirm, setShowConfirm] = useState(false);
   // Index of the bed line whose configurator wizard is open (null = closed), and
   // a snapshot of its prior config lines for prefill after a resize strips them.
   const [bedWizardIndex, setBedWizardIndex] = useState(null);
@@ -250,11 +247,18 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
 
-    const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = itemsSubtotal * 0.18;
-    const total = subtotal + vat_amount;
+    // Round to agorot (2 decimals) so the total matches the sum of line totals.
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const subtotal = round2(itemsSubtotal + extrasTotal);
+    const vat_amount = round2(itemsSubtotal * 0.18);
+    const total = round2(subtotal + vat_amount);
 
-    return { subtotal, discount_total, vat_amount, total };
+    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
+  };
+
+  // ProductItemsEditor hands back a fresh items array; recompute grand totals.
+  const handleItemsChange = (newItems) => {
+    setFormData(prev => ({ ...prev, items: newItems, ...calculateTotals(newItems, prev.extras) }));
   };
 
   const updateItem = (index, field, value) => {
@@ -466,19 +470,14 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     });
   };
 
+  // Editing saves directly — no summary/confirm step. "שמור שינויים" וזהו.
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!isValidIsraeliPhone(formData.customer_phone)) {
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
-    setShowConfirm(true);
-  };
-
-  const confirmSave = () => {
-    updateQuoteMutation.mutate(formData, {
-      onSettled: () => setShowConfirm(false),
-    });
+    updateQuoteMutation.mutate(formData);
   };
 
   const isExpired = quote.valid_until && new Date(quote.valid_until) < new Date();
@@ -685,215 +684,18 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
         {currentStep === 2 && (
           <div className="space-y-6">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>פריטים</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 me-2" />
-              הוסף פריט
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {formData.items.map((item, index) => (
-                <div key={index} className="rounded-xl overflow-hidden bg-white shadow-card border-2 border-border">
-                  <TooltipProvider delayDuration={300}>
-                  {/* Top: Product selector full width */}
-                  <div className="px-3 pt-3 pb-2">
-                    {item.name && !item.product_id ? (
-                      <div className="px-3 py-2 border rounded-lg bg-muted/60 text-foreground font-semibold h-10 flex items-center text-sm">
-                        {item.name}
-                      </div>
-                    ) : (
-                      <ProductSelector
-                        products={products}
-                        variations={variations}
-                        value={item.product_id}
-                        selectedVariationId={item.variation_id}
-                        onSelect={(val) => selectProduct(index, val)}
-                        onVariationSelect={(variation) => handleVariationSelect(index, variation)}
-                        placeholder="בחר מוצר ומידות"
-                      />
-                    )}
-                  </div>
-
-                  {/* Bottom: labelled details bar (qty / unit price / discount / totals) */}
-                  <QuoteItemDetailsBar
-                    item={item}
-                    onUpdateQuantity={(qty) => updateItem(index, 'quantity', qty)}
-                    onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                    onRemove={() => removeItem(index)}
-                  />
-                  </TooltipProvider>
-
-                  {/* קטלוג בד ושדות טקסט — נמלאים באשף המיטה (שאלות טקסט);
-                      כאן תצוגה בלבד. */}
-                  {(() => {
-                    const product = products.find(p => p.id === item.product_id);
-                    if (product?.category !== 'bed') return null;
-                    const lines = bedConfigFieldLines(item);
-                    if (!lines.length) return null;
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-1">
-                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד ושדות נוספים</Label>
-                        {lines.map((ln, i) => (
-                          <div key={i} className="text-xs text-foreground/80">{ln}</div>
-                        ))}
-                        <p className="text-[10px] text-muted-foreground">לעריכה — פתחו את אשף תצורת המיטה.</p>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Bed configurator — guided, priced, single-choice questions for beds */}
-                  {item.variation_id && (() => {
-                    const product = products.find(p => p.id === item.product_id);
-                    if (product?.category !== 'bed') return null;
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openBedWizard(index)}
-                          className="gap-1.5 h-8 text-xs bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
-                        >
-                          <BedDouble className="w-3.5 h-3.5" />
-                          תצורת מיטה (אשף)
-                        </Button>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Addons */}
-                  {item.variation_id && (() => {
-                    const variation = variations.find(v => v.id === item.variation_id);
-                    const product = products.find(p => p.id === item.product_id);
-                    const applicableAddons = addons.filter(addon => {
-                      const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
-                      if (!matchesCategory) return false;
-                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
-                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
-                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
-                      return true;
-                    });
-                    if (applicableAddons.length === 0) return null;
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">תוספות למוצר</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {applicableAddons.map(addon => {
-                            const sizePrice = addon.size_prices?.find(
-                              sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
-                            );
-                            const specificPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
-                            );
-                            const productPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
-                            );
-                            const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
-                            return (
-                              <Button
-                                key={addon.id}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const newItem = {
-                                    product_id: '',
-                                    variation_id: '',
-                                    sku: '',
-                                    name: addon.name,
-                                    quantity: 1,
-                                    unit_price: finalAddonPrice,
-                                    discount_percent: 0,
-                                    total: finalAddonPrice,
-                                    selected_addons: []
-                                  };
-                                  setFormData(prev => {
-                                    const newItems = [...prev.items];
-                                    newItems.splice(index + 1, 0, newItem);
-                                    const totals = calculateTotals(newItems, prev.extras);
-                                    return { ...prev, items: newItems, ...totals };
-                                  });
-                                }}
-                                className="text-xs h-8 bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
-                              >
-                                <Plus className="w-3 h-3 me-1" />
-                                הוסף {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
-
-            {/* Bed configurator wizard — opens for the bed line at bedWizardIndex */}
-            {bedWizardIndex != null && (() => {
-              const it = formData.items[bedWizardIndex];
-              if (!it) return null;
-              const product = products.find(p => p.id === it.product_id);
-              const variation = variations.find(v => v.id === it.variation_id);
-              const token = it.bed_config_token;
-              const initialLines = bedWizardSnapshot != null
-                ? bedWizardSnapshot
-                : (token ? formData.items.filter(l => l.bed_config_owner === token) : []);
-              return (
-                <BedConfigWizard
-                  open={bedWizardIndex != null}
-                  onOpenChange={(o) => { if (!o) { setBedWizardIndex(null); setBedWizardSnapshot(null); } }}
-                  product={product}
-                  variation={variation}
-                  token={token}
-                  initialLines={initialLines}
-                  initialFields={it.bed_config_fields || []}
-                  onConfirm={(lines, fields) => {
-                    setFormData(prev => {
-                      const bedItem = prev.items[bedWizardIndex];
-                      const t = bedItem?.bed_config_token;
-                      // Drop this bed's previous config lines, then insert the new set right after it.
-                      const kept = prev.items.filter(l => !(t && l.bed_config_owner === t));
-                      const bedIdx = t ? kept.findIndex(l => l.bed_config_token === t) : bedWizardIndex;
-                      // Attach the text-field answers (e.g. fabric catalog) to the bed line.
-                      const withFields = bedIdx >= 0
-                        ? kept.map((l, i) => (i === bedIdx ? { ...l, bed_config_fields: fields } : l))
-                        : kept;
-                      const at = bedIdx >= 0 ? bedIdx + 1 : Math.min(bedWizardIndex + 1, kept.length);
-                      const newItems = [...withFields.slice(0, at), ...lines, ...withFields.slice(at)];
-                      const totals = calculateTotals(newItems, prev.extras);
-                      return { ...prev, items: newItems, ...totals };
-                    });
-                  }}
+              <CardContent className="pt-5">
+                <ProductItemsEditor
+                  items={formData.items}
+                  onChange={handleItemsChange}
+                  products={products}
+                  variations={variations}
+                  addons={addons}
+                  addonPrices={addonPrices}
                 />
-              );
-            })()}
 
             {/* Totals */}
-            <div className="mt-6 border border-border rounded-xl overflow-hidden">
-              <div className="p-4 space-y-3 bg-muted/40">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">סכום לפני מע״מ</span>
-                  <span className="font-medium">₪{Math.round(formData.subtotal).toLocaleString()}</span>
-                </div>
-                {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-sm text-red-600">
-                    <span>הנחה כולל מע״מ</span>
-                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">מע״מ (18%)</span>
-                  <span className="font-medium">₪{Math.round(formData.vat_amount).toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
-                <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
-                <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
-              </div>
-            </div>
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
           </CardContent>
         </Card>
 
@@ -1072,17 +874,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
           </div>
         </div>
       </form>
-      <QuoteConfirmDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        formData={formData}
-        products={products}
-        variations={variations}
-        onConfirm={confirmSave}
-        isPending={updateQuoteMutation.isPending}
-        title="אישור לפני עדכון ההצעה"
-        confirmLabel="אישור ועדכון"
-      />
     </div>
   );
 }

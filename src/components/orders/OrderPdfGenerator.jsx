@@ -38,7 +38,8 @@ const OrderPdfGenerator = async (orderData) => {
     const x = Number(n);
     return Number.isFinite(x) ? x : 0;
   };
-  const money = (n) => `₪${normalizeNumber(n).toLocaleString("he-IL")}`;
+  // Two decimals (agorot) so line amounts sum exactly to the printed total.
+  const money = (n) => `₪${normalizeNumber(n).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const createdDate = orderData?.created_date
     ? format(new Date(orderData.created_date), "dd/MM/yyyy")
@@ -420,7 +421,8 @@ const OrderPdfGenerator = async (orderData) => {
     const pageEl = tempDiv.querySelector("#order-page");
     if (!pageEl) throw new Error("PDF root element not found");
 
-    const scale = Math.min(3, window.devicePixelRatio ? window.devicePixelRatio * 2 : 2);
+    // Cap at 2× so the html2canvas pass is lighter and doesn't freeze the modal.
+    const scale = 2;
     const canvas = await html2canvas(pageEl, {
       scale,
       useCORS: true,
@@ -438,22 +440,46 @@ const OrderPdfGenerator = async (orderData) => {
 
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
-    pageCanvas.height = pageHeightPx;
     const ctx = pageCanvas.getContext("2d");
+
+    // Back a page break up to a BLANK row so slicing never cuts through a line
+    // of text / the footer (same fix as the quote PDF).
+    let fullData = null;
+    try {
+      fullData = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    } catch { fullData = null; }
+    const isBlankRow = (ry) => {
+      if (!fullData) return false;
+      const base = ry * canvas.width * 4;
+      for (let x = 0; x < canvas.width; x++) {
+        const i = base + x * 4;
+        if (fullData[i] < 250 || fullData[i + 1] < 250 || fullData[i + 2] < 250) return false;
+      }
+      return true;
+    };
+    const cleanBreak = (targetY) => {
+      const limit = Math.max(targetY - 220, 0);
+      for (let ry = Math.min(targetY, canvas.height - 1); ry >= limit; ry--) {
+        if (isBlankRow(ry)) return ry + 1;
+      }
+      return targetY;
+    };
 
     let y = 0;
     let pageIndex = 0;
     while (y < canvas.height) {
-      const remainingHeight = canvas.height - y;
-      if (remainingHeight < 100 && pageIndex > 0) break;
+      if (canvas.height - y < 8) break;
+      let breakY = y + pageHeightPx;
+      breakY = breakY >= canvas.height ? canvas.height : cleanBreak(breakY);
+      const heightToRender = breakY - y;
+      pageCanvas.height = heightToRender;
       ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-      const heightToRender = Math.min(pageHeightPx, remainingHeight);
       ctx.drawImage(canvas, 0, y, canvas.width, heightToRender, 0, 0, canvas.width, heightToRender);
-      const sliceHeightMm = Math.min(pdfHeight, heightToRender / pxPerMm);
+      const sliceHeightMm = heightToRender / pxPerMm;
       const imgData = pageCanvas.toDataURL("image/png", 1.0);
       if (pageIndex > 0) pdf.addPage();
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, sliceHeightMm, undefined, "FAST");
-      y += pageHeightPx;
+      y = breakY;
       pageIndex += 1;
     }
 

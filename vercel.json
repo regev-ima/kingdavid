@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/pdf/:path*", "destination": "https://njfrqbzkwwalwpzzxecy.supabase.co/storage/v1/object/public/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

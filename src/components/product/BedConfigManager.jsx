@@ -150,17 +150,21 @@ export default function BedConfigManager() {
                   className="h-9 max-w-[16rem] font-semibold"
                   placeholder="שם השאלה"
                 />
-                {/* Per-question type — editable: switch between an options
-                    (choice) question and a free-text question at any time. */}
-                <select
-                  value={isText ? 'text' : 'choice'}
-                  onChange={(e) => updateGroup.mutate({ id: g.id, data: { input_type: e.target.value } })}
-                  className={`h-8 shrink-0 rounded-md border px-2 text-xs font-medium ${isText ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
-                  title="סוג השאלה"
-                >
-                  <option value="choice">אפשרויות (בחירה)</option>
-                  <option value="text">טקסט חופשי</option>
-                </select>
+                {/* Per-question type — the key control: "choice" shows option
+                    cards the rep picks from; "text" shows fields the rep types
+                    into. Editable at any time; switching re-renders the values
+                    below as option rows or text fields accordingly. */}
+                <label className="flex items-center gap-1.5 shrink-0 text-xs">
+                  <span className="font-medium text-muted-foreground">סוג:</span>
+                  <select
+                    value={isText ? 'text' : 'choice'}
+                    onChange={(e) => updateGroup.mutate({ id: g.id, data: { input_type: e.target.value } })}
+                    className={`h-8 rounded-md border-2 px-2 text-xs font-semibold cursor-pointer ${isText ? 'bg-indigo-50 text-indigo-700 border-indigo-300' : 'bg-slate-100 text-slate-700 border-slate-300'}`}
+                  >
+                    <option value="choice">בחירה מרשימה</option>
+                    <option value="text">טקסט חופשי (הקלדה)</option>
+                  </select>
+                </label>
                 <div className="flex items-center gap-3 ms-auto">
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
                     ניתן לדלג

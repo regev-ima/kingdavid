@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import NewOrderDialog from '@/components/order/NewOrderDialog';
 import NewQuoteDialog from '@/components/quote/NewQuoteDialog';
+import { useOrderModal } from '@/components/order/OrderModalContext';
 
 // One place that owns "create a new order / new quote as a popup". Any button
 // anywhere in the app calls openNewOrder()/openNewQuote() and gets the SAME
@@ -22,6 +23,7 @@ export function useCreationModal() {
 export function CreationModalProvider({ children }) {
   const location = useLocation();
   const queryClient = useQueryClient();
+  const { openOrder } = useOrderModal();
   // null when closed; otherwise the seed context ({ leadId, quoteId }).
   const [newOrder, setNewOrder] = useState(null);
   const [newQuote, setNewQuote] = useState(null);
@@ -51,9 +53,12 @@ export function CreationModalProvider({ children }) {
         onOpenChange={(o) => { if (!o) setNewOrder(null); }}
         leadId={newOrder?.leadId}
         quoteId={newOrder?.quoteId}
-        onCreated={() => {
+        onCreated={(order) => {
           queryClient.invalidateQueries({ queryKey: ['orders'] });
           queryClient.invalidateQueries({ queryKey: ['quotes'] });
+          // Show the freshly-created order in its popup (e.g. after "המר להזמנה"),
+          // instead of dropping the rep back on the quote.
+          if (order?.id) openOrder(order.id);
         }}
       />
       <NewQuoteDialog

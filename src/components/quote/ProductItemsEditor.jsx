@@ -3,13 +3,16 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import DiscountPopover from '@/components/quote/DiscountPopover';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, BedDouble, Package, Settings2, CornerDownLeft } from 'lucide-react';
+import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft } from 'lucide-react';
 import { productMatchesBedType } from '@/utils/bedType';
 import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
 
 const VAT = 1.18;
-const ils = (n) => `₪${Math.round((n || 0)).toLocaleString()}`;
+// Two decimals (agorot) so the displayed line totals sum exactly to the grand
+// total — whole-₪ rounding per line drifted by up to ₪0.50 each.
+const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const CATEGORY_LABELS = { bed: 'מיטה', mattress: 'מזרון', topper: 'תוספת', accessory: 'נלווה' };
+const hasTrialPeriod = (p) => Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
 
 // The items step, shared by NewQuote / NewOrder so the two are identical. One
 // clean table (headers once), and "הוסף פריט" opens the product picker straight
@@ -22,6 +25,9 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
   const [expanded, setExpanded] = useState({}); // index -> bool
   const [bedWizardIndex, setBedWizardIndex] = useState(null);
   const [bedWizardSnapshot, setBedWizardSnapshot] = useState(null);
+  // Non-null while the picker is editing an existing row's product/size (pencil)
+  // rather than adding a new one.
+  const [editIndex, setEditIndex] = useState(null);
 
   const productById = (id) => products.find((p) => p.id === id);
 
@@ -45,12 +51,40 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
     onChange(next);
   };
 
+  // Pencil on a non-bed row → re-open the picker to change its product/size.
+  const editProduct = (index) => { setEditIndex(index); setSelectorOpen(true); };
+
   // Add a product line straight from the picker's product + size selection.
   const addFromSelection = (variation) => {
     const product = productById(variation.product_id);
     if (!product) return;
     const isBed = product.category === 'bed';
-    const price = variation.final_price || 0;
+    // Catalog final_price is the FINAL price to the customer (incl VAT). The line
+    // stores pre-VAT (the quote re-adds VAT), so divide — same as bed-wizard
+    // manual prices. Storing it as-is double-VAT'd every product line.
+    const price = (variation.final_price || 0) / VAT;
+
+    // Edit mode: replace the row's product/size in place (keep qty + discount).
+    if (editIndex != null) {
+      const prev = items[editIndex] || {};
+      const sameProduct = prev.product_id === product.id;
+      onChange(items.map((it, i) => (i === editIndex ? withTotal({
+        ...prev,
+        product_id: product.id,
+        name: product.name,
+        sku: variation.sku || '',
+        variation_id: variation.id,
+        length_cm: variation.length_cm ?? null,
+        width_cm: variation.width_cm ?? null,
+        height_cm: variation.height_cm ?? null,
+        unit_price: price,
+        selected_addons: sameProduct ? (prev.selected_addons || []) : [],
+      }) : it)));
+      setSelectorOpen(false);
+      setEditIndex(null);
+      return;
+    }
+
     const line = {
       product_id: product.id,
       name: product.name,
@@ -180,16 +214,33 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                 }
                 const product = productById(item.product_id);
                 const isBed = product?.category === 'bed';
-                const canExpand = isBed || applicableAddonsFor(item).length > 0;
-                const isOpen = !!expanded[index];
+                const canExpand = !isBed && applicableAddonsFor(item).length > 0;
+                const isOpen = !isBed && !!expanded[index];
+                const fieldLines = isBed ? bedConfigFieldLines(item) : [];
                 return (
                   <React.Fragment key={index}>
                     <tr className="hover:bg-muted/20 transition-colors">
                       <td className="text-center py-2.5 px-2 text-muted-foreground tabular-nums">{index + 1}</td>
                       <td className="py-2.5 px-3">
-                        <div className="font-medium text-foreground leading-tight">{item.name}</div>
+                        <div className="font-medium text-foreground leading-tight flex items-center gap-1.5 flex-wrap">
+                          {item.name}
+                          {/* 30-day trial comes from the product itself, shown on
+                              its row (not a manual order-level toggle). */}
+                          {hasTrialPeriod(product) ? (
+                            <span className="inline-flex items-center gap-0.5 bg-amber-100 text-amber-700 text-[9px] font-semibold px-1.5 py-0.5 rounded">30 ימי נסיון</span>
+                          ) : null}
+                        </div>
                         {product?.category ? (
                           <span className="text-[10px] text-muted-foreground">{CATEGORY_LABELS[product.category] || product.category}</span>
+                        ) : null}
+                        {/* קטלוג בד ושדות טקסט — תצוגה מהירה מתחת לשם; לעריכה
+                            פותחים את האשף בכפתור התצורה. */}
+                        {fieldLines.length ? (
+                          <div className="mt-1 space-y-0.5">
+                            {fieldLines.map((ln, i) => (
+                              <div key={i} className="text-[10px] text-muted-foreground leading-snug">{ln}</div>
+                            ))}
+                          </div>
                         ) : null}
                       </td>
                       <td className="text-center py-2.5 px-2 text-xs text-muted-foreground tabular-nums" dir="ltr">
@@ -211,11 +262,22 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                       <td className="text-center py-2.5 px-2 font-bold text-primary tabular-nums">{ils((item.total || 0) * VAT)}</td>
                       <td className="py-2.5 px-2">
                         <div className="flex items-center justify-center gap-0.5">
-                          {canExpand ? (
+                          {/* Pencil = edit this item. Beds open the config wizard
+                              (questions/fabric/prices); other rows re-open the
+                              product picker to change the product/size. */}
+                          <button
+                            type="button"
+                            onClick={() => (isBed ? openBedWizard(index) : editProduct(index))}
+                            title={isBed ? 'עריכת תצורת מיטה' : 'עריכת מוצר/מידה'}
+                            className="p-1.5 rounded-md transition-colors text-primary hover:bg-primary/10"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          {!isBed && canExpand ? (
                             <button
                               type="button"
                               onClick={() => setExpanded((e) => ({ ...e, [index]: !e[index] }))}
-                              title="תוספות ותצורה"
+                              title="תוספות"
                               className={`p-1.5 rounded-md transition-colors ${isOpen ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
                             >
                               <Settings2 className="h-4 w-4" />
@@ -228,50 +290,30 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                       </td>
                     </tr>
 
+                    {/* Non-bed add-ons live in an expander. Beds have no expander —
+                        their config (incl. add-on-like choices) is in the wizard. */}
                     {isOpen ? (
                       <tr>
                         <td colSpan={8} className="bg-muted/20 px-4 py-3 border-t border-border/40">
-                          <div className="space-y-3">
-                            {isBed ? (
-                              <div>
-                                <Button type="button" variant="outline" size="sm" onClick={() => openBedWizard(index)} className="gap-1.5 h-8 text-xs bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
-                                  <BedDouble className="h-3.5 w-3.5" /> תצורת מיטה (אשף)
-                                </Button>
-                              </div>
-                            ) : null}
-
-                            {(() => {
-                              const apps = applicableAddonsFor(item);
-                              if (!apps.length) return null;
-                              return (
-                                <div className="space-y-1.5">
-                                  <span className="text-[11px] font-medium text-muted-foreground">תוספות למוצר</span>
-                                  <div className="flex flex-wrap gap-2">
-                                    {apps.map((addon) => {
-                                      const price = resolveAddonPrice(addon, item);
-                                      return (
-                                        <Button key={addon.id} type="button" variant="outline" size="sm" onClick={() => insertAddon(index, addon, price)} className="text-xs h-8 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
-                                          <Plus className="w-3 h-3 me-1" /> {addon.name} ({ils(price * VAT)})
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
+                          {(() => {
+                            const apps = applicableAddonsFor(item);
+                            if (!apps.length) return null;
+                            return (
+                              <div className="space-y-1.5">
+                                <span className="text-[11px] font-medium text-muted-foreground">תוספות למוצר</span>
+                                <div className="flex flex-wrap gap-2">
+                                  {apps.map((addon) => {
+                                    const price = resolveAddonPrice(addon, item);
+                                    return (
+                                      <Button key={addon.id} type="button" variant="outline" size="sm" onClick={() => insertAddon(index, addon, price)} className="text-xs h-8 bg-primary/5 border-primary/20 text-primary hover:bg-primary/10">
+                                        <Plus className="w-3 h-3 me-1" /> {addon.name} ({ils(price * VAT)})
+                                      </Button>
+                                    );
+                                  })}
                                 </div>
-                              );
-                            })()}
-
-                            {/* קטלוג בד ושדות טקסט נוספים — נמלאים באשף המיטה
-                                (שאלות טקסט), כאן מוצגת תצוגה בלבד. */}
-                            {isBed && bedConfigFieldLines(item).length ? (
-                              <div className="space-y-1">
-                                <span className="text-[11px] font-medium text-muted-foreground">קטלוג בד ושדות נוספים</span>
-                                {bedConfigFieldLines(item).map((ln, i) => (
-                                  <div key={i} className="text-xs text-foreground/80">{ln}</div>
-                                ))}
-                                <p className="text-[10px] text-muted-foreground">לעריכה — פתחו את אשף תצורת המיטה.</p>
                               </div>
-                            ) : null}
-                          </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     ) : null}
@@ -291,7 +333,7 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
         onSelect={() => {}}
         onVariationSelect={addFromSelection}
         open={selectorOpen}
-        onOpenChange={setSelectorOpen}
+        onOpenChange={(o) => { setSelectorOpen(o); if (!o) setEditIndex(null); }}
         hideTrigger
       />
 

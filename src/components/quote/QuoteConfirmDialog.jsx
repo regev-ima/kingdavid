@@ -5,7 +5,7 @@ import { Loader2, ArrowRight, Check } from 'lucide-react';
 import { FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { bedConfigFieldLines } from '@/lib/bedConfig';
 
-const fmt = (n) => `₪${Math.round(Number(n) || 0).toLocaleString('he-IL')}`;
+const fmt = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Reusable "are you sure?" preview shown right before a quote is persisted.
 // Lists every item with its size/fabric/addons + the document totals so the

@@ -32,6 +32,24 @@ function getCi(params: URLSearchParams, ...names: string[]): string | null {
   return null;
 }
 
+// Same idea for the plain object of params the iframe captured from Hyp's
+// redirect. HypReturn reads these case-insensitively, so hyp-verify must too
+// — otherwise a differently-cased CCode/Amount slips through and we reject a
+// charge that actually succeeded.
+function getObjCi(obj: Record<string, unknown>, ...names: string[]): string | null {
+  for (const name of names) {
+    const v = obj?.[name];
+    if (v != null) return String(v);
+  }
+  const lc = new Map<string, string>();
+  for (const [k, v] of Object.entries(obj || {})) lc.set(k.toLowerCase(), String(v));
+  for (const name of names) {
+    const v = lc.get(name.toLowerCase());
+    if (v !== undefined) return v;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -55,6 +73,11 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const orderId = body?.order_id;
     const transactionId = body?.transaction_id;
+    // The amount the rep signed for this attempt (hyp-sign charged exactly
+    // this). Hyp's success redirect only fires on CCode=0 and it charges the
+    // signed amount, so this is a safe fallback when Hyp doesn't echo Amount
+    // back onto the iframe redirect.
+    const clientAmount = Number(body?.amount);
     // Params that Hyp appended to our Succesful URL inside the iframe.
     // The browser captured them in HypReturn and forwarded them here, so
     // we can use them as a trusted source even if Hyp's external VERIFY
@@ -130,9 +153,16 @@ Deno.serve(async (req) => {
       brand = getCi(hypReply!, 'Brand') ?? '';
       l4digit = getCi(hypReply!, 'L4digit', 'L4Digit', 'last4') ?? '';
     } else {
-      // Fall back to the params the iframe captured directly from Hyp.
-      const iframeCCode = String(hypParams.CCode ?? hypParams.ccode ?? '');
-      const iframeAmount = Number(hypParams.Amount ?? hypParams.amount ?? '0');
+      // Fall back to the params the iframe captured directly from Hyp,
+      // reading them case-insensitively the same way HypReturn does.
+      const iframeCCode = String(getObjCi(hypParams, 'CCode') ?? '');
+      let iframeAmount = Number(getObjCi(hypParams, 'Amount') ?? '0');
+      // Hyp doesn't always echo the amount back onto the redirect. When it
+      // doesn't but the charge succeeded (CCode=0), use the amount we signed.
+      if ((!Number.isFinite(iframeAmount) || iframeAmount <= 0) &&
+          Number.isFinite(clientAmount) && clientAmount > 0) {
+        iframeAmount = clientAmount;
+      }
       console.warn('hyp-verify: external VERIFY did not return CCode=0, falling back to iframe redirect params', {
         externalReply: externalReplyObj,
         iframeCCode,
@@ -159,9 +189,9 @@ Deno.serve(async (req) => {
       source = 'iframe_redirect';
       ccode = '0';
       verifiedAmount = iframeAmount;
-      acode = String(hypParams.ACode ?? hypParams.acode ?? '');
-      brand = String(hypParams.Brand ?? hypParams.brand ?? '');
-      l4digit = String(hypParams.L4digit ?? hypParams.L4Digit ?? hypParams.last4 ?? '');
+      acode = String(getObjCi(hypParams, 'ACode') ?? '');
+      brand = String(getObjCi(hypParams, 'Brand') ?? '');
+      l4digit = String(getObjCi(hypParams, 'L4digit', 'L4Digit', 'last4') ?? '');
     }
 
     const supabase = createServiceClient();

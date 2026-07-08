@@ -54,6 +54,11 @@ import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac'
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+
+// Line prices are stored pre-VAT; show the customer incl-VAT, two decimals.
+const VAT = 1.18;
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -362,8 +367,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     <TableHead className="text-right">מוצר</TableHead>
                     <TableHead className="text-right">מק״ט</TableHead>
                     <TableHead className="text-right">כמות</TableHead>
-                    <TableHead className="text-right">מחיר</TableHead>
-                    <TableHead className="text-right">סה"כ</TableHead>
+                    <TableHead className="text-right">מחיר<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
+                    <TableHead className="text-right">סה"כ<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -384,7 +389,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                             <div className="text-xs text-primary mt-1 space-y-0.5">
                               <p className="font-medium">תוספות:</p>
                               {item.selected_addons.map((a, i) => (
-                                <p key={i}>• {a.name} (+₪{a.price?.toLocaleString()})</p>
+                                <p key={i}>• {a.name} (+{money2((a.price || 0) * VAT)})</p>
                               ))}
                             </div>
                           )}
@@ -393,39 +398,22 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                         <TableCell>{item.quantity}</TableCell>
                         <TableCell>
                           <div>
-                            <div>₪{item.unit_price?.toLocaleString()}</div>
+                            <div>{money2((item.unit_price || 0) * VAT)}</div>
                             {addonsTotal > 0 && (
-                              <div className="text-xs text-muted-foreground">+₪{addonsTotal.toLocaleString()} תוספות</div>
+                              <div className="text-xs text-muted-foreground">+{money2(addonsTotal * VAT)} תוספות</div>
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-semibold">₪{item.total?.toLocaleString()}</TableCell>
+                        <TableCell className="font-semibold">{money2((item.total || 0) * VAT)}</TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
               
-              <div className="mt-4 pt-4 border-t space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">סכום ביניים</span>
-                  <span>₪{order.subtotal?.toLocaleString()}</span>
-                </div>
-                {order.discount_total > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>הנחות</span>
-                    <span>-₪{order.discount_total?.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">מע"מ</span>
-                  <span>₪{order.vat_amount?.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-lg font-bold pt-2 border-t">
-                  <span>סה"כ</span>
-                  <span>₪{order.total?.toLocaleString()}</span>
-                </div>
-              </div>
+              {/* Same shared summary component as the create/edit forms + the
+                  quote view, so the breakdown is identical everywhere. */}
+              <QuoteTotalsSummary items={order.items} extras={order.extras} discountTotal={order.discount_total} />
             </CardContent>
           </Card>
 
@@ -698,7 +686,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unpaid">לא שולם</SelectItem>
-                    <SelectItem value="deposit_paid">מקדמה</SelectItem>
+                    <SelectItem value="deposit_paid">תשלום חלקי</SelectItem>
                     <SelectItem value="paid">שולם</SelectItem>
                     <SelectItem value="refunded_partial">זיכוי חלקי</SelectItem>
                     <SelectItem value="refunded_full">זיכוי מלא</SelectItem>

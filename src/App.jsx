@@ -77,8 +77,12 @@ const AuthenticatedApp = () => {
     <ImpersonationProvider>
       <LeadModalProvider>
         <OrderModalProvider>
-        <QuoteModalProvider>
+        {/* CreationModalProvider must wrap QuoteModalProvider so the quote
+            popup (rendered by QuoteModalProvider as a sibling of its children)
+            sits INSIDE it — otherwise "המר להזמנה" from the popup calls a no-op
+            openNewOrder and nothing happens. */}
         <CreationModalProvider>
+        <QuoteModalProvider>
         <Suspense fallback={<PageLoadingFallback />}>
           <Routes>
             <Route path="/" element={
@@ -104,8 +108,8 @@ const AuthenticatedApp = () => {
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Suspense>
-        </CreationModalProvider>
         </QuoteModalProvider>
+        </CreationModalProvider>
         </OrderModalProvider>
       </LeadModalProvider>
     </ImpersonationProvider>

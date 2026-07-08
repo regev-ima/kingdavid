@@ -3,6 +3,12 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
+import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+
+// ₪ with two decimals (agorot) — keeps the totals consistent with the per-line
+// amounts, which now show agorot so the parts sum exactly to the total.
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Strip everything but digits, then drop a leading country prefix so
 // "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
@@ -28,7 +34,6 @@ import { hasBedType } from '@/utils/bedType';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
-import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
@@ -89,10 +94,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     payment_terms_selection: [],
   });
 
-  // Two-phase save: handleSubmit only validates and opens the preview dialog;
-  // the actual mutation runs from the dialog's confirm button. Hook stays at
-  // the top of the component to satisfy Rules of Hooks across early returns.
-  const [showConfirm, setShowConfirm] = useState(false);
   // Phone-based lookup so a quote started from "create new quote" (no
   // existing lead context) can still snap to an existing customer / lead.
   // Skipped entirely once the form already has a hard lead_id (came from
@@ -424,11 +425,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
 
-    const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = Math.round(itemsSubtotal * 0.18);
-    const total = Math.round(subtotal + vat_amount);
+    // Round to agorot (2 decimals), not whole ₪, so the grand total matches the
+    // sum of the per-line totals shown to the customer.
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const subtotal = round2(itemsSubtotal + extrasTotal);
+    const vat_amount = round2(itemsSubtotal * 0.18);
+    const total = round2(subtotal + vat_amount);
 
-    return { subtotal, discount_total, vat_amount, total };
+    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
   };
 
   // ProductItemsEditor hands back a fresh items array; recompute grand totals.
@@ -505,13 +509,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       setCurrentStep(1);
       return;
     }
-    setShowConfirm(true);
-  };
-
-  const confirmSave = () => {
-    createQuoteMutation.mutate(formData, {
-      onSettled: () => setShowConfirm(false),
-    });
+    // Save directly — no summary/confirm screen.
+    createQuoteMutation.mutate(formData);
   };
 
   const mattressCount = formData.items.reduce((count, item) => {
@@ -550,10 +549,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     return true;
   });
 
-  // Loading screen while saving quote
+  // Loading screen while saving quote — fixed min height so switching from the
+  // form to this view doesn't make the dialog jump/expand.
   if (asDialog && createQuoteMutation.isPending) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-6">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
         <div className="relative">
           <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
         </div>
@@ -571,7 +571,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // Summary screen after quote saved in dialog mode
   if (asDialog && savedQuote) {
     const whatsappPhone = formatPhoneForWhatsApp(formData.customer_phone);
-    const whatsappText = encodeURIComponent(`שלום ${formData.customer_name}, מצורפת הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד.\n\nלצפייה בהצעה: ${savedQuote.pdf_url || ''}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה, צוות קינג דוד`);
+    const whatsappText = encodeURIComponent(`שלום ${formData.customer_name}, מצורפת הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד.\n\nלצפייה בהצעה: ${toShareablePdfUrl(savedQuote.pdf_url) || ''}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה, צוות קינג דוד`);
 
     // Payment screen for reserving quote
     if (showPaymentScreen) {
@@ -592,7 +592,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">סכום הצעה</span>
-              <span className="font-semibold">₪{Math.round(formData.total).toLocaleString()}</span>
+              <span className="font-semibold">{money2(formData.total)}</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t pt-3">
               <span className="font-semibold">סכום מקדמה לשריון</span>
@@ -654,7 +654,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
           <h2 className="text-xl font-bold text-foreground">ההצעה נוצרה בהצלחה!</h2>
           <p className="text-sm text-muted-foreground">הצעה מס' {savedQuote.quote_number}</p>
-          <p className="text-lg font-bold text-foreground mt-1">סה״כ: ₪{Math.round(formData.total).toLocaleString()}</p>
+          <p className="text-lg font-bold text-foreground mt-1">סה״כ: {money2(formData.total)}</p>
         </div>
 
         {/* Validity notice */}
@@ -711,7 +711,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     quote_number: savedQuote.quote_number,
                     customer_name: formData.customer_name,
                     total: savedQuote.total?.toLocaleString(),
-                    pdf_url: savedQuote.pdf_url,
+                    pdf_url: toShareablePdfUrl(savedQuote.pdf_url),
                     valid_until: formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : '',
                   });
                   await base44.entities.Quote.update(savedQuote.id, { status: 'sent' });
@@ -768,12 +768,21 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
       <div className={asDialog ? 'mb-4 mt-2' : 'mb-8 mt-6'}>
         <div className="flex items-center justify-center">
-          {steps.map((step, idx) => (
+          {steps.map((step, idx) => {
+            // Can't jump forward past an incomplete step (same rules as "המשך");
+            // going back to an earlier step is always allowed.
+            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone);
+            const step2Valid = formData.items.some(item => item.product_id);
+            const locked = step.id > currentStep && !(
+              (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
+            );
+            return (
             <React.Fragment key={step.id}>
               <button
                 type="button"
-                onClick={() => setCurrentStep(step.id)}
-                className="flex flex-col items-center gap-1.5 group relative"
+                onClick={() => { if (!locked) setCurrentStep(step.id); }}
+                disabled={locked}
+                className={`flex flex-col items-center gap-1.5 group relative ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`${asDialog ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-sm sm:text-base'} rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
                   currentStep > step.id
@@ -796,7 +805,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 </div>
               )}
             </React.Fragment>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -907,28 +917,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             </Card>
 
             {/* Totals */}
-            <div className="mt-6 border border-border rounded-xl overflow-hidden">
-              <div className="p-4 space-y-3 bg-muted/40">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">סכום לפני מע״מ</span>
-                  <span className="font-medium">₪{Math.round(formData.subtotal).toLocaleString()}</span>
-                </div>
-                {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-sm text-red-600">
-                    <span>הנחה כולל מע״מ</span>
-                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">מע״מ (18%)</span>
-                  <span className="font-medium">₪{Math.round(formData.vat_amount).toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
-                <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
-                <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
-              </div>
-            </div>
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
 
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (
@@ -1077,17 +1066,27 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               )}
             </div>
 
-            <div>
+            <div className="flex items-center gap-3">
               {currentStep < 3 ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
-                  disabled={currentStep === 2 && !formData.items.some(item => item.product_id)}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
-                >
-                  המשך
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
+                    disabled={
+                      (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)))
+                      || (currentStep === 2 && !formData.items.some(item => item.product_id))
+                    }
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
+                  >
+                    המשך
+                  </Button>
+                  {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)) ? (
+                    <span className="text-[11px] text-muted-foreground">יש למלא שם וטלפון תקין כדי להמשיך</span>
+                  ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
+                    <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
+                  ) : null}
+                </>
               ) : (
                 <Button
                   type="submit"
@@ -1107,17 +1106,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
         </div>
       </form>
-      <QuoteConfirmDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        formData={formData}
-        products={products}
-        variations={variations}
-        onConfirm={confirmSave}
-        isPending={createQuoteMutation.isPending}
-        title="אישור לפני שמירת ההצעה"
-        confirmLabel="אישור ושמירה"
-      />
     </div>
   );
 }
