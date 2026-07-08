@@ -277,9 +277,11 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Fixed, roomy size with a step sidebar — same width/height for every
-          question, only the question area scrolls, so it never jumps. */}
-      <DialogContent className="max-w-4xl w-[95vw] h-[85vh] p-0 gap-0 flex flex-col overflow-hidden" dir="rtl">
+      {/* Adaptive-but-bounded size with a step sidebar: height follows the
+          viewport (80vh) but is clamped to [400px, 680px] — never huge on a big
+          monitor, never tiny on a laptop, and the same for every step so it
+          doesn't jump. Only the question area scrolls. */}
+      <DialogContent className="max-w-4xl w-[95vw] h-[80vh] min-h-[400px] max-h-[680px] p-0 gap-0 flex flex-col overflow-hidden" dir="rtl">
         <DialogHeader className="shrink-0 px-5 py-3.5 border-b border-border bg-muted/30 space-y-0 text-right">
           <DialogTitle className="flex items-center gap-2 text-base">
             <BedDouble className="h-5 w-5 text-primary" />
@@ -346,8 +348,10 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                 ))}
               </div>
 
-              {/* Question — the only scrolling region */}
-              <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+              {/* Question — the only scrolling region. my-auto centers short
+                  questions; tall ones scroll from the top. */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 flex flex-col">
+                <div className="my-auto w-full">
                 <div className="flex items-baseline justify-between gap-2 mb-4">
                   <h3 className="text-lg font-semibold">{current.label}</h3>
                   <span className="text-xs text-muted-foreground shrink-0">שאלה {step + 1}/{visibleGroups.length}</span>
@@ -484,6 +488,7 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                     )}
                   </div>
                 )}
+                </div>
               </div>
 
               {/* Footer */}

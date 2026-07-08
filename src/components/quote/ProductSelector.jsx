@@ -157,9 +157,11 @@ export default function ProductSelector({
       )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        {/* Fixed, roomy size — same as the bed wizard, so the picker doesn't
-            resize between the category / product / size steps. */}
-        <DialogContent className="max-w-3xl w-[95vw] h-[85vh] overflow-hidden flex flex-col p-0" dir="rtl">
+        {/* Adaptive-but-bounded size — height follows the viewport but is
+            clamped to [400px, 680px], same as the bed wizard, so it never gets
+            huge on a big monitor and doesn't resize between the category /
+            product / size steps. */}
+        <DialogContent className="max-w-3xl w-[95vw] h-[80vh] min-h-[400px] max-h-[680px] overflow-hidden flex flex-col p-0" dir="rtl">
           {/* Header */}
           <div className="px-5 pt-4 pb-3 border-b border-border/50 bg-muted/30">
             <DialogHeader className="mb-0">
