@@ -46,7 +46,14 @@ import {
   Clock,
   AlertTriangle,
   Info,
-  User
+  User,
+  Home,
+  Building2,
+  Layers,
+  Hash,
+  ArrowUpDown,
+  Package,
+  ExternalLink,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -276,32 +283,41 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
   const createdByName = getRepDisplayName(quote.created_by_rep, users);
 
   return (
-    <div className={isModal ? 'space-y-6 p-6' : 'space-y-6'}>
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
       {!isOwner && (
-        <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm px-4 py-2">
+        <div className={
+          isModal
+            ? 'flex-shrink-0 flex items-center gap-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-6 py-2'
+            : 'flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm px-4 py-2'
+        }>
           <Info className="h-4 w-4 flex-shrink-0" />
           צפייה בלבד — הצעת המחיר משויכת לנציג אחר.
         </div>
       )}
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
+      {/* Header — quote number + status badge, creation date and creating rep.
+          Fixed (flex-shrink-0) in popup mode so it never scrolls; pe-12 reserves
+          room for the dialog's close-X. Mirrors the order/lead header. */}
+      <div className={isModal ? 'flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border' : ''}>
+        <div className="flex items-center gap-3">
           {isModal ? (
-            <Button variant="ghost" size="icon" onClick={onClose} title="סגור">
-              <ArrowRight className="h-5 w-5" />
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
+              <ArrowRight className="h-4 w-4" />
             </Button>
           ) : (
             <Link to={createPageUrl('Quotes')}>
-              <Button variant="ghost" size="icon">
+              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
                 <ArrowRight className="h-5 w-5" />
               </Button>
             </Link>
           )}
           <div>
-            <h1 className="text-2xl font-bold text-foreground">הצעת מחיר #{quote.quote_number}</h1>
-            <div className="flex items-center gap-3 mt-1 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">הצעת מחיר #{quote.quote_number}</h1>
+            </div>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StatusBadge status={quote.status} />
-              <span className="text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
                 {format(new Date(quote.created_date), 'dd/MM/yyyy HH:mm')}
               </span>
               <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
@@ -311,148 +327,157 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
             </div>
           </div>
         </div>
-        
-        <div className="flex flex-wrap gap-2">
-          {canEdit && (
-            isModal ? (
-              <Button variant="outline" className="text-primary" onClick={() => onEdit?.()}>
-                <Pencil className="h-4 w-4 me-2" />
-                ערוך הצעה
-              </Button>
-            ) : (
-              <Link to={createPageUrl('EditQuote') + `?id=${quoteId}`}>
-                <Button variant="outline" className="text-primary">
-                  <Pencil className="h-4 w-4 me-2" />
-                  ערוך הצעה
-                </Button>
-              </Link>
-            )
-          )}
-          {isOwner && (isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
-            <Button
-              variant="outline"
-              onClick={() => duplicateQuoteMutation.mutate()}
-              disabled={duplicateQuoteMutation.isPending}
-            >
-              {duplicateQuoteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 me-2 animate-spin" />
-              ) : (
-                <Copy className="h-4 w-4 me-2" />
-              )}
-              שכפל הצעה עם תוקף חדש
-            </Button>
-          )}
-          <Button variant="outline" onClick={handleCall}>
-            <Phone className="h-4 w-4 me-2" />
-            התקשר
-          </Button>
-          <Button variant="outline" onClick={handleWhatsApp} className="[&_svg]:text-green-600">
-            <MessageCircle className="h-4 w-4 me-2" />
-            WhatsApp
-          </Button>
-          {quote.pdf_url && (
-            <Button variant="outline" onClick={() => window.open(quote.pdf_url, '_blank')}>
-              <Download className="h-4 w-4 me-2" />
-              הורד PDF
-            </Button>
-          )}
-          <Button 
-            variant="outline" 
-            onClick={() => generatePdfMutation.mutate()} 
-            disabled={generatePdfMutation.isPending}
-          >
-            {generatePdfMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <FileText className="h-4 w-4 me-2" />
-            )}
-            {quote.pdf_url ? 'צור PDF מחדש' : 'צור PDF'}
-          </Button>
-          {isOwner && quote.customer_email && (
-            <Button
-              variant="outline"
-              onClick={() => sendEmailMutation.mutate()}
-              disabled={sendEmailMutation.isPending}
-              className="text-primary"
-            >
-              {sendEmailMutation.isPending ? (
-                <Loader2 className="h-4 w-4 me-2 animate-spin" />
-              ) : (
-                <Mail className="h-4 w-4 me-2" />
-              )}
-              שלח במייל
-            </Button>
-          )}
-          {isOwner && (quote.status === 'sent' || quote.status === 'approved') && (
-            <Button className="bg-primary hover:bg-primary/90" onClick={handleConvertToOrder}>
-              <ShoppingCart className="h-4 w-4 me-2" />
-              המר להזמנה
-            </Button>
-          )}
-        </div>
       </div>
 
+      {/* Action bar — edit / duplicate / call / WhatsApp / PDF / email / convert.
+          Fixed under the header in popup mode; a bordered bar on the full page.
+          Same surface (border + backdrop-blur) as the order action bar. */}
+      <div className={
+        isModal
+          ? 'flex-shrink-0 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2.5'
+          : 'flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
+      }>
+        {canEdit && (
+          isModal ? (
+            <Button variant="outline" size="sm" className="h-8 text-xs text-primary" onClick={() => onEdit?.()}>
+              <Pencil className="h-3.5 w-3.5 me-1.5" />
+              ערוך הצעה
+            </Button>
+          ) : (
+            <Link to={createPageUrl('EditQuote') + `?id=${quoteId}`}>
+              <Button variant="outline" size="sm" className="h-8 text-xs text-primary">
+                <Pencil className="h-3.5 w-3.5 me-1.5" />
+                ערוך הצעה
+              </Button>
+            </Link>
+          )
+        )}
+        {isOwner && (isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => duplicateQuoteMutation.mutate()}
+            disabled={duplicateQuoteMutation.isPending}
+          >
+            {duplicateQuoteMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+            ) : (
+              <Copy className="h-3.5 w-3.5 me-1.5" />
+            )}
+            שכפל הצעה עם תוקף חדש
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={handleCall} className="h-8 text-xs">
+          <Phone className="h-3.5 w-3.5 me-1.5" />
+          התקשר
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} className="h-8 text-xs [&_svg]:text-green-600">
+          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          WhatsApp
+        </Button>
+        {quote.pdf_url && (
+          <Button variant="outline" size="sm" onClick={() => window.open(quote.pdf_url, '_blank')} className="h-8 text-xs">
+            <Download className="h-3.5 w-3.5 me-1.5" />
+            הורד PDF
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => generatePdfMutation.mutate()}
+          disabled={generatePdfMutation.isPending}
+          className="h-8 text-xs"
+        >
+          {generatePdfMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+          ) : (
+            <FileText className="h-3.5 w-3.5 me-1.5" />
+          )}
+          {quote.pdf_url ? 'צור PDF מחדש' : 'צור PDF'}
+        </Button>
+        {isOwner && quote.customer_email && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => sendEmailMutation.mutate()}
+            disabled={sendEmailMutation.isPending}
+            className="h-8 text-xs text-primary"
+          >
+            {sendEmailMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+            ) : (
+              <Mail className="h-3.5 w-3.5 me-1.5" />
+            )}
+            שלח במייל
+          </Button>
+        )}
+        {isOwner && (quote.status === 'sent' || quote.status === 'approved') && (
+          <Button size="sm" className="h-8 text-xs bg-primary hover:bg-primary/90" onClick={handleConvertToOrder}>
+            <ShoppingCart className="h-3.5 w-3.5 me-1.5" />
+            המר להזמנה
+          </Button>
+        )}
+      </div>
+
+      {/* Body — the only scrollable region in popup mode. */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4' : ''}>
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Customer Info */}
+          {/* Customer Info — same dl icon-row design as the order screen: one row
+              per field with a leading icon + slim label, empty rows hidden. */}
           <Card>
             <CardHeader>
-              <CardTitle>פרטי לקוח</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+                פרטי לקוח
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">שם לקוח</p>
-                  <p className="font-medium text-foreground">{quote.customer_name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">טלפון</p>
-                  <p className="font-medium text-foreground" dir="ltr">{quote.customer_phone}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">אימייל</p>
-                  <p className="font-medium text-foreground">{quote.customer_email || '-'}</p>
-                </div>
-                <div className="sm:col-span-2 md:col-span-3 pt-4 border-t border-border/50">
-                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2">
-                      <p className="text-sm text-muted-foreground mb-1">כתובת למשלוח</p>
-                      <p className="font-medium text-foreground">
-                        {quote.delivery_address || 'לא הוזן'} 
-                        {quote.delivery_city ? `, ${quote.delivery_city}` : ''}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">סוג נכס</p>
-                      <p className="font-medium text-foreground">
-                        {quote.property_type === 'house' ? 'בית פרטי' : 'דירה'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">קומה</p>
-                      <p className="font-medium text-foreground">{quote.floor ?? '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">מספר דירה</p>
-                      <p className="font-medium text-foreground">{quote.apartment_number || '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">מעלית</p>
-                      <p className="font-medium text-foreground">
-                        {quote.elevator_type === 'regular' ? 'רגילה' : quote.elevator_type === 'freight' ? 'משא' : 'אין'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <dl className="divide-y divide-border/30">
+                {[
+                  { label: 'שם לקוח', value: quote.customer_name, icon: User },
+                  { label: 'טלפון', value: quote.customer_phone, icon: Phone, dir: 'ltr' },
+                  { label: 'אימייל', value: quote.customer_email, icon: Mail },
+                  {
+                    label: 'כתובת למשלוח',
+                    value: [quote.delivery_address, quote.delivery_city].filter(Boolean).join(', ') || null,
+                    icon: Home,
+                  },
+                  { label: 'סוג נכס', value: quote.property_type === 'house' ? 'בית פרטי' : 'דירה', icon: Building2 },
+                  { label: 'קומה', value: quote.floor != null ? String(quote.floor) : null, icon: Layers },
+                  { label: 'מספר דירה', value: quote.apartment_number || null, icon: Hash },
+                  {
+                    label: 'מעלית',
+                    value: quote.elevator_type === 'regular' ? 'רגילה' : quote.elevator_type === 'freight' ? 'משא' : 'אין',
+                    icon: ArrowUpDown,
+                  },
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => {
+                    const Icon = row.icon;
+                    return (
+                      <div key={row.label} className="flex items-baseline gap-3 py-3">
+                        <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                          <span>{row.label}</span>
+                        </dt>
+                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate" dir={row.dir}>{row.value}</dd>
+                      </div>
+                    );
+                  })}
+              </dl>
             </CardContent>
           </Card>
 
           {/* Items */}
           <Card>
             <CardHeader>
-              <CardTitle>פריטים</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                פריטים
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -541,12 +566,15 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           {quote.terms && (
             <Card>
               <CardHeader>
-                <CardTitle>תנאים</CardTitle>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  תנאים
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">תנאי תשלום ואספקה</p>
-                  <p>{quote.terms}</p>
+                  <p className="text-sm text-foreground whitespace-pre-line">{quote.terms}</p>
                 </div>
               </CardContent>
             </Card>
@@ -558,7 +586,10 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           {/* Status & Validity */}
           <Card>
             <CardHeader>
-              <CardTitle>סטטוס ותוקף</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                סטטוס ותוקף
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Current status */}
@@ -622,12 +653,15 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           {quote.lead_id && (
             <Card>
               <CardHeader>
-                <CardTitle>ליד מקושר</CardTitle>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                  ליד מקושר
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <Link 
+                <Link
                   to={createPageUrl('LeadDetails') + `?id=${quote.lead_id}`}
-                  className="text-primary hover:underline"
+                  className="text-primary hover:underline text-sm"
                 >
                   צפה בליד
                 </Link>
@@ -639,10 +673,10 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           {quote.notes && (
             <Card>
               <CardHeader>
-                <CardTitle>הערות</CardTitle>
+                <CardTitle className="text-sm font-semibold">הערות</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">{quote.notes}</p>
+                <p className="text-sm text-muted-foreground whitespace-pre-line">{quote.notes}</p>
               </CardContent>
             </Card>
           )}
@@ -682,6 +716,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }
