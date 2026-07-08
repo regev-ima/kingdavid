@@ -335,10 +335,12 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                   );
                 })}
               </ol>
-              <div className="shrink-0 border-t border-border px-3 py-2.5 text-xs">
-                <span className="text-muted-foreground">סה״כ תוספות: </span>
-                <span className="font-bold text-primary">{fmt(withVat(runningTotal))}</span>
-                <span className="text-muted-foreground"> כולל מע״מ</span>
+              <div className="shrink-0 flex items-center border-t border-border px-3 h-16 text-xs">
+                <span>
+                  <span className="text-muted-foreground">סה״כ תוספות: </span>
+                  <span className="font-bold text-primary">{fmt(withVat(runningTotal))}</span>
+                  <span className="text-muted-foreground"> כולל מע״מ</span>
+                </span>
               </div>
             </aside>
 
@@ -491,8 +493,9 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                 )}
               </div>
 
-              {/* Footer */}
-              <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border px-5 py-3">
+              {/* Footer — same height (h-16) as the sidebar total so the top
+                  border forms one continuous line across both columns. */}
+              <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border px-5 h-16">
                 <div className="text-sm sm:hidden">
                   <span className="text-muted-foreground">סה״כ: </span>
                   <span className="font-semibold">{fmt(withVat(runningTotal))}</span>
