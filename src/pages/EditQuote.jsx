@@ -212,10 +212,14 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
       return quoteId;
     },
     onSuccess: () => {
+      toast.success('ההצעה עודכנה');
       // Refresh the detail view (same query key) so the popup shows the update.
       queryClient.invalidateQueries({ queryKey: ['quote', quoteId] });
       if (isModal) { onSaved?.(quoteId); return; }
       navigate(createPageUrl('QuoteDetails') + `?id=${quoteId}`);
+    },
+    onError: (err) => {
+      toast.error(`שמירת ההצעה נכשלה: ${err?.message || 'שגיאה לא צפויה'}`);
     },
   });
 

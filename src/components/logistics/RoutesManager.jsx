@@ -182,7 +182,6 @@ export default function RoutesManager() {
       is_active: !!form.is_active,
     };
 
-    console.log('RoutesManager submit →', editingRoute ? 'update' : 'create', routeData);
 
     if (editingRoute) {
       updateRouteMutation.mutate({ id: editingRoute.id, data: routeData });

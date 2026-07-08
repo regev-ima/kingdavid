@@ -15,7 +15,6 @@ import LeadsTab from '@/components/dashboard2/tabs/LeadsTab';
 import OrdersTab from '@/components/dashboard2/tabs/OrdersTab';
 import TeamTab from '@/components/dashboard2/tabs/TeamTab';
 import MarketingTab from '@/components/dashboard2/tabs/MarketingTab';
-import PlaceholderTab from '@/components/dashboard2/tabs/PlaceholderTab';
 import useDashboard2Data, { useDashboard2Live, useDashboard2LowStock, useDashboard2Previous } from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData, getDemoPrevious } from '@/components/dashboard2/demoData';
 
@@ -241,12 +240,11 @@ export default function Dashboard2() {
             >
               <TabsTrigger value="overview" className="text-xs">סקירה כללית</TabsTrigger>
               <TabsTrigger value="leads" className="text-xs">לידים</TabsTrigger>
+              {/* שירות/מפעל/מלאי היו אריחי "בקרוב" — הוסרו עד שיהיה בהם תוכן
+                  אמיתי; המסכים הייעודיים נגישים מהתפריט. */}
               <TabsTrigger value="orders" className="text-xs">הזמנות</TabsTrigger>
-              <TabsTrigger value="service" className="text-xs">שירות</TabsTrigger>
-              <TabsTrigger value="factory" className="text-xs">מפעל</TabsTrigger>
               <TabsTrigger value="team" className="text-xs">צוות</TabsTrigger>
               <TabsTrigger value="marketing" className="text-xs">שיווק</TabsTrigger>
-              <TabsTrigger value="inventory" className="text-xs">מלאי</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="m-0">
@@ -259,22 +257,6 @@ export default function Dashboard2() {
 
             <TabsContent value="orders" className="m-0">
               <OrdersTab current={current} dateRange={dateRange} />
-            </TabsContent>
-
-            <TabsContent value="service" className="m-0">
-              <PlaceholderTab
-                title="שירות לקוחות"
-                description="בקרוב: פירוט מלא של כרטיסים פתוחים לפי קטגוריה, דחיפות וזמן טיפול ממוצע."
-                drillToPage="ServiceCenter"
-              />
-            </TabsContent>
-
-            <TabsContent value="factory" className="m-0">
-              <PlaceholderTab
-                title="מפעל וייצור"
-                description="בקרוב: תור הייצור המלא, זמני ייצור ממוצעים, הזמנות מאחרות."
-                drillToPage="Factory"
-              />
             </TabsContent>
 
             <TabsContent value="team" className="m-0">
@@ -290,14 +272,6 @@ export default function Dashboard2() {
                   fold — the standalone /Marketing route is one click
                   away for the deep-dive. */}
               <MarketingTab current={current} previous={previous} dateRange={dateRange} />
-            </TabsContent>
-
-            <TabsContent value="inventory" className="m-0">
-              <PlaceholderTab
-                title="מלאי ומשלוחים"
-                description="בקרוב: רשימת פריטים מתחת לסף, משלוחים מתוזמנים, מסלולי משלוח."
-                drillToPage="Inventory"
-              />
             </TabsContent>
           </Tabs>
         </>
