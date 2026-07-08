@@ -686,7 +686,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unpaid">לא שולם</SelectItem>
-                    <SelectItem value="deposit_paid">מקדמה</SelectItem>
+                    <SelectItem value="deposit_paid">תשלום חלקי</SelectItem>
                     <SelectItem value="paid">שולם</SelectItem>
                     <SelectItem value="refunded_partial">זיכוי חלקי</SelectItem>
                     <SelectItem value="refunded_full">זיכוי מלא</SelectItem>
