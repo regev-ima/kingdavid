@@ -421,7 +421,8 @@ const OrderPdfGenerator = async (orderData) => {
     const pageEl = tempDiv.querySelector("#order-page");
     if (!pageEl) throw new Error("PDF root element not found");
 
-    const scale = Math.min(3, window.devicePixelRatio ? window.devicePixelRatio * 2 : 2);
+    // Cap at 2× so the html2canvas pass is lighter and doesn't freeze the modal.
+    const scale = 2;
     const canvas = await html2canvas(pageEl, {
       scale,
       useCORS: true,

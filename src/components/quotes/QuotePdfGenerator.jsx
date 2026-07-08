@@ -228,17 +228,17 @@ const QuotePdfGenerator = async (quoteData) => {
       thead th {
         background: #111827;
         color: #fff;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 900;
-        padding: 10px 10px;
+        padding: 6px 9px;
         text-align: right;
         border-left: 1px solid rgba(255,255,255,.08);
         white-space: nowrap;
       }
       thead th:last-child { border-left: none; }
       tbody td {
-        font-size: 11px;
-        padding: 10px 10px;
+        font-size: 10px;
+        padding: 6px 9px;
         border-top: 1px solid #EEF2F7;
         color: #0B1220;
         font-weight: 900;
@@ -295,17 +295,17 @@ const QuotePdfGenerator = async (quoteData) => {
       .sig .hint { margin:8px 0 0; font-size: 10px; color:#667085; font-weight:900; text-align:center; }
 
       .notes {
-        margin-top: 10px;
+        margin-top: 8px;
         border: 1px solid #E8ECF4;
         background: #FFFFFF;
         border-radius: 14px;
-        padding: 12px 14px;
-        font-size: 11px;
+        padding: 8px 12px;
+        font-size: 9px;
         color:#0B1220;
         font-weight: 400;
-        line-height: 1.6;
+        line-height: 1.4;
       }
-      .notes p { margin: 0 0 6px 0; font-weight: 400; }
+      .notes p { margin: 0 0 3px 0; font-weight: 400; }
       .notes p:last-child { margin:0; }
       .notes-label {
         font-weight: 700;
@@ -515,8 +515,9 @@ const QuotePdfGenerator = async (quoteData) => {
     const pageEl = tempDiv.querySelector("#quote-page");
     if (!pageEl) throw new Error("PDF root element not found");
 
-    // Render canvas
-    const scale = Math.min(3, window.devicePixelRatio ? window.devicePixelRatio * 2 : 2);
+    // Render canvas. Cap at 2× (~190 DPI on A4 — sharp enough for text) so the
+    // synchronous html2canvas pass is ~2× lighter and doesn't freeze the modal.
+    const scale = 2;
 
     const canvas = await html2canvas(pageEl, {
       scale,

@@ -53,6 +53,12 @@ import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canEditQuote } from '@/lib/rbac';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+
+// Line prices are stored PRE-VAT; the whole app shows the customer incl-VAT with
+// two decimals, so the detail view must match (product AND add-on/config lines).
+const VAT = 1.18;
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -455,9 +461,9 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
                     <TableHead className="text-right">מוצר</TableHead>
                     <TableHead className="text-right">מק״ט</TableHead>
                     <TableHead className="text-right">כמות</TableHead>
-                    <TableHead className="text-right">מחיר</TableHead>
+                    <TableHead className="text-right">מחיר<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
                     <TableHead className="text-right">הנחה</TableHead>
-                    <TableHead className="text-right">סה"כ</TableHead>
+                    <TableHead className="text-right">סה"כ<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -479,7 +485,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
                             <div className="text-xs text-primary mt-1 space-y-0.5">
                               <p className="font-medium">תוספות:</p>
                               {item.selected_addons.map((a, i) => (
-                                <p key={i}>• {a.name} (+₪{a.price?.toLocaleString()})</p>
+                                <p key={i}>• {a.name} (+{money2((a.price || 0) * VAT)})</p>
                               ))}
                             </div>
                           )}
@@ -488,14 +494,14 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
                         <TableCell>{item.quantity}</TableCell>
                         <TableCell>
                           <div>
-                            <div>₪{item.unit_price?.toLocaleString()}</div>
+                            <div>{money2((item.unit_price || 0) * VAT)}</div>
                             {addonsTotal > 0 && (
-                              <div className="text-xs text-muted-foreground">+₪{addonsTotal.toLocaleString()} תוספות</div>
+                              <div className="text-xs text-muted-foreground">+{money2(addonsTotal * VAT)} תוספות</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</TableCell>
-                        <TableCell className="font-semibold">₪{item.total?.toLocaleString()}</TableCell>
+                        <TableCell className="font-semibold">{money2((item.total || 0) * VAT)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -525,26 +531,9 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
                 </div>
               )}
 
-              <div className="mt-4 pt-4 border-t space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">סכום ביניים</span>
-                  <span>₪{quote.subtotal?.toLocaleString()}</span>
-                </div>
-                {quote.discount_total > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>הנחות</span>
-                    <span>-₪{quote.discount_total?.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">מע"מ (18%)</span>
-                  <span>₪{quote.vat_amount?.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xl font-bold pt-2 border-t">
-                  <span>סה"כ לתשלום</span>
-                  <span className="text-primary">₪{quote.total?.toLocaleString()}</span>
-                </div>
-              </div>
+              {/* Same shared summary component the create/edit forms use, so the
+                  breakdown is identical everywhere. */}
+              <QuoteTotalsSummary items={quote.items} extras={quote.extras} discountTotal={quote.discount_total} />
             </CardContent>
           </Card>
 
