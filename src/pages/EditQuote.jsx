@@ -28,7 +28,6 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import { genBedConfigToken, bedConfigFieldLines, legacyFabricToFields } from '@/lib/bedConfig';
 import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
-import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewQuote } from '@/lib/rbac';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -74,9 +73,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     special_requests: '',
     payment_terms_selection: [],
   });
-  // Two-phase save: handleSubmit only validates and opens the preview dialog;
-  // the mutation runs from the dialog's confirm button.
-  const [showConfirm, setShowConfirm] = useState(false);
   // Index of the bed line whose configurator wizard is open (null = closed), and
   // a snapshot of its prior config lines for prefill after a resize strips them.
   const [bedWizardIndex, setBedWizardIndex] = useState(null);
@@ -471,19 +467,14 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     });
   };
 
+  // Editing saves directly — no summary/confirm step. "שמור שינויים" וזהו.
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!isValidIsraeliPhone(formData.customer_phone)) {
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
-    setShowConfirm(true);
-  };
-
-  const confirmSave = () => {
-    updateQuoteMutation.mutate(formData, {
-      onSettled: () => setShowConfirm(false),
-    });
+    updateQuoteMutation.mutate(formData);
   };
 
   const isExpired = quote.valid_until && new Date(quote.valid_until) < new Date();
@@ -1077,17 +1068,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
           </div>
         </div>
       </form>
-      <QuoteConfirmDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        formData={formData}
-        products={products}
-        variations={variations}
-        onConfirm={confirmSave}
-        isPending={updateQuoteMutation.isPending}
-        title="אישור לפני עדכון ההצעה"
-        confirmLabel="אישור ועדכון"
-      />
     </div>
   );
 }
