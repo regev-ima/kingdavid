@@ -169,7 +169,9 @@ export default function AddressAutocomplete({
         placeholder={placeholder}
         disabled={disabled}
         autoFocus={autoFocus}
-        className={`pe-8 ${className}`}
+        // ps-8: room on the RTL start (right) for the MapPin icon so the
+        // placeholder/text doesn't sit under it; pe-8: room for the spinner.
+        className={`ps-8 pe-8 ${className}`}
         // Autofill bypass — Chrome ignores 'off' but respects unrecognized values.
         autoComplete="address-line1-fake"
       />
