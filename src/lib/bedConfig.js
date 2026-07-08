@@ -54,6 +54,29 @@ export const BED_FIELD_TYPES = [
 // the old fabric-supplier dropdown.
 export const BED_FIELD_OTHER = 'אחר';
 
+// Fabric-catalog fallback. The DB seed (migration) only runs on merge, so on a
+// preview build the fabric_catalog group doesn't exist yet. The wizard injects
+// this client-side group when the DB has no 'fabric_catalog' group, so the
+// fabric catalog always appears and the rep's answers still save on the item.
+// Once the migration merges, the real (admin-editable) DB group takes over and
+// this is not injected — so there's never a duplicate.
+export const FABRIC_CATALOG_FALLBACK_GROUP = {
+  id: '__fabric_catalog_fallback__',
+  key: 'fabric_catalog',
+  label: 'קטלוג בד',
+  input_type: 'text',
+  sort_order: 100,
+  skippable: true,
+  is_active: true,
+  __fallback: true,
+};
+export const FABRIC_CATALOG_FALLBACK_VALUES = [
+  { id: '__fc_catalog_name__', group_id: '__fabric_catalog_fallback__', key: 'catalog_name', label: 'שם קטלוג', field_type: 'text', sort_order: 1, is_active: true },
+  { id: '__fc_color_number__', group_id: '__fabric_catalog_fallback__', key: 'color_number', label: 'מס׳ צבע', field_type: 'text', sort_order: 2, is_active: true },
+  { id: '__fc_color__', group_id: '__fabric_catalog_fallback__', key: 'color', label: 'צבע', field_type: 'text', sort_order: 3, is_active: true },
+  { id: '__fc_supplier__', group_id: '__fabric_catalog_fallback__', key: 'supplier', label: 'ספק', field_type: 'select', options: ['פרחי', 'ארוטקס', 'בד U', 'אחר'], sort_order: 4, is_active: true },
+];
+
 // Text-question answers are stored on the bed item as:
 //   item.bed_config_fields = [{ group_key, group_label, values: [{ key, label, value }] }]
 // Turn that into display lines, one per group, e.g.

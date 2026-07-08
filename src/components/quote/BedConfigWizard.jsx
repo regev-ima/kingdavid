@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Check, BedDouble, Loader2, SkipForward } from 'lucide-react';
-import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER } from '@/lib/bedConfig';
+import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER, FABRIC_CATALOG_FALLBACK_GROUP, FABRIC_CATALOG_FALLBACK_VALUES } from '@/lib/bedConfig';
 
 const VAT = BED_VAT_RATE;
 const withVat = (n) => Math.round((Number(n) || 0) * VAT);
@@ -19,16 +19,29 @@ const fmt = (n) => `₪${(Number(n) || 0).toLocaleString()}`;
 // them in under the bed line. Prices come from the linked add-on (single source
 // of truth) or, for pure choices (בלי ארגז), the value's own flat price.
 export default function BedConfigWizard({ open, onOpenChange, product, variation, token, initialLines = [], initialFields = [], onConfirm }) {
-  const { data: groups = [], isLoading: gL } = useQuery({
+  const { data: rawGroups = [], isLoading: gL } = useQuery({
     queryKey: ['bed-option-groups'],
     queryFn: () => base44.entities.BedOptionGroup.list('sort_order'),
     enabled: open,
   });
-  const { data: values = [], isLoading: vL } = useQuery({
+  const { data: rawValues = [], isLoading: vL } = useQuery({
     queryKey: ['bed-option-values'],
     queryFn: () => base44.entities.BedOptionValue.list('sort_order'),
     enabled: open,
   });
+
+  // Inject the client-side fabric catalog when the DB doesn't have it yet
+  // (preview builds, before the seed migration merges). Never duplicates: once
+  // the real DB group exists, the fallback is skipped.
+  const hasFabricGroup = rawGroups.some((g) => g.key === 'fabric_catalog');
+  const groups = useMemo(
+    () => (hasFabricGroup ? rawGroups : [...rawGroups, FABRIC_CATALOG_FALLBACK_GROUP]),
+    [rawGroups, hasFabricGroup],
+  );
+  const values = useMemo(
+    () => (hasFabricGroup ? rawValues : [...rawValues, ...FABRIC_CATALOG_FALLBACK_VALUES]),
+    [rawValues, hasFabricGroup],
+  );
   // Same query keys as NewQuote/EditQuote → react-query dedupes, no extra fetch.
   const { data: addons = [] } = useQuery({
     queryKey: ['product-addons'],
@@ -236,8 +249,11 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
             </div>
             <p className="shrink-0 text-xs text-muted-foreground">שאלה {step + 1} מתוך {visibleGroups.length}</p>
 
-            {/* Question — the only scrolling region, so the dialog size is constant */}
-            <div className="flex-1 min-h-0 overflow-y-auto pe-1">
+            {/* Question — the only scrolling region, so the dialog size is
+                constant. my-auto centers short questions; tall ones scroll from
+                the top (auto margins collapse to 0 when content overflows). */}
+            <div className="flex-1 min-h-0 overflow-y-auto pe-1 flex flex-col">
+              <div className="my-auto w-full">
               <h3 className="text-lg font-semibold mb-3">{current.label}</h3>
               {isTextGroup ? (
                 <div className="space-y-3">
@@ -345,6 +361,7 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                 )}
               </div>
               )}
+              </div>
             </div>
 
             {/* Footer */}

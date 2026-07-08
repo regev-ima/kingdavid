@@ -157,7 +157,9 @@ export default function ProductSelector({
       )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col p-0" dir="rtl">
+        {/* Fixed, roomy size — same as the bed wizard, so the picker doesn't
+            resize between the category / product / size steps. */}
+        <DialogContent className="max-w-3xl w-[95vw] h-[85vh] overflow-hidden flex flex-col p-0" dir="rtl">
           {/* Header */}
           <div className="px-5 pt-4 pb-3 border-b border-border/50 bg-muted/30">
             <DialogHeader className="mb-0">
@@ -194,9 +196,10 @@ export default function ProductSelector({
             </div>
           </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            <div className="space-y-5">
+          {/* Content — my-auto centers sparse steps (category / bed-type);
+              tall steps (size grid) scroll from the top. */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col">
+            <div className="space-y-5 my-auto w-full">
 
               {/* Step 1: Category Selection */}
               {!selectedCategory && (
