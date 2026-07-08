@@ -53,7 +53,8 @@ const QuotePdfGenerator = async (quoteData) => {
 
   const money = (n) => {
     const num = normalizeNumber(n);
-    return `₪${num.toLocaleString("he-IL")}`;
+    // Two decimals (agorot) so line amounts sum exactly to the printed total.
+    return `₪${num.toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const createdDate = quoteData?.created_date

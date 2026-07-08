@@ -38,7 +38,8 @@ const OrderPdfGenerator = async (orderData) => {
     const x = Number(n);
     return Number.isFinite(x) ? x : 0;
   };
-  const money = (n) => `₪${normalizeNumber(n).toLocaleString("he-IL")}`;
+  // Two decimals (agorot) so line amounts sum exactly to the printed total.
+  const money = (n) => `₪${normalizeNumber(n).toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const createdDate = orderData?.created_date
     ? format(new Date(orderData.created_date), "dd/MM/yyyy")

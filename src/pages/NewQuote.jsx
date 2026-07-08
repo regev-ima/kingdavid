@@ -4,6 +4,10 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
 
+// ₪ with two decimals (agorot) — keeps the totals consistent with the per-line
+// amounts, which now show agorot so the parts sum exactly to the total.
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 // Strip everything but digits, then drop a leading country prefix so
 // "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
 function normalizePhoneForLookup(raw) {
@@ -424,11 +428,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
 
-    const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = Math.round(itemsSubtotal * 0.18);
-    const total = Math.round(subtotal + vat_amount);
+    // Round to agorot (2 decimals), not whole ₪, so the grand total matches the
+    // sum of the per-line totals shown to the customer.
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const subtotal = round2(itemsSubtotal + extrasTotal);
+    const vat_amount = round2(itemsSubtotal * 0.18);
+    const total = round2(subtotal + vat_amount);
 
-    return { subtotal, discount_total, vat_amount, total };
+    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
   };
 
   // ProductItemsEditor hands back a fresh items array; recompute grand totals.
@@ -592,7 +599,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">סכום הצעה</span>
-              <span className="font-semibold">₪{Math.round(formData.total).toLocaleString()}</span>
+              <span className="font-semibold">{money2(formData.total)}</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t pt-3">
               <span className="font-semibold">סכום מקדמה לשריון</span>
@@ -654,7 +661,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
           <h2 className="text-xl font-bold text-foreground">ההצעה נוצרה בהצלחה!</h2>
           <p className="text-sm text-muted-foreground">הצעה מס' {savedQuote.quote_number}</p>
-          <p className="text-lg font-bold text-foreground mt-1">סה״כ: ₪{Math.round(formData.total).toLocaleString()}</p>
+          <p className="text-lg font-bold text-foreground mt-1">סה״כ: {money2(formData.total)}</p>
         </div>
 
         {/* Validity notice */}
@@ -911,22 +918,22 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               <div className="p-4 space-y-3 bg-muted/40">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">סכום לפני מע״מ</span>
-                  <span className="font-medium">₪{Math.round(formData.subtotal).toLocaleString()}</span>
+                  <span className="font-medium">{money2(formData.subtotal)}</span>
                 </div>
                 {formData.discount_total > 0 && (
                   <div className="flex justify-between text-sm text-red-600">
                     <span>הנחה כולל מע״מ</span>
-                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
+                    <span className="font-medium">-{money2(formData.discount_total * 1.18)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">מע״מ (18%)</span>
-                  <span className="font-medium">₪{Math.round(formData.vat_amount).toLocaleString()}</span>
+                  <span className="font-medium">{money2(formData.vat_amount)}</span>
                 </div>
               </div>
               <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
                 <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
-                <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
+                <span className="text-xl font-bold text-primary">{money2(formData.total)}</span>
               </div>
             </div>
 

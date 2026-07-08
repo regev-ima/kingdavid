@@ -157,11 +157,9 @@ export default function ProductSelector({
       )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        {/* Adaptive-but-bounded size — height follows the viewport but is
-            clamped to [400px, 680px], same as the bed wizard, so it never gets
-            huge on a big monitor and doesn't resize between the category /
-            product / size steps. */}
-        <DialogContent className="max-w-3xl w-[95vw] h-[80vh] min-h-[400px] max-h-[680px] overflow-hidden flex flex-col p-0" dir="rtl">
+        {/* Dynamic height — sizes to its content (capped at 85vh, then scrolls),
+            so there's no empty space; the product list has its own inner scroll. */}
+        <DialogContent className="max-w-3xl w-[95vw] max-h-[85vh] overflow-hidden flex flex-col p-0" dir="rtl">
           {/* Header */}
           <div className="px-5 pt-4 pb-3 border-b border-border/50 bg-muted/30">
             <DialogHeader className="mb-0">
@@ -198,10 +196,10 @@ export default function ProductSelector({
             </div>
           </div>
 
-          {/* Content — my-auto centers sparse steps (category / bed-type);
-              tall steps (size grid) scroll from the top. */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col">
-            <div className="space-y-5 my-auto w-full">
+          {/* Content — top-aligned; the dialog sizes to it (dynamic height),
+              and this area scrolls if a step (e.g. many sizes) gets tall. */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+            <div className="space-y-5">
 
               {/* Step 1: Category Selection */}
               {!selectedCategory && (

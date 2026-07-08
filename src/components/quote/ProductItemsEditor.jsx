@@ -8,7 +8,9 @@ import { productMatchesBedType } from '@/utils/bedType';
 import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
 
 const VAT = 1.18;
-const ils = (n) => `₪${Math.round((n || 0)).toLocaleString()}`;
+// Two decimals (agorot) so the displayed line totals sum exactly to the grand
+// total — whole-₪ rounding per line drifted by up to ₪0.50 each.
+const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const CATEGORY_LABELS = { bed: 'מיטה', mattress: 'מזרון', topper: 'תוספת', accessory: 'נלווה' };
 
 // The items step, shared by NewQuote / NewOrder so the two are identical. One

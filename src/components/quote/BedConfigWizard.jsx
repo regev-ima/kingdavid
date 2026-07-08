@@ -8,8 +8,9 @@ import { Check, BedDouble, Loader2, SkipForward } from 'lucide-react';
 import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER, FABRIC_CATALOG_FALLBACK_GROUP, FABRIC_CATALOG_FALLBACK_VALUES } from '@/lib/bedConfig';
 
 const VAT = BED_VAT_RATE;
-const withVat = (n) => Math.round((Number(n) || 0) * VAT);
-const fmt = (n) => `₪${(Number(n) || 0).toLocaleString()}`;
+const withVat = (n) => (Number(n) || 0) * VAT;
+// Two decimals (agorot) so wizard totals line up with the quote totals.
+const fmt = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Guided bed configurator shown when a rep adds a bed to a quote. Steps through
 // the option groups (ארגז מצעים → סוג ארגז → מסגרת → …) as single-choice
@@ -282,7 +283,9 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
           monitor, never tiny on a laptop, and the same for every step so it
           doesn't jump. Only the question area scrolls. */}
       <DialogContent className="max-w-4xl w-[95vw] h-[80vh] min-h-[400px] max-h-[680px] p-0 gap-0 flex flex-col overflow-hidden" dir="rtl">
-        <DialogHeader className="shrink-0 px-5 py-3.5 border-b border-border bg-muted/30 space-y-0 text-right">
+        {/* ps-14: leave room on the right (RTL start) for the dialog's close X
+            so the title doesn't sit under it. */}
+        <DialogHeader className="shrink-0 ps-14 pe-5 py-3.5 border-b border-border bg-muted/30 space-y-0 text-right">
           <DialogTitle className="flex items-center gap-2 text-base">
             <BedDouble className="h-5 w-5 text-primary" />
             תצורת מיטה{product?.name ? ` — ${product.name}` : ''}
@@ -348,10 +351,8 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                 ))}
               </div>
 
-              {/* Question — the only scrolling region. my-auto centers short
-                  questions; tall ones scroll from the top. */}
-              <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 flex flex-col">
-                <div className="my-auto w-full">
+              {/* Question — the only scrolling region, pinned to the top. */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
                 <div className="flex items-baseline justify-between gap-2 mb-4">
                   <h3 className="text-lg font-semibold">{current.label}</h3>
                   <span className="text-xs text-muted-foreground shrink-0">שאלה {step + 1}/{visibleGroups.length}</span>
@@ -488,7 +489,6 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                     )}
                   </div>
                 )}
-                </div>
               </div>
 
               {/* Footer */}
