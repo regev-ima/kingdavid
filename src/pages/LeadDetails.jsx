@@ -62,6 +62,7 @@ import SLABadge from '@/components/sla/SLABadge';
 import CommunicationHistory from '@/components/lead/CommunicationHistory';
 import AddCommunication from '@/components/lead/AddCommunication';
 import RepCard from '@/components/lead/RepCard';
+import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
 import { addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
@@ -690,6 +691,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           <Phone className="h-3.5 w-3.5 me-1.5" />
           חייג
         </Button>
+        <LeadWhatsAppChatButton phone={lead.phone} name={lead.full_name} className="flex-1 min-w-[120px] justify-center h-9" />
         <Button
           variant="outline"
           size="sm"
@@ -740,6 +742,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <Phone className="h-3.5 w-3.5 me-1" />
             חייג
           </Button>
+          <LeadWhatsAppChatButton phone={lead.phone} name={lead.full_name} />
           <Button variant="outline" size="sm" onClick={requestAddTask} className="h-8 text-xs">
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה

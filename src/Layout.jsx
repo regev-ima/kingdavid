@@ -41,7 +41,8 @@ import {
   LayoutTemplate,
   PlusCircle,
   Pin,
-  CalendarDays
+  CalendarDays,
+  MessageCircle
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
 
@@ -53,6 +54,7 @@ import NotificationBell from "@/components/shared/NotificationBell";
 
 import VoiceCenterCallPopup from "@/components/call/VoiceCenterCallPopup";
 import UserAvatar from "@/components/shared/UserAvatar";
+import WhatsAppWaitingBanner from "@/components/whatsapp/WhatsAppWaitingBanner";
 import { useHiddenMenuItems, applyMenuOrder } from "@/hooks/useHiddenMenuItems";
 
 // Navigation organized by role priority
@@ -70,6 +72,7 @@ export const navigationByRole = {
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
     { name: 'מלאי', href: 'Inventory', icon: Boxes },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
@@ -94,6 +97,7 @@ export const navigationByRole = {
     // Service Center is a management screen — only reps granted "ניהול מרכז
     // שירות" (or admins) see it. Reps still open tickets from an order.
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
+    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
   ],
   factory_user: [
     { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
@@ -420,6 +424,11 @@ function LayoutContent({ children, currentPageName }) {
 
       {/* Main Content */}
       <main className={`min-h-screen ${sidebarPinned ? 'lg:pr-64' : 'lg:pr-16'} ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
+        {userRole !== 'admin' && (
+          <div className={`sticky z-30 ${isImpersonating ? 'top-[104px]' : 'top-16'}`}>
+            <WhatsAppWaitingBanner />
+          </div>
+        )}
         <div className="p-6 lg:p-8">
           {children}
         </div>
