@@ -32,6 +32,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    // Admin-only: this overwrites the live product catalog. getUser was
+    // imported but never called here, so any authenticated caller could
+    // trigger a full re-import.
+    const user = await getUser(req);
+    if (!user || user.role !== 'admin') {
+      return Response.json({ error: 'Forbidden — admin only' }, { status: 403, headers: corsHeaders });
+    }
+
     const supabase = createServiceClient();
     const apiKey = Deno.env.get('GOOGLE_SHEETS_API_KEY');
     if (!apiKey) return Response.json({ error: 'GOOGLE_SHEETS_API_KEY not set' }, { status: 500, headers: corsHeaders });

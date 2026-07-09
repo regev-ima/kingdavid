@@ -66,7 +66,6 @@ export function loadGoogleMaps() {
     script.onload = () => {
       if (window.google?.maps?.places) {
         // eslint-disable-next-line no-console
-        console.log('[googleMapsLoader] loaded successfully');
         resolve(window.google);
       } else {
         reject(new Error('Google Maps loaded but places library is missing'));

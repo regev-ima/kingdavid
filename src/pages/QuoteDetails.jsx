@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { toast } from 'sonner';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
+import { useQuoteModal } from '@/components/quote/QuoteModalContext';
 import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -41,11 +44,28 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Info,
+  User,
+  Home,
+  Building2,
+  Layers,
+  Hash,
+  ArrowUpDown,
+  Package,
+  ExternalLink,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canViewQuote } from '@/lib/rbac';
+import { buildLeadsById, canEditQuote } from '@/lib/rbac';
+import { getRepDisplayName } from '@/lib/repDisplay';
+import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+
+// Line prices are stored PRE-VAT; the whole app shows the customer incl-VAT with
+// two decimals, so the detail view must match (product AND add-on/config lines).
+const VAT = 1.18;
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -76,14 +96,17 @@ const statusTransitions = {
   expired: [],
 };
 
-export default function QuoteDetails() {
+export default function QuoteDetails({ id: idProp, isModal = false, onClose, onEdit }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [statusConfirm, setStatusConfirm] = useState(null); // { targetStatus }
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { openNewOrder } = useCreationModal();
+  const { openQuote } = useQuoteModal();
 
   const urlParams = new URLSearchParams(window.location.search);
-  const quoteId = urlParams.get('id');
+  // In modal mode the id arrives as a prop and the URL is left untouched.
+  const quoteId = idProp ?? urlParams.get('id');
 
   const { data: quote, isLoading } = useQuery({
     queryKey: ['quote', quoteId],
@@ -97,17 +120,27 @@ export default function QuoteDetails() {
     enabled: !!quote?.lead_id,
   });
 
+  // For resolving the creating rep's email → display name.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 300000,
+  });
+
   const updateQuoteMutation = useMutation({
     mutationFn: (data) => base44.entities.Quote.update(quoteId, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['quote', quoteId]);
     },
+    onError: (err) => toast.error(`עדכון ההצעה נכשל: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   const sendEmailMutation = useMutation({
     mutationFn: async () => {
-      if (!quote.pdf_url) {
-        const pdfUrl = await QuotePdfGenerator(quote);
+      // Use the freshly-generated URL (quote.pdf_url is stale until refetch).
+      let pdfUrl = quote.pdf_url;
+      if (!pdfUrl) {
+        pdfUrl = await QuotePdfGenerator(quote);
         await base44.entities.Quote.update(quoteId, { pdf_url: pdfUrl, status: 'sent' });
       }
 
@@ -118,15 +151,17 @@ export default function QuoteDetails() {
         quote_number: quote.quote_number,
         customer_name: quote.customer_name,
         total: quote.total?.toLocaleString(),
-        pdf_url: quote.pdf_url,
+        pdf_url: toShareablePdfUrl(pdfUrl),
         valid_until: quote.valid_until ? format(new Date(quote.valid_until), 'dd/MM/yyyy') : '',
       });
 
       await base44.entities.Quote.update(quoteId, { status: 'sent' });
     },
     onSuccess: () => {
+      toast.success('ההצעה נשלחה במייל ללקוח');
       queryClient.invalidateQueries(['quote', quoteId]);
     },
+    onError: (err) => toast.error(`שליחת המייל נכשלה: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   const generatePdfMutation = useMutation({
@@ -139,6 +174,7 @@ export default function QuoteDetails() {
       queryClient.invalidateQueries(['quote', quoteId]);
       window.open(pdfUrl, '_blank');
     },
+    onError: (err) => toast.error(`יצירת ה-PDF נכשלה: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   const duplicateQuoteMutation = useMutation({
@@ -154,8 +190,12 @@ export default function QuoteDetails() {
       return newQuote;
     },
     onSuccess: (newQuote) => {
+      // In the popup, swap it to show the freshly-duplicated quote instead of
+      // navigating away to a full page — the rep stays in the same overlay.
+      if (isModal) { openQuote(newQuote.id); return; }
       navigate(createPageUrl('QuoteDetails') + `?id=${newQuote.id}`);
     },
+    onError: (err) => toast.error(`שכפול ההצעה נכשל: ${err?.message || 'שגיאה לא צפויה'}`),
   });
 
   if (isLoadingUser || isLoading) {
@@ -170,29 +210,30 @@ export default function QuoteDetails() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">ההצעה לא נמצאה</p>
-        <Link to={createPageUrl('Quotes')}>
-          <Button className="mt-4">חזור לרשימת ההצעות</Button>
-        </Link>
+        {isModal ? (
+          <Button className="mt-4" onClick={onClose}>סגור</Button>
+        ) : (
+          <Link to={createPageUrl('Quotes')}>
+            <Button className="mt-4">חזור לרשימת ההצעות</Button>
+          </Link>
+        )}
       </div>
     );
   }
 
-  if (!canViewQuote(effectiveUser, quote, buildLeadsById(lead ? [lead] : []))) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה לצפות בהצעת מחיר זו</p>
-        <Link to={createPageUrl('Quotes')}>
-          <Button className="mt-4">חזור לרשימת ההצעות</Button>
-        </Link>
-      </div>
-    );
-  }
+  // Reps reach OTHER reps' quotes through the phone lookup — they may view but
+  // not edit. canEditQuote mirrors the old canViewQuote ownership check, so
+  // everyone who could act before still can; a non-owning sales rep is
+  // downgraded to read-only (banner + hidden actions below).
+  const isOwner = canEditQuote(effectiveUser, quote, buildLeadsById(lead ? [lead] : []));
 
   const isExpired = quote.valid_until && new Date(quote.valid_until) < new Date();
-  const canEdit = quote.status === 'draft' && !isExpired;
-  const allowedTransitions = isExpired && quote.status !== 'expired'
-    ? ['expired']
-    : (statusTransitions[quote.status] || []);
+  const canEdit = isOwner && quote.status === 'draft' && !isExpired;
+  const allowedTransitions = !isOwner
+    ? []
+    : (isExpired && quote.status !== 'expired'
+      ? ['expired']
+      : (statusTransitions[quote.status] || []));
 
   const handleStatusChange = (targetStatus) => {
     setStatusConfirm({ targetStatus });
@@ -216,7 +257,7 @@ export default function QuoteDetails() {
       // order, so jump straight there with the quote (and via it the
       // customer) pre-filled.
       if (isApproval) {
-        navigate(createPageUrl('NewOrder') + `?quote_id=${quoteId}`);
+        openNewOrder({ quoteId });
       }
     }
   };
@@ -236,164 +277,207 @@ export default function QuoteDetails() {
   };
 
   const handleConvertToOrder = () => {
-    navigate(createPageUrl('NewOrder') + `?quote_id=${quoteId}`);
+    openNewOrder({ quoteId });
   };
 
+  const createdByName = getRepDisplayName(quote.created_by_rep, users);
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Link to={createPageUrl('Quotes')}>
-            <Button variant="ghost" size="icon">
-              <ArrowRight className="h-5 w-5" />
+    <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {!isOwner && (
+        <div className={
+          isModal
+            ? 'flex-shrink-0 flex items-center gap-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-6 py-2'
+            : 'flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm px-4 py-2'
+        }>
+          <Info className="h-4 w-4 flex-shrink-0" />
+          צפייה בלבד — הצעת המחיר משויכת לנציג אחר.
+        </div>
+      )}
+      {/* Header — quote number + status badge, creation date and creating rep.
+          Fixed (flex-shrink-0) in popup mode so it never scrolls; pe-12 reserves
+          room for the dialog's close-X. Mirrors the order/lead header. */}
+      <div className={isModal ? 'flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border' : ''}>
+        <div className="flex items-center gap-3">
+          {isModal ? (
+            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
+              <ArrowRight className="h-4 w-4" />
             </Button>
-          </Link>
+          ) : (
+            <Link to={createPageUrl('Quotes')}>
+              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </Link>
+          )}
           <div>
-            <h1 className="text-2xl font-bold text-foreground">הצעת מחיר #{quote.quote_number}</h1>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">הצעת מחיר #{quote.quote_number}</h1>
+            </div>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StatusBadge status={quote.status} />
-              <span className="text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <Clock className="h-3.5 w-3.5" />
                 {format(new Date(quote.created_date), 'dd/MM/yyyy HH:mm')}
+              </span>
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <User className="h-3.5 w-3.5" />
+                נוצר ע״י: <span className="font-medium text-foreground">{createdByName || 'לא ידוע'}</span>
               </span>
             </div>
           </div>
         </div>
-        
-        <div className="flex flex-wrap gap-2">
-          {canEdit && (
+      </div>
+
+      {/* Action bar — edit / duplicate / call / WhatsApp / PDF / email / convert.
+          Fixed under the header in popup mode; a bordered bar on the full page.
+          Same surface (border + backdrop-blur) as the order action bar. */}
+      <div className={
+        isModal
+          ? 'flex-shrink-0 flex flex-wrap items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2.5'
+          : 'flex flex-wrap items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
+      }>
+        {canEdit && (
+          isModal ? (
+            <Button variant="outline" size="sm" className="h-8 text-xs text-primary" onClick={() => onEdit?.()}>
+              <Pencil className="h-3.5 w-3.5 me-1.5" />
+              ערוך הצעה
+            </Button>
+          ) : (
             <Link to={createPageUrl('EditQuote') + `?id=${quoteId}`}>
-              <Button variant="outline" className="text-primary">
-                <Pencil className="h-4 w-4 me-2" />
+              <Button variant="outline" size="sm" className="h-8 text-xs text-primary">
+                <Pencil className="h-3.5 w-3.5 me-1.5" />
                 ערוך הצעה
               </Button>
             </Link>
-          )}
-          {(isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
-            <Button
-              variant="outline"
-              onClick={() => duplicateQuoteMutation.mutate()}
-              disabled={duplicateQuoteMutation.isPending}
-            >
-              {duplicateQuoteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 me-2 animate-spin" />
-              ) : (
-                <Copy className="h-4 w-4 me-2" />
-              )}
-              שכפל הצעה עם תוקף חדש
-            </Button>
-          )}
-          <Button variant="outline" onClick={handleCall}>
-            <Phone className="h-4 w-4 me-2" />
-            התקשר
-          </Button>
-          <Button variant="outline" onClick={handleWhatsApp} className="[&_svg]:text-green-600">
-            <MessageCircle className="h-4 w-4 me-2" />
-            WhatsApp
-          </Button>
-          {quote.pdf_url && (
-            <Button variant="outline" onClick={() => window.open(quote.pdf_url, '_blank')}>
-              <Download className="h-4 w-4 me-2" />
-              הורד PDF
-            </Button>
-          )}
-          <Button 
-            variant="outline" 
-            onClick={() => generatePdfMutation.mutate()} 
-            disabled={generatePdfMutation.isPending}
+          )
+        )}
+        {isOwner && (isExpired || quote.status === 'expired' || quote.status === 'rejected') && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => duplicateQuoteMutation.mutate()}
+            disabled={duplicateQuoteMutation.isPending}
           >
-            {generatePdfMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
+            {duplicateQuoteMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
             ) : (
-              <FileText className="h-4 w-4 me-2" />
+              <Copy className="h-3.5 w-3.5 me-1.5" />
             )}
-            {quote.pdf_url ? 'צור PDF מחדש' : 'צור PDF'}
+            שכפל הצעה עם תוקף חדש
           </Button>
-          {quote.customer_email && (
-            <Button 
-              variant="outline" 
-              onClick={() => sendEmailMutation.mutate()}
-              disabled={sendEmailMutation.isPending}
-              className="text-primary"
-            >
-              {sendEmailMutation.isPending ? (
-                <Loader2 className="h-4 w-4 me-2 animate-spin" />
-              ) : (
-                <Mail className="h-4 w-4 me-2" />
-              )}
-              שלח במייל
-            </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={handleCall} className="h-8 text-xs">
+          <Phone className="h-3.5 w-3.5 me-1.5" />
+          התקשר
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleWhatsApp} className="h-8 text-xs [&_svg]:text-green-600">
+          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          WhatsApp
+        </Button>
+        {quote.pdf_url && (
+          <Button variant="outline" size="sm" onClick={() => window.open(quote.pdf_url, '_blank')} className="h-8 text-xs">
+            <Download className="h-3.5 w-3.5 me-1.5" />
+            הורד PDF
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => generatePdfMutation.mutate()}
+          disabled={generatePdfMutation.isPending}
+          className="h-8 text-xs"
+        >
+          {generatePdfMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+          ) : (
+            <FileText className="h-3.5 w-3.5 me-1.5" />
           )}
-          {(quote.status === 'sent' || quote.status === 'approved') && (
-            <Button className="bg-primary hover:bg-primary/90" onClick={handleConvertToOrder}>
-              <ShoppingCart className="h-4 w-4 me-2" />
-              המר להזמנה
-            </Button>
-          )}
-        </div>
+          {quote.pdf_url ? 'צור PDF מחדש' : 'צור PDF'}
+        </Button>
+        {isOwner && quote.customer_email && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => sendEmailMutation.mutate()}
+            disabled={sendEmailMutation.isPending}
+            className="h-8 text-xs text-primary"
+          >
+            {sendEmailMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 me-1.5 animate-spin" />
+            ) : (
+              <Mail className="h-3.5 w-3.5 me-1.5" />
+            )}
+            שלח במייל
+          </Button>
+        )}
+        {isOwner && (quote.status === 'sent' || quote.status === 'approved') && (
+          <Button size="sm" className="h-8 text-xs bg-primary hover:bg-primary/90" onClick={handleConvertToOrder}>
+            <ShoppingCart className="h-3.5 w-3.5 me-1.5" />
+            המר להזמנה
+          </Button>
+        )}
       </div>
 
+      {/* Body — the only scrollable region in popup mode. */}
+      <div className={isModal ? 'flex-1 overflow-auto px-6 pb-6 pt-4' : ''}>
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Customer Info */}
+          {/* Customer Info — same dl icon-row design as the order screen: one row
+              per field with a leading icon + slim label, empty rows hidden. */}
           <Card>
             <CardHeader>
-              <CardTitle>פרטי לקוח</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <User className="h-4 w-4 text-muted-foreground" />
+                פרטי לקוח
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">שם לקוח</p>
-                  <p className="font-medium text-foreground">{quote.customer_name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">טלפון</p>
-                  <p className="font-medium text-foreground" dir="ltr">{quote.customer_phone}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">אימייל</p>
-                  <p className="font-medium text-foreground">{quote.customer_email || '-'}</p>
-                </div>
-                <div className="sm:col-span-2 md:col-span-3 pt-4 border-t border-border/50">
-                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2">
-                      <p className="text-sm text-muted-foreground mb-1">כתובת למשלוח</p>
-                      <p className="font-medium text-foreground">
-                        {quote.delivery_address || 'לא הוזן'} 
-                        {quote.delivery_city ? `, ${quote.delivery_city}` : ''}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">סוג נכס</p>
-                      <p className="font-medium text-foreground">
-                        {quote.property_type === 'house' ? 'בית פרטי' : 'דירה'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">קומה</p>
-                      <p className="font-medium text-foreground">{quote.floor ?? '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">מספר דירה</p>
-                      <p className="font-medium text-foreground">{quote.apartment_number || '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-1">מעלית</p>
-                      <p className="font-medium text-foreground">
-                        {quote.elevator_type === 'regular' ? 'רגילה' : quote.elevator_type === 'freight' ? 'משא' : 'אין'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <dl className="divide-y divide-border/30">
+                {[
+                  { label: 'שם לקוח', value: quote.customer_name, icon: User },
+                  { label: 'טלפון', value: quote.customer_phone, icon: Phone, dir: 'ltr' },
+                  { label: 'אימייל', value: quote.customer_email, icon: Mail },
+                  {
+                    label: 'כתובת למשלוח',
+                    value: [quote.delivery_address, quote.delivery_city].filter(Boolean).join(', ') || null,
+                    icon: Home,
+                  },
+                  { label: 'סוג נכס', value: quote.property_type === 'house' ? 'בית פרטי' : 'דירה', icon: Building2 },
+                  { label: 'קומה', value: quote.floor != null ? String(quote.floor) : null, icon: Layers },
+                  { label: 'מספר דירה', value: quote.apartment_number || null, icon: Hash },
+                  {
+                    label: 'מעלית',
+                    value: quote.elevator_type === 'regular' ? 'רגילה' : quote.elevator_type === 'freight' ? 'משא' : 'אין',
+                    icon: ArrowUpDown,
+                  },
+                ]
+                  .filter((row) => row.value)
+                  .map((row) => {
+                    const Icon = row.icon;
+                    return (
+                      <div key={row.label} className="flex items-baseline gap-3 py-3">
+                        <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                          <span>{row.label}</span>
+                        </dt>
+                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate" dir={row.dir}>{row.value}</dd>
+                      </div>
+                    );
+                  })}
+              </dl>
             </CardContent>
           </Card>
 
           {/* Items */}
           <Card>
             <CardHeader>
-              <CardTitle>פריטים</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                פריטים
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -402,9 +486,9 @@ export default function QuoteDetails() {
                     <TableHead className="text-right">מוצר</TableHead>
                     <TableHead className="text-right">מק״ט</TableHead>
                     <TableHead className="text-right">כמות</TableHead>
-                    <TableHead className="text-right">מחיר</TableHead>
+                    <TableHead className="text-right">מחיר<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
                     <TableHead className="text-right">הנחה</TableHead>
-                    <TableHead className="text-right">סה"כ</TableHead>
+                    <TableHead className="text-right">סה"כ<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -426,7 +510,7 @@ export default function QuoteDetails() {
                             <div className="text-xs text-primary mt-1 space-y-0.5">
                               <p className="font-medium">תוספות:</p>
                               {item.selected_addons.map((a, i) => (
-                                <p key={i}>• {a.name} (+₪{a.price?.toLocaleString()})</p>
+                                <p key={i}>• {a.name} (+{money2((a.price || 0) * VAT)})</p>
                               ))}
                             </div>
                           )}
@@ -435,14 +519,14 @@ export default function QuoteDetails() {
                         <TableCell>{item.quantity}</TableCell>
                         <TableCell>
                           <div>
-                            <div>₪{item.unit_price?.toLocaleString()}</div>
+                            <div>{money2((item.unit_price || 0) * VAT)}</div>
                             {addonsTotal > 0 && (
-                              <div className="text-xs text-muted-foreground">+₪{addonsTotal.toLocaleString()} תוספות</div>
+                              <div className="text-xs text-muted-foreground">+{money2(addonsTotal * VAT)} תוספות</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</TableCell>
-                        <TableCell className="font-semibold">₪{item.total?.toLocaleString()}</TableCell>
+                        <TableCell className="font-semibold">{money2((item.total || 0) * VAT)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -472,26 +556,9 @@ export default function QuoteDetails() {
                 </div>
               )}
 
-              <div className="mt-4 pt-4 border-t space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">סכום ביניים</span>
-                  <span>₪{quote.subtotal?.toLocaleString()}</span>
-                </div>
-                {quote.discount_total > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>הנחות</span>
-                    <span>-₪{quote.discount_total?.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">מע"מ (18%)</span>
-                  <span>₪{quote.vat_amount?.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-xl font-bold pt-2 border-t">
-                  <span>סה"כ לתשלום</span>
-                  <span className="text-primary">₪{quote.total?.toLocaleString()}</span>
-                </div>
-              </div>
+              {/* Same shared summary component the create/edit forms use, so the
+                  breakdown is identical everywhere. */}
+              <QuoteTotalsSummary items={quote.items} extras={quote.extras} discountTotal={quote.discount_total} />
             </CardContent>
           </Card>
 
@@ -499,12 +566,15 @@ export default function QuoteDetails() {
           {quote.terms && (
             <Card>
               <CardHeader>
-                <CardTitle>תנאים</CardTitle>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  תנאים
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">תנאי תשלום ואספקה</p>
-                  <p>{quote.terms}</p>
+                  <p className="text-sm text-foreground whitespace-pre-line">{quote.terms}</p>
                 </div>
               </CardContent>
             </Card>
@@ -516,7 +586,10 @@ export default function QuoteDetails() {
           {/* Status & Validity */}
           <Card>
             <CardHeader>
-              <CardTitle>סטטוס ותוקף</CardTitle>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                סטטוס ותוקף
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Current status */}
@@ -580,12 +653,15 @@ export default function QuoteDetails() {
           {quote.lead_id && (
             <Card>
               <CardHeader>
-                <CardTitle>ליד מקושר</CardTitle>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                  ליד מקושר
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <Link 
+                <Link
                   to={createPageUrl('LeadDetails') + `?id=${quote.lead_id}`}
-                  className="text-primary hover:underline"
+                  className="text-primary hover:underline text-sm"
                 >
                   צפה בליד
                 </Link>
@@ -597,10 +673,10 @@ export default function QuoteDetails() {
           {quote.notes && (
             <Card>
               <CardHeader>
-                <CardTitle>הערות</CardTitle>
+                <CardTitle className="text-sm font-semibold">הערות</CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">{quote.notes}</p>
+                <p className="text-sm text-muted-foreground whitespace-pre-line">{quote.notes}</p>
               </CardContent>
             </Card>
           )}
@@ -640,6 +716,7 @@ export default function QuoteDetails() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      </div>
     </div>
   );
 }

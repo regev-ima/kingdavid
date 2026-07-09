@@ -3,17 +3,12 @@ import { base44 } from '@/api/base44Client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+
+
 import DataTable from '@/components/shared/DataTable';
 import StatusBadge from '@/components/shared/StatusBadge';
-import { Copy, Receipt, Send, Search, FileCheck2, Clock } from 'lucide-react';
+import { Copy, Receipt, Search, FileCheck2, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -299,33 +294,8 @@ export default function Bookkeeping() {
           );
         },
       },
-      {
-        header: 'סיגמא',
-        width: '110px',
-        align: 'center',
-        render: () => (
-          <TooltipProvider delayDuration={150}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled
-                    className="h-7 px-2 text-xs gap-1 cursor-not-allowed"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Send className="h-3 w-3" />
-                    שלח
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>שילוב עם סיגמא — בקרוב</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ),
-      },
+      // עמודת "סיגמא" (שליחה לסיגמא) הוסרה עד שהאינטגרציה תיבנה בפועל —
+      // כפתור מושבת עם "בקרוב" אינו רלוונטי למסירה.
     ],
     [invoiceDrafts],
   );

@@ -4,7 +4,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import DiscountPopover from '@/components/quote/DiscountPopover';
 
 const VAT_RATE = 1.18;
-const ils = (n) => `₪${Math.round(n || 0).toLocaleString()}`;
+const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // One symmetric column: a fixed-height caption block (main + optional VAT
 // qualifier) over a fixed-height value block, both centered. Every cell shares

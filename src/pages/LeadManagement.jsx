@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/use-toast';
 import UserAvatar from '@/components/shared/UserAvatar';
 import {
   Users, UserPlus, UserCheck, Calendar as CalendarIcon,
-  Filter, X as XIcon, Plus, FileSpreadsheet, ArrowRightLeft, Sparkles,
+  Filter, X as XIcon, FileSpreadsheet, ArrowRightLeft, Sparkles,
   Moon, Sun, Hourglass, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -28,6 +28,7 @@ import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
+import LeadQuickActions from '@/components/lead/LeadQuickActions';
 
 // State for this page lives mostly in the URL so navigation back from a
 // lead-details page restores exactly where the manager left off (filters,
@@ -142,11 +143,14 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
     // בטיפול — past the new_lead stage and not yet closed.
     conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
   } else if (isShiftScope) {
-    // לידים חדשים (לילה/יום/מחזור) — new_lead leads that arrived in the window.
+    // לידים שנכנסו (לילה/יום/מחזור) — every lead that ARRIVED in the window,
+    // regardless of its current status. Counting only the ones still sitting
+    // at new_lead made the tile decay toward 0 as reps worked the queue
+    // ("נכנסו מעל 200 לידים" while the tile said 18) — arrivals is the number
+    // a manager actually means here.
     const w = scope === 'new_night' ? windows?.night
       : scope === 'new_day' ? windows?.day
         : windows?.cycle;
-    conditions.push({ status: 'new_lead' });
     if (w) conditions.push(windowCond(w));
   } else if (LIFECYCLE_SCOPES[scope]) {
     // Per-rep workload drill-down (חדשים/בטיפול/נסגרו/נאבדו). Combined with the
@@ -276,54 +280,64 @@ export default function LeadManagement() {
   const dateRange = useMemo(() => resolveDatePreset(datePresetId, customRange), [datePresetId, customRange]);
   const fromIso = dateRange?.from ? dateRange.from.toISOString() : '';
   const toIso = dateRange?.to ? dateRange.to.toISOString() : '';
-  // Fixed night/day shift windows, anchored to today's Israel date. Computed
-  // once per mount — the boundaries (20:00 / 08:00) don't move during a
-  // session, so the ISO strings stay stable and keep the query keys steady.
-  const windows = useMemo(() => israelShiftWindows(), []);
+  // Night/day shift windows. Anchored to the END of the selected date range
+  // (so picking a specific day shows THAT day's 20:00→20:00 cycle — the
+  // manager checking "כמה נכנסו ב-06.07" gets 06.07's cycle, not today's);
+  // with no range selected they anchor to today's Israel date. toIso keeps
+  // the ISO strings stable per selection so query keys stay steady.
+  const windows = useMemo(
+    () => israelShiftWindows(toIso ? new Date(toIso) : new Date()),
+    [toIso],
+  );
 
   // ───────────────────────────────────────────────────────────────
-  // Category KPI tiles. The three assignment/status buckets respect the
-  // date range; the two "new leads" shift buckets use their own fixed
-  // night/day windows (see israelShiftWindows).
+  // Category KPI tiles. All buckets respect the selected date range.
   // ───────────────────────────────────────────────────────────────
   const EMPTY_KPI = {
-    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0,
-    newNightCount: 0, newDayCount: 0, totalCount: 0,
+    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0,
   };
   const { data: kpiCounts = EMPTY_KPI } = useQuery({
-    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso, windows.night.from, windows.day.from],
+    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso],
     enabled: !!effectiveUser && !!userEmail,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      // base(extra, { range }) builds a count filter. `extra` may be a single
-      // condition or an array of them. `range` defaults to true (honor the
-      // page date range); pass false for the shift windows that bring their own.
-      const base = (extra, { range = true } = {}) => {
+      // base(extra) builds a count filter honoring the page date range.
+      const base = (extra) => {
         const conditions = [];
         if (!isAdmin) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
-        if (range && fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
         if (Array.isArray(extra)) conditions.push(...extra);
         else if (extra) conditions.push(extra);
         if (conditions.length === 0) return {};
         if (conditions.length === 1) return conditions[0];
         return { $and: conditions };
       };
-      const [
-        assignedUnhandledCount, unassignedCount, handlingCount,
-        newNightCount, newDayCount, totalCount,
-      ] = await Promise.all([
+      const [assignedUnhandledCount, unassignedCount, handlingCount, totalCount] = await Promise.all([
         base44.entities.Lead.count(base([{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }])),
         base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
         base44.entities.Lead.count(base({ status: { $nin: HANDLING_EXCLUDED_STATUSES } })),
-        base44.entities.Lead.count(base([{ status: 'new_lead' }, windowCond(windows.night)], { range: false })),
-        base44.entities.Lead.count(base([{ status: 'new_lead' }, windowCond(windows.day)], { range: false })),
         base44.entities.Lead.count(base()),
       ]);
-      return {
-        assignedUnhandledCount, unassignedCount, handlingCount,
-        newNightCount, newDayCount, totalCount,
-      };
+      return { assignedUnhandledCount, unassignedCount, handlingCount, totalCount };
+    },
+  });
+
+  // Arrivals split by work shift (day 08–20 / night 20–08) over the WHOLE
+  // selected range, via a SQL RPC so day + night == total for any range and the
+  // cube reconciles with the list (a fixed single-day window showed one day's
+  // cycle even when a week was selected). Admin-only, like the cube.
+  const EMPTY_ARRIVALS = { total: 0, day: 0, night: 0 };
+  const { data: arrivals = EMPTY_ARRIVALS } = useQuery({
+    queryKey: ['leadMgmt-arrivals', fromIso, toIso],
+    enabled: !!effectiveUser && isAdmin && !!fromIso && !!toIso,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: async () => {
+      const { data, error } = await base44.supabase.rpc('lead_arrivals_by_shift', { p_start: fromIso, p_end: toIso });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return { total: Number(row?.total || 0), day: Number(row?.day_count || 0), night: Number(row?.night_count || 0) };
     },
   });
 
@@ -649,9 +663,13 @@ export default function LeadManagement() {
               <FileSpreadsheet className="h-4 w-4" /> ייבוא מ-Sheets
             </Button>
           ) : null}
-          <Button onClick={() => navigate(createPageUrl('NewLead'))} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" /> ליד חדש
-          </Button>
+          <LeadQuickActions
+            currentUser={effectiveUser}
+            onLeadCreated={() => {
+              queryClient.invalidateQueries({ queryKey: ['leadMgmt-leads'] });
+              queryClient.invalidateQueries({ queryKey: ['leadMgmt-kpis'] });
+            }}
+          />
         </div>
       </div>
 
@@ -699,10 +717,15 @@ export default function LeadManagement() {
       </div>
 
       {/* Category tiles — clickable to filter the list. The three status
-          buckets follow the date range above; the "new leads" cube uses its
-          own fixed 20:00→20:00 cycle (total) split into night / day shifts. */}
+          buckets follow the date range above; the arrivals cube uses its
+          own 20:00→20:00 cycle (total) split into night / day shifts,
+          anchored to the selected date. For a rep the whole strip is scoped
+          to their own leads, and the manager-only tiles (unassigned pool,
+          night/day intake) are replaced with a personal summary tile —
+          a rep's view stays focused on the leads that belong to them. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
+          ...(!isAdmin ? [{ id: '__mine', label: 'הלידים שלי', value: kpiCounts.totalCount, tone: 'sky', icon: Users, desc: 'כל הלידים המשויכים אליי בטווח' }] : []),
           { id: 'assigned_unhandled', label: 'משויך ולא טופל', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
           // "לא משויכים" is a management-only pool — reps only handle leads
           // assigned to them, so the unassigned tile is hidden for them.
@@ -716,16 +739,23 @@ export default function LeadManagement() {
             tone={tile.tone}
             icon={tile.icon}
             desc={tile.desc}
-            isActive={scope === tile.id}
-            onClick={() => toggleScope(tile.id)}
+            isActive={tile.id === '__mine' ? scope === 'all' && !hasActiveFilter : scope === tile.id}
+            onClick={() => (tile.id === '__mine'
+              ? (setScope('all'), setFilters({ search: '', status: 'all', source: 'all', rep: 'all' }))
+              : toggleScope(tile.id))}
           />
         ))}
-        <NewLeadsCube
-          nightCount={kpiCounts.newNightCount}
-          dayCount={kpiCounts.newDayCount}
-          scope={scope}
-          onSelect={toggleScope}
-        />
+        {isAdmin ? (
+          <NewLeadsCube
+            // Total always from the plain count (works everywhere, matches the
+            // filter summary). The night/day split comes from the RPC and only
+            // shows once it returns data (i.e. after the migration is deployed).
+            total={kpiCounts.totalCount}
+            nightCount={arrivals.night}
+            dayCount={arrivals.day}
+            hasSplit={arrivals.total > 0}
+          />
+        ) : null}
       </div>
 
       {/* Rep workload panel — admin only. Click the card header to filter the
@@ -1010,61 +1040,43 @@ function CategoryTile({ label, value, tone, icon: Icon, desc, isActive, onClick 
   );
 }
 
-// "New leads" cube — one tile holding the full 20:00→20:00 cycle total on top,
-// split below into the night and day shifts. The cube is a plain container (not
-// a button) so its three click targets — total / night / day — don't nest
-// buttons; each toggles its own scope on the list.
-function NewLeadsCube({ nightCount, dayCount, scope, onSelect }) {
-  // Night and day are a half-open partition of the cycle, so the total is
-  // exactly their sum — no extra count query needed.
-  const total = (nightCount || 0) + (dayCount || 0);
-  const cycleActive = scope === 'new_cycle';
-  const cardCls = cycleActive ? TILE_TONES.violet.active : 'border-border bg-muted/30';
+// Arrivals cube — total leads that ENTERED within the selected date range (so it
+// always reconciles with the list/filter), split below by work shift: day
+// (08:00–20:00) vs night (20:00–08:00), summed across the whole range via the
+// lead_arrivals_by_shift RPC so day + night == total for any range. Informational
+// (the date picker above is what drives filtering) — no separate window that
+// could disagree with the rest of the screen.
+function NewLeadsCube({ total, nightCount, dayCount, hasSplit }) {
   const sub = [
-    { id: 'new_night', label: 'לילה', range: '20:00–08:00', value: nightCount, icon: Moon, tone: 'violet' },
-    { id: 'new_day',   label: 'יום',  range: '08:00–20:00', value: dayCount,   icon: Sun,  tone: 'sky' },
+    { id: 'night', label: 'לילה', range: '20:00–08:00', value: nightCount, icon: Moon },
+    { id: 'day',   label: 'יום',  range: '08:00–20:00', value: dayCount,   icon: Sun },
   ];
   return (
-    <div className={`rounded-xl border-2 p-3 shadow-card transition-all ${cardCls}`}>
-      {/* Total — click to filter the whole 20:00→20:00 cycle */}
-      <button
-        type="button"
-        onClick={() => onSelect('new_cycle')}
-        className="w-full text-right rounded-lg px-1 py-0.5 transition-colors hover:bg-muted/40"
-      >
+    <div className="rounded-xl border-2 border-border bg-muted/30 p-3 shadow-card">
+      <div className="px-1 py-0.5">
         <div className="flex items-center justify-between mb-0.5">
-          <p className={`text-xs font-medium ${cycleActive ? 'text-foreground' : 'text-muted-foreground'}`}>
-            לידים חדשים <span className="text-[10px] opacity-70">(20:00–20:00)</span>
-          </p>
-          <Sparkles className={`h-4 w-4 ${cycleActive ? 'text-violet-700 opacity-100' : 'text-muted-foreground opacity-50'}`} />
+          <p className="text-xs font-medium text-muted-foreground">לידים שנכנסו <span className="text-[10px] opacity-70">בטווח שנבחר</span></p>
+          <Sparkles className="h-4 w-4 text-muted-foreground opacity-50" />
         </div>
-        <p className={`text-3xl font-bold tabular-nums ${cycleActive ? 'text-violet-700' : 'text-muted-foreground'}`}>{fmt(total)}</p>
-      </button>
-      {/* Night / day split */}
-      <div className="grid grid-cols-2 gap-2 mt-2">
-        {sub.map((s) => {
-          const active = scope === s.id;
-          const tones = TILE_TONES[s.tone];
-          const Icon = s.icon;
-          const cls = active ? tones.active : 'border-border bg-card hover:bg-muted/50';
-          const valueCls = active ? tones.value : 'text-foreground';
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onSelect(s.id)}
-              className={`text-right rounded-lg border p-2 transition-all ${cls}`}
-            >
-              <div className="flex items-center justify-between">
-                <span className={`text-[11px] font-medium ${active ? 'text-foreground' : 'text-muted-foreground'}`}>{s.label}</span>
-                <Icon className={`h-3.5 w-3.5 ${valueCls} ${active ? 'opacity-100' : 'opacity-60'}`} />
-              </div>
-              <p className={`text-xl font-bold tabular-nums leading-tight ${valueCls}`}>{fmt(s.value)}</p>
-              <p className="text-[9px] text-muted-foreground" dir="ltr">{s.range}</p>
-            </button>
-          );
-        })}
+        <p className="text-3xl font-bold tabular-nums text-muted-foreground">{fmt(total)}</p>
       </div>
+      {hasSplit ? (
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          {sub.map((s) => {
+            const Icon = s.icon;
+            return (
+              <div key={s.id} className="text-right rounded-lg border border-border bg-card p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-muted-foreground">{s.label}</span>
+                  <Icon className="h-3.5 w-3.5 text-foreground opacity-60" />
+                </div>
+                <p className="text-xl font-bold tabular-nums leading-tight text-foreground">{fmt(s.value)}</p>
+                <p className="text-[9px] text-muted-foreground" dir="ltr">{s.range}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1226,6 +1238,9 @@ function ActiveFilterSummary({
       onClear: null, // date is cleared via the preset bar above
     },
   ].filter(Boolean);
+  // A date range on its own isn't really a "filter" — it's just the period.
+  // Only rep/status/source/scope/search count as an actual filter.
+  const hasNonDateFilter = chips.some((c) => c.key !== 'date');
   const pct = totalCount > 0 && filteredCount != null
     ? Math.round((Number(filteredCount) / Number(totalCount)) * 1000) / 10
     : null;
@@ -1237,16 +1252,18 @@ function ActiveFilterSummary({
             <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary">
               <Filter className="h-3.5 w-3.5" />
             </span>
-            <span className="text-sm font-semibold text-foreground">תוצאות הסינון</span>
+            <span className="text-sm font-semibold text-foreground">{hasNonDateFilter ? 'תוצאות הסינון' : 'לידים בטווח שנבחר'}</span>
           </div>
           <span className="text-3xl font-bold text-primary tabular-nums whitespace-nowrap">
             {filteredCount === null ? '...' : fmt(filteredCount)}
           </span>
-          {pct != null ? (
+          {hasNonDateFilter && pct != null ? (
             <span className="text-xs text-muted-foreground whitespace-nowrap">
               ({pct}% מתוך {fmt(totalCount)} בטווח)
             </span>
-          ) : null}
+          ) : (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">כל הלידים שנכנסו בתאריך הנבחר (= קוביית "לידים שנכנסו")</span>
+          )}
         </div>
         <button
           type="button"

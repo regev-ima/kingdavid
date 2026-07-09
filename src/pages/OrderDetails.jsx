@@ -50,10 +50,15 @@ import {
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canViewOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
+import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+
+// Line prices are stored pre-VAT; show the customer incl-VAT, two decimals.
+const VAT = 1.18;
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -190,20 +195,11 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     );
   }
 
-  if (!canViewOrder(effectiveUser, order)) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">אין לך הרשאה לצפות בהזמנה זו</p>
-        {isModal ? (
-          <Button className="mt-4" onClick={onClose}>סגור</Button>
-        ) : (
-          <Link to={createPageUrl('Orders')}>
-            <Button className="mt-4">חזור לרשימת ההזמנות</Button>
-          </Link>
-        )}
-      </div>
-    );
-  }
+  // Reps reach OTHER reps' orders through the phone lookup — they may view but
+  // not edit. canEditOrder mirrors the old canViewOrder ownership check, so
+  // everyone who could edit before still can; only a non-owning sales rep is
+  // downgraded to read-only (a banner + disabled controls below).
+  const canEdit = canEditOrder(effectiveUser, order);
 
   const handleCall = () => {
     if (order?.customer_phone) {
@@ -220,6 +216,12 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
 
   return (
     <div className={isModal ? 'flex flex-col h-full overflow-hidden' : 'space-y-6'}>
+      {!canEdit && (
+        <div className="flex-shrink-0 flex items-center gap-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-sm px-6 py-2">
+          <Info className="h-4 w-4 flex-shrink-0" />
+          צפייה בלבד — ההזמנה משויכת לנציג אחר.
+        </div>
+      )}
       {/* Header — order number + the 3 status badges. Fixed (flex-shrink-0) in
           popup mode so it never scrolls; pe-12 reserves room for the dialog's
           close-X. Mirrors the lead / service-ticket header. */}
@@ -247,6 +249,10 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               <StatusBadge status={order.payment_status} />
               <StatusBadge status={order.production_status} />
               <StatusBadge status={order.delivery_status} />
+              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <User className="h-3.5 w-3.5" />
+                נציג: <span className="font-medium text-foreground">{getRepDisplayName(order.rep1, users) || 'לא ידוע'}</span>
+              </span>
             </div>
           </div>
         </div>
@@ -361,8 +367,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     <TableHead className="text-right">מוצר</TableHead>
                     <TableHead className="text-right">מק״ט</TableHead>
                     <TableHead className="text-right">כמות</TableHead>
-                    <TableHead className="text-right">מחיר</TableHead>
-                    <TableHead className="text-right">סה"כ</TableHead>
+                    <TableHead className="text-right">מחיר<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
+                    <TableHead className="text-right">סה"כ<div className="text-[10px] font-normal opacity-70">כולל מע״מ</div></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -383,7 +389,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                             <div className="text-xs text-primary mt-1 space-y-0.5">
                               <p className="font-medium">תוספות:</p>
                               {item.selected_addons.map((a, i) => (
-                                <p key={i}>• {a.name} (+₪{a.price?.toLocaleString()})</p>
+                                <p key={i}>• {a.name} (+{money2((a.price || 0) * VAT)})</p>
                               ))}
                             </div>
                           )}
@@ -392,39 +398,22 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                         <TableCell>{item.quantity}</TableCell>
                         <TableCell>
                           <div>
-                            <div>₪{item.unit_price?.toLocaleString()}</div>
+                            <div>{money2((item.unit_price || 0) * VAT)}</div>
                             {addonsTotal > 0 && (
-                              <div className="text-xs text-muted-foreground">+₪{addonsTotal.toLocaleString()} תוספות</div>
+                              <div className="text-xs text-muted-foreground">+{money2(addonsTotal * VAT)} תוספות</div>
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="font-semibold">₪{item.total?.toLocaleString()}</TableCell>
+                        <TableCell className="font-semibold">{money2((item.total || 0) * VAT)}</TableCell>
                       </TableRow>
                     );
                   })}
                 </TableBody>
               </Table>
               
-              <div className="mt-4 pt-4 border-t space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">סכום ביניים</span>
-                  <span>₪{order.subtotal?.toLocaleString()}</span>
-                </div>
-                {order.discount_total > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>הנחות</span>
-                    <span>-₪{order.discount_total?.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">מע"מ</span>
-                  <span>₪{order.vat_amount?.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-lg font-bold pt-2 border-t">
-                  <span>סה"כ</span>
-                  <span>₪{order.total?.toLocaleString()}</span>
-                </div>
-              </div>
+              {/* Same shared summary component as the create/edit forms + the
+                  quote view, so the breakdown is identical everywhere. */}
+              <QuoteTotalsSummary items={order.items} extras={order.extras} discountTotal={order.discount_total} />
             </CardContent>
           </Card>
 
@@ -440,6 +429,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   value={order.notes_sales || ''}
                   onChange={(e) => updateOrderMutation.mutate({ notes_sales: e.target.value })}
                   rows={2}
+                  disabled={!canEdit}
                 />
               </div>
               <div className="space-y-2">
@@ -457,6 +447,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   value={order.notes_logistics || ''}
                   onChange={(e) => updateOrderMutation.mutate({ notes_logistics: e.target.value })}
                   rows={2}
+                  disabled={!canEdit}
                 />
               </div>
             </CardContent>
@@ -547,6 +538,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={!canEdit}
                           className="h-7 w-7 text-red-400 hover:text-red-600 shrink-0"
                           onClick={() => {
                             const updatedPayments = order.payments.filter((_, i) => i !== idx);
@@ -663,7 +655,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     size="sm"
                     className="w-full"
                     onClick={() => setShowHypPayment(true)}
-                    disabled={(order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
+                    disabled={!canEdit || (order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
                   >
                     <CreditCard className="h-3.5 w-3.5 me-1.5" />
                     תשלום באשראי (Hyp)
@@ -673,6 +665,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     size="sm"
                     className="w-full"
                     onClick={() => setShowAddPayment(true)}
+                    disabled={!canEdit}
                   >
                     <Plus className="h-3.5 w-3.5 me-1.5" />
                     הוסף תשלום ידני
@@ -686,13 +679,14 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 <Select
                   value={order.payment_status}
                   onValueChange={(val) => updateOrderMutation.mutate({ payment_status: val })}
+                  disabled={!canEdit}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unpaid">לא שולם</SelectItem>
-                    <SelectItem value="deposit_paid">מקדמה</SelectItem>
+                    <SelectItem value="deposit_paid">תשלום חלקי</SelectItem>
                     <SelectItem value="paid">שולם</SelectItem>
                     <SelectItem value="refunded_partial">זיכוי חלקי</SelectItem>
                     <SelectItem value="refunded_full">זיכוי מלא</SelectItem>
@@ -742,6 +736,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               <Select
                 value={order.delivery_status}
                 onValueChange={(val) => updateOrderMutation.mutate({ delivery_status: val })}
+                disabled={!canEdit}
               >
                 <SelectTrigger>
                   <SelectValue />

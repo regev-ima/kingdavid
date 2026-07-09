@@ -49,7 +49,32 @@ const TABLE_MAP = {
   ClubSignup: 'club_signups',
   QuoteDefaults: 'quote_defaults',
   CompanyClosures: 'company_closures',
+  ShiftAssignment: 'shift_assignments',
+  BedOptionGroup: 'bed_option_groups',
+  BedOptionValue: 'bed_option_values',
 };
+
+// PostgREST fails an entire INSERT/UPDATE when the payload carries a column the
+// table doesn't have (PGRST204: "Could not find the 'X' column of ..."). Forms
+// occasionally ship a field before its migration lands (special_requests,
+// payment_terms_selection did exactly this) — and then NOTHING saves. Instead
+// of hard-failing, drop the named column, warn, and retry (bounded), so the
+// save succeeds minus the not-yet-migrated field.
+async function writeWithSchemaResilience(data, run) {
+  let payload = data;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: result, error } = await run(payload);
+    if (!error) return result;
+    const missing = error.code === 'PGRST204' && /'([^']+)' column/.exec(error.message || '')?.[1];
+    if (!missing || !(missing in payload)) throw error;
+    console.warn(`[entities] column "${missing}" missing in DB schema — saving without it (add a migration!)`);
+    payload = { ...payload };
+    delete payload[missing];
+  }
+  const { data: result, error } = await run(payload);
+  if (error) throw error;
+  return result;
+}
 
 /**
  * Creates an entity API object that mimics the Base44 SDK interface:
@@ -285,13 +310,9 @@ function createEntityAPI(tableName) {
      * @param {Object} data
      */
     async create(data) {
-      const { data: result, error } = await supabase
-        .from(tableName)
-        .insert(data)
-        .select()
-        .single();
-      if (error) throw error;
-      return result;
+      return writeWithSchemaResilience(data, (payload) =>
+        supabase.from(tableName).insert(payload).select().single(),
+      );
     },
 
     /**
@@ -300,14 +321,9 @@ function createEntityAPI(tableName) {
      * @param {Object} data
      */
     async update(id, data) {
-      const { data: result, error } = await supabase
-        .from(tableName)
-        .update(data)
-        .eq('id', id)
-        .select()
-        .single();
-      if (error) throw error;
-      return result;
+      return writeWithSchemaResilience(data, (payload) =>
+        supabase.from(tableName).update(payload).eq('id', id).select().single(),
+      );
     },
 
     /**

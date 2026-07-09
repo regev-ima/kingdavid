@@ -2,6 +2,7 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
+import { bedConfigFieldLines } from "@/lib/bedConfig";
 
 /**
  * KING DAVID - Premium PDF Quote Generator
@@ -52,7 +53,8 @@ const QuotePdfGenerator = async (quoteData) => {
 
   const money = (n) => {
     const num = normalizeNumber(n);
-    return `₪${num.toLocaleString("he-IL")}`;
+    // Two decimals (agorot) so line amounts sum exactly to the printed total.
+    return `₪${num.toLocaleString("he-IL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const createdDate = quoteData?.created_date
@@ -84,17 +86,23 @@ const QuotePdfGenerator = async (quoteData) => {
         const addonsText = (item.selected_addons || []).map(a => `${a.name} (+₪${normalizeNumber(a.price).toLocaleString()})`).join(', ');
         extraInfo.push(`תוספות: ${addonsText}`);
       }
-      // Fabric catalog details — only present on bed items where the rep filled them in.
-      const fabricParts = [];
-      if (item?.fabric_catalog_name) fabricParts.push(`קטלוג: ${safe(item.fabric_catalog_name)}`);
-      if (item?.fabric_color_number) fabricParts.push(`מס׳ צבע: ${safe(item.fabric_color_number)}`);
-      if (item?.fabric_color) fabricParts.push(`צבע: ${safe(item.fabric_color)}`);
-      const supplier = item?.fabric_supplier === 'אחר'
-        ? (item?.fabric_supplier_other || 'אחר')
-        : item?.fabric_supplier;
-      if (supplier) fabricParts.push(`ספק: ${safe(supplier)}`);
-      if (fabricParts.length) {
-        extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
+      // Bed text-question answers (fabric catalog etc.) — the generic path.
+      // Falls back to legacy fabric_* columns for quotes saved before the feature.
+      const fieldLines = bedConfigFieldLines(item);
+      if (fieldLines.length) {
+        fieldLines.forEach((ln) => extraInfo.push(safe(ln)));
+      } else {
+        const fabricParts = [];
+        if (item?.fabric_catalog_name) fabricParts.push(`קטלוג: ${safe(item.fabric_catalog_name)}`);
+        if (item?.fabric_color_number) fabricParts.push(`מס׳ צבע: ${safe(item.fabric_color_number)}`);
+        if (item?.fabric_color) fabricParts.push(`צבע: ${safe(item.fabric_color)}`);
+        const supplier = item?.fabric_supplier === 'אחר'
+          ? (item?.fabric_supplier_other || 'אחר')
+          : item?.fabric_supplier;
+        if (supplier) fabricParts.push(`ספק: ${safe(supplier)}`);
+        if (fabricParts.length) {
+          extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
+        }
       }
       
       return {
@@ -220,17 +228,17 @@ const QuotePdfGenerator = async (quoteData) => {
       thead th {
         background: #111827;
         color: #fff;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 900;
-        padding: 10px 10px;
+        padding: 6px 9px;
         text-align: right;
         border-left: 1px solid rgba(255,255,255,.08);
         white-space: nowrap;
       }
       thead th:last-child { border-left: none; }
       tbody td {
-        font-size: 11px;
-        padding: 10px 10px;
+        font-size: 10px;
+        padding: 6px 9px;
         border-top: 1px solid #EEF2F7;
         color: #0B1220;
         font-weight: 900;
@@ -287,17 +295,17 @@ const QuotePdfGenerator = async (quoteData) => {
       .sig .hint { margin:8px 0 0; font-size: 10px; color:#667085; font-weight:900; text-align:center; }
 
       .notes {
-        margin-top: 10px;
+        margin-top: 8px;
         border: 1px solid #E8ECF4;
         background: #FFFFFF;
         border-radius: 14px;
-        padding: 12px 14px;
-        font-size: 11px;
+        padding: 8px 12px;
+        font-size: 9px;
         color:#0B1220;
         font-weight: 400;
-        line-height: 1.6;
+        line-height: 1.4;
       }
-      .notes p { margin: 0 0 6px 0; font-weight: 400; }
+      .notes p { margin: 0 0 3px 0; font-weight: 400; }
       .notes p:last-child { margin:0; }
       .notes-label {
         font-weight: 700;
@@ -507,8 +515,9 @@ const QuotePdfGenerator = async (quoteData) => {
     const pageEl = tempDiv.querySelector("#quote-page");
     if (!pageEl) throw new Error("PDF root element not found");
 
-    // Render canvas
-    const scale = Math.min(3, window.devicePixelRatio ? window.devicePixelRatio * 2 : 2);
+    // Render canvas. Cap at 2× (~190 DPI on A4 — sharp enough for text) so the
+    // synchronous html2canvas pass is ~2× lighter and doesn't freeze the modal.
+    const scale = 2;
 
     const canvas = await html2canvas(pageEl, {
       scale,
@@ -530,43 +539,57 @@ const QuotePdfGenerator = async (quoteData) => {
 
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
-    pageCanvas.height = pageHeightPx;
     const ctx = pageCanvas.getContext("2d");
+
+    // Read all pixels once so a page break can be backed up to a BLANK row —
+    // slicing at an exact A4 boundary cut through a line of text / the footer,
+    // which is what made page 2 look garbled/doubled.
+    let fullData = null;
+    try {
+      fullData = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    } catch { fullData = null; }
+    const isBlankRow = (ry) => {
+      if (!fullData) return false;
+      const base = ry * canvas.width * 4;
+      for (let x = 0; x < canvas.width; x++) {
+        const i = base + x * 4;
+        if (fullData[i] < 250 || fullData[i + 1] < 250 || fullData[i + 2] < 250) return false;
+      }
+      return true;
+    };
+    // Nearest blank row at/above targetY (scan up to ~220px); fall back to the
+    // hard boundary if the page is genuinely full.
+    const cleanBreak = (targetY) => {
+      const limit = Math.max(targetY - 220, 0);
+      for (let ry = Math.min(targetY, canvas.height - 1); ry >= limit; ry--) {
+        if (isBlankRow(ry)) return ry + 1;
+      }
+      return targetY;
+    };
 
     let y = 0;
     let pageIndex = 0;
 
     while (y < canvas.height) {
-      const remainingHeight = canvas.height - y;
-      
-      // Skip creating a new page if remaining content is less than 100px (nearly empty)
-      if (remainingHeight < 100 && pageIndex > 0) {
-        break;
-      }
+      if (canvas.height - y < 8) break; // nothing meaningful left
 
+      let breakY = y + pageHeightPx;
+      breakY = breakY >= canvas.height ? canvas.height : cleanBreak(breakY);
+      const heightToRender = breakY - y;
+
+      // Each page's image is exactly its content height (placed at the top of
+      // the A4 page), so nothing gets stretched and the rest stays white.
+      pageCanvas.height = heightToRender;
       ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+      ctx.drawImage(canvas, 0, y, canvas.width, heightToRender, 0, 0, canvas.width, heightToRender);
 
-      const heightToRender = Math.min(pageHeightPx, remainingHeight);
-      
-      ctx.drawImage(
-        canvas,
-        0,
-        y,
-        canvas.width,
-        heightToRender,
-        0,
-        0,
-        canvas.width,
-        heightToRender
-      );
-
-      const sliceHeightMm = Math.min(pdfHeight, heightToRender / pxPerMm);
+      const sliceHeightMm = heightToRender / pxPerMm;
       const imgData = pageCanvas.toDataURL("image/png", 1.0);
 
       if (pageIndex > 0) pdf.addPage();
       pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, sliceHeightMm, undefined, "FAST");
 
-      y += pageHeightPx;
+      y = breakY;
       pageIndex += 1;
     }
 

@@ -3,6 +3,12 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
+import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+
+// ₪ with two decimals (agorot) — keeps the totals consistent with the per-line
+// amounts, which now show agorot so the parts sum exactly to the total.
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Strip everything but digits, then drop a leading country prefix so
 // "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
@@ -13,8 +19,6 @@ function normalizePhoneForLookup(raw) {
   return digits;
 }
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { QUOTE_DEFAULTS_FALLBACK } from '@/constants/quoteDefaultsFallback';
 import { Link, useNavigate } from 'react-router-dom';
@@ -25,19 +29,17 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ArrowRight, Save, Loader2, Plus, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
-import { hasBedType, productMatchesBedType } from '@/utils/bedType';
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
+import { hasBedType } from '@/utils/bedType';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
-import ProductSelector from '@/components/quote/ProductSelector';
-import QuoteItemDetailsBar from '@/components/quote/QuoteItemDetailsBar';
-import QuoteConfirmDialog from '@/components/quote/QuoteConfirmDialog';
+import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
+import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -75,7 +77,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -91,16 +93,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     special_requests: '',
     payment_terms_selection: [],
   });
-
-  // NOTE: this useState used to live below the early-return branches at line ~305,
-  // which violated the Rules of Hooks (different hook count between renders →
-  // Minified React error #310). Moved up here so it runs unconditionally on
-  // every render.
-  const [emptyItemIndex, setEmptyItemIndex] = useState(null);
-  // Two-phase save: handleSubmit only validates and opens the preview dialog;
-  // the actual mutation runs from the dialog's confirm button. Hook stays at
-  // the top of the component to satisfy Rules of Hooks across early returns.
-  const [showConfirm, setShowConfirm] = useState(false);
 
   // Phone-based lookup so a quote started from "create new quote" (no
   // existing lead context) can still snap to an existing customer / lead.
@@ -163,6 +155,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   }, [phoneMatchesData]);
 
   const showPhoneMatches = phoneLookupEnabled && phoneMatches.length > 0;
+  // Feedback while the lookup runs — covers BOTH the debounce window (the typed
+  // phone hasn't propagated to the query yet) and the request in flight — so the
+  // rep can SEE a search is happening instead of staring at a static field.
+  const normalizedTypedPhone = normalizePhoneForLookup(formData.customer_phone);
+  const phoneSearching =
+    !leadId && !linkedRecord && canAccessSales &&
+    normalizedTypedPhone.length >= 4 &&
+    (isPhoneLookupFetching || normalizedTypedPhone !== debouncedPhone);
 
   const applyPhoneMatch = (match) => {
     setFormData((prev) => ({
@@ -341,12 +341,27 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             fabric_color: item.fabric_color || '',
             fabric_supplier: item.fabric_supplier || '',
             fabric_supplier_other: item.fabric_supplier_other || '',
+            bed_config_token: item.bed_config_token || null,
+            bed_config_owner: item.bed_config_owner || null,
+            bed_config_group_key: item.bed_config_group_key || null,
+            bed_config_value_key: item.bed_config_value_key || null,
+            // Text-question answers (e.g. fabric catalog) collected in the wizard.
+            bed_config_fields: item.bed_config_fields || null,
           })),
         }),
       });
 
       if (leadId) {
         await base44.entities.Lead.update(leadId, { status: 'followup_after_quote' });
+        // Cross-rep policy: a rep who doesn't own this lead just produced a
+        // quote → become secondary if the lead has an order, else take over as
+        // primary. Logged to the lead history. Admins exempt.
+        await applyCrossRepReassignment({
+          leadId,
+          actingUser: effectiveUser,
+          isAdminActor: isAdmin(effectiveUser),
+          sourceLabel: 'הצעת מחיר',
+        });
       }
 
       // Generate and upload PDF
@@ -410,30 +425,19 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
 
-    const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = Math.round(itemsSubtotal * 0.18);
-    const total = Math.round(subtotal + vat_amount);
+    // Round to agorot (2 decimals), not whole ₪, so the grand total matches the
+    // sum of the per-line totals shown to the customer.
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const subtotal = round2(itemsSubtotal + extrasTotal);
+    const vat_amount = round2(itemsSubtotal * 0.18);
+    const total = round2(subtotal + vat_amount);
 
-    return { subtotal, discount_total, vat_amount, total };
+    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
   };
 
-  const updateItem = (index, field, value) => {
-    setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
-        if (idx !== index) return item;
-        
-        const updatedItem = { ...item, [field]: value };
-        const addonsPrices = (updatedItem.selected_addons || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = updatedItem.quantity * (updatedItem.unit_price + addonsPrices);
-        const discount = itemTotal * (updatedItem.discount_percent / 100);
-        updatedItem.total = itemTotal - discount;
-        
-        return updatedItem;
-      });
-      
-      const totals = calculateTotals(newItems, prev.extras);
-      return { ...prev, items: newItems, ...totals };
-    });
+  // ProductItemsEditor hands back a fresh items array; recompute grand totals.
+  const handleItemsChange = (newItems) => {
+    setFormData(prev => ({ ...prev, items: newItems, ...calculateTotals(newItems, prev.extras) }));
   };
 
   const addExtra = (extraChargeId) => {
@@ -477,97 +481,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // untouched; credit for the quote goes to the rep who built it
   // (created_by_rep above). Only non-sales users are turned away (canAccessSales).
 
-  const addItem = () => {
-    const emptyIdx = formData.items.findIndex(item => !item.product_id && !item.name);
-    if (emptyIdx !== -1) {
-      setEmptyItemIndex(emptyIdx);
-      setTimeout(() => setEmptyItemIndex(null), 2000);
-      return;
-    }
-    setFormData(prev => ({
-      ...prev,
-      items: [...prev.items, { sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [] }]
-    }));
-  };
-
-  const removeItem = (index) => {
-    const newItems = formData.items.filter((_, i) => i !== index);
-    const totals = calculateTotals(newItems, formData.extras);
-    setFormData(prev => ({ ...prev, items: newItems, ...totals }));
-  };
-
   const addUpsellItem = (item) => {
     const newItems = [...formData.items, item];
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
 
-  const selectProduct = (index, productId) => {
-    const product = products.find(p => p.id === productId);
-    if (product) {
-      const newItems = [...formData.items];
-      newItems[index] = {
-        ...newItems[index],
-        product_id: productId,
-        name: product.name,
-        sku: '',
-        variation_id: '',
-        unit_price: 0,
-        total: 0,
-        selected_addons: []
-      };
-      const totals = calculateTotals(newItems, formData.extras);
-      setFormData(prev => ({ ...prev, items: newItems, ...totals }));
-    }
-  };
-
-  const handleVariationSelect = (index, variation) => {
-    setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
-        if (idx !== index) return item;
-        
-        const itemTotal = item.quantity * (variation.final_price || 0);
-        const discount = itemTotal * (item.discount_percent / 100);
-        
-        return {
-          ...item,
-          variation_id: variation.id,
-          sku: variation.sku,
-          length_cm: variation.length_cm,
-          width_cm: variation.width_cm,
-          height_cm: variation.height_cm,
-          unit_price: variation.final_price || 0,
-          selected_addons: [],
-          total: itemTotal - discount
-        };
-      });
-
-      const totals = calculateTotals(newItems, prev.extras);
-      return { ...prev, items: newItems, ...totals };
-    });
-  };
-
-  const handleAddonsSelect = (index, addons) => {
-    setFormData(prev => {
-      const newItems = prev.items.map((item, idx) => {
-        if (idx !== index) return item;
-        
-        const addonsTotal = addons.reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = item.quantity * (item.unit_price + addonsTotal);
-        const discount = itemTotal * (item.discount_percent / 100);
-        
-        return {
-          ...item,
-          selected_addons: addons,
-          total: itemTotal - discount
-        };
-      });
-      
-      const totals = calculateTotals(newItems, prev.extras);
-      return { ...prev, items: newItems, ...totals };
-    });
-  };
-
+  // Open the configurator wizard for an already-set bed line (the "edit" button):
+  // ensure a token, use the bed's current config lines for prefill.
   const handleSubmit = (e) => {
     e.preventDefault();
     // Catch the obvious "user reached step 3 with empty form" case before
@@ -588,13 +509,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       setCurrentStep(1);
       return;
     }
-    setShowConfirm(true);
-  };
-
-  const confirmSave = () => {
-    createQuoteMutation.mutate(formData, {
-      onSettled: () => setShowConfirm(false),
-    });
+    // Save directly — no summary/confirm screen.
+    createQuoteMutation.mutate(formData);
   };
 
   const mattressCount = formData.items.reduce((count, item) => {
@@ -633,10 +549,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     return true;
   });
 
-  // Loading screen while saving quote
+  // Loading screen while saving quote — fixed min height so switching from the
+  // form to this view doesn't make the dialog jump/expand.
   if (asDialog && createQuoteMutation.isPending) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-6">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
         <div className="relative">
           <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
         </div>
@@ -654,7 +571,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // Summary screen after quote saved in dialog mode
   if (asDialog && savedQuote) {
     const whatsappPhone = formatPhoneForWhatsApp(formData.customer_phone);
-    const whatsappText = encodeURIComponent(`שלום ${formData.customer_name}, מצורפת הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד.\n\nלצפייה בהצעה: ${savedQuote.pdf_url || ''}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה, צוות קינג דוד`);
+    const whatsappText = encodeURIComponent(`שלום ${formData.customer_name}, מצורפת הצעת מחיר מס' ${savedQuote.quote_number} מקינג דוד.\n\nלצפייה בהצעה: ${toShareablePdfUrl(savedQuote.pdf_url) || ''}\n\nההצעה תקפה עד ${formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : ''}.\n\nבברכה, צוות קינג דוד`);
 
     // Payment screen for reserving quote
     if (showPaymentScreen) {
@@ -675,7 +592,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-muted-foreground">סכום הצעה</span>
-              <span className="font-semibold">₪{Math.round(formData.total).toLocaleString()}</span>
+              <span className="font-semibold">{money2(formData.total)}</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t pt-3">
               <span className="font-semibold">סכום מקדמה לשריון</span>
@@ -737,7 +654,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
           <h2 className="text-xl font-bold text-foreground">ההצעה נוצרה בהצלחה!</h2>
           <p className="text-sm text-muted-foreground">הצעה מס' {savedQuote.quote_number}</p>
-          <p className="text-lg font-bold text-foreground mt-1">סה״כ: ₪{Math.round(formData.total).toLocaleString()}</p>
+          <p className="text-lg font-bold text-foreground mt-1">סה״כ: {money2(formData.total)}</p>
         </div>
 
         {/* Validity notice */}
@@ -794,7 +711,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     quote_number: savedQuote.quote_number,
                     customer_name: formData.customer_name,
                     total: savedQuote.total?.toLocaleString(),
-                    pdf_url: savedQuote.pdf_url,
+                    pdf_url: toShareablePdfUrl(savedQuote.pdf_url),
                     valid_until: formData.valid_until ? format(new Date(formData.valid_until), 'dd/MM/yyyy') : '',
                   });
                   await base44.entities.Quote.update(savedQuote.id, { status: 'sent' });
@@ -851,12 +768,21 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
 
       <div className={asDialog ? 'mb-4 mt-2' : 'mb-8 mt-6'}>
         <div className="flex items-center justify-center">
-          {steps.map((step, idx) => (
+          {steps.map((step, idx) => {
+            // Can't jump forward past an incomplete step (same rules as "המשך");
+            // going back to an earlier step is always allowed.
+            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone);
+            const step2Valid = formData.items.some(item => item.product_id);
+            const locked = step.id > currentStep && !(
+              (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
+            );
+            return (
             <React.Fragment key={step.id}>
               <button
                 type="button"
-                onClick={() => setCurrentStep(step.id)}
-                className="flex flex-col items-center gap-1.5 group relative"
+                onClick={() => { if (!locked) setCurrentStep(step.id); }}
+                disabled={locked}
+                className={`flex flex-col items-center gap-1.5 group relative ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`${asDialog ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-sm sm:text-base'} rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
                   currentStep > step.id
@@ -879,7 +805,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 </div>
               )}
             </React.Fragment>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -936,7 +863,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             ) : null}
             {showPhoneMatches ? (
               <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2">
-                <p className="text-xs text-blue-800 font-medium">נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההצעה:</p>
+                <p className="text-xs text-blue-800 font-medium flex items-center gap-1.5">
+                  {phoneSearching && <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />}
+                  נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההצעה:
+                </p>
                 <div className="space-y-1.5">
                   {phoneMatches.map((m) => (
                     <button
@@ -961,6 +891,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                   ))}
                 </div>
               </div>
+            ) : phoneSearching ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 flex items-center gap-2 text-xs text-blue-800">
+                <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" />
+                מחפש רשומות עם טלפון תואם…
+              </div>
             ) : null}
           </CardContent>
         </Card>
@@ -969,198 +904,20 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
         {currentStep === 2 && (
           <div className="space-y-6">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>פריטים</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 me-2" />
-              הוסף פריט
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {formData.items.map((item, index) => (
-                <div key={index} className={`rounded-xl overflow-hidden bg-white shadow-card border-2 transition-colors ${emptyItemIndex === index ? 'border-red-400 animate-pulse' : 'border-border'}`}>
-                  <TooltipProvider delayDuration={300}>
-                  {/* Top: Product selector full width */}
-                  <div className="px-3 pt-3 pb-2">
-                    {item.name && !item.product_id ? (
-                      <div className="px-3 py-2 border rounded-lg bg-muted/60 text-foreground font-semibold h-10 flex items-center text-sm">
-                        {item.name}
-                      </div>
-                    ) : (
-                      <ProductSelector
-                        products={products}
-                        variations={variations}
-                        value={item.product_id}
-                        selectedVariationId={item.variation_id}
-                        onSelect={(val) => selectProduct(index, val)}
-                        onVariationSelect={(variation) => handleVariationSelect(index, variation)}
-                        placeholder="בחר מוצר ומידות"
-                      />
-                    )}
-                  </div>
-
-                  {/* Bottom: labelled details bar (qty / unit price / discount / totals) */}
-                  <QuoteItemDetailsBar
-                    item={item}
-                    onUpdateQuantity={(qty) => updateItem(index, 'quantity', qty)}
-                    onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                    onRemove={() => removeItem(index)}
-                  />
-                  </TooltipProvider>
-
-                  {/* Bed-only fabric catalog block — appears for items whose
-                      selected product is in the bed category. Stored as free-
-                      text alongside the supplier dropdown; renders to the PDF. */}
-                  {(() => {
-                    const product = products.find(p => p.id === item.product_id);
-                    if (product?.category !== 'bed') return null;
-                    return (
-                      <div className="px-3 pb-3 border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">קטלוג בד</Label>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <Input
-                            placeholder="שם קטלוג"
-                            value={item.fabric_catalog_name || ''}
-                            onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="מס׳ צבע"
-                            value={item.fabric_color_number || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Input
-                            placeholder="צבע"
-                            value={item.fabric_color || ''}
-                            onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                          <Select
-                            value={item.fabric_supplier || ''}
-                            onValueChange={(val) => {
-                              updateItem(index, 'fabric_supplier', val);
-                              if (val !== FABRIC_SUPPLIER_OTHER) {
-                                updateItem(index, 'fabric_supplier_other', '');
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 text-xs">
-                              <SelectValue placeholder="ספק" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {FABRIC_SUPPLIERS.map((s) => (
-                                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
-                          <Input
-                            placeholder="שם הספק"
-                            value={item.fabric_supplier_other || ''}
-                            onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
-                            className="h-8 text-xs"
-                          />
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Addons */}
-                  {item.variation_id && (() => {
-                    const variation = variations.find(v => v.id === item.variation_id);
-                    const product = products.find(p => p.id === item.product_id);
-                    const applicableAddons = addons.filter(addon => {
-                      const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
-                      if (!matchesCategory) return false;
-                      // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
-                      if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
-                      if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
-                      return true;
-                    });
-                    if (applicableAddons.length === 0) return null;
-                    return (
-                      <div className="border-t border-border/40 pt-3 space-y-2">
-                        <Label className="text-xs font-medium text-muted-foreground">תוספות למוצר</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {applicableAddons.map(addon => {
-                            const sizePrice = addon.size_prices?.find(
-                              sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
-                            );
-                            const specificPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
-                            );
-                            const productPrice = addonPrices.find(
-                              ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
-                            );
-                            const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
-                            return (
-                              <Button
-                                key={addon.id}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const newItem = {
-                                    product_id: '',
-                                    variation_id: '',
-                                    sku: '',
-                                    name: addon.name,
-                                    quantity: 1,
-                                    unit_price: finalAddonPrice,
-                                    discount_percent: 0,
-                                    total: finalAddonPrice,
-                                    selected_addons: []
-                                  };
-                                  setFormData(prev => {
-                                    const newItems = [...prev.items];
-                                    newItems.splice(index + 1, 0, newItem);
-                                    const totals = calculateTotals(newItems, prev.extras);
-                                    return { ...prev, items: newItems, ...totals };
-                                  });
-                                }}
-                                className="text-xs h-8 bg-primary/5 border-primary/20 hover:bg-primary/10 hover:border-primary/30 text-primary"
-                              >
-                                <Plus className="w-3 h-3 me-1" />
-                                הוסף {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
+              <CardContent className="pt-5">
+                <ProductItemsEditor
+                  items={formData.items}
+                  onChange={handleItemsChange}
+                  products={products}
+                  variations={variations}
+                  addons={addons}
+                  addonPrices={addonPrices}
+                />
+              </CardContent>
+            </Card>
 
             {/* Totals */}
-            <div className="mt-6 border border-border rounded-xl overflow-hidden">
-              <div className="p-4 space-y-3 bg-muted/40">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">סכום לפני מע״מ</span>
-                  <span className="font-medium">₪{Math.round(formData.subtotal).toLocaleString()}</span>
-                </div>
-                {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-sm text-red-600">
-                    <span>הנחה כולל מע״מ</span>
-                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">מע״מ (18%)</span>
-                  <span className="font-medium">₪{Math.round(formData.vat_amount).toLocaleString()}</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center px-4 py-3.5 bg-primary/5 border-t border-primary/10">
-                <span className="text-base font-bold text-foreground">סה״כ לתשלום</span>
-                <span className="text-xl font-bold text-primary">₪{Math.round(formData.total).toLocaleString()}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
 
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (
@@ -1309,17 +1066,27 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               )}
             </div>
 
-            <div>
+            <div className="flex items-center gap-3">
               {currentStep < 3 ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
-                  disabled={currentStep === 2 && !formData.items.some(item => item.product_id)}
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
-                >
-                  המשך
-                </Button>
+                <>
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
+                    disabled={
+                      (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)))
+                      || (currentStep === 2 && !formData.items.some(item => item.product_id))
+                    }
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
+                  >
+                    המשך
+                  </Button>
+                  {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)) ? (
+                    <span className="text-[11px] text-muted-foreground">יש למלא שם וטלפון תקין כדי להמשיך</span>
+                  ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
+                    <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
+                  ) : null}
+                </>
               ) : (
                 <Button
                   type="submit"
@@ -1339,17 +1106,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           </div>
         </div>
       </form>
-      <QuoteConfirmDialog
-        open={showConfirm}
-        onOpenChange={setShowConfirm}
-        formData={formData}
-        products={products}
-        variations={variations}
-        onConfirm={confirmSave}
-        isPending={createQuoteMutation.isPending}
-        title="אישור לפני שמירת ההצעה"
-        confirmLabel="אישור ושמירה"
-      />
     </div>
   );
 }

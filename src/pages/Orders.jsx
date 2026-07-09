@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, LayoutDashboard, X } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { canViewOrdersWorkspace, filterOrdersForUser, canAccessAdminOnly } from '@/lib/rbac';
+import { canViewOrdersWorkspace, filterOrdersForUser, canViewOrder, isPhoneLookupTerm, canAccessAdminOnly } from '@/lib/rbac';
 import { getDateRange } from '@/utils/dateRange';
 import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
 import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
@@ -128,7 +128,12 @@ export default function Orders() {
     enabled: canAccessSales,
   });
 
-  const scopedOrders = filterOrdersForUser(effectiveUser, orders);
+  // A phone search lets a rep find OTHER reps' orders too (view-only); any
+  // other search — or none — stays scoped to the rep's own orders.
+  const phoneSearch = isPhoneLookupTerm(filters.search);
+  const scopedOrders = phoneSearch
+    ? orders.map((o) => ({ ...o, _readOnly: !canViewOrder(effectiveUser, o) }))
+    : filterOrdersForUser(effectiveUser, orders);
 
   // Date-scope by the selected range for managers. The snapshot cubes are
   // computed from this exact set, so a cube's number always equals what its
@@ -195,7 +200,10 @@ export default function Orders() {
       header: 'לקוח',
       render: (row) => (
         <div>
-          <p className="font-medium">{row.customer_name}</p>
+          <p className="font-medium">
+            {row.customer_name}
+            {row._readOnly && <span className="ms-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">צפייה בלבד</span>}
+          </p>
           <p className="text-sm text-muted-foreground">{row.customer_phone}</p>
         </div>
       )

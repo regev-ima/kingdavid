@@ -2,7 +2,8 @@ import React, { Suspense, lazy } from 'react';
 import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { pagesConfig } from './pages.config'
+import Layout from './Layout.jsx';
+import { pageLoaders, pageNames, mainPage } from '@/lib/pageRoutes';
 import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
@@ -10,6 +11,8 @@ import ErrorBoundary from '@/components/shared/ErrorBoundary';
 import { ImpersonationProvider } from '@/components/shared/ImpersonationContext';
 import { LeadModalProvider } from '@/components/lead/LeadModalContext';
 import { OrderModalProvider } from '@/components/order/OrderModalContext';
+import { QuoteModalProvider } from '@/components/quote/QuoteModalContext';
+import { CreationModalProvider } from '@/components/shared/CreationModalContext';
 
 const LazyLogin = lazy(() => import('./pages/Login.jsx'));
 const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
@@ -17,14 +20,10 @@ const LazyHypReturn = lazy(() => import('./pages/HypReturn.jsx'));
 // link). Rendered outside the auth gate, like /HypReturn.
 const LazyServiceRequestPublic = lazy(() => import('./pages/ServiceRequestPublic.jsx'));
 
-const { Pages, Layout, mainPage } = pagesConfig;
-const mainPageKey = mainPage ?? Object.keys(Pages)[0];
+const mainPageKey = mainPage ?? pageNames[0];
 
 const LazyPages = Object.fromEntries(
-  Object.keys(Pages).map((name) => [
-    name,
-    lazy(() => import(`./pages/${name}.jsx`)),
-  ])
+  pageNames.map((name) => [name, lazy(pageLoaders[name])])
 );
 
 const MainPage = mainPageKey ? LazyPages[mainPageKey] : () => <></>;
@@ -78,6 +77,12 @@ const AuthenticatedApp = () => {
     <ImpersonationProvider>
       <LeadModalProvider>
         <OrderModalProvider>
+        {/* CreationModalProvider must wrap QuoteModalProvider so the quote
+            popup (rendered by QuoteModalProvider as a sibling of its children)
+            sits INSIDE it — otherwise "המר להזמנה" from the popup calls a no-op
+            openNewOrder and nothing happens. */}
+        <CreationModalProvider>
+        <QuoteModalProvider>
         <Suspense fallback={<PageLoadingFallback />}>
           <Routes>
             <Route path="/" element={
@@ -103,6 +108,8 @@ const AuthenticatedApp = () => {
             <Route path="*" element={<PageNotFound />} />
           </Routes>
         </Suspense>
+        </QuoteModalProvider>
+        </CreationModalProvider>
         </OrderModalProvider>
       </LeadModalProvider>
     </ImpersonationProvider>

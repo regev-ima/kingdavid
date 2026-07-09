@@ -16,27 +16,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ArrowRight, Save, Loader2, Plus, Trash2, User, UserCheck, X, Check } from "lucide-react";
-import { productMatchesBedType } from '@/utils/bedType';
+import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
-import ProductSelector from '@/components/quote/ProductSelector';
-import DiscountPopover from '@/components/quote/DiscountPopover';
+import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
+import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
-import { FABRIC_SUPPLIERS, FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
+
+// ₪ with two decimals (agorot) so totals match the per-line amounts.
+const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Strip everything but digits, then drop a leading country prefix so
 // "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
@@ -78,7 +72,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
-    items: [{ sku: '', name: '', product_id: '', variation_id: '', quantity: 1, unit_price: 0, discount_percent: 0, total: 0, selected_addons: [], fabric_catalog_name: '', fabric_color_number: '', fabric_color: '', fabric_supplier: '', fabric_supplier_other: '' }],
+    items: [],
     extras: [],
     subtotal: 0,
     discount_total: 0,
@@ -168,7 +162,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   const phoneLookupEnabled =
     !leadId && !customerId && !quoteId && debouncedPhone.length >= 4 && !linkedRecord;
 
-  const { data: phoneMatchesData } = useQuery({
+  const { data: phoneMatchesData, isFetching: isPhoneFetching } = useQuery({
     queryKey: ['orderPhoneLookup', debouncedPhone],
     enabled: phoneLookupEnabled && canAccessSales,
     staleTime: 60_000,
@@ -203,6 +197,14 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   }, [phoneMatchesData]);
 
   const showPhoneMatches = phoneLookupEnabled && phoneMatches.length > 0;
+  // Feedback while the lookup runs — covers BOTH the debounce window (the typed
+  // phone hasn't propagated to the query yet) and the request in flight — so the
+  // rep can SEE a search is happening instead of staring at a static field.
+  const normalizedTypedPhone = normalizePhoneForLookup(formData.customer_phone);
+  const phoneSearching =
+    !leadId && !customerId && !quoteId && !linkedRecord && canAccessSales &&
+    normalizedTypedPhone.length >= 4 &&
+    (isPhoneFetching || normalizedTypedPhone !== debouncedPhone);
 
   const applyPhoneMatch = (match) => {
     setFormData((prev) => ({
@@ -376,17 +378,47 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
       // Update lead status and link customer if exists
       if (data.lead_id) {
-        await base44.entities.Lead.update(data.lead_id, { 
+        await base44.entities.Lead.update(data.lead_id, {
           status: 'deal_closed',
-          customer_id: customerId 
+          customer_id: customerId
+        });
+        // Cross-rep policy: a rep who doesn't own this lead just created an
+        // order → become secondary if the lead already had an order, else take
+        // over as primary. excludeOrderId ignores the order we just created so
+        // the FIRST order still counts as "no prior order". Admins exempt.
+        await applyCrossRepReassignment({
+          leadId: data.lead_id,
+          actingUser: effectiveUser,
+          isAdminActor: isAdmin(effectiveUser),
+          sourceLabel: 'הזמנה',
+          excludeOrderId: order.id,
         });
       }
-      
+
       return order;
     },
     onSuccess: (order) => {
       if (asDialog && onDialogClose) { onDialogClose(order); return; }
       navigate(createPageUrl('OrderDetails') + `?id=${order.id}`);
+    },
+    // Without this, a failed insert (RLS denial, a rejected column, or a failing
+    // shipment/commission/customer sub-insert) left "צור הזמנה" doing nothing —
+    // the mutation rejected and no feedback surfaced. Mirror NewQuote: surface
+    // the real PostgREST error parts so the rep sees exactly what broke.
+    onError: (err) => {
+      const parts = [err?.message, err?.details, err?.hint, err?.code]
+        .map((p) => (p == null || p === '' ? null : String(p)))
+        .filter(Boolean);
+      const description = parts.length ? parts.join(' — ') : (typeof err === 'string' ? err : 'אירעה שגיאה לא ידועה');
+      console.error('Order.create failed', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      const isDuplicateKey = err?.code === '23505' || /duplicate key|unique constraint/i.test(description);
+      if (isDuplicateKey) {
+        toast.error('מספר ההזמנה כבר תפוס (ייתכן שנוצרה הזמנה נוספת באותו רגע). אנא רענן את הדף ונסה שוב.', {
+          duration: Infinity,
+        });
+        return;
+      }
+      toast.error(`יצירת ההזמנה נכשלה: ${description}`, { duration: Infinity });
     },
   });
 
@@ -411,10 +443,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
     // VAT recomputed on top of them. VAT is only applied to the items subtotal.
     const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-    const subtotal = itemsSubtotal + extrasTotal;
-    const vat_amount = Math.round(itemsSubtotal * 0.18);
-    const total = Math.round(subtotal + vat_amount);
-    return { subtotal, discount_total, vat_amount, total };
+    // Round to agorot (2 decimals) so the total matches the sum of line totals.
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const subtotal = round2(itemsSubtotal + extrasTotal);
+    const vat_amount = round2(itemsSubtotal * 0.18);
+    const total = round2(subtotal + vat_amount);
+    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
+  };
+
+  // ProductItemsEditor hands back a fresh items array; recompute grand totals.
+  const handleItemsChange = (newItems) => {
+    setFormData(prev => ({ ...prev, items: newItems, ...calculateTotals(newItems, prev.extras) }));
   };
 
   const updateItem = (index, field, value) => {
@@ -543,9 +582,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     // The required customer fields live on step 1; since steps are unmounted
     // (not CSS-hidden), the browser can't enforce `required` from step 3 — so
     // validate here and jump back so the rep sees exactly what's missing.
-    if (!formData.customer_name?.trim() || !formData.delivery_address?.trim()) {
+    if (!formData.customer_name?.trim() || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) {
       setCurrentStep(1);
-      toast.error('יש למלא שם לקוח וכתובת למשלוח');
+      toast.error('יש למלא שם לקוח, עיר וכתובת למשלוח');
       return;
     }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
@@ -553,7 +592,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
-    createOrderMutation.mutate(formData);
+    // Trial flag is derived from the products on the order, not a manual toggle.
+    const trial_30d_enabled = formData.items.some((it) => {
+      const p = products.find((pp) => pp.id === it.product_id);
+      return Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
+    });
+    createOrderMutation.mutate({ ...formData, trial_30d_enabled });
   };
 
   return (
@@ -575,12 +619,20 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       {/* Step indicator — mirrors NewQuote */}
       <div className={asDialog ? 'mb-4 mt-2' : 'mb-8 mt-6'}>
         <div className="flex items-center justify-center">
-          {steps.map((step, idx) => (
+          {steps.map((step, idx) => {
+            // Can't jump forward past an incomplete step (same rules as "המשך").
+            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone) && !!formData.delivery_city?.trim() && !!formData.delivery_address?.trim();
+            const step2Valid = formData.items.some(item => item.product_id);
+            const locked = step.id > currentStep && !(
+              (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
+            );
+            return (
             <React.Fragment key={step.id}>
               <button
                 type="button"
-                onClick={() => setCurrentStep(step.id)}
-                className="flex flex-col items-center gap-1.5 group relative"
+                onClick={() => { if (!locked) setCurrentStep(step.id); }}
+                disabled={locked}
+                className={`flex flex-col items-center gap-1.5 group relative ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`${asDialog ? 'w-8 h-8 text-xs' : 'w-10 h-10 sm:w-12 sm:h-12 text-sm sm:text-base'} rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
                   currentStep > step.id
@@ -603,7 +655,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 </div>
               )}
             </React.Fragment>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -671,7 +724,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             ) : null}
             {showPhoneMatches ? (
               <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-2">
-                <p className="text-xs text-blue-800 font-medium">נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההזמנה:</p>
+                <p className="text-xs text-blue-800 font-medium flex items-center gap-1.5">
+                  {phoneSearching && <Loader2 className="h-3 w-3 animate-spin flex-shrink-0" />}
+                  נמצאו רשומות עם טלפון דומה — בחר כדי לקשר את ההזמנה:
+                </p>
                 <div className="space-y-1.5">
                   {phoneMatches.map((m) => (
                     <button
@@ -695,6 +751,11 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                     </button>
                   ))}
                 </div>
+              </div>
+            ) : phoneSearching ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 flex items-center gap-2 text-xs text-blue-800">
+                <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" />
+                מחפש רשומות עם טלפון תואם…
               </div>
             ) : null}
             <div className="grid sm:grid-cols-2 gap-4">
@@ -767,246 +828,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
         {currentStep === 2 && (
         <Card className="mt-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>פריטים</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 me-2" />
-              הוסף פריט
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">מוצר</TableHead>
-                  <TableHead className="text-right w-32">מק״ט</TableHead>
-                  <TableHead className="text-right w-24">כמות</TableHead>
-                  <TableHead className="text-right w-32">מחיר</TableHead>
-                  <TableHead className="text-right w-28">הנחה</TableHead>
-                  <TableHead className="text-right w-32">סה"כ</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {formData.items.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell>
-                      <div className="space-y-2">
-                        <ProductSelector
-                          products={products}
-                          variations={variations}
-                          value={item.product_id}
-                          selectedVariationId={item.variation_id}
-                          onSelect={(val) => selectProduct(index, val)}
-                          onVariationSelect={(variation) => handleVariationSelect(index, variation)}
-                          placeholder="בחר מוצר ומידות"
-                        />
-                        {/* Bed-only fabric catalog block */}
-                        {(() => {
-                          const product = products.find(p => p.id === item.product_id);
-                          if (product?.category !== 'bed') return null;
-                          return (
-                            <div className="mt-3 space-y-2 border-t border-border/40 pt-3">
-                              <Label className="text-xs text-muted-foreground">קטלוג בד</Label>
-                              <div className="grid grid-cols-2 gap-2">
-                                <Input
-                                  placeholder="שם קטלוג"
-                                  value={item.fabric_catalog_name || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_catalog_name', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                                <Input
-                                  placeholder="מס׳ צבע"
-                                  value={item.fabric_color_number || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_color_number', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                                <Input
-                                  placeholder="צבע"
-                                  value={item.fabric_color || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_color', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                                <Select
-                                  value={item.fabric_supplier || ''}
-                                  onValueChange={(val) => {
-                                    updateItem(index, 'fabric_supplier', val);
-                                    if (val !== FABRIC_SUPPLIER_OTHER) {
-                                      updateItem(index, 'fabric_supplier_other', '');
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 text-xs">
-                                    <SelectValue placeholder="ספק" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {FABRIC_SUPPLIERS.map((s) => (
-                                      <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              {item.fabric_supplier === FABRIC_SUPPLIER_OTHER && (
-                                <Input
-                                  placeholder="שם הספק"
-                                  value={item.fabric_supplier_other || ''}
-                                  onChange={(e) => updateItem(index, 'fabric_supplier_other', e.target.value)}
-                                  className="h-8 text-xs"
-                                />
-                              )}
-                            </div>
-                          );
-                        })()}
-                        {item.variation_id && (() => {
-                              const variation = variations.find(v => v.id === item.variation_id);
-                              const product = products.find(p => p.id === item.product_id);
-                              const applicableAddons = addons.filter(addon => {
-                                const matchesCategory = !addon.applicable_categories?.length || addon.applicable_categories.includes(product?.category);
-                                if (!matchesCategory) return false;
-                                // bed_type is an array — exclude add-ons whose applies_to bed-type isn't supported by this product.
-                                if (addon.applies_to === 'double' && !productMatchesBedType(product, 'double')) return false;
-                                if (addon.applies_to === 'single' && !productMatchesBedType(product, 'single')) return false;
-                                return true;
-                              });
-                              if (applicableAddons.length === 0) return null;
-                              return (
-                                <div className="mt-3 space-y-2">
-                                  <Label className="text-xs text-muted-foreground">תוספות למוצר</Label>
-                                  <div className="flex flex-wrap gap-2">
-                                    {applicableAddons.map(addon => {
-                                      const sizePrice = addon.size_prices?.find(
-                                        sp => sp.width_cm === variation?.width_cm && sp.length_cm === variation?.length_cm
-                                      );
-                                      const specificPrice = addonPrices.find(
-                                        ap => ap.addon_id === addon.id && ap.product_id === item.product_id && ap.product_variation_id === item.variation_id
-                                      );
-                                      const productPrice = addonPrices.find(
-                                        ap => ap.addon_id === addon.id && ap.product_id === item.product_id && !ap.product_variation_id
-                                      );
-                                      const finalAddonPrice = specificPrice?.price || productPrice?.price || sizePrice?.price || addon.base_price;
-                                      const isSelected = (item.selected_addons || []).some(sa => sa.addon_id === addon.id);
-                                      return (
-                                        <Button
-                                          key={addon.id}
-                                          type="button"
-                                          variant={isSelected ? "default" : "outline"}
-                                          size="sm"
-                                          onClick={() => {
-                                            const currentAddons = item.selected_addons || [];
-                                            const newSelectedAddons = isSelected
-                                              ? currentAddons.filter(sa => sa.addon_id !== addon.id)
-                                              : [...currentAddons, { addon_id: addon.id, name: addon.name, price: finalAddonPrice }];
-                                            handleAddonsSelect(index, newSelectedAddons);
-                                          }}
-                                          className="text-xs"
-                                        >
-                                          {addon.name} (₪{Math.round((finalAddonPrice || 0) * 1.18).toLocaleString()})
-                                        </Button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm text-muted-foreground" dir="ltr">{item.sku || '-'}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                        className="w-20"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <div className="font-medium">₪{item.unit_price?.toLocaleString()}</div>
-                        {item.selected_addons && item.selected_addons.length > 0 && (
-                          <div className="text-xs text-muted-foreground">
-                            +₪{item.selected_addons.reduce((sum, a) => sum + (a.price || 0), 0).toLocaleString()} תוספות
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <DiscountPopover
-                          item={item}
-                          onApplyDiscount={(percent) => updateItem(index, 'discount_percent', percent)}
-                        />
-                        {item.discount_percent > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => updateItem(index, 'discount_percent', 0)}
-                            className="text-red-400 hover:text-red-600 transition-colors"
-                            aria-label="הסר הנחה"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-semibold">
-                      {(() => {
-                        const addonsTotal = (item.selected_addons || []).reduce((s, a) => s + (a.price || 0), 0);
-                        const baseLine = item.quantity * (item.unit_price + addonsTotal);
-                        return item.discount_percent > 0 ? (
-                          <div className="flex flex-col leading-tight">
-                            <span className="text-[11px] text-red-400 line-through">₪{Math.round(baseLine).toLocaleString()}</span>
-                            <span className="flex items-center gap-1">
-                              ₪{Math.round(item.total || 0).toLocaleString()}
-                              <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 rounded px-1">-{item.discount_percent}%</span>
-                            </span>
-                          </div>
-                        ) : (
-                          <span>₪{item.total?.toLocaleString()}</span>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      {formData.items.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeItem(index)}
-                          className="text-red-500"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <CardContent className="pt-5">
+            <ProductItemsEditor
+              items={formData.items}
+              onChange={handleItemsChange}
+              products={products}
+              variations={variations}
+              addons={addons}
+              addonPrices={addonPrices}
+            />
 
-            <div className="mt-6 flex justify-end">
-              <div className="w-64 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">סכום ביניים:</span>
-                  <span>₪{Math.round(formData.subtotal).toLocaleString()}</span>
-                </div>
-                {formData.discount_total > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>הנחה כולל מע״מ:</span>
-                    <span className="font-medium">-₪{Math.round(formData.discount_total * 1.18).toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">מע"מ (18%):</span>
-                  <span>₪{Math.round(formData.vat_amount).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-lg font-bold border-t pt-2">
-                  <span>סה"כ לתשלום:</span>
-                  <span>₪{formData.total.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
           </CardContent>
         </Card>
         )}
@@ -1063,13 +895,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             <CardTitle>אפשרויות</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Switch
-                checked={formData.trial_30d_enabled}
-                onCheckedChange={(v) => setFormData({...formData, trial_30d_enabled: v})}
-              />
-              <Label>ניסיון 30 יום</Label>
-            </div>
+            {/* 30-day trial is a property of the product (shown on its row in the
+                items step), not a manual order-level toggle. */}
             <div className="space-y-2">
               <Label>הערות</Label>
               <Textarea
@@ -1139,17 +966,27 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             )}
           </div>
 
-          <div>
+          <div className="flex items-center gap-3">
             {currentStep < 3 ? (
-              <Button
-                type="button"
-                size="lg"
-                className="h-11 px-8 text-base font-semibold"
-                disabled={currentStep === 2 && !formData.items.some(item => item.product_id)}
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
-              >
-                המשך
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  size="lg"
+                  className="h-11 px-8 text-base font-semibold"
+                  disabled={
+                    (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()))
+                    || (currentStep === 2 && !formData.items.some(item => item.product_id))
+                  }
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
+                >
+                  המשך
+                </Button>
+                {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) ? (
+                  <span className="text-[11px] text-muted-foreground">יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך</span>
+                ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
+                  <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
+                ) : null}
+              </>
             ) : (
               <Button
                 type="submit"

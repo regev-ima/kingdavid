@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Check, Search, Bed, Armchair, Layers, Package, X, ChevronLeft, Ruler, Clock, AlertTriangle } from 'lucide-react';
+import { Check, Search, Bed, Layers, Package, ChevronLeft, Ruler, Clock, AlertTriangle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,9 +40,18 @@ export default function ProductSelector({
   selectedVariationId,
   onSelect,
   onVariationSelect,
-  placeholder = "בחר מוצר"
+  placeholder = "בחר מוצר",
+  // Controlled-open mode: when `open`/`onOpenChange` are passed the dialog is
+  // driven from outside and (with hideTrigger) the built-in button is omitted —
+  // lets "הוסף פריט" open the picker straight into a fresh selection.
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (v) => { if (isControlled) onOpenChange?.(v); else setUncontrolledOpen(v); };
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedBedType, setSelectedBedType] = useState(null);
   const [selectedProductId, setSelectedProductId] = useState(null);
@@ -119,6 +128,7 @@ export default function ProductSelector({
 
   return (
     <>
+      {!hideTrigger && (
       <Button
         type="button"
         variant="outline"
@@ -144,9 +154,12 @@ export default function ProductSelector({
         )}
         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
       </Button>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col p-0" dir="rtl">
+        {/* Dynamic height — sizes to its content (capped at 85vh, then scrolls),
+            so there's no empty space; the product list has its own inner scroll. */}
+        <DialogContent className="max-w-3xl w-[95vw] max-h-[85vh] overflow-hidden flex flex-col p-0" dir="rtl">
           {/* Header */}
           <div className="px-5 pt-4 pb-3 border-b border-border/50 bg-muted/30">
             <DialogHeader className="mb-0">
@@ -183,8 +196,9 @@ export default function ProductSelector({
             </div>
           </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          {/* Content — top-aligned; the dialog sizes to it (dynamic height),
+              and this area scrolls if a step (e.g. many sizes) gets tall. */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
             <div className="space-y-5">
 
               {/* Step 1: Category Selection */}
@@ -313,8 +327,9 @@ export default function ProductSelector({
 
                 const renderVariationButton = (variation) => {
                   const isSelected = pendingVariation?.id === variation.id && !pendingVariation?._customWidth;
-                  const priceWithVat = Math.round((variation.final_price || 0) * 1.18);
-                  const priceWithoutVat = Math.round(variation.final_price || 0);
+                  // final_price is the final price to the customer (incl VAT).
+                  const priceWithVat = Math.round(variation.final_price || 0);
+                  const priceWithoutVat = Math.round((variation.final_price || 0) / 1.18);
                   return (
                     <button
                       key={variation.id}
@@ -356,8 +371,8 @@ export default function ProductSelector({
                     ? group.find(v => (v.width_cm || 0) >= enteredWidth) || group[group.length - 1]
                     : pricingVariation;
 
-                  const customPriceWithVat = Math.round((pricedAt.final_price || 0) * 1.18);
-                  const customPriceWithoutVat = Math.round(pricedAt.final_price || 0);
+                  const customPriceWithVat = Math.round(pricedAt.final_price || 0);
+                  const customPriceWithoutVat = Math.round((pricedAt.final_price || 0) / 1.18);
 
                   return (
                     <div
@@ -470,8 +485,8 @@ export default function ProductSelector({
 
           {/* Sticky confirm footer */}
           {pendingVariation && (() => {
-            const footerWithVat = Math.round((pendingVariation.final_price || 0) * 1.18);
-            const footerWithout = Math.round(pendingVariation.final_price || 0);
+            const footerWithVat = Math.round(pendingVariation.final_price || 0);
+            const footerWithout = Math.round((pendingVariation.final_price || 0) / 1.18);
             return (
               <div className="px-5 py-3.5 border-t-2 border-primary/20 bg-gradient-to-l from-primary/[0.06] to-primary/[0.02]">
                 <div className="flex items-center justify-between">

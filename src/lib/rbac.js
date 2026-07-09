@@ -32,6 +32,11 @@ export const GRANTABLE_PERMISSIONS = [
     label: 'עדכון מרוכז',
     description: 'שימוש בכלי העדכון המרוכז (Bulk Update) לעריכת לידים בכמות.',
   },
+  {
+    key: 'edit_schedule',
+    label: 'עריכת שיבוץ משמרות',
+    description: 'שיבוץ נציגים למשמרות בעמוד "שיבוץ משמרות". שאר הנציגים רק צופים.',
+  },
 ];
 
 // True when `key` is switched on in the rep's extra_permissions blob.
@@ -93,6 +98,12 @@ export function canViewFinanceWorkspace(user) {
 // `bulk_update` extra permission opens it for a specific rep.
 export function canUseBulkUpdate(user) {
   return isAdmin(user) || hasExtraPermission(user, 'bulk_update');
+}
+
+// Shift schedule ("שיבוץ משמרות"). Everyone authenticated can VIEW the weekly
+// board; admins — or a rep granted `edit_schedule` — may assign reps to shifts.
+export function canEditSchedule(user) {
+  return isAdmin(user) || hasExtraPermission(user, 'edit_schedule');
 }
 
 export function canAccessSupportWorkspace(user) {
@@ -286,6 +297,30 @@ export function canViewCustomer(user, customer, context = {}) {
 
 export function filterCustomersForUser(user, customers = [], context = {}) {
   return customers.filter((customer) => canViewCustomer(user, customer, context));
+}
+
+// ── Editing an order / quote / customer ──────────────────────────────────────
+// Reps may now VIEW any record they reach through a phone lookup, but they may
+// only EDIT records they own. These mirror the canView* ownership checks, so
+// everyone who can edit today keeps their access; the only new behaviour is
+// that a sales rep who reached someone else's record via search is downgraded
+// to read-only. Detail screens gate their edit controls on these.
+export function canEditOrder(user, order) {
+  return canViewOrder(user, order);
+}
+export function canEditQuote(user, quote, leadsById = {}) {
+  return canViewQuote(user, quote, leadsById);
+}
+export function canEditCustomer(user, customer, context = {}) {
+  return canViewCustomer(user, customer, context);
+}
+
+// A list search counts as a "phone lookup" once it carries enough digits to be
+// a real number fragment (>= 5). Reps' list searches surface OTHER reps'
+// records (view-only) only for phone lookups — name/email searches stay scoped
+// to the rep's own records so they can't browse the whole book by common names.
+export function isPhoneLookupTerm(term) {
+  return String(term || '').replace(/\D/g, '').length >= 5;
 }
 
 export function canViewSupportTicket(user, ticket) {

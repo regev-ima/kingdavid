@@ -3,8 +3,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Loader2, ArrowRight, Check } from 'lucide-react';
 import { FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
+import { bedConfigFieldLines } from '@/lib/bedConfig';
 
-const fmt = (n) => `₪${Math.round(Number(n) || 0).toLocaleString('he-IL')}`;
+const fmt = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Reusable "are you sure?" preview shown right before a quote is persisted.
 // Lists every item with its size/fabric/addons + the document totals so the
@@ -63,15 +64,21 @@ export default function QuoteConfirmDialog({
                   const size = hasSize
                     ? `${item.length_cm}×${item.width_cm}${item.height_cm ? `×${item.height_cm}` : ''} ס"מ`
                     : variation ? `${variation.length_cm}×${variation.width_cm} ס"מ` : null;
-                  const supplier = item.fabric_supplier === FABRIC_SUPPLIER_OTHER
-                    ? (item.fabric_supplier_other || 'אחר')
-                    : item.fabric_supplier;
-                  const fabricParts = [
-                    item.fabric_catalog_name && `קטלוג: ${item.fabric_catalog_name}`,
-                    item.fabric_color_number && `מס׳ צבע: ${item.fabric_color_number}`,
-                    item.fabric_color && `צבע: ${item.fabric_color}`,
-                    supplier && `ספק: ${supplier}`,
-                  ].filter(Boolean);
+                  // Bed text-question answers (fabric catalog etc.) — generic
+                  // path, with a fallback to legacy fabric_* columns.
+                  let fieldLines = bedConfigFieldLines(item);
+                  if (!fieldLines.length) {
+                    const supplier = item.fabric_supplier === FABRIC_SUPPLIER_OTHER
+                      ? (item.fabric_supplier_other || 'אחר')
+                      : item.fabric_supplier;
+                    const fabricParts = [
+                      item.fabric_catalog_name && `קטלוג: ${item.fabric_catalog_name}`,
+                      item.fabric_color_number && `מס׳ צבע: ${item.fabric_color_number}`,
+                      item.fabric_color && `צבע: ${item.fabric_color}`,
+                      supplier && `ספק: ${supplier}`,
+                    ].filter(Boolean);
+                    if (fabricParts.length) fieldLines = [`בד: ${fabricParts.join(' · ')}`];
+                  }
                   const addons = item.selected_addons || [];
                   const lineTotal = Number(item.total) || 0;
                   return (
@@ -82,9 +89,9 @@ export default function QuoteConfirmDialog({
                           <div className="text-[11px] text-muted-foreground mt-0.5 space-y-0.5">
                             {item.sku && <div dir="ltr" className="text-right">SKU: {item.sku}</div>}
                             {size && <div>מידה: {size}</div>}
-                            {fabricParts.length > 0 && (
-                              <div>בד: {fabricParts.join(' · ')}</div>
-                            )}
+                            {fieldLines.map((ln, i) => (
+                              <div key={i}>{ln}</div>
+                            ))}
                             {addons.length > 0 && (
                               <div>
                                 תוספות: {addons.map(a => `${a.name} (+${fmt(a.price)})`).join(', ')}

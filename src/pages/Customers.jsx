@@ -12,7 +12,7 @@ import { TrendingUp, Users, DollarSign, FileSpreadsheet } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import ImportCustomers from '@/components/customer/ImportCustomers';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, filterCustomersForUser, isAdmin } from '@/lib/rbac';
+import { buildLeadsById, buildOrdersByCustomerId, canAccessSalesWorkspace, canViewCustomer, filterCustomersForUser, isAdmin, isPhoneLookupTerm } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 // Cap for the in-memory list. The table only ever shows the first
@@ -159,13 +159,21 @@ export default function Customers() {
 
   // For admins this is a pass-through (canViewCustomer short-circuits
   // to true), so we don't pay for buildLeadsById / buildOrdersByCustomerId.
+  // A phone search lets a rep find OTHER reps' customers too (so they can help
+  // a walk-in / caller), but those surface as view-only. Any other search — or
+  // no search — stays scoped to the rep's own book.
+  const phoneSearch = isPhoneLookupTerm(filterValues.search);
   const scopedCustomers = useMemo(() => {
     if (adminUser) return customers;
-    return filterCustomersForUser(effectiveUser, customers, {
+    const ctx = {
       leadsById: buildLeadsById(leads),
       ordersByCustomerId: buildOrdersByCustomerId(orders),
-    });
-  }, [adminUser, effectiveUser, customers, leads, orders]);
+    };
+    if (phoneSearch) {
+      return customers.map((c) => ({ ...c, _readOnly: !canViewCustomer(effectiveUser, c, ctx) }));
+    }
+    return filterCustomersForUser(effectiveUser, customers, ctx);
+  }, [adminUser, effectiveUser, customers, leads, orders, phoneSearch]);
 
   const repOptions = users
     .filter((u) => u.role === 'user' || u.role === 'admin')
@@ -213,7 +221,10 @@ export default function Customers() {
       header: 'לקוח',
       render: (customer) => (
         <div>
-          <p className="font-medium">{customer.full_name}</p>
+          <p className="font-medium">
+            {customer.full_name}
+            {customer._readOnly && <span className="ms-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">צפייה בלבד</span>}
+          </p>
           <p className="text-xs text-muted-foreground">{customer.phone}</p>
         </div>
       )

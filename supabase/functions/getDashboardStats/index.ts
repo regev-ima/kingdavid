@@ -188,9 +188,13 @@ Deno.serve(async (req) => {
       safe('dashboardStatsRpc', supabase.rpc('dashboard_stats_v1', { p_start: startIso, p_end: endIso }).then((r: any) => { if (r.error) throw r.error; return r.data; }), null as any),
       safe('marketing_costs', fetchAll(supabase, 'marketing_costs', { gte: { date: startIso }, lte: { date: endIso }, order: 'date' }), [] as any[]),
       safe('users', supabase.from('users').select('email,full_name,role,profile_icon').then((r: any) => { if (r.error) throw r.error; return r.data || []; }), [] as any[]),
-      safe('overdueTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, lt: { due_date: todayStart.toISOString() }, order: 'due_date' }), [] as any[]),
-      safe('todayTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, gte: { due_date: todayStart.toISOString() }, lte: { due_date: todayEnd.toISOString() }, order: 'due_date' }), [] as any[]),
-      safe('sentQuotes', fetchAll(supabase, 'quotes', { eq: { status: 'sent' }, order: 'created_date' }), [] as any[]),
+      // Narrow column projections: these three scans are unbounded (no date
+      // filter) and previously selected * — on quotes that meant dragging the
+      // full items jsonb of every sent quote ever, the single heaviest payload
+      // of this function. Only the fields actually read below are fetched.
+      safe('overdueTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, lt: { due_date: todayStart.toISOString() }, order: 'due_date' }, 'id,rep1,rep2'), [] as any[]),
+      safe('todayTasks', fetchAll(supabase, 'sales_tasks', { eq: { task_status: 'not_completed' }, gte: { due_date: todayStart.toISOString() }, lte: { due_date: todayEnd.toISOString() }, order: 'due_date' }, 'id,rep1,rep2'), [] as any[]),
+      safe('sentQuotes', fetchAll(supabase, 'quotes', { eq: { status: 'sent' }, order: 'created_date' }, 'id,quote_number,customer_name,total,valid_until'), [] as any[]),
       safe('unassignedLeads', supabase
         .from('leads')
         .select('*', { count: 'exact', head: true })

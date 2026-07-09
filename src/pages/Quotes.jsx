@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
-import { createPageUrl } from '@/utils';
 import DataTable from '@/components/shared/DataTable';
 import FilterBar from '@/components/shared/FilterBar';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuickActions from '@/components/shared/QuickActions';
+import { useCreationModal } from '@/components/shared/CreationModalContext';
+import { useQuoteModal } from '@/components/quote/QuoteModalContext';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, X } from "lucide-react";
 import { format, differenceInDays } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { buildLeadsById, canViewOrdersWorkspace, filterQuotesForUser, isAdmin } from '@/lib/rbac';
+import { buildLeadsById, canViewOrdersWorkspace, filterQuotesForUser, canViewQuote, isPhoneLookupTerm, isAdmin } from '@/lib/rbac';
 import { fetchAllList } from '@/lib/base44Pagination';
 
 const filterOptions = [
@@ -31,7 +31,8 @@ const filterOptions = [
 ];
 
 export default function Quotes() {
-  const navigate = useNavigate();
+  const { openNewQuote } = useCreationModal();
+  const { openQuote } = useQuoteModal();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending', 'draft', 'expiring'].includes(initialTab) ? initialTab : 'all');
@@ -65,6 +66,12 @@ export default function Quotes() {
 
   const leadsById = buildLeadsById(leads);
   const scopedQuotes = filterQuotesForUser(effectiveUser, quotes, leadsById);
+  // A phone search lets a rep find OTHER reps' quotes too (view-only); counts
+  // and the per-rep drilldown keep using the rep's own scopedQuotes.
+  const phoneSearch = isPhoneLookupTerm(filters.search);
+  const searchableQuotes = phoneSearch
+    ? quotes.map((q) => ({ ...q, _readOnly: !canViewQuote(effectiveUser, q, leadsById) }))
+    : scopedQuotes;
   let filteredQuotes;
 
   if (repFilter) {
@@ -76,7 +83,7 @@ export default function Quotes() {
       return rep === repFilterLower && (q.status === 'draft' || q.status === 'sent');
     });
   } else {
-    filteredQuotes = scopedQuotes;
+    filteredQuotes = searchableQuotes;
 
     if (activeTab === 'pending') {
       filteredQuotes = filteredQuotes.filter(q => q.status === 'sent');
@@ -94,7 +101,8 @@ export default function Quotes() {
       const searchLower = filters.search.toLowerCase();
       filteredQuotes = filteredQuotes.filter(q =>
         q.quote_number?.toLowerCase().includes(searchLower) ||
-        q.customer_name?.toLowerCase().includes(searchLower)
+        q.customer_name?.toLowerCase().includes(searchLower) ||
+        q.customer_phone?.includes(filters.search)
       );
     }
     if (filters.status && filters.status !== 'all') {
@@ -152,7 +160,10 @@ export default function Quotes() {
       header: 'לקוח',
       render: (row) => (
         <div>
-          <p className="font-medium">{row.customer_name}</p>
+          <p className="font-medium">
+            {row.customer_name}
+            {row._readOnly && <span className="ms-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">צפייה בלבד</span>}
+          </p>
           <p className="text-sm text-muted-foreground">{row.customer_phone}</p>
         </div>
       )
@@ -196,7 +207,7 @@ export default function Quotes() {
         <QuickActions 
           type="quote" 
           data={row}
-          onView={() => navigate(createPageUrl('QuoteDetails') + `?id=${row.id}`)}
+          onView={() => openQuote(row.id)}
         />
       )
     }
@@ -221,12 +232,10 @@ export default function Quotes() {
           <h1 className="text-xl sm:text-2xl font-bold text-foreground">הצעות מחיר</h1>
           <p className="text-sm text-muted-foreground">ניהול הצעות מחיר ללקוחות</p>
         </div>
-        <Link to={createPageUrl('NewQuote')}>
-          <Button>
-            <Plus className="h-4 w-4 me-2" />
-            הצעה חדשה
-          </Button>
-        </Link>
+        <Button onClick={() => openNewQuote({})}>
+          <Plus className="h-4 w-4 me-2" />
+          הצעה חדשה
+        </Button>
       </div>
 
       <Card className="border-border shadow-card">
@@ -294,7 +303,7 @@ export default function Quotes() {
         values={filters}
         onChange={(key, value) => { setFilters(prev => ({ ...prev, [key]: value })); setRepFilter(''); }}
         onClear={() => { setFilters({ search: '', status: 'all' }); setRepFilter(''); }}
-        searchPlaceholder="חפש לפי מספר הצעה או שם לקוח..."
+        searchPlaceholder="חפש לפי מספר הצעה, שם או טלפון..."
       />
 
       {repFilter && (
@@ -324,7 +333,7 @@ export default function Quotes() {
         data={filteredQuotes}
         isLoading={isLoading}
         emptyMessage="לא נמצאו הצעות מחיר"
-        onRowClick={(row) => navigate(createPageUrl('QuoteDetails') + `?id=${row.id}`)}
+        onRowClick={(row) => openQuote(row.id)}
       />
     </div>
   );

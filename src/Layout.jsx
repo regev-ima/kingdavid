@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
+import { canManageService, canViewFinanceWorkspace } from '@/lib/rbac';
 import { Button } from "@/components/ui/button";
 import { useImpersonation } from "@/components/shared/ImpersonationContext";
 import {
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   LayoutDashboard,
-  Users,
   FileText,
   ShoppingCart,
   Truck,
@@ -22,7 +22,6 @@ import {
   Factory,
   DollarSign,
   Package,
-  BarChart3,
   Settings,
   LogOut,
   Search,
@@ -34,8 +33,15 @@ import {
   CheckSquare,
   Receipt,
   UserCog,
-  RefreshCw,
   LifeBuoy,
+  Contact,
+  Boxes,
+  ClipboardList,
+  Megaphone,
+  LayoutTemplate,
+  PlusCircle,
+  Pin,
+  CalendarDays,
   MessageCircle
 } from "lucide-react";
 import GlobalSearch from "@/components/shared/GlobalSearch";
@@ -49,55 +55,60 @@ import NotificationBell from "@/components/shared/NotificationBell";
 import VoiceCenterCallPopup from "@/components/call/VoiceCenterCallPopup";
 import UserAvatar from "@/components/shared/UserAvatar";
 import WhatsAppWaitingBanner from "@/components/whatsapp/WhatsAppWaitingBanner";
+import { useHiddenMenuItems, applyMenuOrder } from "@/hooks/useHiddenMenuItems";
 
 // Navigation organized by role priority
-const navigationByRole = {
+export const navigationByRole = {
   admin: [
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
     { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לקוחות', href: 'Customers', icon: Crown },
+    { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
     { name: 'מפעל', href: 'Factory', icon: Factory },
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
-    { name: 'מלאי', href: 'Inventory', icon: Package },
+    { name: 'מלאי', href: 'Inventory', icon: Boxes },
     { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
     { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
     { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
-    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
+    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
     { name: 'כספים', href: 'Finance', icon: DollarSign },
-    { name: 'נציגים', href: 'Representatives', icon: Users },
-    { name: 'שיווק', href: 'Marketing', icon: BarChart3 },
+    { name: 'שיווק', href: 'Marketing', icon: Megaphone },
     { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown },
-    { name: 'דפי נחיתה', href: 'LandingPages', icon: BarChart3 },
-    { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: DollarSign },
+    { name: 'דפי נחיתה', href: 'LandingPages', icon: LayoutTemplate },
+    { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: PlusCircle },
     { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
-    { name: 'עדכון המוני', href: 'BulkUpdate', icon: RefreshCw },
     { name: 'הגדרות', href: 'Settings', icon: Settings },
   ],
   sales_user: [
-    { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
+    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: CheckSquare },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לידים', href: 'LeadManagement', icon: Users },
-    { name: 'לקוחות', href: 'Customers', icon: Crown },
+    { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    // Finance is only for reps granted "צפייה באזור פיננסי" (or admins).
+    { name: 'כספים', href: 'Finance', icon: DollarSign, can: canViewFinanceWorkspace },
+    // Service Center is a management screen — only reps granted "ניהול מרכז
+    // שירות" (or admins) see it. Reps still open tickets from an order.
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
     { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
   ],
   factory_user: [
     { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
     { name: 'מפעל', href: 'Factory', icon: Factory },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
     { name: 'משלוחים', href: 'Deliveries', icon: Truck },
-    { name: 'מלאי', href: 'Inventory', icon: Package },
+    { name: 'מלאי', href: 'Inventory', icon: Boxes },
     { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
-    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: BarChart3 },
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
+    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
     { name: 'החזרות', href: 'Returns', icon: RotateCcw },
   ],
   bookkeeper: [
@@ -116,9 +127,22 @@ function LayoutContent({ children, currentPageName }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  // Desktop sidebar: collapsed-to-icons + hover-to-open by default. The admin
+  // can "pin" it permanently open; the choice is remembered per-browser.
+  const [sidebarPinned, setSidebarPinned] = useState(() => {
+    try { return localStorage.getItem('king_david_sidebar_pinned') === '1'; } catch { return false; }
+  });
+  const toggleSidebarPin = () => {
+    setSidebarPinned((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('king_david_sidebar_pinned', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
+  const { hiddenMenuItems, menuOrder } = useHiddenMenuItems();
 
   // Cache user data - won't refetch on every page change
   const { data: user } = useQuery({
@@ -213,8 +237,16 @@ function LayoutContent({ children, currentPageName }) {
     userRole = 'sales_user';
   }
   
-  // Get navigation based on role
-  const filteredNav = user ? (navigationByRole[userRole] || navigationByRole.sales_user) : [];
+  // Get navigation based on role, reordered + filtered per the admin's
+  // Settings → תפריט preferences (stored per-browser in useHiddenMenuItems).
+  const filteredNav = user
+    ? applyMenuOrder(navigationByRole[userRole] || navigationByRole.sales_user, menuOrder)
+        .filter((item) => !hiddenMenuItems.includes(item.href))
+        // Permission gate: items carrying a `can(user)` predicate only show for
+        // users who actually hold that grantable permission (admins always do).
+        // Without this, a permission could be OFF yet its screen stayed reachable.
+        .filter((item) => !item.can || item.can(effectiveUser))
+    : [];
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
@@ -333,14 +365,31 @@ function LayoutContent({ children, currentPageName }) {
         </div>
       </header>
 
-      {/* Sidebar */}
+      {/* Sidebar — light theme. Desktop: pinned open, or collapsed to an icon
+          rail that expands on hover/focus. Mobile: full slide-in drawer. */}
       <aside className={`
-        fixed right-0 bottom-0 w-64 gradient-sidebar z-40 
-        transition-transform duration-300 overflow-y-auto
+        group fixed right-0 bottom-0 z-40 overflow-y-auto overflow-x-hidden
+        bg-white border-l border-border shadow-sm
+        transition-all duration-200 ease-in-out
+        [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border
+        w-64
+        ${sidebarPinned ? 'lg:w-64' : 'lg:w-16 lg:hover:w-64 lg:focus-within:w-64 lg:hover:shadow-2xl lg:focus-within:shadow-2xl'}
         ${isImpersonating ? 'top-[104px]' : 'top-16'}
         ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
       `}>
-        <nav className="p-4 space-y-1">
+        {/* Pin / collapse control (desktop only) */}
+        <div className="hidden lg:flex justify-center p-2">
+          <button
+            type="button"
+            onClick={toggleSidebarPin}
+            title={sidebarPinned ? 'שחרר נעיצה (כיווץ אוטומטי)' : 'נעץ את התפריט פתוח'}
+            aria-pressed={sidebarPinned}
+            className={`p-1.5 rounded-lg transition-colors ${sidebarPinned ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+          >
+            <Pin className={`h-4 w-4 ${sidebarPinned ? 'fill-primary/20' : ''}`} />
+          </button>
+        </div>
+        <nav className="p-2 pt-0 space-y-1">
           {filteredNav.map((item) => {
             const isActive = currentPageName === item.href;
             return (
@@ -348,16 +397,17 @@ function LayoutContent({ children, currentPageName }) {
                 key={item.name}
                 to={createPageUrl(item.href)}
                 onClick={() => setIsMobileMenuOpen(false)}
+                title={item.name}
                 className={`
-                  flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 text-sm font-medium
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 text-sm font-medium
                   ${isActive
-                    ? 'bg-sidebar-primary/20 text-sidebar-primary-foreground'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                    ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                    : 'text-foreground/70 hover:bg-muted hover:text-foreground'
                   }
                 `}
               >
-                <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/50'}`} />
-                <span className="truncate">{item.name}</span>
+                <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
+                <span className={`truncate whitespace-nowrap transition-opacity duration-200 ${sidebarPinned ? '' : 'lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100'}`}>{item.name}</span>
               </Link>
             );
           })}
@@ -373,7 +423,7 @@ function LayoutContent({ children, currentPageName }) {
       )}
 
       {/* Main Content */}
-      <main className={`lg:pr-64 min-h-screen ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
+      <main className={`min-h-screen ${sidebarPinned ? 'lg:pr-64' : 'lg:pr-16'} ${isImpersonating ? 'pt-[104px]' : 'pt-16'}`}>
         {userRole !== 'admin' && (
           <div className={`sticky z-30 ${isImpersonating ? 'top-[104px]' : 'top-16'}`}>
             <WhatsAppWaitingBanner />
