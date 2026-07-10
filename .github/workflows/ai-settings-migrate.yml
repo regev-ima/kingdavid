@@ -4,15 +4,11 @@ name: AI Settings — apply migration
 # to main. Idempotent (CREATE TABLE IF NOT EXISTS, INSERT ... ON CONFLICT DO
 # NOTHING, DROP POLICY IF EXISTS), so re-runs are safe. Same pattern as
 # quote-defaults-migrate.yml.
-#
-# NOTE: the dev-branch trigger below is temporary, for preview testing.
-# Remove it before/after merging.
 
 on:
   push:
     branches:
       - main
-      - claude/whatsapp-phase2-messaging-n4odvs
     paths:
       - 'supabase/migrations/20260710000002_ai_settings.sql'
       - '.github/workflows/ai-settings-migrate.yml'
