@@ -71,14 +71,21 @@ export default function WhatsAppSendPdfButton({
     if (!open) return;
     const tpl = templates.find((t) => t.category === templateCategory && t.is_active !== false);
     const firstName = (contactName || '').trim().split(/\s+/)[0] || '';
+    // {{נציג}} in the caption must be the SENDING rep (the existing chat's
+    // owner, else the quote/order's owning rep) — not the logged-in admin.
+    // Same rule as the chat composer: the file goes out from the rep's
+    // WhatsApp, so it must be signed with the rep's name.
+    const sender = sendingAsOther ? ownerUser : currentUser;
     if (tpl) {
       setCaption(resolveTemplate(tpl.body, {
-        contactName, repName: currentUser?.full_name || '', repPhone: currentUser?.phone || '',
+        contactName,
+        repName: sender?.full_name || '',
+        repPhone: sender?.phone || '',
       }));
     } else {
       setCaption(fallbackCaption(firstName));
     }
-  }, [open, templates, templateCategory, contactName, currentUser]);
+  }, [open, templates, templateCategory, contactName, currentUser, sendingAsOther, ownerUser]);
 
   const sendMutation = useMutation({
     mutationFn: async () => {

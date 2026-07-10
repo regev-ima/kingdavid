@@ -46,12 +46,6 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
 
   const { data: templates = [] } = useWhatsAppTemplates();
 
-  const placeholderCtx = useMemo(() => ({
-    contactName: contactName || chat?.contact_name || '',
-    repName: currentUser?.full_name || '',
-    repPhone: currentUser?.phone || '',
-  }), [contactName, chat?.contact_name, currentUser?.full_name, currentUser?.phone]);
-
   const shortcutMap = useMemo(
     () => Object.fromEntries(templates.filter((t) => t.shortcut).map((t) => [t.shortcut, t])),
     [templates],
@@ -80,6 +74,18 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
     staleTime: 5 * 60_000,
   });
   const ownerName = rep?.full_name || rep?.email || repUser?.full_name || repUser?.email || 'הנציג';
+
+  // The rep whose WhatsApp actually sends this message = the chat's owner.
+  // Their details fill {{נציג}} / {{טלפון_נציג}} — NOT the logged-in user's.
+  // When an admin sends on a rep's behalf the message goes out from the rep's
+  // WhatsApp, so it must be signed with the rep's name, not the manager's.
+  const ownerRep = isOwner ? currentUser : (rep || repUser || null);
+
+  const placeholderCtx = useMemo(() => ({
+    contactName: contactName || chat?.contact_name || '',
+    repName: ownerRep?.full_name || '',
+    repPhone: ownerRep?.phone || '',
+  }), [contactName, chat?.contact_name, ownerRep?.full_name, ownerRep?.phone]);
 
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['green-api', chat?.user_id],
