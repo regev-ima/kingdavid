@@ -8,7 +8,6 @@ on:
       - claude/fix-lead-notifications-M2jB4
       - claude/wise-center-extension-BYxGw
       - claude/clever-planck-qu7do6
-      - claude/whatsapp-phase2-messaging-n4odvs
     paths:
       - 'supabase/functions/**'
       - '.github/workflows/deploy-functions.yml'
