@@ -20,8 +20,9 @@ import {
 // masked hint. Everything goes through the greenApiSettings Edge Function with
 // the rep's user_id, so an admin can set this up from "נהל נציג".
 //
-// IMPORTANT: this only MIRRORS WhatsApp (incoming + outgoing). The platform
-// never sends a message — it just records what happens on the rep's phone.
+// This connection mirrors the rep's WhatsApp (incoming + outgoing) AND lets
+// them send from the CRM composer (phase 2, via greenApiSend) — both use the
+// same Green API instance/token configured here.
 export default function WhatsAppSettingsTab({ rep }) {
   const queryClient = useQueryClient();
   const userId = rep?.id;
@@ -129,8 +130,8 @@ export default function WhatsAppSettingsTab({ rep }) {
       <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3">
         <MessageCircle className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
         <p className="text-xs text-muted-foreground">
-          חיבור הוואטסאפ של הנציג למערכת דרך Green API. המערכת <b>רק מתעדת</b> את ההודעות
-          (נכנסות ויוצאות) — היא לא שולחת הודעות. ההודעות יופיעו במסך "צ'אט וואטסאפ".
+          חיבור הוואטסאפ של הנציג למערכת דרך Green API. לאחר החיבור ניתן <b>לשלוח ולקבל</b> הודעות
+          — כל ההודעות (נכנסות ויוצאות, כולל שנשלחו מהמערכת) יופיעו במסך "צ'אט וואטסאפ".
         </p>
       </div>
 

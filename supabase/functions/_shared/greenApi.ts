@@ -4,9 +4,11 @@
 // Green API REST shape:  {apiUrl}/waInstance{idInstance}/{method}/{apiToken}
 // e.g. https://api.green-api.com/waInstance1101000001/getStateInstance/abcdef
 //
-// We deliberately use ONLY read/config methods here (getStateInstance,
-// getSettings, setSettings). We never call sendMessage — the product rule is
-// that the platform mirrors WhatsApp, it does not send from it.
+// Read/config methods (getStateInstance, getSettings, setSettings) are used
+// by greenApiSettings to connect + monitor a rep's instance. sendMessage /
+// sendFileByUrl (phase 2) are used ONLY by greenApiSend, which sends through
+// the caller's own (or, for an admin, an explicitly chosen rep's) instance —
+// never with credentials the browser can see.
 
 export interface GreenAccount {
   instance_id: string;

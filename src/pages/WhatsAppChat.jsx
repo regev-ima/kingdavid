@@ -245,7 +245,7 @@ export default function WhatsAppChat() {
             צ'אט וואטסאפ
           </h1>
           <p className="text-sm text-muted-foreground">
-            {isAdmin ? 'תיעוד כל שיחות הוואטסאפ של הנציגים' : 'תיעוד שיחות הוואטסאפ שלך'} · תצוגה בלבד
+            {isAdmin ? 'שיחות הוואטסאפ של כל הנציגים' : 'שיחות הוואטסאפ שלך'} · מחובר ל-Green API
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

@@ -16,6 +16,9 @@
 //             outgoing notifications. Never enables sending.
 //   'check'   { user_id? }                          → refresh getStateInstance
 //   'list'    (admin only)                          → all accounts + status
+//   'purge'   { user_id? }                          → wipe one account's chat history
+//   'purge_all' (admin only)                        → wipe EVERY account's chat history
+//   'diagnose' { user_id? }                         → compare our webhook config vs Green's
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
 import { getStateInstance, getGreenSettings, setWebhookSettings, buildWebhookUrlWithToken } from '../_shared/greenApi.ts';
@@ -203,6 +206,29 @@ Deno.serve(async (req) => {
         return Response.json({ ok: false, error: cErr.message }, { status: 500, headers: cors });
       }
       return Response.json({ ok: true, purged: true }, { headers: cors });
+    }
+
+    if (action === 'purge_all') {
+      // Same as 'purge', looped over every connected account. Admin-only.
+      if (!isAdmin) {
+        return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
+      }
+      const { data: accounts } = await svc.from('whatsapp_accounts').select('id');
+      let purgedCount = 0;
+      for (const acc of accounts || []) {
+        const { error: mErr } = await svc.from('whatsapp_messages').delete().eq('account_id', acc.id);
+        if (mErr) {
+          console.error('[greenApiSettings] purge_all messages failed', acc.id, mErr);
+          continue;
+        }
+        const { error: cErr } = await svc.from('whatsapp_chats').delete().eq('account_id', acc.id);
+        if (cErr) {
+          console.error('[greenApiSettings] purge_all chats failed', acc.id, cErr);
+          continue;
+        }
+        purgedCount++;
+      }
+      return Response.json({ ok: true, purged: true, purged_count: purgedCount }, { headers: cors });
     }
 
     if (action === 'diagnose') {

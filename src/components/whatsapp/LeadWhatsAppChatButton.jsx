@@ -15,8 +15,8 @@ import { chatTitle, prettyPhone, dayLabel } from '@/components/whatsapp/whatsapp
 
 // Drop-in button for the lead screen: if the lead's phone has a WhatsApp
 // conversation (RLS-scoped — the rep's own, or any for admin), it shows a
-// "צ'אט וואטסאפ" button that opens the thread in a read-only popup. Renders
-// nothing when there's no matching conversation.
+// "צ'אט וואטסאפ" button that opens the thread (with a composer to reply) in
+// a popup. Renders nothing when there's no matching conversation.
 export default function LeadWhatsAppChatButton({ phone, name, className = '' }) {
   const [open, setOpen] = useState(false);
   const tail = phoneTail(phone);
