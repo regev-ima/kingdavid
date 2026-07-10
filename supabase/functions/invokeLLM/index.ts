@@ -1,4 +1,4 @@
-import { corsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
+import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
 
 // Model ids (substrings) that flag a catalog entry as a "smart / flagship"
 // recommendation in the AI-settings picker, regardless of price. Kept here
@@ -13,11 +13,15 @@ const SMART_MODEL_HINTS = [
 const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  // Dynamic CORS so Vercel preview origins (…-regevs-projects.vercel.app) are
+  // allowed too — the static corsHeaders only permits the canonical domain,
+  // which made every invokeLLM call fail from a preview deployment.
+  const cors = getCorsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
     const user = await getUser(req);
-    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: cors });
 
     const body = await req.json();
 
@@ -29,7 +33,7 @@ Deno.serve(async (req) => {
         headers: openrouterKey ? { Authorization: `Bearer ${openrouterKey}` } : {},
       });
       if (!res.ok) {
-        return Response.json({ ok: false, error: 'openrouter_unavailable' }, { status: 502, headers: corsHeaders });
+        return Response.json({ ok: false, error: 'openrouter_unavailable' }, { status: 502, headers: cors });
       }
       const json = await res.json();
       const all = (json?.data || [])
@@ -51,14 +55,14 @@ Deno.serve(async (req) => {
 
       return Response.json(
         { ok: true, openrouter_configured: !!openrouterKey, recommended, cheapest },
-        { headers: corsHeaders },
+        { headers: cors },
       );
     }
 
     const { prompt, response_json_schema, model: modelOverride } = body;
 
     if (!prompt) {
-      return Response.json({ error: 'Missing required field: prompt' }, { status: 400, headers: corsHeaders });
+      return Response.json({ error: 'Missing required field: prompt' }, { status: 400, headers: cors });
     }
 
     // OpenRouter (phase 2, admin-selectable model) takes priority once
@@ -89,18 +93,18 @@ Deno.serve(async (req) => {
       });
 
       const result = await res.json();
-      if (!res.ok) return Response.json({ error: 'LLM API error', details: result }, { status: 500, headers: corsHeaders });
+      if (!res.ok) return Response.json({ error: 'LLM API error', details: result }, { status: 500, headers: cors });
 
       const text = result.choices?.[0]?.message?.content || '';
 
       if (response_json_schema) {
         try {
           const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) return Response.json(JSON.parse(jsonMatch[0]), { headers: corsHeaders });
+          if (jsonMatch) return Response.json(JSON.parse(jsonMatch[0]), { headers: cors });
         } catch { /* fall through to raw text below */ }
       }
 
-      return Response.json({ result: text }, { headers: corsHeaders });
+      return Response.json({ result: text }, { headers: cors });
     }
 
     const apiKey = Deno.env.get('ANTHROPIC_API_KEY') || Deno.env.get('OPENAI_API_KEY');
@@ -108,7 +112,7 @@ Deno.serve(async (req) => {
     if (!apiKey) {
       return Response.json({
         error: 'No LLM API key configured (set OPENROUTER_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY)',
-      }, { status: 500, headers: corsHeaders });
+      }, { status: 500, headers: cors });
     }
 
     // Try Anthropic first
@@ -128,7 +132,7 @@ Deno.serve(async (req) => {
       });
 
       const result = await res.json();
-      if (!res.ok) return Response.json({ error: 'LLM API error', details: result }, { status: 500, headers: corsHeaders });
+      if (!res.ok) return Response.json({ error: 'LLM API error', details: result }, { status: 500, headers: cors });
 
       const text = result.content?.[0]?.text || '';
 
@@ -136,11 +140,11 @@ Deno.serve(async (req) => {
       if (response_json_schema) {
         try {
           const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) return Response.json(JSON.parse(jsonMatch[0]), { headers: corsHeaders });
+          if (jsonMatch) return Response.json(JSON.parse(jsonMatch[0]), { headers: cors });
         } catch {}
       }
 
-      return Response.json({ result: text }, { headers: corsHeaders });
+      return Response.json({ result: text }, { headers: cors });
     }
 
     // Fallback to OpenAI
@@ -158,20 +162,20 @@ Deno.serve(async (req) => {
     });
 
     const result = await res.json();
-    if (!res.ok) return Response.json({ error: 'LLM API error', details: result }, { status: 500, headers: corsHeaders });
+    if (!res.ok) return Response.json({ error: 'LLM API error', details: result }, { status: 500, headers: cors });
 
     const text = result.choices?.[0]?.message?.content || '';
 
     if (response_json_schema) {
       try {
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) return Response.json(JSON.parse(jsonMatch[0]), { headers: corsHeaders });
+        if (jsonMatch) return Response.json(JSON.parse(jsonMatch[0]), { headers: cors });
       } catch {}
     }
 
-    return Response.json({ result: text }, { headers: corsHeaders });
+    return Response.json({ result: text }, { headers: cors });
   } catch (error) {
     console.error('Function error:', error);
-    return Response.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });
+    return Response.json({ error: 'Internal server error' }, { status: 500, headers: cors });
   }
 });
