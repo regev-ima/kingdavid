@@ -4,15 +4,11 @@ name: WhatsApp Phase 2 — apply migration
 # templates/shortcuts, PDF attachments) via the Supabase Management API on
 # push to main. Idempotent, so re-runs are safe. Same pattern as
 # whatsapp-chat-migrate.yml.
-#
-# NOTE: the dev-branch trigger below is temporary, for preview testing during
-# the phase-2 build. Remove it before/after merging (see plan §8 item 7).
 
 on:
   push:
     branches:
       - main
-      - claude/whatsapp-phase2-messaging-n4odvs
     paths:
       - 'supabase/migrations/20260710000001_whatsapp_phase2.sql'
       - '.github/workflows/whatsapp-phase2-migrate.yml'
