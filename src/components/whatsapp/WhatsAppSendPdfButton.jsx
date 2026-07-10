@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, MessageCircle } from 'lucide-react';
 import { phoneTail } from './useWhatsAppContext';
-import { resolveTemplate } from './whatsappHelpers';
+import { resolveTemplate, sendErrorMessage } from './whatsappHelpers';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
 
 function fallbackCaption(firstName) {
@@ -66,7 +66,7 @@ export default function WhatsAppSendPdfButton({
         ? { action: 'file', chat_ref: existingChat.id, file_url: fileUrl, file_name: fileName, message: caption }
         : { action: 'file', phone, file_url: fileUrl, file_name: fileName, message: caption };
       const res = await base44.functions.invoke('greenApiSend', payload);
-      if (!res?.ok) throw new Error(res?.error || 'שגיאה');
+      if (!res?.ok) throw new Error(sendErrorMessage(res?.error));
       return res;
     },
     onSuccess: () => {

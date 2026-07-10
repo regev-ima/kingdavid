@@ -10,21 +10,7 @@ import {
 } from '@/components/ui/command';
 import { Loader2, Send, Lock, AlertTriangle, BookText } from 'lucide-react';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
-import { resolveTemplate } from './whatsappHelpers';
-
-const SEND_ERROR_LABELS = {
-  not_configured: 'חשבון הוואטסאפ לא מוגדר',
-  instance_not_authorized: 'המכשיר לא מאומת ב-Green API',
-  rate_limited: 'נשלחו יותר מדי הודעות בדקה האחרונה — נסה שוב עוד רגע',
-  chat_not_found: 'השיחה לא נמצאה',
-  Forbidden: 'אין הרשאה לשלוח משיחה זו',
-  message_required: 'ההודעה ריקה',
-  green_send_failed: 'השליחה ל-Green API נכשלה',
-};
-
-function sendErrorMessage(err) {
-  return SEND_ERROR_LABELS[err] || err || 'שגיאה לא צפויה';
-}
+import { resolveTemplate, sendErrorMessage } from './whatsappHelpers';
 
 const TEMPLATE_CATEGORIES = [
   { value: 'all', label: 'הכל' },

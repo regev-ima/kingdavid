@@ -88,6 +88,25 @@ export function elapsedSeconds(value) {
   return Math.max(0, (Date.now() - d.getTime()) / 1000);
 }
 
+// Human-readable Hebrew messages for greenApiSend's error codes — shared by
+// the composer and the "send PDF" dialog so a rep never sees a raw error
+// code like "instance_not_authorized".
+const SEND_ERROR_LABELS = {
+  not_configured: 'חשבון הוואטסאפ לא מוגדר',
+  instance_not_authorized: 'המכשיר לא מאומת ב-Green API',
+  rate_limited: 'נשלחו יותר מדי הודעות בדקה האחרונה — נסה שוב עוד רגע',
+  chat_not_found: 'השיחה לא נמצאה',
+  Forbidden: 'אין הרשאה לשלוח הודעה זו',
+  message_required: 'ההודעה ריקה',
+  file_url_required: 'לא נמצא קובץ לשליחה',
+  invalid_destination: 'מספר הטלפון לא תקין',
+  green_send_failed: 'השליחה ל-Green API נכשלה',
+};
+
+export function sendErrorMessage(err) {
+  return SEND_ERROR_LABELS[err] || err || 'שגיאה לא צפויה';
+}
+
 // Resolve {{placeholders}} in a template body against a chat/user context.
 // Unrecognized placeholders are left untouched (never throws, never drops
 // text) — see whatsapp-phase2-messaging-plan.md §5.
