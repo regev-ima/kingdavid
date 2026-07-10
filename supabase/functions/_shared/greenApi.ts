@@ -43,6 +43,51 @@ export async function getStateInstance(acc: GreenAccount) {
   return callGreenApi(acc, 'getStateInstance');
 }
 
+/** Send a plain text message to a chat (…@c.us / …@g.us). */
+export async function sendTextMessage(acc: GreenAccount, chatId: string, message: string) {
+  return callGreenApi(acc, 'sendMessage', { chatId, message });
+}
+
+/** Send a file by public URL, with an optional caption, to a chat. */
+export async function sendFileByUrl(
+  acc: GreenAccount,
+  chatId: string,
+  urlFile: string,
+  fileName: string,
+  caption?: string,
+) {
+  const body: Record<string, unknown> = { chatId, urlFile, fileName };
+  if (caption) body.caption = caption;
+  return callGreenApi(acc, 'sendFileByUrl', body);
+}
+
+/**
+ * Israeli phone → Green API chatId ("9725XXXXXXXX@c.us"). TS port of
+ * src/utils/phoneUtils.js normalizeIsraeliPhone — kept in sync manually since
+ * Edge Functions can't import frontend source. Returns null if the number
+ * can't be normalized to anything chat-id-shaped.
+ */
+export function normalizeIsraeliPhoneToChatId(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  if (!digits) return null;
+
+  let intl: string;
+  if (digits.startsWith('05') && digits.length === 10) {
+    intl = '972' + digits.substring(1);
+  } else if (digits.startsWith('9725') && digits.length === 12) {
+    intl = digits;
+  } else if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) {
+    intl = '972' + digits.substring(1);
+  } else if (digits.startsWith('972') && digits.length >= 11 && digits.length <= 12) {
+    intl = digits;
+  } else {
+    intl = digits;
+  }
+  if (intl.length < 11) return null; // too short to be a real number
+  return `${intl}@c.us`;
+}
+
 /** Read the instance's current settings (webhookUrl, notification flags, …). */
 export async function getGreenSettings(acc: GreenAccount) {
   return callGreenApi(acc, 'getSettings');
