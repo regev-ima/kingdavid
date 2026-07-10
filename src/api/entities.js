@@ -46,6 +46,7 @@ const TABLE_MAP = {
   WhatsAppChat: 'whatsapp_chats',
   WhatsAppMessage: 'whatsapp_messages',
   WhatsAppRepStats: 'whatsapp_rep_stats',
+  WhatsAppTemplate: 'whatsapp_templates',
   ClubSignup: 'club_signups',
   QuoteDefaults: 'quote_defaults',
   CompanyClosures: 'company_closures',
