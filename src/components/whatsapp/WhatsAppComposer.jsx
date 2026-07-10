@@ -8,9 +8,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import {
   Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from '@/components/ui/command';
-import { Loader2, Send, Lock, AlertTriangle, BookText } from 'lucide-react';
+import { Loader2, Send, Lock, AlertTriangle, BookText, Sparkles } from 'lucide-react';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
-import { resolveTemplate, sendErrorMessage } from './whatsappHelpers';
+import { resolveTemplate, sendErrorMessage, buildImproveMessagePrompt } from './whatsappHelpers';
 
 const TEMPLATE_CATEGORIES = [
   { value: 'all', label: 'הכל' },
@@ -39,6 +39,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
+  const [improving, setImproving] = useState(false);
 
   const currentUserId = currentUser?.id;
   const isOwner = !!chat?.user_id && chat.user_id === currentUserId;
@@ -182,6 +183,28 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
     sendMutation.mutate(message);
   };
 
+  // Improve the rep's OWN draft with AI (clarity/tone), replacing the composer
+  // text in place — they still review and can edit/undo before sending. Does
+  // NOT generate from scratch: it enhances what they wrote, preserving
+  // placeholders. Uses the admin-selected model via InvokeLLM.
+  const handleImprove = async () => {
+    const draft = text.trim();
+    if (!draft || improving) return;
+    setImproving(true);
+    setSlashOpen(false);
+    try {
+      const res = await base44.integrations.Core.InvokeLLM({ prompt: buildImproveMessagePrompt(draft) });
+      const improved = (res?.result || '').trim();
+      if (improved) setText(improved);
+      else toast.error('לא התקבל טקסט מה-AI');
+    } catch (err) {
+      toast.error(`שיפור ההודעה נכשל: ${err?.message || 'שגיאה'}`);
+    } finally {
+      setImproving(false);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (slashOpen && slashResults.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % slashResults.length); return; }
@@ -300,6 +323,19 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
             </Command>
           </PopoverContent>
         </Popover>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={handleImprove}
+          disabled={!text.trim() || improving || sendMutation.isPending}
+          className="h-10 w-10 shrink-0 text-primary"
+          aria-label="שפר עם AI"
+          title="שפר עם AI — משפר את מה שכתבת, לא כותב מחדש"
+        >
+          {improving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        </Button>
 
         <Button
           size="icon"

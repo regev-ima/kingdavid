@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { buildImproveMessagePrompt } from '@/components/whatsapp/whatsappHelpers';
 import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
   AlertDialogFooter, AlertDialogTitle, AlertDialogDescription,
@@ -132,22 +133,31 @@ export default function WhatsAppTemplatesTab() {
     saveMutation.mutate(form);
   };
 
-  const generateWithAI = async () => {
-    if (!form.title.trim()) { toast.error('הזן כותרת קודם, כדי שה-AI ידע על מה לכתוב'); return; }
+  // Prefer IMPROVING the draft the admin already wrote (clarity/tone), so the
+  // AI enhances their intent rather than inventing a message. Only when the
+  // body is still empty does it fall back to drafting from the title.
+  const hasDraft = !!form.body.trim();
+  const improveWithAI = async () => {
+    const draft = form.body.trim();
+    const categoryLabel = CATEGORY_LABEL[form.category] || 'כללי';
+    if (!draft && !form.title.trim()) {
+      toast.error('כתוב טקסט התחלתי בגוף ההודעה (או כותרת) כדי שה-AI ישפר');
+      return;
+    }
     setAiPending(true);
     try {
-      const categoryLabel = CATEGORY_LABEL[form.category] || 'כללי';
-      const res = await base44.integrations.Core.InvokeLLM({
-        prompt: `כתוב הודעת וואטסאפ קצרה וידידותית בעברית, בסגנון עסקי-חם, עבור חברת "קינג דוד" (מזרנים ומוצרי שינה). `
+      const prompt = draft
+        ? buildImproveMessagePrompt(draft, categoryLabel)
+        : `כתוב הודעת וואטסאפ קצרה וידידותית בעברית, בסגנון עסקי-חם, עבור חברת "קינג דוד" (מזרנים ומוצרי שינה). `
           + `קטגוריה: ${categoryLabel}. נושא ההודעה: "${form.title.trim()}". `
           + `אפשר להשתמש בפלייסהולדרים {{שם}} (שם הלקוח) ו-{{נציג}} (שם הנציג) איפה שמתאים. `
-          + `החזר רק את טקסט ההודעה עצמה, בלי מרכאות ובלי הסברים.`,
-      });
+          + `החזר רק את טקסט ההודעה עצמה, בלי מרכאות ובלי הסברים.`;
+      const res = await base44.integrations.Core.InvokeLLM({ prompt });
       const text = (res?.result || '').trim();
       if (text) setForm((f) => ({ ...f, body: text }));
       else toast.error('לא התקבל טקסט מה-AI');
     } catch (err) {
-      toast.error(`ניסוח אוטומטי נכשל: ${err?.message || 'שגיאה'}`);
+      toast.error(`${draft ? 'שיפור ההודעה' : 'ניסוח אוטומטי'} נכשל: ${err?.message || 'שגיאה'}`);
     } finally {
       setAiPending(false);
     }
@@ -291,12 +301,13 @@ export default function WhatsAppTemplatesTab() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={generateWithAI}
+                  onClick={improveWithAI}
                   disabled={aiPending}
                   className="h-7 text-xs gap-1 text-primary"
+                  title={hasDraft ? 'שפר את הטקסט שכתבת' : 'נסח טיוטה מהכותרת'}
                 >
                   {aiPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  נסח עם AI
+                  {hasDraft ? 'שפר עם AI' : 'נסח מהכותרת'}
                 </Button>
               </div>
               <Textarea

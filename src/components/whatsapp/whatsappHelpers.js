@@ -107,6 +107,21 @@ export function sendErrorMessage(err) {
   return SEND_ERROR_LABELS[err] || err || 'שגיאה לא צפויה';
 }
 
+// Prompt for the "improve with AI" action — takes a draft the user already
+// wrote and enhances clarity/tone/effectiveness, WITHOUT inventing facts and
+// preserving any {{placeholders}} literally. Shared by the template editor
+// and the chat composer so both behave identically. `categoryLabel` is
+// optional extra context (used from the template editor).
+export function buildImproveMessagePrompt(text, categoryLabel) {
+  const cat = categoryLabel ? ` הקטגוריה: ${categoryLabel}.` : '';
+  return 'שפר את הודעת הוואטסאפ הבאה בעברית, עבור חברת "קינג דוד" (מזרנים ומוצרי שינה).'
+    + ` שפר בהירות, טון וניסוח, שמור על אורך קצר ועל סגנון עסקי-חם ואישי.${cat}`
+    + ' חשוב: שמור על כל הפלייסהולדרים בדיוק כפי שהם (למשל {{שם}}, {{נציג}}, {{טלפון_נציג}}),'
+    + ' ואל תמציא פרטים, מספרים, מחירים או הבטחות שלא נכתבו במקור.'
+    + ' החזר רק את ההודעה המשופרת עצמה, בלי מרכאות ובלי הסברים.'
+    + `\n\nההודעה המקורית:\n"""\n${text}\n"""`;
+}
+
 // Resolve {{placeholders}} in a template body against a chat/user context.
 // Unrecognized placeholders are left untouched (never throws, never drops
 // text) — see whatsapp-phase2-messaging-plan.md §5.
