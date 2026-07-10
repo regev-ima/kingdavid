@@ -9,6 +9,7 @@ import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
+import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -396,6 +397,19 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           )}
           {quote.pdf_url ? 'צור PDF מחדש' : 'צור PDF'}
         </Button>
+        <WhatsAppSendPdfButton
+          phone={quote.customer_phone}
+          contactName={quote.customer_name}
+          fileName={`הצעת-מחיר-${quote.quote_number}.pdf`}
+          currentUser={effectiveUser}
+          ensurePdfUrl={async () => {
+            if (quote.pdf_url) return quote.pdf_url;
+            const pdfUrl = await QuotePdfGenerator(quote);
+            await base44.entities.Quote.update(quoteId, { pdf_url: pdfUrl });
+            queryClient.invalidateQueries(['quote', quoteId]);
+            return pdfUrl;
+          }}
+        />
         {isOwner && quote.customer_email && (
           <Button
             variant="outline"
