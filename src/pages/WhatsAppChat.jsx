@@ -17,11 +17,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Search, MessageCircle, Loader2, Lock, ArrowRight, Phone, Users as UsersIcon,
+  Search, MessageCircle, Loader2, ArrowRight, Phone, Users as UsersIcon,
   Circle, Inbox, Check, UserCheck, UserPlus, CircleUserRound, Timer, BarChart3,
   ChevronUp, ChevronDown, Clock,
 } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
+import WhatsAppComposer from '@/components/whatsapp/WhatsAppComposer';
 import WhatsAppContextPanel from '@/components/whatsapp/WhatsAppContextPanel';
 import WhatsAppManagerOverview from '@/components/whatsapp/WhatsAppManagerOverview';
 import { useWhatsAppContext } from '@/components/whatsapp/useWhatsAppContext';
@@ -358,6 +359,8 @@ export default function WhatsAppChat() {
               onShowInfo={() => setInfoOpen(true)}
               ctxHasMatch={ctxHasMatch}
               ctxLoading={ctxQuery.isLoading}
+              currentUserId={effectiveUser?.id}
+              isAdmin={isAdmin}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
@@ -467,7 +470,7 @@ function ChatRow({ chat, active, rep, now, onClick }) {
   );
 }
 
-function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onShowInfo, ctxHasMatch, ctxLoading }) {
+function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onShowInfo, ctxHasMatch, ctxLoading, currentUserId, isAdmin }) {
   const meta = chatStatusMeta(chat.status);
   const title = chatTitle(chat);
   const bottomRef = useRef(null);
@@ -567,11 +570,13 @@ function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, 
         <div ref={bottomRef} />
       </div>
 
-      {/* Read-only footer (no composer — the platform never sends) */}
-      <div className="border-t bg-muted/40 px-4 py-2.5 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-        <Lock className="h-3.5 w-3.5" />
-        תצוגה בלבד — לא ניתן לשלוח הודעות מהמערכת. המסך משקף את הוואטסאפ של הנציג.
-      </div>
+      <WhatsAppComposer
+        chat={chat}
+        rep={rep}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        messagesQueryKey={['wa-messages', chat.id]}
+      />
     </div>
   );
 }

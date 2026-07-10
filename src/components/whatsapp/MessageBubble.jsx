@@ -1,16 +1,19 @@
 import React from 'react';
-import { FileText, MapPin, Image as ImageIcon, Video, Mic, Download } from 'lucide-react';
+import { FileText, MapPin, Image as ImageIcon, Video, Mic, Download, Loader2 } from 'lucide-react';
 import { bubbleTime } from './whatsappHelpers';
 
 // A single WhatsApp message. Outgoing (our side) → green, aligned to the start
-// (right in RTL). Incoming (customer) → white, aligned to the end. Read-only.
+// (right in RTL). Incoming (customer) → white, aligned to the end.
+// message._pending marks an optimistic bubble the composer added before the
+// server confirmed the send — greyed out with a spinner instead of a time.
 export default function MessageBubble({ message }) {
   const outgoing = message.direction === 'outgoing';
+  const pending = !!message._pending;
 
   return (
     <div className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+        className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-sm ${pending ? 'opacity-60' : ''} ${
           outgoing
             ? 'bg-green-100 text-slate-800 rounded-tr-sm'
             : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
@@ -19,7 +22,14 @@ export default function MessageBubble({ message }) {
         <MediaPart message={message} />
         {message.body ? <p className="whitespace-pre-wrap break-words leading-relaxed">{message.body}</p> : null}
         <div className="mt-0.5 flex items-center justify-end gap-1">
-          <span className="text-[10px] text-slate-400">{bubbleTime(message.msg_timestamp || message.created_date)}</span>
+          {pending ? (
+            <>
+              <span className="text-[10px] text-slate-400">נשלחת…</span>
+              <Loader2 className="h-2.5 w-2.5 animate-spin text-slate-400" />
+            </>
+          ) : (
+            <span className="text-[10px] text-slate-400">{bubbleTime(message.msg_timestamp || message.created_date)}</span>
+          )}
         </div>
       </div>
     </div>

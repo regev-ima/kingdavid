@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
+import { useImpersonation } from '@/components/shared/ImpersonationContext';
+import { canAccessAdminOnly } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Loader2, MessageCircle, Lock, ExternalLink, Inbox } from 'lucide-react';
+import { Loader2, MessageCircle, ExternalLink, Inbox } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
+import WhatsAppComposer from '@/components/whatsapp/WhatsAppComposer';
 import { phoneTail } from '@/components/whatsapp/useWhatsAppContext';
 import { chatTitle, prettyPhone, dayLabel } from '@/components/whatsapp/whatsappHelpers';
 
@@ -52,9 +55,14 @@ export default function LeadWhatsAppChatButton({ phone, name, className = '' }) 
 
 function WhatsAppChatDialog({ chat, open, onOpenChange, fallbackName }) {
   const bottomRef = useRef(null);
+  const { getEffectiveUser } = useImpersonation();
+  const { data: user } = useQuery({ queryKey: ['currentUser'], queryFn: () => base44.auth.me(), staleTime: 30 * 60 * 1000 });
+  const effectiveUser = getEffectiveUser(user);
+  const isAdmin = canAccessAdminOnly(effectiveUser);
 
+  const messagesQueryKey = ['lead-wa-messages', chat?.id];
   const { data: messages = [], isLoading } = useQuery({
-    queryKey: ['lead-wa-messages', chat?.id],
+    queryKey: messagesQueryKey,
     enabled: open && !!chat?.id,
     queryFn: () => base44.entities.WhatsAppMessage.filter({ chat_ref: chat.id }, 'msg_timestamp', 1000),
     refetchInterval: open ? 15000 : false,
@@ -112,14 +120,21 @@ function WhatsAppChatDialog({ chat, open, onOpenChange, fallbackName }) {
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t bg-muted/40 px-4 py-2.5 flex items-center justify-between text-xs text-muted-foreground shrink-0">
-          <span className="flex items-center gap-1"><Lock className="h-3.5 w-3.5" />תצוגה בלבד</span>
-          <Link
-            to={`${createPageUrl('WhatsAppChat')}?chat=${chat.id}`}
-            className="text-primary hover:underline inline-flex items-center gap-1"
-          >
-            פתח במסך מלא <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
+        <div className="shrink-0">
+          <WhatsAppComposer
+            chat={chat}
+            currentUserId={effectiveUser?.id}
+            isAdmin={isAdmin}
+            messagesQueryKey={messagesQueryKey}
+          />
+          <div className="border-t px-4 py-1.5 flex items-center justify-end text-xs text-muted-foreground">
+            <Link
+              to={`${createPageUrl('WhatsAppChat')}?chat=${chat.id}`}
+              className="text-primary hover:underline inline-flex items-center gap-1"
+            >
+              פתח במסך מלא <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
