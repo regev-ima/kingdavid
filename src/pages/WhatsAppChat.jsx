@@ -359,8 +359,9 @@ export default function WhatsAppChat() {
               onShowInfo={() => setInfoOpen(true)}
               ctxHasMatch={ctxHasMatch}
               ctxLoading={ctxQuery.isLoading}
-              currentUserId={effectiveUser?.id}
+              currentUser={effectiveUser}
               isAdmin={isAdmin}
+              leadName={context?.leads?.[0]?.full_name || context?.customers?.[0]?.full_name || null}
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted-foreground">
@@ -470,7 +471,7 @@ function ChatRow({ chat, active, rep, now, onClick }) {
   );
 }
 
-function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onShowInfo, ctxHasMatch, ctxLoading, currentUserId, isAdmin }) {
+function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onShowInfo, ctxHasMatch, ctxLoading, currentUser, isAdmin, leadName }) {
   const meta = chatStatusMeta(chat.status);
   const title = chatTitle(chat);
   const bottomRef = useRef(null);
@@ -573,9 +574,10 @@ function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, 
       <WhatsAppComposer
         chat={chat}
         rep={rep}
-        currentUserId={currentUserId}
+        currentUser={currentUser}
         isAdmin={isAdmin}
         messagesQueryKey={['wa-messages', chat.id]}
+        contactName={chat.contact_name || leadName || ''}
       />
     </div>
   );

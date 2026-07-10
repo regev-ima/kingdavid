@@ -123,9 +123,10 @@ function WhatsAppChatDialog({ chat, open, onOpenChange, fallbackName }) {
         <div className="shrink-0">
           <WhatsAppComposer
             chat={chat}
-            currentUserId={effectiveUser?.id}
+            currentUser={effectiveUser}
             isAdmin={isAdmin}
             messagesQueryKey={messagesQueryKey}
+            contactName={chat.contact_name || fallbackName || ''}
           />
           <div className="border-t px-4 py-1.5 flex items-center justify-end text-xs text-muted-foreground">
             <Link

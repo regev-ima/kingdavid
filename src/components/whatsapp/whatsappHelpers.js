@@ -88,6 +88,23 @@ export function elapsedSeconds(value) {
   return Math.max(0, (Date.now() - d.getTime()) / 1000);
 }
 
+// Resolve {{placeholders}} in a template body against a chat/user context.
+// Unrecognized placeholders are left untouched (never throws, never drops
+// text) — see whatsapp-phase2-messaging-plan.md §5.
+const PLACEHOLDER_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+export function resolveTemplate(body, ctx = {}) {
+  if (!body) return '';
+  const firstName = (ctx.contactName || '').trim().split(/\s+/)[0] || '';
+  const values = {
+    'שם': firstName,
+    'שם_מלא': (ctx.contactName || '').trim(),
+    'נציג': (ctx.repName || '').trim(),
+    'טלפון_נציג': (ctx.repPhone || '').trim(),
+  };
+  return body.replace(PLACEHOLDER_PATTERN, (match, key) => (key in values ? values[key] : match));
+}
+
 // Deterministic avatar colour from a string (so each contact keeps its colour).
 export function colorFromString(str) {
   const palette = [

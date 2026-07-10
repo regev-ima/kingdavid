@@ -1,10 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, Send, Lock, AlertTriangle } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
+} from '@/components/ui/command';
+import { Loader2, Send, Lock, AlertTriangle, BookText } from 'lucide-react';
+import { useWhatsAppTemplates } from './useWhatsAppTemplates';
+import { resolveTemplate } from './whatsappHelpers';
 
 const SEND_ERROR_LABELS = {
   not_configured: 'חשבון הוואטסאפ לא מוגדר',
@@ -20,18 +26,63 @@ function sendErrorMessage(err) {
   return SEND_ERROR_LABELS[err] || err || 'שגיאה לא צפויה';
 }
 
+const TEMPLATE_CATEGORIES = [
+  { value: 'all', label: 'הכל' },
+  { value: 'general', label: 'כללי' },
+  { value: 'sales', label: 'מכירות' },
+  { value: 'availability', label: 'זמינות' },
+  { value: 'service', label: 'שירות' },
+];
+
 // Text composer for a WhatsApp thread — sends through the chat owner's own
 // Green API instance via greenApiSend (the browser never sees any Green
 // token). Shown to the chat's own rep and to admins (with a warning line when
 // sending through someone else's instance); falls back to a locked footer
 // when that rep's account isn't connected/authorized yet.
-export default function WhatsAppComposer({ chat, rep, currentUserId, isAdmin, messagesQueryKey }) {
+//
+// Also hosts the template system (E2/E3): a browsable popover of shared
+// templates, plus Mac-style text-replacement — typing "/shortcut" followed by
+// a space at the start of the message expands it immediately, with a live
+// filtered dropdown while the shortcut is being typed.
+export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, messagesQueryKey, contactName }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const textareaRef = useRef(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateCategory, setTemplateCategory] = useState('all');
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
 
+  const currentUserId = currentUser?.id;
   const isOwner = !!chat?.user_id && chat.user_id === currentUserId;
   const canSend = isOwner || isAdmin;
+
+  const { data: templates = [] } = useWhatsAppTemplates();
+
+  const placeholderCtx = useMemo(() => ({
+    contactName: contactName || chat?.contact_name || '',
+    repName: currentUser?.full_name || '',
+    repPhone: currentUser?.phone || '',
+  }), [contactName, chat?.contact_name, currentUser?.full_name, currentUser?.phone]);
+
+  const shortcutMap = useMemo(
+    () => Object.fromEntries(templates.filter((t) => t.shortcut).map((t) => [t.shortcut, t])),
+    [templates],
+  );
+
+  const slashResults = useMemo(() => {
+    if (!slashOpen) return [];
+    const q = slashQuery.toLowerCase();
+    return templates
+      .filter((t) => (t.shortcut && t.shortcut.toLowerCase().includes(q)) || t.title.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [templates, slashOpen, slashQuery]);
+
+  const popoverTemplates = useMemo(
+    () => (templateCategory === 'all' ? templates : templates.filter((t) => t.category === templateCategory)),
+    [templates, templateCategory],
+  );
 
   // Only fetched when needed for the "sending through X's instance" warning
   // and the caller didn't already hand us the rep object (WhatsAppChat.jsx
@@ -59,6 +110,38 @@ export default function WhatsAppComposer({ chat, rep, currentUserId, isAdmin, me
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [text]);
+
+  const applyTemplate = (template) => {
+    if (!template) return;
+    setText(resolveTemplate(template.body, placeholderCtx));
+    setSlashOpen(false);
+    setTemplatesOpen(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const handleTextChange = (e) => {
+    const value = e.target.value;
+
+    // Mac-style auto-expand: "/shortcut" + space, at the very start of the
+    // message, is replaced immediately with the resolved template body.
+    const expandMatch = value.match(/^\/(\S+)\s$/);
+    const expandTemplate = expandMatch && shortcutMap[expandMatch[1]];
+    if (expandTemplate) {
+      applyTemplate(expandTemplate);
+      return;
+    }
+    setText(value);
+
+    // While the shortcut is still being typed, show a live filtered menu.
+    const liveMatch = value.match(/^\/(\S*)$/);
+    if (liveMatch) {
+      setSlashQuery(liveMatch[1]);
+      setSlashOpen(true);
+      setSlashIndex(0);
+    } else if (slashOpen) {
+      setSlashOpen(false);
+    }
+  };
 
   const sendMutation = useMutation({
     mutationFn: async (message) => {
@@ -103,10 +186,17 @@ export default function WhatsAppComposer({ chat, rep, currentUserId, isAdmin, me
     const message = text.trim();
     if (!message || sendMutation.isPending) return;
     setText('');
+    setSlashOpen(false);
     sendMutation.mutate(message);
   };
 
   const handleKeyDown = (e) => {
+    if (slashOpen && slashResults.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => (i + 1) % slashResults.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex((i) => (i - 1 + slashResults.length) % slashResults.length); return; }
+      if (e.key === 'Enter') { e.preventDefault(); applyTemplate(slashResults[slashIndex]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setSlashOpen(false); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -135,16 +225,90 @@ export default function WhatsAppComposer({ chat, rep, currentUserId, isAdmin, me
         </p>
       )}
       <div className="flex items-end gap-2">
-        <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="הקלד/י הודעה…"
-          disabled={statusLoading || sendMutation.isPending}
-          rows={1}
-          className="min-h-[40px] max-h-[160px] resize-none text-sm"
-        />
+        <div className="relative flex-1">
+          <Textarea
+            ref={textareaRef}
+            value={text}
+            onChange={handleTextChange}
+            onKeyDown={handleKeyDown}
+            onBlur={() => setSlashOpen(false)}
+            placeholder="הקלד/י הודעה… (נסה /קיצור)"
+            disabled={statusLoading || sendMutation.isPending}
+            rows={1}
+            className="min-h-[40px] max-h-[160px] resize-none text-sm"
+          />
+          {slashOpen && slashResults.length > 0 && (
+            <div className="absolute bottom-full mb-1 inset-x-0 z-20 rounded-lg border bg-popover shadow-lg max-h-56 overflow-y-auto">
+              {slashResults.map((t, i) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); applyTemplate(t); }}
+                  className={`w-full text-right px-3 py-2 text-sm flex items-center justify-between gap-2 ${
+                    i === slashIndex ? 'bg-accent' : 'hover:bg-muted'
+                  }`}
+                >
+                  <span className="truncate">{t.title}</span>
+                  {t.shortcut && <span className="text-[10px] text-muted-foreground shrink-0" dir="ltr">/{t.shortcut}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <Popover open={templatesOpen} onOpenChange={setTemplatesOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 shrink-0"
+              aria-label="תבניות הודעה"
+              title="תבניות הודעה"
+            >
+              <BookText className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-80 p-0" align="start" dir="rtl">
+            <Command>
+              <CommandInput placeholder="חיפוש תבנית…" />
+              <div className="flex items-center gap-1 px-2 pt-2 pb-1.5 flex-wrap border-b">
+                {TEMPLATE_CATEGORIES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setTemplateCategory(c.value)}
+                    className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+                      templateCategory === c.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <CommandList>
+                <CommandEmpty>לא נמצאו תבניות</CommandEmpty>
+                <CommandGroup>
+                  {popoverTemplates.map((t) => (
+                    <CommandItem
+                      key={t.id}
+                      value={`${t.title} ${t.shortcut || ''}`}
+                      onSelect={() => applyTemplate(t)}
+                      className="flex-col items-start gap-0.5"
+                    >
+                      <div className="flex items-center gap-1.5 w-full">
+                        <span className="text-sm font-medium truncate">{t.title}</span>
+                        {t.shortcut && <span className="text-[10px] text-muted-foreground shrink-0" dir="ltr">/{t.shortcut}</span>}
+                      </div>
+                      <span className="text-xs text-muted-foreground truncate w-full">{t.body}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+
         <Button
           size="icon"
           onClick={handleSend}
