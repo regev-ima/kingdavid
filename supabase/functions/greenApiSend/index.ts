@@ -192,6 +192,11 @@ Deno.serve(async (req) => {
     }
 
     // ── Roll the conversation summary forward ───────────────────────────────
+    // Guarded on last_message_at so this can't clobber a newer INCOMING
+    // message that the webhook races in concurrently (mirrors the webhook's
+    // own `isNewest` check, but as an atomic DB-side condition instead of a
+    // read-then-write — a customer reply landing between our message insert
+    // and this update must not get silently flipped back to "answered").
     const preview = message || (action === 'file' ? `📄 ${body.file_name || 'קובץ'}` : '');
     await svc.from('whatsapp_chats').update({
       last_message_text: preview,
@@ -199,7 +204,7 @@ Deno.serve(async (req) => {
       last_message_direction: 'outgoing',
       status: 'answered',
       unread_count: 0,
-    }).eq('id', chat.id);
+    }).eq('id', chat.id).or(`last_message_at.is.null,last_message_at.lte.${nowIso}`);
 
     return Response.json({ ok: true, idMessage, chat_ref: chat.id }, { headers: cors });
   } catch (error) {

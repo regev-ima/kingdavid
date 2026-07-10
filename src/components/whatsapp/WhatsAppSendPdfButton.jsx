@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Loader2, MessageCircle } from 'lucide-react';
+import { Loader2, MessageCircle, AlertTriangle } from 'lucide-react';
 import { phoneTail } from './useWhatsAppContext';
 import { resolveTemplate, sendErrorMessage } from './whatsappHelpers';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
@@ -23,14 +23,21 @@ function fallbackCaption(firstName) {
 // an existing WhatsApp conversation (chat_ref) over a bare phone number when
 // one is found, so it lands in the right thread and uses its owning rep's
 // account.
+//
+// `ownerUserId` is the quote/order's owning rep (resolved by the caller from
+// created_by_rep / rep1 email) — used only as a fallback identity when there's
+// no existing chat yet. An admin sending on a rep's behalf (either case) sees
+// the same "sent from X's WhatsApp" warning the chat composer shows, and the
+// send goes out through that rep's Green API instance, not the admin's own.
 export default function WhatsAppSendPdfButton({
-  phone, contactName, fileName, currentUser, ensurePdfUrl,
+  phone, contactName, fileName, currentUser, ensurePdfUrl, ownerUserId, ownerName,
   templateCategory = 'sales', label = 'שלח בוואטסאפ', className = '', size = 'sm', variant = 'outline',
 }) {
   const [open, setOpen] = useState(false);
   const [caption, setCaption] = useState('');
   const tail = phoneTail(phone);
   const hasPhone = !!tail;
+  const isAdmin = currentUser?.role === 'admin';
 
   const { data: templates = [] } = useWhatsAppTemplates();
 
@@ -45,6 +52,20 @@ export default function WhatsAppSendPdfButton({
       return rows?.[0] || null;
     },
   });
+
+  // Who this will actually send AS: the existing chat's owner if one was
+  // found (greenApiSend resolves the account from chat_ref regardless of
+  // as_user_id), otherwise the quote/order's owning rep.
+  const effectiveOwnerId = existingChat?.user_id || ownerUserId || null;
+  const sendingAsOther = isAdmin && !!effectiveOwnerId && effectiveOwnerId !== currentUser?.id;
+
+  const { data: ownerUser } = useQuery({
+    queryKey: ['wa-send-pdf-owner', effectiveOwnerId],
+    queryFn: () => base44.entities.User.filter({ id: effectiveOwnerId }).then((r) => r[0] || null),
+    enabled: open && sendingAsOther && !ownerName,
+    staleTime: 5 * 60_000,
+  });
+  const ownerDisplayName = ownerName || ownerUser?.full_name || ownerUser?.email || 'הנציג';
 
   useEffect(() => {
     if (!open) return;
@@ -64,7 +85,10 @@ export default function WhatsAppSendPdfButton({
       const fileUrl = await ensurePdfUrl();
       const payload = existingChat
         ? { action: 'file', chat_ref: existingChat.id, file_url: fileUrl, file_name: fileName, message: caption }
-        : { action: 'file', phone, file_url: fileUrl, file_name: fileName, message: caption };
+        : {
+            action: 'file', phone, file_url: fileUrl, file_name: fileName, message: caption,
+            ...(sendingAsOther ? { as_user_id: effectiveOwnerId } : {}),
+          };
       const res = await base44.functions.invoke('greenApiSend', payload);
       if (!res?.ok) throw new Error(sendErrorMessage(res?.error));
       return res;
@@ -96,6 +120,12 @@ export default function WhatsAppSendPdfButton({
             <DialogTitle>שליחת {fileName} בוואטסאפ</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {sendingAsOther && (
+              <p className="flex items-center gap-1.5 text-[11px] text-amber-700">
+                <AlertTriangle className="h-3 w-3" />
+                ההודעה תישלח מהוואטסאפ של {ownerDisplayName}
+              </p>
+            )}
             <div className="space-y-1.5">
               <Label>נמען</Label>
               <Input value={phone || ''} disabled dir="ltr" />

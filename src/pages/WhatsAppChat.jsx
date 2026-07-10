@@ -572,6 +572,7 @@ function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, 
       </div>
 
       <WhatsAppComposer
+        key={chat.id}
         chat={chat}
         rep={rep}
         currentUser={currentUser}

@@ -294,6 +294,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           contactName={order.customer_name}
           fileName={`הזמנה-${order.order_number}.pdf`}
           currentUser={effectiveUser}
+          ownerUserId={users.find((u) => u.email?.toLowerCase() === (order.rep1 || '').toLowerCase())?.id}
           ensurePdfUrl={() => OrderPdfGenerator(order)}
         />
         <Button variant="outline" size="sm" onClick={() => setShowServiceTicket(true)} className="h-8 text-xs">

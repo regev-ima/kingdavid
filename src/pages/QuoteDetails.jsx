@@ -402,6 +402,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
           contactName={quote.customer_name}
           fileName={`הצעת-מחיר-${quote.quote_number}.pdf`}
           currentUser={effectiveUser}
+          ownerUserId={users.find((u) => u.email?.toLowerCase() === (quote.created_by_rep || '').toLowerCase())?.id}
           ensurePdfUrl={async () => {
             if (quote.pdf_url) return quote.pdf_url;
             const pdfUrl = await QuotePdfGenerator(quote);

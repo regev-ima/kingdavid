@@ -122,6 +122,7 @@ function WhatsAppChatDialog({ chat, open, onOpenChange, fallbackName }) {
 
         <div className="shrink-0">
           <WhatsAppComposer
+            key={chat.id}
             chat={chat}
             currentUser={effectiveUser}
             isAdmin={isAdmin}
