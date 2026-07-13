@@ -354,6 +354,28 @@ export default function LeadManagement() {
     [salesReps],
   );
 
+  // Source filter options come from the actual leads, not a fixed list. The
+  // leads.source column holds raw values (google_ads, Facebook Form, Outbrain,
+  // taboola, …) that the curated LEAD_SOURCE_OPTIONS never covered, so the
+  // filter could not target them. lead_sources() returns the distinct sources
+  // present (RLS-scoped, most common first); we fall back to the curated list
+  // if the RPC isn't deployed yet so the filter always works.
+  const { data: sourceOptions = LEAD_SOURCE_OPTIONS } = useQuery({
+    queryKey: ['leadSources'],
+    enabled: !!effectiveUser,
+    staleTime: 5 * 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const { data, error } = await base44.supabase.rpc('lead_sources');
+      if (error) throw error;
+      const opts = (data || [])
+        .map((row) => row.source)
+        .filter(Boolean)
+        .map((src) => ({ value: src, label: SOURCE_LABELS[src] || src }));
+      return opts.length ? opts : LEAD_SOURCE_OPTIONS;
+    },
+  });
+
   // Per-rep workload via exact COUNT queries. For each rep (and team-wide) we
   // count four lifecycle buckets, each defined by the SAME condition its
   // drill-down click applies (LIFECYCLE_SCOPES):
@@ -810,7 +832,7 @@ export default function LeadManagement() {
       <FilterBar
         filters={[
           { key: 'status', label: 'סטטוס', allLabel: 'כל הסטטוסים', options: [...LEAD_STATUS_OPTIONS, ...customStatusesForFilter] },
-          { key: 'source', label: 'מקור',  allLabel: 'כל המקורות',  options: LEAD_SOURCE_OPTIONS },
+          { key: 'source', label: 'מקור',  allLabel: 'כל המקורות',  options: sourceOptions },
           ...(isAdmin ? [{
             key: 'rep',
             label: 'נציג',
