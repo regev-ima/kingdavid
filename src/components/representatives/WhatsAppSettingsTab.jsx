@@ -11,7 +11,7 @@ import {
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import {
-  Loader2, Save, Eye, EyeOff, Plug, RefreshCw, CheckCircle2,
+  Loader2, Save, Eye, EyeOff, Plug, Unplug, RefreshCw, CheckCircle2,
   AlertTriangle, MessageCircle, KeyRound, Copy, Activity, Trash2,
 } from 'lucide-react';
 
@@ -91,6 +91,20 @@ export default function WhatsAppSettingsTab({ rep }) {
       queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
     },
     onError: (err) => toast.error(`האבחון נכשל: ${err?.message || 'שגיאה'}`),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'disconnect', user_id: userId }),
+    onSuccess: () => {
+      toast.success('הוואטסאפ נותק — ההיסטוריה נשמרה');
+      setDiag(null);
+      setDraft({ instance_id: '', api_token: '', api_url: 'https://api.green-api.com' });
+      queryClient.invalidateQueries({ queryKey: ['green-api', userId] });
+      // The chats stay, but the composer/monitoring state changes — refresh them.
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+    },
+    onError: (err) => toast.error(`הניתוק נכשל: ${err?.message || 'שגיאה'}`),
   });
 
   const purgeMutation = useMutation({
@@ -295,6 +309,54 @@ export default function WhatsAppSettingsTab({ rep }) {
           <p className="text-[11px] text-muted-foreground">
             לחיצה על "חבר וובהוק" מגדירה את הכתובת הזו ב-Green API ומפעילה התראות על הודעות נכנסות ויוצאות.
           </p>
+        </div>
+      )}
+
+      {/* Disconnect — detach the Green API instance but KEEP the history (admin).
+          Amber, not red: no data is deleted. Only shown when there's something
+          connected to disconnect. */}
+      {configured && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+          <div className="flex items-center gap-2 text-amber-800">
+            <Unplug className="h-4 w-4" />
+            <p className="text-sm font-medium">ניתוק הוואטסאפ</p>
+          </div>
+          <p className="text-xs text-amber-800/80">
+            ניתוק החשבון מ-Green API. <b>ההיסטוריה (כל השיחות וההודעות) נשמרת</b> וניתן לצפות בה במסך
+            "צ'אט וואטסאפ" — רק החיבור מנותק: המערכת תפסיק לקבל ולשלוח הודעות דרך המספר הזה. ניתן לחבר
+            מחדש בכל עת ע"י הזנת הקודים ולחיצה על "שמור".
+          </p>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-amber-400 text-amber-800 hover:bg-amber-100"
+                disabled={disconnectMutation.isPending}
+              >
+                {disconnectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Unplug className="h-4 w-4" />}
+                נתק את הוואטסאפ (ללא מחיקת היסטוריה)
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent dir="rtl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>לנתק את הוואטסאפ של הנציג?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  החיבור ל-Green API ינותק והמערכת תפסיק לקבל/לשלוח הודעות דרך מספר זה.
+                  ההיסטוריה שתועדה <b>לא תימחק</b> ותישאר זמינה לצפייה. אפשר לחבר מחדש מאוחר יותר.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>ביטול</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => disconnectMutation.mutate()}
+                  className="bg-amber-600 text-white hover:bg-amber-700"
+                >
+                  כן, נתק
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       )}
 
