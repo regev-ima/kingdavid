@@ -48,6 +48,7 @@ jobs:
             getVoicecenterCredentials
             greenApiSettings
             greenApiWebhook
+            greenApiSend
             hyp-sign
             hyp-notify
             hyp-verify

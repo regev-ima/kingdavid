@@ -1,7 +1,15 @@
 import React, { useMemo } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { base44 } from '@/api/base44Client';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import UserAvatar from '@/components/shared/UserAvatar';
-import { Users, Timer, Clock } from 'lucide-react';
+import { Users, Timer, Clock, Loader2, Trash2 } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
+  AlertDialogFooter, AlertDialogTitle, AlertDialogDescription,
+  AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { formatDuration } from './whatsappHelpers';
 
 const PERIODS = [
@@ -89,7 +97,24 @@ export default function WhatsAppManagerOverview({
   chats = [], usersById = {}, viewStatsById = {}, period, setPeriod,
   now, activeRep, activeStatus, onFilter,
 }) {
+  const queryClient = useQueryClient();
   const startMs = useMemo(() => periodStartMs(period, now), [period, now]);
+
+  // Admin-only "wipe everyone's history" — same purge as WhatsAppSettingsTab,
+  // looped server-side over every connected account. Credentials/connections
+  // are kept; only recorded chats/messages are deleted, and recording
+  // continues for new messages going forward.
+  const purgeAllMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'purge_all' }),
+    onSuccess: (res) => {
+      toast.success(`ההיסטוריה נמחקה לכל הצוות (${res?.purged_count ?? 0} חשבונות)`);
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-rep-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-my-stats'] });
+    },
+    onError: (err) => toast.error(`המחיקה נכשלה: ${err?.message || 'שגיאה'}`),
+  });
 
   const { reps, team } = useMemo(() => {
     const map = {};
@@ -148,10 +173,42 @@ export default function WhatsAppManagerOverview({
         })}
       </div>
 
-      <p className="text-xs font-semibold text-muted-foreground px-1 flex items-center gap-2">
-        <Users className="h-3.5 w-3.5" />
-        מבט-על לפי נציג ({reps.length} בצוות)
-      </p>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <p className="text-xs font-semibold text-muted-foreground flex items-center gap-2">
+          <Users className="h-3.5 w-3.5" />
+          מבט-על לפי נציג ({reps.length} בצוות)
+        </p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              type="button"
+              disabled={purgeAllMutation.isPending}
+              className="text-[11px] text-destructive/80 hover:text-destructive inline-flex items-center gap-1 disabled:opacity-50"
+            >
+              {purgeAllMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              נקה את כל ההיסטוריה של כולם
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent dir="rtl">
+            <AlertDialogHeader>
+              <AlertDialogTitle>למחוק את כל ההיסטוריה — של כל הצוות?</AlertDialogTitle>
+              <AlertDialogDescription>
+                כל השיחות וההודעות שתועדו עבור כל חשבונות הוואטסאפ המחוברים יימחקו לצמיתות ולא ניתן
+                יהיה לשחזר אותן. החיבורים עצמם יישארו, ותיעוד הודעות חדשות יימשך.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ביטול</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => purgeAllMutation.mutate()}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                כן, מחק את הכל
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
 
       <div className="max-h-[40vh] overflow-y-auto">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">

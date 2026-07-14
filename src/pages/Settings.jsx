@@ -30,6 +30,8 @@ const Sms019SettingsTab = lazy(() => import('@/components/settings/Sms019Setting
 const BulkUpdate = lazy(() => import('@/pages/BulkUpdate'));
 const Representatives = lazy(() => import('@/pages/Representatives'));
 const MenuManagementTab = lazy(() => import('@/components/settings/MenuManagementTab'));
+const WhatsAppTemplatesTab = lazy(() => import('@/components/settings/WhatsAppTemplatesTab'));
+const AiSettingsTab = lazy(() => import('@/components/settings/AiSettingsTab'));
 
 // Centered spinner shown while a section's chunk downloads.
 function SectionFallback() {
@@ -87,6 +89,8 @@ export default function Settings() {
     { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   show: isAdmin },
     { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     show: isAdmin },
     { value: 'sms',            label: 'שליחת SMS',         desc: 'חיבור חשבון 019',           icon: 'sms',            show: isAdmin },
+    { value: 'wa-templates',   label: 'תבניות וואטסאפ',    desc: 'תבניות הודעה וקיצורים לקומפוזר', icon: 'forum', show: isAdmin },
+    { value: 'ai',             label: 'בינה מלאכותית',     desc: 'בחירת מודל AI לניסוח תוכן',  icon: 'smart_toy',      show: isAdmin },
     { value: 'bulk',           label: 'עדכון המוני',        desc: 'עדכון נתונים בכמות',         icon: 'sync',           show: canBulkUpdate },
     { value: 'menu',           label: 'תפריט',             desc: 'הסתרה וסידור התפריט',        icon: 'menu',           show: isAdmin },
   ].filter((s) => s.show);
@@ -348,6 +352,22 @@ export default function Settings() {
           <TabsContent value="sms" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <Sms019SettingsTab />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="wa-templates" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <WhatsAppTemplatesTab />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="ai" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <AiSettingsTab />
             </Suspense>
           </TabsContent>
         )}

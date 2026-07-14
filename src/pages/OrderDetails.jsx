@@ -54,6 +54,7 @@ import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac'
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
+import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 
 // Line prices are stored pre-VAT; show the customer incl-VAT, two decimals.
@@ -288,6 +289,14 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           )}
           הורד PDF
         </Button>
+        <WhatsAppSendPdfButton
+          phone={order.customer_phone}
+          contactName={order.customer_name}
+          fileName={`הזמנה-${order.order_number}.pdf`}
+          currentUser={effectiveUser}
+          ownerUserId={users.find((u) => u.email?.toLowerCase() === (order.rep1 || '').toLowerCase())?.id}
+          ensurePdfUrl={() => OrderPdfGenerator(order)}
+        />
         <Button variant="outline" size="sm" onClick={() => setShowServiceTicket(true)} className="h-8 text-xs">
           <Headphones className="h-3.5 w-3.5 me-1.5" />
           קריאת שירות

@@ -88,6 +88,57 @@ export function elapsedSeconds(value) {
   return Math.max(0, (Date.now() - d.getTime()) / 1000);
 }
 
+// Human-readable Hebrew messages for greenApiSend's error codes — shared by
+// the composer and the "send PDF" dialog so a rep never sees a raw error
+// code like "instance_not_authorized".
+const SEND_ERROR_LABELS = {
+  not_configured: 'חשבון הוואטסאפ לא מוגדר',
+  instance_not_authorized: 'המכשיר לא מאומת ב-Green API',
+  rate_limited: 'נשלחו יותר מדי הודעות בדקה האחרונה — נסה שוב עוד רגע',
+  chat_not_found: 'השיחה לא נמצאה',
+  Forbidden: 'אין הרשאה לשלוח הודעה זו',
+  message_required: 'ההודעה ריקה',
+  file_url_required: 'לא נמצא קובץ לשליחה',
+  invalid_destination: 'מספר הטלפון לא תקין',
+  green_send_failed: 'השליחה ל-Green API נכשלה',
+};
+
+export function sendErrorMessage(err) {
+  return SEND_ERROR_LABELS[err] || err || 'שגיאה לא צפויה';
+}
+
+// Prompt for the "improve with AI" action — takes a draft the user already
+// wrote and enhances clarity/tone/effectiveness, WITHOUT inventing facts and
+// preserving any {{placeholders}} literally. Shared by the template editor
+// and the chat composer so both behave identically. `categoryLabel` is
+// optional extra context (used from the template editor).
+export function buildImproveMessagePrompt(text, categoryLabel) {
+  const cat = categoryLabel ? ` הקטגוריה: ${categoryLabel}.` : '';
+  return 'שפר את הודעת הוואטסאפ הבאה בעברית, עבור חברת "קינג דוד" (מזרנים ומוצרי שינה).'
+    + ` שפר בהירות, טון וניסוח, שמור על אורך קצר ועל סגנון עסקי-חם ואישי.${cat}`
+    + ' חשוב: שמור על כל הפלייסהולדרים בדיוק כפי שהם (למשל {{שם}}, {{נציג}}, {{טלפון_נציג}}),'
+    + ' ואל תמציא פרטים, מספרים, מחירים או הבטחות שלא נכתבו במקור.'
+    + ' החזר רק את ההודעה המשופרת עצמה, בלי מרכאות ובלי הסברים.'
+    + `\n\nההודעה המקורית:\n"""\n${text}\n"""`;
+}
+
+// Resolve {{placeholders}} in a template body against a chat/user context.
+// Unrecognized placeholders are left untouched (never throws, never drops
+// text) — see whatsapp-phase2-messaging-plan.md §5.
+const PLACEHOLDER_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+export function resolveTemplate(body, ctx = {}) {
+  if (!body) return '';
+  const firstName = (ctx.contactName || '').trim().split(/\s+/)[0] || '';
+  const values = {
+    'שם': firstName,
+    'שם_מלא': (ctx.contactName || '').trim(),
+    'נציג': (ctx.repName || '').trim(),
+    'טלפון_נציג': (ctx.repPhone || '').trim(),
+  };
+  return body.replace(PLACEHOLDER_PATTERN, (match, key) => (key in values ? values[key] : match));
+}
+
 // Deterministic avatar colour from a string (so each contact keeps its colour).
 export function colorFromString(str) {
   const palette = [

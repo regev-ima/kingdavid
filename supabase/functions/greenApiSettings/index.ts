@@ -16,9 +16,14 @@
 //             outgoing notifications. Never enables sending.
 //   'check'   { user_id? }                          → refresh getStateInstance
 //   'list'    (admin only)                          → all accounts + status
+//   'purge'   { user_id? }                          → wipe one account's chat history
+//   'purge_all' (admin only)                        → wipe EVERY account's chat history
+//   'disconnect' { user_id? } (admin only)          → detach the Green API instance
+//              (clear creds, stop webhooks) but KEEP the recorded chat history
+//   'diagnose' { user_id? }                         → compare our webhook config vs Green's
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
-import { getStateInstance, getGreenSettings, setWebhookSettings, buildWebhookUrlWithToken } from '../_shared/greenApi.ts';
+import { getStateInstance, getGreenSettings, setWebhookSettings, buildWebhookUrlWithToken, callGreenApi } from '../_shared/greenApi.ts';
 
 function maskToken(t: string) {
   return t ? `••••${t.slice(-4)}` : '';
@@ -203,6 +208,79 @@ Deno.serve(async (req) => {
         return Response.json({ ok: false, error: cErr.message }, { status: 500, headers: cors });
       }
       return Response.json({ ok: true, purged: true }, { headers: cors });
+    }
+
+    if (action === 'disconnect') {
+      // Detach the Green API instance from this rep WITHOUT touching the
+      // recorded history. Admin-only, same reasoning as purge (a rep must not
+      // be able to unilaterally stop being mirrored). We keep the account row
+      // (so its chats/messages, which FK to it, stay intact) and only clear the
+      // credentials + deactivate it — after this the composer locks, sending is
+      // disabled, and inbound webhooks for this instance no longer match.
+      if (!isAdmin) {
+        return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
+      }
+      const acc = await loadAccount();
+      if (!acc) {
+        return Response.json({ ok: false, error: 'not_found' }, { status: 404, headers: cors });
+      }
+
+      // Best-effort: ask Green API to stop delivering webhooks to us. Ignore
+      // failures (the instance may already be gone / creds revoked) — clearing
+      // instance_id below already makes any further webhook a no-op on our side.
+      if (acc.instance_id && acc.api_token) {
+        try {
+          await callGreenApi(acc, 'setSettings', {
+            webhookUrl: '',
+            incomingWebhook: 'no',
+            outgoingWebhook: 'no',
+            outgoingAPIMessageWebhook: 'no',
+            outgoingMessageWebhook: 'no',
+            stateWebhook: 'no',
+          });
+        } catch (e) {
+          console.warn('[greenApiSettings] disconnect setSettings failed (ignored)', e);
+        }
+      }
+
+      const { error } = await svc.from('whatsapp_accounts').update({
+        instance_id: '',
+        api_token: '',
+        webhook_token: '',
+        state: null,
+        phone: null,
+        is_active: false,
+        updated_by: user.email || null,
+        updated_date: new Date().toISOString(),
+      }).eq('id', acc.id);
+      if (error) {
+        console.error('[greenApiSettings] disconnect failed', error);
+        return Response.json({ ok: false, error: error.message }, { status: 500, headers: cors });
+      }
+      return Response.json({ ok: true, disconnected: true, ...statusOf(await loadAccount()) }, { headers: cors });
+    }
+
+    if (action === 'purge_all') {
+      // Same as 'purge', looped over every connected account. Admin-only.
+      if (!isAdmin) {
+        return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
+      }
+      const { data: accounts } = await svc.from('whatsapp_accounts').select('id');
+      let purgedCount = 0;
+      for (const acc of accounts || []) {
+        const { error: mErr } = await svc.from('whatsapp_messages').delete().eq('account_id', acc.id);
+        if (mErr) {
+          console.error('[greenApiSettings] purge_all messages failed', acc.id, mErr);
+          continue;
+        }
+        const { error: cErr } = await svc.from('whatsapp_chats').delete().eq('account_id', acc.id);
+        if (cErr) {
+          console.error('[greenApiSettings] purge_all chats failed', acc.id, cErr);
+          continue;
+        }
+        purgedCount++;
+      }
+      return Response.json({ ok: true, purged: true, purged_count: purgedCount }, { headers: cors });
     }
 
     if (action === 'diagnose') {

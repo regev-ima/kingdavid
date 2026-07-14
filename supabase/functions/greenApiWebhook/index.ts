@@ -2,9 +2,13 @@
 // to. Deployed with --no-verify-jwt (like hyp-notify) so Green API can reach
 // it; we authenticate each call by matching the per-instance webhook token.
 //
-// This endpoint ONLY records. It never calls a send method — incoming AND
-// outgoing messages are both mirrored read-only into whatsapp_chats /
-// whatsapp_messages so the manager and the rep can see the conversation.
+// This endpoint itself only records — it never calls a send method. It
+// mirrors BOTH directions into whatsapp_chats / whatsapp_messages: incoming
+// messages, and outgoing ones sent either from the rep's phone or through the
+// app via greenApiSend (phase 2). Green API echoes app-sent messages back
+// here too (outgoingAPIMessageReceived) — the dedupe on green_message_id
+// below means that echo is a no-op, since greenApiSend already inserted the
+// row when it sent.
 //
 // Status rule (drives the colour in the UI):
 //   incoming last  → chat.status = 'waiting'  (customer waiting for a reply)
