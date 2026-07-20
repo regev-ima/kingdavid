@@ -1,4 +1,4 @@
-import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 const SPREADSHEET_ID = '1o2KSCJX3l9jKMvyVVU1gHLnK7hvEx_iF-01cjGeq0tQ';
 
@@ -29,6 +29,7 @@ function parseSize(val: string): { width: number; length: number } {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {

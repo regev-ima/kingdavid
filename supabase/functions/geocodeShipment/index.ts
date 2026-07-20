@@ -1,4 +1,4 @@
-import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 // ---------------------------------------------------------------------------
 // geocodeShipment - Google Maps Geocoding for delivery_shipments.
@@ -94,6 +94,7 @@ async function geocodeOne(
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

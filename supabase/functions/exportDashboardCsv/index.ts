@@ -1,4 +1,4 @@
-import { getUser, corsHeaders } from '../_shared/supabase.ts';
+import { getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 function normalizeLower(v: unknown) { return typeof v === 'string' ? v.trim().toLowerCase() : ''; }
 
@@ -39,6 +39,7 @@ function buildExport(data: any, exportType: string) {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {

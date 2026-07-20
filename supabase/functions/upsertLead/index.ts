@@ -1,4 +1,4 @@
-import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
 
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
@@ -12,6 +12,7 @@ const VALID_STATUSES = new Set([
 ]);
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: { ...corsHeaders, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, api_key, x-webhook-secret, Authorization' } });
   }

@@ -1,6 +1,7 @@
-import { createServiceClient, corsHeaders, getUser } from '../_shared/supabase.ts';
+import { createServiceClient, getCorsHeaders, getUser } from '../_shared/supabase.ts';
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

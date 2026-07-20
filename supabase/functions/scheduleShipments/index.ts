@@ -1,4 +1,4 @@
-import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 
 // ---------------------------------------------------------------------------
 // Depot (factory origin) - all routes start here each delivery day.
@@ -282,6 +282,7 @@ function totalRouteDistance(origin: { lat: number; lon: number }, shipments: Shi
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

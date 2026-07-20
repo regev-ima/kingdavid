@@ -1,4 +1,4 @@
-import { corsHeaders, getUser } from '../_shared/supabase.ts';
+import { getCorsHeaders, getUser } from '../_shared/supabase.ts';
 
 function buildEmailTemplate(subject: string, body: string, options?: {
   quote_number?: string;
@@ -110,6 +110,7 @@ function buildEmailTemplate(subject: string, body: string, options?: {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
