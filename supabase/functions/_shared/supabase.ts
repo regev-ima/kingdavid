@@ -44,6 +44,7 @@ export async function getUser(req: Request) {
  * Standard CORS headers for Edge Functions.
  */
 const ALLOWED_ORIGINS = [
+  'https://my.kingdavid4u.co.il',
   'https://kingdavid.imagick.ai',
   'https://kingdavid-one.vercel.app',
   'https://king.imagick.ai',
@@ -72,9 +73,11 @@ export function getCorsHeaders(req?: Request) {
   };
 }
 
-// Default CORS - restricted to known origins
+// Default CORS - restricted to known origins.
+// Prefer getCorsHeaders(req) so the response echoes the caller's origin; this
+// static object stays only for callers that have no request context.
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://kingdavid.imagick.ai',
+  'Access-Control-Allow-Origin': ALLOWED_ORIGINS[0],
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Vary': 'Origin',

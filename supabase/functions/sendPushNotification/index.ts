@@ -1,7 +1,8 @@
-import { createServiceClient, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
 import { sendFcmToTokens } from '../_shared/fcm.ts';
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   // NOTE: no app-level auth gate here on purpose. This function is invoked

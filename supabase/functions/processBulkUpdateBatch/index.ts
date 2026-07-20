@@ -1,4 +1,4 @@
-import { createServiceClient, getUser, corsHeaders } from '../_shared/supabase.ts';
+import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 import { applyBulkFilter } from '../_shared/bulkFilter.ts';
 
 const BATCH_SIZE = 20;
@@ -62,6 +62,7 @@ async function fetchWithRetry<T>(fn: () => Promise<T>, retries = 3, backoff = 30
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
