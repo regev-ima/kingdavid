@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select';
 import {
   Loader2, KeyRound, Upload, FileText, Trash2, Plus, CalendarDays,
-  Clock, ShieldCheck, User as UserIcon, Save, MessageCircle,
+  Clock, ShieldCheck, User as UserIcon, Save, MessageCircle, Eye, EyeOff,
 } from 'lucide-react';
 import UserAvatar from '@/components/shared/UserAvatar';
 import WhatsAppSettingsTab from '@/components/representatives/WhatsAppSettingsTab';
@@ -112,6 +112,9 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
 
   const [resetting, setResetting] = useState(false);
   const [resetInfo, setResetInfo] = useState(null); // { type:'temp'|'link', value }
+  const [newPass, setNewPass] = useState('');
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [settingPass, setSettingPass] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [docCategory, setDocCategory] = useState('contract');
   const fileInputRef = useRef(null);
@@ -179,6 +182,31 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
       toast.error(`שליחת מייל האיפוס נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     } finally {
       setResetting(false);
+    }
+  };
+
+  // Admin sets a specific password for the rep, directly.
+  const handleSetPassword = async () => {
+    if (!rep?.email || newPass.length < 6) return;
+    setSettingPass(true);
+    setResetInfo(null);
+    try {
+      const res = await base44.functions.invoke('sendPasswordReset', {
+        email: rep.email,
+        userId: rep.id,
+        newPassword: newPass,
+      });
+      if (res?.ok === false) throw new Error(res?.error || 'שגיאה');
+      toast.success('הסיסמה עודכנה — מסרו אותה לנציג');
+      setNewPass('');
+      setShowNewPass(false);
+    } catch (err) {
+      const msg = err?.message === 'password_too_short' ? 'הסיסמה חייבת להכיל לפחות 6 תווים'
+        : err?.message === 'no_auth_account' ? 'לנציג אין עדיין חשבון התחברות פעיל'
+        : (err?.message || 'שגיאה לא ידועה');
+      toast.error(`עדכון הסיסמה נכשל: ${msg}`);
+    } finally {
+      setSettingPass(false);
     }
   };
 
@@ -425,6 +453,43 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                     <code className="block text-[11px] bg-white border rounded px-2 py-1 break-all" dir="ltr">{resetInfo.value}</code>
                   </div>
                 )}
+
+                {/* Set a password directly (no e-mail) */}
+                <Separator className="my-1" />
+                <p className="text-xs font-medium">קביעת סיסמה ידנית</p>
+                <p className="text-xs text-muted-foreground">
+                  הגדרת סיסמה לנציג ישירות מהמערכת. לאחר השמירה מסרו אותה לנציג — מומלץ שיחליף אותה לאחר ההתחברות.
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showNewPass ? 'text' : 'password'}
+                      value={newPass}
+                      onChange={(e) => setNewPass(e.target.value)}
+                      placeholder="סיסמה חדשה (לפחות 6 תווים)"
+                      dir="ltr"
+                      className="pe-10 h-9"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass((v) => !v)}
+                      className="absolute inset-y-0 end-0 flex items-center pe-3 text-muted-foreground hover:text-foreground"
+                      aria-label={showNewPass ? 'הסתר סיסמה' : 'הצג סיסמה'}
+                    >
+                      {showNewPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={handleSetPassword}
+                    disabled={settingPass || newPass.length < 6}
+                    className="gap-2 shrink-0"
+                  >
+                    {settingPass ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                    קבע סיסמה
+                  </Button>
+                </div>
               </div>
             </TabsContent>
 
