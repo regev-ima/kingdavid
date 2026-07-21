@@ -5,7 +5,7 @@
  */
 
 const FCM_PROJECT_ID = 'kingdavid-crm';
-const DEFAULT_LINK = 'https://kingdavid.imagick.ai/';
+const DEFAULT_LINK = 'https://my.kingdavid4u.co.il/';
 const DEFAULT_ICON = 'https://kingdavid4u.co.il/wp-content/uploads/2023/09/logo.png';
 
 export async function getFcmAccessToken(): Promise<string> {

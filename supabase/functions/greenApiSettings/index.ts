@@ -15,6 +15,8 @@
 //             Green API (setSettings) + refresh state. Enables incoming +
 //             outgoing notifications. Never enables sending.
 //   'check'   { user_id? }                          → refresh getStateInstance
+//   'qr'      { user_id? }                           → Green API authorization QR
+//             (base64 PNG) so the phone can be linked from inside the CRM
 //   'list'    (admin only)                          → all accounts + status
 //   'purge'   { user_id? }                          → wipe one account's chat history
 //   'purge_all' (admin only)                        → wipe EVERY account's chat history
@@ -181,6 +183,35 @@ Deno.serve(async (req) => {
         state_ok: state.ok,
         settings_ok: action === 'connect' ? !!settingsResult?.ok : undefined,
         ...statusOf(await loadAccount()),
+      }, { headers: cors });
+    }
+
+    if (action === 'qr') {
+      // Return the Green API authorization QR so the rep can link their phone
+      // from INSIDE the CRM — no need to open the Green API console. The
+      // api_token stays server-side; the browser only receives the QR image
+      // (base64 PNG). Green's `qr` returns { type, message }:
+      //   type 'qrCode'      → message is a base64 PNG to scan
+      //   type 'alreadyLogged' → instance is already authorized
+      //   type 'error'       → message explains why (e.g. still starting)
+      const acc = await loadAccount();
+      if (!acc?.instance_id || !acc?.api_token) {
+        return Response.json({ ok: false, error: 'not_configured' }, { status: 400, headers: cors });
+      }
+      const qr = await callGreenApi(acc, 'qr');
+      // Refresh + persist the live state so the UI can tell when linking is done.
+      const state = await getStateInstance(acc);
+      const stateInstance = state.data?.stateInstance || null;
+      await svc.from('whatsapp_accounts')
+        .update({ state: stateInstance, last_state_at: new Date().toISOString() })
+        .eq('id', acc.id);
+      const type = qr.data?.type || (qr.ok ? 'unknown' : 'error');
+      return Response.json({
+        ok: true,
+        type,                                     // 'qrCode' | 'alreadyLogged' | 'error' | …
+        message: qr.data?.message || '',          // base64 PNG when type === 'qrCode'
+        state: stateInstance,                     // 'authorized' once the phone links
+        authorized: stateInstance === 'authorized' || type === 'alreadyLogged',
       }, { headers: cors });
     }
 
