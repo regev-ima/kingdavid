@@ -69,7 +69,19 @@ export default function WhatsAppChat() {
   const { openLead } = useLeadModal();
   const [infoOpen, setInfoOpen] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
-  const [overviewOpen, setOverviewOpen] = useState(true);
+  // Remember the manager overview open/closed choice. Default: open on wide
+  // screens, collapsed on small ones — the cards take real vertical space and
+  // on a laptop/low resolution they crowd out the actual chat.
+  const [overviewOpen, setOverviewOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('wa-overview-open');
+      if (saved !== null) return saved === '1';
+    } catch { /* ignore */ }
+    return typeof window !== 'undefined' ? window.innerWidth >= 1024 : true;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('wa-overview-open', overviewOpen ? '1' : '0'); } catch { /* ignore */ }
+  }, [overviewOpen]);
   const [period, setPeriod] = useState('today');
   const [now, setNow] = useState(() => Date.now());
 
