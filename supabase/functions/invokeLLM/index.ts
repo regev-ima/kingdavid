@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${openrouterKey}`,
-          'HTTP-Referer': 'https://kingdavid.imagick.ai',
+          'HTTP-Referer': 'https://my.kingdavid4u.co.il',
           'X-Title': 'King David CRM',
         },
         body: JSON.stringify({

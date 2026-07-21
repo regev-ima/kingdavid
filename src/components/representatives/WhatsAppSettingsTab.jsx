@@ -11,8 +11,11 @@ import {
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import {
+  Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import {
   Loader2, Save, Eye, EyeOff, Plug, Unplug, RefreshCw, CheckCircle2,
-  AlertTriangle, MessageCircle, KeyRound, Copy, Activity, Trash2,
+  AlertTriangle, MessageCircle, KeyRound, Copy, Activity, Trash2, QrCode,
 } from 'lucide-react';
 
 // Per-rep Green API (WhatsApp) connection. The api_token is a secret stored
@@ -37,6 +40,7 @@ export default function WhatsAppSettingsTab({ rep }) {
   const [draft, setDraft] = useState({ instance_id: '', api_token: '', api_url: '' });
   const [showToken, setShowToken] = useState(false);
   const [diag, setDiag] = useState(null);
+  const [qrOpen, setQrOpen] = useState(false);
 
   useEffect(() => {
     if (status) {
@@ -235,6 +239,12 @@ export default function WhatsAppSettingsTab({ rep }) {
             {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             שמור
           </Button>
+          {configured && !authorized && (
+            <Button onClick={() => setQrOpen(true)} className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+              <QrCode className="h-4 w-4" />
+              חבר מכשיר (QR)
+            </Button>
+          )}
           <Button variant="outline" onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending || !configured} className="gap-2">
             {connectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
             חבר וובהוק
@@ -397,7 +407,98 @@ export default function WhatsAppSettingsTab({ rep }) {
           </AlertDialogContent>
         </AlertDialog>
       </div>
+
+      <QrLinkDialog
+        userId={userId}
+        open={qrOpen}
+        onOpenChange={setQrOpen}
+        onLinked={() => queryClient.invalidateQueries({ queryKey: ['green-api', userId] })}
+      />
     </div>
+  );
+}
+
+// Shows the Green API authorization QR inside the CRM so a rep can link their
+// phone (WhatsApp → Linked Devices → Link a device) without ever opening the
+// Green API console. While open we poll the `qr` action; Green rotates the code
+// ~every 20s so we refresh on an interval, and stop the moment the instance
+// reports `authorized`.
+function QrLinkDialog({ userId, open, onOpenChange, onLinked }) {
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ['green-api-qr', userId],
+    queryFn: () => base44.functions.invoke('greenApiSettings', { action: 'qr', user_id: userId }),
+    enabled: open,
+    refetchInterval: (query) => (query.state.data?.authorized ? false : 5000),
+    refetchOnWindowFocus: false,
+    retry: false,
+    gcTime: 0,
+  });
+
+  const authorized = data?.authorized;
+
+  useEffect(() => {
+    if (open && authorized) {
+      toast.success('הוואטסאפ חובר בהצלחה ✅');
+      onLinked?.();
+      const t = setTimeout(() => onOpenChange(false), 1400);
+      return () => clearTimeout(t);
+    }
+  }, [open, authorized]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent dir="rtl" className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>חיבור מכשיר וואטסאפ</DialogTitle>
+          <DialogDescription>
+            סרוק את הקוד מהטלפון של הנציג: וואטסאפ ← הגדרות ← מכשירים מקושרים ← קישור מכשיר.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col items-center justify-center py-2 min-h-[260px]">
+          {authorized ? (
+            <div className="flex flex-col items-center gap-2 text-green-700">
+              <CheckCircle2 className="h-14 w-14" />
+              <p className="font-medium">מחובר! הטלפון קושר בהצלחה.</p>
+            </div>
+          ) : data?.type === 'qrCode' && data?.message ? (
+            <>
+              <img
+                src={`data:image/png;base64,${data.message}`}
+                alt="QR code"
+                className="h-56 w-56 rounded-lg border bg-white p-2"
+              />
+              <p className="mt-3 text-xs text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ממתין לסריקה… הקוד מתרענן אוטומטית
+              </p>
+            </>
+          ) : data?.type === 'error' ? (
+            <div className="flex flex-col items-center gap-2 text-amber-700 text-center px-3">
+              <AlertTriangle className="h-8 w-8" />
+              <p className="text-sm">לא ניתן להביא קוד QR כרגע.</p>
+              <p className="text-[11px] text-muted-foreground">
+                ייתכן שהמכונה עדיין מתחילה (starting). המתן רגע ולחץ "רענן קוד".
+              </p>
+              {data.message && <p className="text-[11px] text-muted-foreground" dir="ltr">{String(data.message)}</p>}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <p className="text-sm">טוען קוד QR…</p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="sm:justify-between gap-2">
+          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching} className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            רענן קוד
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>סגור</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -416,7 +517,7 @@ function DiagRow({ ok, label, value }) {
 function stateLabel(state) {
   return {
     authorized: 'מחובר',
-    notAuthorized: 'לא מאומת (סרוק QR ב-Green API)',
+    notAuthorized: 'לא מאומת — לחץ "חבר מכשיר (QR)" וסרוק',
     blocked: 'חסום',
     sleepMode: 'במצב שינה',
     starting: 'מתחיל',
