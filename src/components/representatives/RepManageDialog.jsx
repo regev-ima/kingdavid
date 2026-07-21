@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { supabase } from '@/api/supabaseClient';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -150,11 +149,21 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
     if (!rep?.email) return;
     setResetting(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(rep.email, {
+      // Route through our own Edge Function (service-role generateLink + Resend)
+      // rather than supabase.auth.resetPasswordForEmail, whose built-in mailer
+      // fails on this project ("Unable to process request").
+      const res = await base44.functions.invoke('sendPasswordReset', {
+        email: rep.email,
         redirectTo: `${window.location.origin}/login`,
       });
-      if (error) throw error;
-      toast.success(`נשלח מייל לאיפוס סיסמה ל-${rep.email}`);
+      if (res?.ok === false) throw new Error(res?.error || 'שגיאה');
+      if (res?.emailed === false && res?.action_link) {
+        // No mailer configured — surface the link so the admin can pass it on.
+        toast.success('נוצר קישור לאיפוס סיסמה — הועתק ללוח');
+        try { await navigator.clipboard?.writeText(res.action_link); } catch { /* ignore */ }
+      } else {
+        toast.success(`נשלח מייל לאיפוס סיסמה ל-${rep.email}`);
+      }
     } catch (err) {
       toast.error(`שליחת מייל האיפוס נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
     } finally {
