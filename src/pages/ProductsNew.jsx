@@ -1270,9 +1270,12 @@ export default function ProductsNew() {
                     : (product.bed_type ? [product.bed_type] : []);
                   return (
                     <React.Fragment key={product.id}>
-                      <TableRow className="cursor-pointer hover:bg-muted/30" onClick={() => toggleExpand(product.id)}>
+                      <TableRow
+                        className={`cursor-pointer transition-colors ${isExpanded ? 'bg-primary/10 hover:bg-primary/10 font-medium' : 'hover:bg-muted/30'}`}
+                        onClick={() => toggleExpand(product.id)}
+                      >
                         <TableCell className="w-8 text-center align-middle">
-                          <ChevronDown className={`h-4 w-4 text-muted-foreground inline transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                          <ChevronDown className={`h-4 w-4 inline transition-transform ${isExpanded ? 'text-primary' : 'text-muted-foreground -rotate-90'}`} />
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 min-w-0">
@@ -1348,8 +1351,12 @@ export default function ProductsNew() {
 
                       {isExpanded ? (
                         <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={9} className="p-0 bg-muted/10">
-                            <div className="px-4 pb-4 pt-2 overflow-x-auto border-t border-border/30">
+                          <TableCell colSpan={9} className="p-0 bg-primary/[0.04]">
+                            <div className="ps-8 pe-3 pb-4 pt-2 overflow-x-auto border-t border-primary/15">
+                              <div className="ps-3 border-s-2 border-primary/25">
+                                <div className="text-[11px] font-medium text-primary/80 mb-1.5">
+                                  מידות של: {product.name}
+                                </div>
                               {productVariations.length > 0 ?
                                 <Table className="min-w-[600px]" dir="rtl">
                                   <TableHeader>
@@ -1433,6 +1440,7 @@ export default function ProductsNew() {
                                   אין מידות למוצר זה. לחץ על "מידה" כדי להוסיף.
                                 </div>
                                 }
+                              </div>
                             </div>
                           </TableCell>
                         </TableRow>

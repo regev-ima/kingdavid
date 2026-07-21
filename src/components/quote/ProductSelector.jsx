@@ -327,9 +327,9 @@ export default function ProductSelector({
 
                 const renderVariationButton = (variation) => {
                   const isSelected = pendingVariation?.id === variation.id && !pendingVariation?._customWidth;
-                  // final_price is the final price to the customer (incl VAT).
-                  const priceWithVat = Math.round(variation.final_price || 0);
-                  const priceWithoutVat = Math.round((variation.final_price || 0) / 1.18);
+                  // final_price is stored PRE-VAT; the customer price adds VAT.
+                  const priceWithVat = Math.round((variation.final_price || 0) * 1.18);
+                  const priceWithoutVat = Math.round(variation.final_price || 0);
                   return (
                     <button
                       key={variation.id}
@@ -371,8 +371,8 @@ export default function ProductSelector({
                     ? group.find(v => (v.width_cm || 0) >= enteredWidth) || group[group.length - 1]
                     : pricingVariation;
 
-                  const customPriceWithVat = Math.round(pricedAt.final_price || 0);
-                  const customPriceWithoutVat = Math.round((pricedAt.final_price || 0) / 1.18);
+                  const customPriceWithVat = Math.round((pricedAt.final_price || 0) * 1.18);
+                  const customPriceWithoutVat = Math.round(pricedAt.final_price || 0);
 
                   return (
                     <div
@@ -485,8 +485,8 @@ export default function ProductSelector({
 
           {/* Sticky confirm footer */}
           {pendingVariation && (() => {
-            const footerWithVat = Math.round(pendingVariation.final_price || 0);
-            const footerWithout = Math.round((pendingVariation.final_price || 0) / 1.18);
+            const footerWithVat = Math.round((pendingVariation.final_price || 0) * 1.18);
+            const footerWithout = Math.round(pendingVariation.final_price || 0);
             return (
               <div className="px-5 py-3.5 border-t-2 border-primary/20 bg-gradient-to-l from-primary/[0.06] to-primary/[0.02]">
                 <div className="flex items-center justify-between">
