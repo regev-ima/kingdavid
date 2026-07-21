@@ -111,6 +111,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
   const [documents, setDocuments] = useState(() => rep?.documents || []);
 
   const [resetting, setResetting] = useState(false);
+  const [resetInfo, setResetInfo] = useState(null); // { type:'temp'|'link', value }
   const [uploading, setUploading] = useState(false);
   const [docCategory, setDocCategory] = useState('contract');
   const fileInputRef = useRef(null);
@@ -148,19 +149,29 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
   const handleResetPassword = async () => {
     if (!rep?.email) return;
     setResetting(true);
+    setResetInfo(null);
     try {
-      // Route through our own Edge Function (service-role generateLink + Resend)
-      // rather than supabase.auth.resetPasswordForEmail, whose built-in mailer
-      // fails on this project ("Unable to process request").
+      // Route through our own Edge Function. It prefers e-mailing a recovery
+      // link via Resend, but if Supabase Auth's link/e-mail subsystem is down
+      // it falls back to setting a temporary password we surface here — so a
+      // reset always works.
       const res = await base44.functions.invoke('sendPasswordReset', {
         email: rep.email,
+        userId: rep.id,
         redirectTo: `${window.location.origin}/login`,
       });
       if (res?.ok === false) throw new Error(res?.error || 'שגיאה');
-      if (res?.emailed === false && res?.action_link) {
-        // No mailer configured — surface the link so the admin can pass it on.
-        toast.success('נוצר קישור לאיפוס סיסמה — הועתק ללוח');
+
+      if (res?.mode === 'temp' && res?.temp_password) {
+        // E-mail path was unavailable — show the temporary password to relay.
+        setResetInfo({ type: 'temp', value: res.temp_password });
+        try { await navigator.clipboard?.writeText(res.temp_password); } catch { /* ignore */ }
+        toast.success('נקבעה סיסמה זמנית — הועתקה ללוח');
+      } else if (res?.action_link) {
+        // Mailer off but a link was generated — surface it to pass on.
+        setResetInfo({ type: 'link', value: res.action_link });
         try { await navigator.clipboard?.writeText(res.action_link); } catch { /* ignore */ }
+        toast.success('נוצר קישור לאיפוס סיסמה — הועתק ללוח');
       } else {
         toast.success(`נשלח מייל לאיפוס סיסמה ל-${rep.email}`);
       }
@@ -385,11 +396,35 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                 </div>
                 <p className="text-xs text-muted-foreground">
                   שליחת מייל לנציג עם קישור לקביעת סיסמה חדשה. הנציג בוחר סיסמה בעצמו.
+                  אם שליחת המייל אינה זמינה — תיקבע סיסמה זמנית שתוצג כאן למסירה לנציג.
                 </p>
                 <Button variant="outline" size="sm" onClick={handleResetPassword} disabled={resetting} className="gap-2">
                   {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
                   שלח מייל לאיפוס סיסמה
                 </Button>
+
+                {resetInfo?.type === 'temp' && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 space-y-1.5">
+                    <p className="text-xs text-amber-800">
+                      לא ניתן היה לשלוח מייל, לכן נקבעה <b>סיסמה זמנית</b>. מסרו אותה לנציג — מומלץ שיחליף אותה לאחר ההתחברות.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm bg-white border rounded px-2 py-1 flex-1 font-mono" dir="ltr">{resetInfo.value}</code>
+                      <Button
+                        type="button" variant="ghost" size="sm" className="h-8 gap-1.5"
+                        onClick={() => { navigator.clipboard?.writeText(resetInfo.value); toast.success('הועתק'); }}
+                      >
+                        העתק
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {resetInfo?.type === 'link' && (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-2.5 space-y-1.5">
+                    <p className="text-xs text-amber-800">קישור לאיפוס סיסמה (הועתק ללוח) — שלחו אותו לנציג:</p>
+                    <code className="block text-[11px] bg-white border rounded px-2 py-1 break-all" dir="ltr">{resetInfo.value}</code>
+                  </div>
+                )}
               </div>
             </TabsContent>
 

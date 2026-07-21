@@ -1,12 +1,19 @@
 // sendPasswordReset — an ADMIN resets a rep's password from the CRM.
 //
-// Why this exists instead of supabase.auth.resetPasswordForEmail(): the public
-// recover endpoint sends through Supabase's built-in mailer, which on this
-// project fails with "Unable to process request" (rate-limited / not wired to
-// custom SMTP). Here we generate the recovery link with the service role and
-// send it via Resend — the same reliable path the rest of the CRM already uses
-// for e-mail. This is immune to the built-in mailer AND, by falling back to the
-// default Site URL, to a redirect_to that isn't in the project's allow-list.
+// The project's Supabase Auth e-mail/link subsystem is unreliable
+// (supabase.auth.resetPasswordForEmail → "Unable to process request";
+// admin.generateLink → empty 500). So this function is defensive with a
+// two-step strategy, preferring the nicest flow but always ending with one
+// that works:
+//
+//   1. PREFERRED — generate a recovery link (service role) and e-mail it via
+//      Resend (our reliable mailer). The rep clicks it and picks their own
+//      password. Used only if generateLink actually returns a link.
+//   2. FALLBACK — if the link can't be generated/sent, set a TEMPORARY
+//      password directly with admin.updateUserById (a pure DB write — no
+//      e-mail, no SMTP, no link, so it cannot fail the way the above do) and
+//      return it so the admin can hand it to the rep. This guarantees the
+//      reset always succeeds even while Auth e-mail is down.
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
 
@@ -38,6 +45,57 @@ function buildResetEmail(actionLink: string) {
 </body></html>`;
 }
 
+// A readable, reasonably strong temporary password (letters + digits).
+function randomPassword() {
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  let b64 = btoa(String.fromCharCode(...bytes)).replace(/[^A-Za-z0-9]/g, '');
+  while (b64.length < 8) b64 += 'x';
+  return `Kd${b64.slice(0, 10)}9`; // ≥ min length, has letters + digits
+}
+
+async function emailRecoveryLink(email: string, redirectTo: string | undefined, svc: any): Promise<{ ok: boolean; genError?: string }> {
+  const generate = (options?: Record<string, unknown>) =>
+    svc.auth.admin.generateLink({ type: 'recovery', email, options } as any);
+
+  let data: any = null;
+  let error: any = null;
+  try {
+    ({ data, error } = await generate(redirectTo ? { redirectTo } : undefined));
+    if (error && redirectTo) {
+      // redirect_to may not be allow-listed → retry with the default Site URL.
+      ({ data, error } = await generate(undefined));
+    }
+  } catch (e) {
+    return { ok: false, genError: String((e as any)?.message || e) };
+  }
+  if (error) return { ok: false, genError: error.message || 'generateLink failed' };
+
+  const actionLink = data?.properties?.action_link;
+  if (!actionLink) return { ok: false, genError: 'no_action_link' };
+
+  const resendApiKey = Deno.env.get('RESEND_API_KEY');
+  if (!resendApiKey) return { ok: false, genError: 'resend_not_configured' };
+  const fromEmail = Deno.env.get('FROM_EMAIL') || 'King David CRM <noreply@kingdavid.co.il>';
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendApiKey}` },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [email],
+      subject: 'איפוס סיסמה — King David CRM',
+      html: buildResetEmail(actionLink),
+      text: `לאיפוס הסיסמה שלך במערכת King David CRM, פתחו את הקישור: ${actionLink}`,
+    }),
+  });
+  if (!res.ok) {
+    const details = await res.text();
+    return { ok: false, genError: `resend_${res.status}: ${details.slice(0, 120)}` };
+  }
+  return { ok: true };
+}
+
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -46,63 +104,50 @@ Deno.serve(async (req) => {
     let user: { role?: string } | null = null;
     try { user = await getUser(req); } catch { user = null; }
     if (!user) return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401, headers: cors });
-    // Admin-only: resetting a rep's password is a management action.
     if (user.role !== 'admin') return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
 
-    const { email, redirectTo } = await req.json().catch(() => ({}));
+    const { email, userId, redirectTo } = await req.json().catch(() => ({}));
     if (!email || typeof email !== 'string') {
       return Response.json({ ok: false, error: 'email_required' }, { status: 400, headers: cors });
     }
 
     const svc = createServiceClient();
 
-    // Generate the recovery link ourselves (service role) — no Supabase mail.
-    const generate = (options?: Record<string, unknown>) =>
-      svc.auth.admin.generateLink({ type: 'recovery', email, options } as any);
-
-    let { data, error } = await generate(redirectTo ? { redirectTo } : undefined);
-    if (error && redirectTo) {
-      // redirect_to may not be in the project's allow-list → retry with the
-      // default (Site URL), so we still get a usable link.
-      console.warn('[sendPasswordReset] generateLink with redirectTo failed, retrying without', error.message);
-      ({ data, error } = await generate(undefined));
+    // 1) Preferred: e-mail a recovery link via Resend.
+    const emailed = await emailRecoveryLink(email, redirectTo, svc);
+    if (emailed.ok) {
+      return Response.json({ ok: true, mode: 'email', emailed: true }, { headers: cors });
     }
-    if (error) {
-      console.error('[sendPasswordReset] generateLink failed', error.message);
-      return Response.json({ ok: false, error: error.message }, { status: 500, headers: cors });
-    }
+    console.warn('[sendPasswordReset] link/email path failed, falling back to temp password:', emailed.genError);
 
-    const actionLink = (data as any)?.properties?.action_link;
-    if (!actionLink) {
-      return Response.json({ ok: false, error: 'no_action_link' }, { status: 500, headers: cors });
+    // 2) Fallback: set a temporary password directly (no e-mail dependency).
+    let authId: string | null = null;
+    if (userId) {
+      const { data } = await svc.from('users').select('auth_id').eq('id', userId).maybeSingle();
+      authId = data?.auth_id || null;
     }
-
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    const fromEmail = Deno.env.get('FROM_EMAIL') || 'King David CRM <noreply@kingdavid.co.il>';
-    if (!resendApiKey) {
-      // No mailer configured — hand the link back so the admin can pass it on.
-      return Response.json({ ok: true, emailed: false, action_link: actionLink }, { headers: cors });
+    if (!authId) {
+      const { data } = await svc.from('users').select('auth_id').eq('email', email).maybeSingle();
+      authId = data?.auth_id || null;
+    }
+    if (!authId) {
+      return Response.json(
+        { ok: false, error: 'no_auth_account', detail: emailed.genError },
+        { status: 400, headers: cors },
+      );
     }
 
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendApiKey}` },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: [email],
-        subject: 'איפוס סיסמה — King David CRM',
-        html: buildResetEmail(actionLink),
-        text: `לאיפוס הסיסמה שלך במערכת King David CRM, פתחו את הקישור: ${actionLink}`,
-      }),
-    });
-
-    if (!res.ok) {
-      const details = await res.text();
-      console.error('[sendPasswordReset] resend failed', res.status, details);
-      return Response.json({ ok: false, error: 'email_send_failed' }, { status: 500, headers: cors });
+    const tempPassword = randomPassword();
+    const { error: upErr } = await svc.auth.admin.updateUserById(authId, { password: tempPassword });
+    if (upErr) {
+      console.error('[sendPasswordReset] updateUserById failed', upErr.message);
+      return Response.json({ ok: false, error: upErr.message }, { status: 500, headers: cors });
     }
 
-    return Response.json({ ok: true, emailed: true }, { headers: cors });
+    return Response.json(
+      { ok: true, mode: 'temp', emailed: false, temp_password: tempPassword, reason: emailed.genError },
+      { headers: cors },
+    );
   } catch (error) {
     console.error('[sendPasswordReset] error', error);
     return Response.json({ ok: false, error: 'internal_error' }, { status: 500, headers: cors });
