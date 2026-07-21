@@ -61,7 +61,7 @@ import { useHiddenMenuItems, applyMenuOrder } from "@/hooks/useHiddenMenuItems";
 export const navigationByRole = {
   admin: [
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
-    { name: 'ניהול לידים', href: 'LeadManagement', icon: UserCog },
+    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: UserCog },
     { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
     { name: 'לקוחות', href: 'Customers', icon: Contact },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
