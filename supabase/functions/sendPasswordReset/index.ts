@@ -14,6 +14,15 @@
 //      e-mail, no SMTP, no link, so it cannot fail the way the above do) and
 //      return it so the admin can hand it to the rep. This guarantees the
 //      reset always succeeds even while Auth e-mail is down.
+//
+// Setting a password (manual or temp fallback) goes through setRepPassword(),
+// which does NOT trust users.auth_id blindly. That column is frequently null
+// or stale: a rep invited while Supabase SMTP was down never got an auth user
+// created, so the profile row exists ("pending") with auth_id = null, and the
+// older "resolve auth_id → give up if null" logic made the reset fail with
+// no_auth_account. setRepPassword instead resolves the auth account by e-mail
+// and CREATES + links it when missing, so an admin setting a password always
+// ends up with a login that works.
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
 
@@ -96,6 +105,76 @@ async function emailRecoveryLink(email: string, redirectTo: string | undefined, 
   return { ok: true };
 }
 
+// The JS admin SDK has no server-side e-mail filter, so scan the user pages.
+// A CRM has at most a few hundred users, so this stays cheap; the page cap is
+// just a safety bound against an unbounded loop.
+async function findAuthUserByEmail(svc: any, email: string): Promise<string | null> {
+  const target = email.trim().toLowerCase();
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await svc.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) return null;
+    const users = data?.users ?? [];
+    const hit = users.find((u: { email?: string }) => (u.email || '').toLowerCase() === target);
+    if (hit) return hit.id;
+    if (users.length < 200) break; // last page reached
+  }
+  return null;
+}
+
+const isMissingUserError = (msg?: string) => {
+  const s = (msg || '').toLowerCase();
+  return s.includes('not found') || s.includes('does not exist') || s.includes('user_not_found');
+};
+
+// Ensure an auth account exists for `email` with the given password and return
+// its id. Tries, in order: the stored auth_id; a lookup by e-mail (auth_id was
+// null or drifted); creating a fresh confirmed account. Throws with the raw
+// Auth error message on genuine failure.
+async function setRepPassword(
+  svc: any,
+  email: string,
+  profile: { auth_id?: string | null; full_name?: string } | null,
+  password: string,
+): Promise<string> {
+  // 1) Stored auth_id — the common, healthy case.
+  const storedId = profile?.auth_id || null;
+  if (storedId) {
+    const { error } = await svc.auth.admin.updateUserById(storedId, { password });
+    if (!error) return storedId;
+    if (!isMissingUserError(error.message)) throw new Error(error.message);
+    // Stored id points at a deleted/absent auth user → fall through.
+  }
+
+  // 2) Look the account up by e-mail (auth_id was null or stale).
+  const foundId = await findAuthUserByEmail(svc, email);
+  if (foundId) {
+    const { error } = await svc.auth.admin.updateUserById(foundId, { password });
+    if (!error) return foundId;
+    if (!isMissingUserError(error.message)) throw new Error(error.message);
+  }
+
+  // 3) No auth account exists yet → create one with this password, confirmed so
+  //    the rep can log in immediately (the whole point of an admin-set password).
+  const { data, error } = await svc.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: profile?.full_name ? { full_name: profile.full_name } : undefined,
+  });
+  if (!error && data?.user?.id) return data.user.id;
+
+  // Race: created between our lookup and now → find it and set the password.
+  if (error && /already|registered|exists/i.test(error.message || '')) {
+    const raceId = await findAuthUserByEmail(svc, email);
+    if (raceId) {
+      const { error: upErr } = await svc.auth.admin.updateUserById(raceId, { password });
+      if (upErr) throw new Error(upErr.message);
+      return raceId;
+    }
+  }
+  throw new Error(error?.message || 'could not create auth account');
+}
+
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
@@ -113,30 +192,42 @@ Deno.serve(async (req) => {
 
     const svc = createServiceClient();
 
-    // Resolve the rep's Supabase Auth user id from our users table (auth_id may
-    // have drifted, so fall back to matching by e-mail).
-    const resolveAuthId = async (): Promise<string | null> => {
+    // Load the rep's CRM profile (id for re-linking, auth_id as the first guess,
+    // full_name for the auth metadata if we end up creating the account). Prefer
+    // the explicit userId, falling back to the e-mail.
+    const loadProfile = async (): Promise<{ id?: string; auth_id?: string | null; full_name?: string } | null> => {
       if (userId) {
-        const { data } = await svc.from('users').select('auth_id').eq('id', userId).maybeSingle();
-        if (data?.auth_id) return data.auth_id;
+        const { data } = await svc.from('users').select('id, auth_id, full_name').eq('id', userId).maybeSingle();
+        if (data) return data;
       }
-      const { data } = await svc.from('users').select('auth_id').eq('email', email).maybeSingle();
-      return data?.auth_id || null;
+      const { data } = await svc.from('users').select('id, auth_id, full_name').eq('email', email).maybeSingle();
+      return data || null;
     };
 
-    // 0) Explicit: admin sets a specific password for the rep (no e-mail).
+    // Persist the resolved/created auth id back onto the profile so future
+    // logins and resets resolve without another lookup.
+    const linkAuthId = async (authId: string, profileId?: string) => {
+      const query = svc.from('users').update({ auth_id: authId });
+      const { error } = profileId ? await query.eq('id', profileId) : await query.eq('email', email);
+      if (error) console.error('[sendPasswordReset] auth_id link failed', error.message);
+    };
+
+    // 0) Explicit: admin sets a specific password for the rep (no e-mail). Ends
+    //    with a working login even for a rep that never had an auth account.
     if (typeof newPassword === 'string' && newPassword.length > 0) {
       if (newPassword.length < 6) {
         return Response.json({ ok: false, error: 'password_too_short' }, { status: 400, headers: cors });
       }
-      const authId = await resolveAuthId();
-      if (!authId) return Response.json({ ok: false, error: 'no_auth_account' }, { status: 400, headers: cors });
-      const { error } = await svc.auth.admin.updateUserById(authId, { password: newPassword });
-      if (error) {
-        console.error('[sendPasswordReset] set password failed', error.message);
-        return Response.json({ ok: false, error: error.message }, { status: 500, headers: cors });
+      const profile = await loadProfile();
+      try {
+        const authId = await setRepPassword(svc, email, profile, newPassword);
+        await linkAuthId(authId, profile?.id);
+        return Response.json({ ok: true, mode: 'set' }, { headers: cors });
+      } catch (e) {
+        const message = (e as any)?.message || 'set_password_failed';
+        console.error('[sendPasswordReset] set password failed', message);
+        return Response.json({ ok: false, error: message }, { status: 500, headers: cors });
       }
-      return Response.json({ ok: true, mode: 'set' }, { headers: cors });
     }
 
     // 1) Preferred: e-mail a recovery link via Resend.
@@ -146,26 +237,25 @@ Deno.serve(async (req) => {
     }
     console.warn('[sendPasswordReset] link/email path failed, falling back to temp password:', emailed.genError);
 
-    // 2) Fallback: set a temporary password directly (no e-mail dependency).
-    const authId = await resolveAuthId();
-    if (!authId) {
+    // 2) Fallback: set a temporary password directly (no e-mail dependency),
+    //    creating/linking the auth account if the rep never had one.
+    const profile = await loadProfile();
+    const tempPassword = randomPassword();
+    try {
+      const authId = await setRepPassword(svc, email, profile, tempPassword);
+      await linkAuthId(authId, profile?.id);
       return Response.json(
-        { ok: false, error: 'no_auth_account', detail: emailed.genError },
-        { status: 400, headers: cors },
+        { ok: true, mode: 'temp', emailed: false, temp_password: tempPassword, reason: emailed.genError },
+        { headers: cors },
+      );
+    } catch (e) {
+      const message = (e as any)?.message || 'temp_password_failed';
+      console.error('[sendPasswordReset] temp password failed', message);
+      return Response.json(
+        { ok: false, error: message, detail: emailed.genError },
+        { status: 500, headers: cors },
       );
     }
-
-    const tempPassword = randomPassword();
-    const { error: upErr } = await svc.auth.admin.updateUserById(authId, { password: tempPassword });
-    if (upErr) {
-      console.error('[sendPasswordReset] updateUserById failed', upErr.message);
-      return Response.json({ ok: false, error: upErr.message }, { status: 500, headers: cors });
-    }
-
-    return Response.json(
-      { ok: true, mode: 'temp', emailed: false, temp_password: tempPassword, reason: emailed.genError },
-      { headers: cors },
-    );
   } catch (error) {
     console.error('[sendPasswordReset] error', error);
     return Response.json({ ok: false, error: 'internal_error' }, { status: 500, headers: cors });
