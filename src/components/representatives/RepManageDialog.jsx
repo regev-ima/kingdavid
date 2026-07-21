@@ -115,6 +115,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
   const [newPass, setNewPass] = useState('');
   const [showNewPass, setShowNewPass] = useState(false);
   const [settingPass, setSettingPass] = useState(false);
+  const [opError, setOpError] = useState(null); // detailed error text for password ops
   const [uploading, setUploading] = useState(false);
   const [docCategory, setDocCategory] = useState('contract');
   const fileInputRef = useRef(null);
@@ -153,6 +154,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
     if (!rep?.email) return;
     setResetting(true);
     setResetInfo(null);
+    setOpError(null);
     try {
       // Route through our own Edge Function. It prefers e-mailing a recovery
       // link via Resend, but if Supabase Auth's link/e-mail subsystem is down
@@ -179,7 +181,8 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
         toast.success(`נשלח מייל לאיפוס סיסמה ל-${rep.email}`);
       }
     } catch (err) {
-      toast.error(`שליחת מייל האיפוס נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+      setOpError(err?.message || 'שגיאה לא ידועה');
+      toast.error('שליחת מייל האיפוס נכשלה');
     } finally {
       setResetting(false);
     }
@@ -190,6 +193,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
     if (!rep?.email || newPass.length < 6) return;
     setSettingPass(true);
     setResetInfo(null);
+    setOpError(null);
     try {
       const res = await base44.functions.invoke('sendPasswordReset', {
         email: rep.email,
@@ -201,10 +205,12 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
       setNewPass('');
       setShowNewPass(false);
     } catch (err) {
-      const msg = err?.message === 'password_too_short' ? 'הסיסמה חייבת להכיל לפחות 6 תווים'
-        : err?.message === 'no_auth_account' ? 'לנציג אין עדיין חשבון התחברות פעיל'
-        : (err?.message || 'שגיאה לא ידועה');
-      toast.error(`עדכון הסיסמה נכשל: ${msg}`);
+      const raw = err?.message || 'שגיאה לא ידועה';
+      const msg = raw === 'password_too_short' ? 'הסיסמה חייבת להכיל לפחות 6 תווים'
+        : raw === 'no_auth_account' ? 'לנציג אין עדיין חשבון התחברות פעיל'
+        : raw;
+      setOpError(msg);
+      toast.error('עדכון הסיסמה נכשל');
     } finally {
       setSettingPass(false);
     }
@@ -490,6 +496,19 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                     קבע סיסמה
                   </Button>
                 </div>
+
+                {opError && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2.5 space-y-1.5">
+                    <p className="text-xs font-medium text-destructive">הפעולה נכשלה — פרטי שגיאה</p>
+                    <code className="block text-[11px] bg-white border rounded px-2 py-1 break-all whitespace-pre-wrap" dir="ltr">{opError}</code>
+                    <Button
+                      type="button" variant="ghost" size="sm" className="h-7 gap-1.5"
+                      onClick={() => { navigator.clipboard?.writeText(opError); toast.success('הועתק'); }}
+                    >
+                      העתק פרטי שגיאה
+                    </Button>
+                  </div>
+                )}
               </div>
             </TabsContent>
 
