@@ -59,10 +59,10 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
     const product = productById(variation.product_id);
     if (!product) return;
     const isBed = product.category === 'bed';
-    // Catalog final_price is the FINAL price to the customer (incl VAT). The line
-    // stores pre-VAT (the quote re-adds VAT), so divide — same as bed-wizard
-    // manual prices. Storing it as-is double-VAT'd every product line.
-    const price = (variation.final_price || 0) / VAT;
+    // Catalog final_price is stored PRE-VAT (the product page shows it under
+    // "לפני מע״מ" and derives incl-VAT as ×1.18). The quote line also stores
+    // pre-VAT and re-adds VAT for display, so use final_price as-is.
+    const price = variation.final_price || 0;
 
     // Edit mode: replace the row's product/size in place (keep qty + discount).
     if (editIndex != null) {
