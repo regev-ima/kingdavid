@@ -106,12 +106,38 @@ Deno.serve(async (req) => {
     if (!user) return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401, headers: cors });
     if (user.role !== 'admin') return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
 
-    const { email, userId, redirectTo } = await req.json().catch(() => ({}));
+    const { email, userId, redirectTo, newPassword } = await req.json().catch(() => ({}));
     if (!email || typeof email !== 'string') {
       return Response.json({ ok: false, error: 'email_required' }, { status: 400, headers: cors });
     }
 
     const svc = createServiceClient();
+
+    // Resolve the rep's Supabase Auth user id from our users table (auth_id may
+    // have drifted, so fall back to matching by e-mail).
+    const resolveAuthId = async (): Promise<string | null> => {
+      if (userId) {
+        const { data } = await svc.from('users').select('auth_id').eq('id', userId).maybeSingle();
+        if (data?.auth_id) return data.auth_id;
+      }
+      const { data } = await svc.from('users').select('auth_id').eq('email', email).maybeSingle();
+      return data?.auth_id || null;
+    };
+
+    // 0) Explicit: admin sets a specific password for the rep (no e-mail).
+    if (typeof newPassword === 'string' && newPassword.length > 0) {
+      if (newPassword.length < 6) {
+        return Response.json({ ok: false, error: 'password_too_short' }, { status: 400, headers: cors });
+      }
+      const authId = await resolveAuthId();
+      if (!authId) return Response.json({ ok: false, error: 'no_auth_account' }, { status: 400, headers: cors });
+      const { error } = await svc.auth.admin.updateUserById(authId, { password: newPassword });
+      if (error) {
+        console.error('[sendPasswordReset] set password failed', error.message);
+        return Response.json({ ok: false, error: error.message }, { status: 500, headers: cors });
+      }
+      return Response.json({ ok: true, mode: 'set' }, { headers: cors });
+    }
 
     // 1) Preferred: e-mail a recovery link via Resend.
     const emailed = await emailRecoveryLink(email, redirectTo, svc);
@@ -121,15 +147,7 @@ Deno.serve(async (req) => {
     console.warn('[sendPasswordReset] link/email path failed, falling back to temp password:', emailed.genError);
 
     // 2) Fallback: set a temporary password directly (no e-mail dependency).
-    let authId: string | null = null;
-    if (userId) {
-      const { data } = await svc.from('users').select('auth_id').eq('id', userId).maybeSingle();
-      authId = data?.auth_id || null;
-    }
-    if (!authId) {
-      const { data } = await svc.from('users').select('auth_id').eq('email', email).maybeSingle();
-      authId = data?.auth_id || null;
-    }
+    const authId = await resolveAuthId();
     if (!authId) {
       return Response.json(
         { ok: false, error: 'no_auth_account', detail: emailed.genError },
