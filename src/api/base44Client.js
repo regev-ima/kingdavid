@@ -91,7 +91,15 @@ const functions = {
       try {
         if (error.context && typeof error.context.json === 'function') {
           const body = await error.context.json();
-          if (body?.error) error.message = body.error;
+          const serverError = body?.error ?? body?.message;
+          if (serverError) {
+            // Always coerce to a readable string. An object here would render
+            // as "[object Object]" (or, if JSON-stringified upstream, an empty
+            // "{}") in toasts, hiding the real cause from the user.
+            error.message = typeof serverError === 'string'
+              ? serverError
+              : JSON.stringify(serverError);
+          }
         }
       } catch {
         // ignore — fall back to the original error message
