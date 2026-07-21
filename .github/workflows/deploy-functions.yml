@@ -70,6 +70,7 @@ jobs:
             upsertLead
             importProductsFromSheets
             sendEmail
+            sendPasswordReset
             invokeLLM
             extractData
             sendPushNotification
