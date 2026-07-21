@@ -126,6 +126,44 @@ const isMissingUserError = (msg?: string) => {
   return s.includes('not found') || s.includes('does not exist') || s.includes('user_not_found');
 };
 
+// Update a user's password via the GoTrue admin API. Tries the SDK, and on a
+// non-"missing user" error falls back to a raw REST PUT. Returns a rich detail
+// string (HTTP status + body) so a broken Auth admin API is diagnosable instead
+// of surfacing an opaque "{}". `missing` signals the caller to try create/link.
+async function adminUpdatePassword(
+  svc: any,
+  id: string,
+  password: string,
+): Promise<{ ok: boolean; missing: boolean; detail: string }> {
+  let sdkDetail = '';
+  try {
+    const { error } = await svc.auth.admin.updateUserById(id, { password });
+    if (!error) return { ok: true, missing: false, detail: 'sdk' };
+    if (isMissingUserError(error.message)) return { ok: false, missing: true, detail: `sdk:not_found` };
+    sdkDetail = `sdk(status=${(error as any).status ?? '?'} msg=${error.message ?? '?'})`;
+  } catch (e) {
+    sdkDetail = `sdk(threw ${String((e as any)?.message || e)})`;
+  }
+
+  // Raw REST fallback — bypasses the SDK in case that layer misbehaves, and
+  // exposes the real HTTP status/body of the GoTrue admin endpoint.
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const base = (Deno.env.get('SUPABASE_URL') || '').replace(/\/+$/, '');
+  try {
+    const r = await fetch(`${base}/auth/v1/admin/users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ password }),
+    });
+    if (r.ok) return { ok: true, missing: false, detail: 'raw' };
+    const body = (await r.text()).slice(0, 200);
+    if (r.status === 404) return { ok: false, missing: true, detail: `raw:404` };
+    return { ok: false, missing: false, detail: `${sdkDetail} | raw(HTTP ${r.status} ${body})` };
+  } catch (e) {
+    return { ok: false, missing: false, detail: `${sdkDetail} | raw(threw ${String((e as any)?.message || e)})` };
+  }
+}
+
 // Ensure an auth account exists for `email` with the given password and return
 // its id. Tries, in order: the stored auth_id; a lookup by e-mail (auth_id was
 // null or drifted); creating a fresh confirmed account. Throws with the raw
@@ -139,18 +177,18 @@ async function setRepPassword(
   // 1) Stored auth_id — the common, healthy case.
   const storedId = profile?.auth_id || null;
   if (storedId) {
-    const { error } = await svc.auth.admin.updateUserById(storedId, { password });
-    if (!error) return storedId;
-    if (!isMissingUserError(error.message)) throw new Error(error.message);
+    const r = await adminUpdatePassword(svc, storedId, password);
+    if (r.ok) return storedId;
+    if (!r.missing) throw new Error(r.detail); // rich detail (status/body), not "{}"
     // Stored id points at a deleted/absent auth user → fall through.
   }
 
   // 2) Look the account up by e-mail (auth_id was null or stale).
   const foundId = await findAuthUserByEmail(svc, email);
   if (foundId) {
-    const { error } = await svc.auth.admin.updateUserById(foundId, { password });
-    if (!error) return foundId;
-    if (!isMissingUserError(error.message)) throw new Error(error.message);
+    const r = await adminUpdatePassword(svc, foundId, password);
+    if (r.ok) return foundId;
+    if (!r.missing) throw new Error(r.detail);
   }
 
   // 3) No auth account exists yet → create one with this password, confirmed so
@@ -172,7 +210,7 @@ async function setRepPassword(
       return raceId;
     }
   }
-  throw new Error(error?.message || 'could not create auth account');
+  throw new Error(`create(status=${(error as any)?.status ?? '?'} msg=${error?.message || 'could not create auth account'})`);
 }
 
 Deno.serve(async (req) => {
