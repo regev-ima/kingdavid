@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import {
   Dialog,
@@ -73,7 +74,11 @@ export default function AddCommunication({ leadId, isOpen, onClose }) {
       return log;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['communications', leadId]);
+      // CommunicationHistory reads under ['allCommunications', leadId]; keep the
+      // legacy key too for any other listener.
+      queryClient.invalidateQueries({ queryKey: ['allCommunications', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['communications', leadId] });
+      toast.success('רשומת התקשורת נשמרה');
       onClose();
       setFormData({
         type: 'call',
@@ -87,6 +92,7 @@ export default function AddCommunication({ leadId, isOpen, onClose }) {
         follow_up_date: '',
       });
     },
+    onError: (err) => toast.error(`שמירת התקשורת נכשלה: ${err?.message || 'שגיאה'}`),
   });
 
   const handleSubmit = (e) => {

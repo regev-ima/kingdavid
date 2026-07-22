@@ -70,7 +70,7 @@ import { he } from 'date-fns/locale';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
-import { useCreationModal } from '@/components/shared/CreationModalContext';
+import NewQuoteDialog from '@/components/quote/NewQuoteDialog';
 import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
 import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
@@ -124,7 +124,6 @@ function formatLeadAge(createdDate) {
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
-  const { openNewQuote } = useCreationModal();
   const urlParams = new URLSearchParams(window.location.search);
   // When rendered as a popup the id/mode arrive as props and the URL is
   // left completely untouched, so the list page underneath keeps its
@@ -142,6 +141,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   // Create an order inline (as a dialog over the lead) instead of navigating
   // away — lets a rep close a walk-in sale without leaving the lead screen.
   const [showOrderDialog, setShowOrderDialog] = useState(false);
+  // Create a quote inline (dialog over the lead). We own it locally rather than
+  // via useCreationModal() because the lead overlay renders ABOVE the
+  // CreationModal provider, so that context is a no-op here — which is exactly
+  // why "הצעה חדשה" did nothing. Mirrors the order dialog above.
+  const [showQuoteDialog, setShowQuoteDialog] = useState(false);
   // Gating dialog for "משימה חדשה" on unassigned leads — instead of
   // letting the rep open a task on a lead that has no owner (and then
   // wondering who's supposed to do it), we intercept and require an
@@ -703,7 +707,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </Button>
         <Button
           size="sm"
-          onClick={() => openNewQuote({ leadId })}
+          onClick={() => setShowQuoteDialog(true)}
           className="flex-1 min-w-[120px] justify-center h-9 text-xs"
         >
           <FileText className="h-3.5 w-3.5 me-1.5" />
@@ -717,6 +721,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         >
           <ShoppingBag className="h-3.5 w-3.5 me-1.5" />
           הזמנה חדשה
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setShowAddCommunication(true)}
+          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
+        >
+          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
+          הוסף תקשורת
         </Button>
       </div>
 
@@ -747,13 +760,17 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <Clock className="h-3.5 w-3.5 me-1" />
             משימה חדשה
           </Button>
-          <Button size="sm" onClick={() => openNewQuote({ leadId })} className="h-8 text-xs">
+          <Button size="sm" onClick={() => setShowQuoteDialog(true)} className="h-8 text-xs">
             <FileText className="h-3.5 w-3.5 me-1" />
             הצעה חדשה
           </Button>
           <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)} className="h-8 text-xs">
             <ShoppingBag className="h-3.5 w-3.5 me-1" />
             הזמנה חדשה
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowAddCommunication(true)} className="h-8 text-xs">
+            <MessageCircle className="h-3.5 w-3.5 me-1" />
+            הוסף תקשורת
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -771,10 +788,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   המר ללקוח
                 </DropdownMenuItem>
               ) : null}
-              <DropdownMenuItem onClick={() => setShowAddCommunication(true)}>
-                <MessageCircle className="h-3.5 w-3.5 me-2" />
-                הוסף תקשורת
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1194,7 +1207,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               {quotes.length === 0 ? (
                 <div className="py-4 flex items-center justify-between gap-3 text-sm">
                   <span className="text-muted-foreground">אין הצעות מחיר לליד זה.</span>
-                  <Button size="sm" variant="outline" onClick={() => openNewQuote({ leadId })}>
+                  <Button size="sm" variant="outline" onClick={() => setShowQuoteDialog(true)}>
                     <FileText className="h-3.5 w-3.5 me-1" />
                     צור הצעה
                   </Button>
@@ -1291,14 +1304,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </TabsContent>
 
           <TabsContent value="activity" className="mt-4 space-y-4">
-          {/* Communication History — temporarily hidden per product
-              decision. The card was almost always empty for new
-              leads, which made it dead visual weight. The
-              <CommunicationHistory /> component, the AddCommunication
-              dialog wiring, and the import above are all kept so
-              this is a one-line revert when we're ready to bring it
-              back. */}
-          {false && (
+          {/* Communication History — logged calls / WhatsApp / emails /
+              meetings (added via "הוסף תקשורת") plus system audit entries. */}
+          {leadId && (
             <Card className="rounded-xl border-border shadow-card overflow-hidden">
               <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -1462,6 +1470,22 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           />
         </DialogContent>
       </Dialog>
+
+      {/* Inline quote creation — prefilled from this lead's customer details.
+          Local dialog (not useCreationModal) so it works inside the lead
+          overlay, which sits above the CreationModal provider. */}
+      <NewQuoteDialog
+        open={showQuoteDialog}
+        onOpenChange={setShowQuoteDialog}
+        leadId={leadId}
+        title={`הצעת מחיר חדשה - ${lead?.full_name || ''}`}
+        onCreated={(quote) => {
+          queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+          queryClient.invalidateQueries({ queryKey: ['leads'] });
+          queryClient.invalidateQueries({ queryKey: ['quotes'] });
+          if (quote?.id) toast({ title: 'הצעת המחיר נוצרה' });
+        }}
+      />
 
       {/* Edit Task Dialog */}
       <SalesTaskDialog
