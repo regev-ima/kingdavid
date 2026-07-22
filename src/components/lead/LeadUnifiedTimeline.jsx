@@ -20,6 +20,7 @@ import {
   Tag,
   Activity,
   Mail,
+  StickyNote,
 } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -117,6 +118,7 @@ const TASK_OUTCOME = {
 
 // ── communication-event visual metadata (logged via "הוסף תקשורת") ─────────
 const COMM_TYPE = {
+  note:     { icon: StickyNote,    label: 'הערה',    tone: 'bg-amber-100 text-amber-700' },
   call:     { icon: Phone,         label: 'שיחה',    tone: 'bg-blue-100 text-blue-700' },
   whatsapp: { icon: MessageCircle, label: 'וואטסאפ', tone: 'bg-green-100 text-green-700' },
   email:    { icon: Mail,          label: 'אימייל',  tone: 'bg-purple-100 text-purple-700' },
@@ -303,9 +305,11 @@ function renderChangeEvent(log, isLast, users) {
 }
 
 function renderCommunicationEvent(comm, isLast, users) {
+  const isNote = comm.type === 'note';
   const meta = COMM_TYPE[comm.type] || COMM_TYPE.call;
   const Icon = meta.icon;
-  const dir = comm.direction === 'inbound' ? 'נכנס' : comm.direction === 'outbound' ? 'יוצא' : null;
+  // A note is free text — direction / outcome don't apply, so keep it clean.
+  const dir = isNote ? null : comm.direction === 'inbound' ? 'נכנס' : comm.direction === 'outbound' ? 'יוצא' : null;
   const when = comm.created_date;
 
   return (
@@ -325,7 +329,7 @@ function renderCommunicationEvent(comm, isLast, users) {
               {dir}
             </span>
           )}
-          {comm.outcome && COMM_OUTCOME_LABELS[comm.outcome] && (
+          {!isNote && comm.outcome && COMM_OUTCOME_LABELS[comm.outcome] && (
             <span className="inline-flex items-center rounded-full text-[10px] h-5 px-2 bg-muted text-foreground/70">
               {COMM_OUTCOME_LABELS[comm.outcome]}
             </span>
