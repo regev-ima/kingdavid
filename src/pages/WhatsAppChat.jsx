@@ -421,6 +421,7 @@ export default function WhatsAppChat() {
               name={chatTitle(selectedChat)}
               context={context}
               isLoading={ctxQuery.isLoading}
+              currentUser={effectiveUser}
               onOpenLead={openLead}
               onCreateTicket={() => setTicketOpen(true)}
             />
@@ -438,6 +439,7 @@ export default function WhatsAppChat() {
               name={chatTitle(selectedChat)}
               context={context}
               isLoading={ctxQuery.isLoading}
+              currentUser={effectiveUser}
               onOpenLead={(id) => { setInfoOpen(false); openLead(id); }}
               onCreateTicket={() => { setInfoOpen(false); setTicketOpen(true); }}
             />
