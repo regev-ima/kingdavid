@@ -14,6 +14,20 @@ export function chatStatusMeta(status) {
   }
 }
 
+// Sales-status tags a rep/manager can put on a WhatsApp conversation. Stored as
+// a stable English key on whatsapp_chats.tag (see the migration); the label is
+// the Hebrew text shown in the UI. Ordered roughly hottest → coldest.
+export const WHATSAPP_TAGS = [
+  { value: 'hot',              label: 'רותח',         className: 'bg-red-100 text-red-700 border-red-200' },
+  { value: 'closing_soon',     label: 'סגירה קרובה',  className: 'bg-purple-100 text-purple-700 border-purple-200' },
+  { value: 'awaiting_payment', label: 'ממתין לתשלום', className: 'bg-amber-100 text-amber-800 border-amber-200' },
+  { value: 'paid',             label: 'שולם',         className: 'bg-green-100 text-green-700 border-green-200' },
+  { value: 'follow_up',        label: 'מעקב',         className: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { value: 'not_serious',      label: 'לא רציני',     className: 'bg-slate-100 text-slate-600 border-slate-200' },
+  { value: 'not_relevant',    label: 'לא רלוונטי',   className: 'bg-gray-100 text-gray-500 border-gray-200' },
+];
+export const WHATSAPP_TAG_MAP = Object.fromEntries(WHATSAPP_TAGS.map((t) => [t.value, t]));
+
 // 972501234567@c.us / 972501234567 → 050-1234567 (best-effort, falls back to raw)
 export function prettyPhone(raw) {
   if (!raw) return '';
