@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,7 @@ export default function WhatsAppSendPdfButton({
   phone, contactName, fileName, currentUser, ensurePdfUrl, ownerUserId, ownerName,
   templateCategory = 'sales', label = 'שלח בוואטסאפ', className = '', size = 'sm', variant = 'outline',
 }) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [caption, setCaption] = useState('');
   const tail = phoneTail(phone);
@@ -100,9 +101,20 @@ export default function WhatsAppSendPdfButton({
       if (!res?.ok) throw new Error(sendErrorMessage(res?.error));
       return res;
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success('הקובץ נשלח בוואטסאפ');
       setOpen(false);
+      // Refresh the open thread so the just-sent file shows up immediately
+      // (both the full chat screen and the lead popup), plus the chat list.
+      const ref = res?.chat_ref || existingChat?.id;
+      if (ref) {
+        queryClient.invalidateQueries({ queryKey: ['wa-messages', ref] });
+        queryClient.invalidateQueries({ queryKey: ['lead-wa-messages', ref] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-send-pdf-chat'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-wa-chat'] });
     },
     onError: (err) => toast.error(`השליחה נכשלה: ${err?.message || 'שגיאה'}`),
   });

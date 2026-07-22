@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
 import { isOpenTicket } from './useWhatsAppContext';
+import WhatsAppSendPdfButton from './WhatsAppSendPdfButton';
 
 function localPhone(phone) {
   const norm = normalizeIsraeliPhone(phone);
@@ -49,7 +50,7 @@ function Row({ to, onClick, title, subtitle, badge }) {
 // CRM context for a WhatsApp contact: is this an existing lead/customer, what
 // quotes/orders/service-tickets they have, plus one-click actions (open lead,
 // create lead, open a service ticket, call).
-export default function WhatsAppContextPanel({ phone, name, context, isLoading, onOpenLead, onCreateTicket }) {
+export default function WhatsAppContextPanel({ phone, name, context, isLoading, currentUser, onOpenLead, onCreateTicket }) {
   const { leads = [], customers = [], orders = [], tickets = [], quotes = [] } = context || {};
   const hasMatch = leads.length || customers.length || orders.length || tickets.length || quotes.length;
   const primaryLead = leads[0] || null;
@@ -128,29 +129,65 @@ export default function WhatsAppContextPanel({ phone, name, context, isLoading, 
               ))}
             </Section>
 
-            {/* Quotes */}
+            {/* Quotes — open the quote, or send its PDF straight into this chat */}
             <Section icon={FileText} title="הצעות מחיר" count={quotes.length}>
               {quotes.map((q) => (
-                <Row
-                  key={q.id}
-                  to={`${createPageUrl('QuoteDetails')}?id=${q.id}`}
-                  title={`הצעה #${q.quote_number || q.id?.slice(0, 6)}`}
-                  subtitle={q.total != null ? `₪${Number(q.total).toLocaleString()}` : ''}
-                  badge={q.status ? <Badge variant="secondary" className="text-[10px]">{q.status}</Badge> : null}
-                />
+                <div key={q.id} className="flex items-center gap-1">
+                  <div className="flex-1 min-w-0">
+                    <Row
+                      to={`${createPageUrl('QuoteDetails')}?id=${q.id}`}
+                      title={`הצעה #${q.quote_number || q.id?.slice(0, 6)}`}
+                      subtitle={q.total != null ? `₪${Number(q.total).toLocaleString()}` : ''}
+                      badge={q.status ? <Badge variant="secondary" className="text-[10px]">{q.status}</Badge> : null}
+                    />
+                  </div>
+                  <WhatsAppSendPdfButton
+                    phone={phone}
+                    contactName={displayName}
+                    fileName={`הצעה-${q.quote_number || q.id?.slice(0, 6)}.pdf`}
+                    currentUser={currentUser}
+                    templateCategory="sales"
+                    label="שלח"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    ensurePdfUrl={async () => {
+                      const { default: QuotePdfGenerator } = await import('@/components/quotes/QuotePdfGenerator');
+                      return QuotePdfGenerator(q);
+                    }}
+                  />
+                </div>
               ))}
             </Section>
 
-            {/* Orders */}
+            {/* Orders — open the order, or send its PDF straight into this chat */}
             <Section icon={ShoppingCart} title="הזמנות" count={orders.length}>
               {orders.map((o) => (
-                <Row
-                  key={o.id}
-                  to={`${createPageUrl('OrderDetails')}?id=${o.id}`}
-                  title={`הזמנה #${o.order_number || o.id?.slice(0, 6)}`}
-                  subtitle={o.total_amount != null ? `₪${Number(o.total_amount).toLocaleString()}` : ''}
-                  badge={o.status ? <Badge variant="secondary" className="text-[10px]">{o.status}</Badge> : null}
-                />
+                <div key={o.id} className="flex items-center gap-1">
+                  <div className="flex-1 min-w-0">
+                    <Row
+                      to={`${createPageUrl('OrderDetails')}?id=${o.id}`}
+                      title={`הזמנה #${o.order_number || o.id?.slice(0, 6)}`}
+                      subtitle={o.total_amount != null ? `₪${Number(o.total_amount).toLocaleString()}` : ''}
+                      badge={o.status ? <Badge variant="secondary" className="text-[10px]">{o.status}</Badge> : null}
+                    />
+                  </div>
+                  <WhatsAppSendPdfButton
+                    phone={phone}
+                    contactName={displayName}
+                    fileName={`הזמנה-${o.order_number || o.id?.slice(0, 6)}.pdf`}
+                    currentUser={currentUser}
+                    templateCategory="sales"
+                    label="שלח"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0"
+                    ensurePdfUrl={async () => {
+                      const { default: OrderPdfGenerator } = await import('@/components/orders/OrderPdfGenerator');
+                      return OrderPdfGenerator(o);
+                    }}
+                  />
+                </div>
               ))}
             </Section>
 
