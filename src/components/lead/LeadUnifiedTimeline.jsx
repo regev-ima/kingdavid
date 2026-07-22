@@ -19,6 +19,7 @@ import {
   User,
   Tag,
   Activity,
+  Mail,
 } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -114,8 +115,25 @@ const TASK_OUTCOME = {
   cancelled: { icon: Ban,         dot: 'bg-muted text-muted-foreground',  pill: 'bg-muted text-muted-foreground ring-1 ring-border',    label: 'בוטל' },
 };
 
+// ── communication-event visual metadata (logged via "הוסף תקשורת") ─────────
+const COMM_TYPE = {
+  call:     { icon: Phone,         label: 'שיחה',    tone: 'bg-blue-100 text-blue-700' },
+  whatsapp: { icon: MessageCircle, label: 'וואטסאפ', tone: 'bg-green-100 text-green-700' },
+  email:    { icon: Mail,          label: 'אימייל',  tone: 'bg-purple-100 text-purple-700' },
+  meeting:  { icon: CalendarDays,  label: 'פגישה',   tone: 'bg-amber-100 text-amber-700' },
+};
+const COMM_OUTCOME_LABELS = {
+  answered_positive: 'נענה - חיובי',
+  answered_neutral: 'נענה - ניטרלי',
+  answered_negative: 'נענה - שלילי',
+  no_answer: 'לא נענה',
+  voicemail: 'הותיר הודעה',
+  sent: 'נשלח',
+};
+
 const FILTERS = [
   { key: 'all', label: 'הכל' },
+  { key: 'communication', label: 'תקשורת' },
   { key: 'task', label: 'משימות' },
   { key: 'change', label: 'שינויים' },
 ];
@@ -133,6 +151,15 @@ export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], on
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['leadActivityLogs', leadId],
     queryFn: () => base44.entities.LeadActivityLog.filter({ lead_id: leadId }),
+    enabled: !!leadId,
+    staleTime: 60000,
+  });
+
+  // Manually-logged communications ("הוסף תקשורת"). Same key AddCommunication
+  // invalidates, so a freshly-added entry shows up here immediately.
+  const { data: comms = [] } = useQuery({
+    queryKey: ['communications', leadId],
+    queryFn: () => base44.entities.CommunicationLog.filter({ lead_id: leadId }),
     enabled: !!leadId,
     staleTime: 60000,
   });
@@ -159,9 +186,17 @@ export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], on
         : new Date(task.created_date || 0).getTime();
       out.push({ id: `task-${task.id}`, kind: 'task', ts: ts || 0, task });
     }
+    for (const comm of comms) {
+      out.push({
+        id: `comm-${comm.id}`,
+        kind: 'communication',
+        ts: new Date(comm.created_date || 0).getTime() || 0,
+        comm,
+      });
+    }
     out.sort((a, b) => b.ts - a.ts);
     return out;
-  }, [logs, closedTasks]);
+  }, [logs, closedTasks, comms]);
 
   const filtered = filter === 'all' ? events : events.filter((e) => e.kind === filter);
 
@@ -207,6 +242,8 @@ export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], on
               const isLast = index === filtered.length - 1;
               return event.kind === 'task'
                 ? renderTaskEvent(event.task, isLast, users, onOpenTask)
+                : event.kind === 'communication'
+                ? renderCommunicationEvent(event.comm, isLast, users)
                 : renderChangeEvent(event.log, isLast, users);
             })}
           </ol>
@@ -259,6 +296,53 @@ function renderChangeEvent(log, isLast, users) {
 
         <p className="text-[11px] text-muted-foreground/70 mt-0.5">
           {humanizeEmails(log.performed_by_name, users)}
+        </p>
+      </div>
+    </li>
+  );
+}
+
+function renderCommunicationEvent(comm, isLast, users) {
+  const meta = COMM_TYPE[comm.type] || COMM_TYPE.call;
+  const Icon = meta.icon;
+  const dir = comm.direction === 'inbound' ? 'נכנס' : comm.direction === 'outbound' ? 'יוצא' : null;
+  const when = comm.created_date;
+
+  return (
+    <li key={`comm-${comm.id}`} className="flex gap-3 relative">
+      <Rail isLast={isLast} />
+      <span className={`relative z-10 flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${meta.tone}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <div className="flex-1 pb-5 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+          <span className={`inline-flex items-center gap-1 rounded-lg text-[10px] h-5 px-2 font-semibold ${meta.tone}`}>
+            <Icon className="h-3 w-3" />
+            {meta.label}
+          </span>
+          {dir && (
+            <span className="inline-flex items-center rounded border border-border text-[10px] h-5 px-1.5 text-muted-foreground">
+              {dir}
+            </span>
+          )}
+          {comm.outcome && COMM_OUTCOME_LABELS[comm.outcome] && (
+            <span className="inline-flex items-center rounded-full text-[10px] h-5 px-2 bg-muted text-foreground/70">
+              {COMM_OUTCOME_LABELS[comm.outcome]}
+            </span>
+          )}
+          <span className="text-[11px] text-muted-foreground/70">
+            {when ? formatInTimeZone(when, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : ''}
+          </span>
+        </div>
+
+        {comm.subject && <p className="text-sm font-medium text-foreground">{comm.subject}</p>}
+        {comm.content && (
+          <p className="text-[13px] text-foreground/80 whitespace-pre-wrap break-words mt-0.5">{comm.content}</p>
+        )}
+        {comm.notes && <p className="text-[11px] text-muted-foreground/70 italic mt-1">{comm.notes}</p>}
+
+        <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+          {comm.rep_id ? getRepDisplayName(comm.rep_id, users) : ''}
         </p>
       </div>
     </li>
