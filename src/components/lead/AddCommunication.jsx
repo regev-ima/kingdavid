@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Phone, MessageCircle, Mail, Users, ArrowUp, ArrowDown, Calendar } from "lucide-react";
+import { Loader2, Phone, MessageCircle, Mail, Users, ArrowUp, ArrowDown, Calendar, StickyNote } from "lucide-react";
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 
 export default function AddCommunication({ leadId, isOpen, onClose }) {
@@ -101,11 +101,16 @@ export default function AddCommunication({ leadId, isOpen, onClose }) {
   };
 
   const communicationTypes = [
+    { value: 'note', label: 'הערה', icon: StickyNote, color: 'text-amber-600 bg-amber-50' },
     { value: 'call', label: 'שיחה', icon: Phone, color: 'text-blue-600 bg-blue-50' },
     { value: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, color: 'text-green-600 bg-green-50' },
     { value: 'email', label: 'אימייל', icon: Mail, color: 'text-purple-600 bg-purple-50' },
     { value: 'meeting', label: 'פגישה', icon: Users, color: 'text-primary bg-primary/5' },
   ];
+
+  // A note is just free text — the fields that describe a real contact
+  // (direction / outcome / duration) don't apply to it.
+  const isNote = formData.type === 'note';
 
   const directions = [
     { value: 'outbound', label: 'יוצא', icon: ArrowUp, color: 'text-green-600 bg-green-50' },
@@ -150,7 +155,7 @@ export default function AddCommunication({ leadId, isOpen, onClose }) {
               </div>
             </div>
 
-            {formData.type !== 'meeting' && (
+            {formData.type !== 'meeting' && !isNote && (
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-foreground/80">כיוון</Label>
                 <div className="grid grid-cols-2 gap-2">
@@ -193,51 +198,53 @@ export default function AddCommunication({ leadId, isOpen, onClose }) {
           </div>
 
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground/80">תוכן *</Label>
+            <Label className="text-sm font-medium text-foreground/80">{isNote ? 'תוכן ההערה *' : 'תוכן *'}</Label>
             <Textarea
               value={formData.content}
               onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-              placeholder="תאר את התקשורת - מה נאמר, מה התוצאה..."
+              placeholder={isNote ? 'כתוב כאן את ההערה...' : 'תאר את התקשורת - מה נאמר, מה התוצאה...'}
               rows={4}
               required
               className="text-right resize-none"
             />
           </div>
 
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-foreground/80">תוצאה</Label>
-              <Select
-                value={formData.outcome}
-                onValueChange={(val) => setFormData({ ...formData, outcome: val })}
-              >
-                <SelectTrigger className="text-right">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="answered_positive">נענה - חיובי</SelectItem>
-                  <SelectItem value="answered_neutral">נענה - ניטרלי</SelectItem>
-                  <SelectItem value="answered_negative">נענה - שלילי</SelectItem>
-                  <SelectItem value="no_answer">לא נענה</SelectItem>
-                  <SelectItem value="voicemail">הותיר הודעה</SelectItem>
-                  <SelectItem value="sent">נשלח</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {formData.type === 'call' && (
+          {!isNote && (
+            <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground/80">משך שיחה (שניות)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={formData.duration_seconds}
-                  onChange={(e) => setFormData({ ...formData, duration_seconds: parseInt(e.target.value) || 0 })}
-                  className="text-right"
-                />
+                <Label className="text-sm font-medium text-foreground/80">תוצאה</Label>
+                <Select
+                  value={formData.outcome}
+                  onValueChange={(val) => setFormData({ ...formData, outcome: val })}
+                >
+                  <SelectTrigger className="text-right">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="answered_positive">נענה - חיובי</SelectItem>
+                    <SelectItem value="answered_neutral">נענה - ניטרלי</SelectItem>
+                    <SelectItem value="answered_negative">נענה - שלילי</SelectItem>
+                    <SelectItem value="no_answer">לא נענה</SelectItem>
+                    <SelectItem value="voicemail">הותיר הודעה</SelectItem>
+                    <SelectItem value="sent">נשלח</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            )}
-          </div>
+
+              {formData.type === 'call' && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-foreground/80">משך שיחה (שניות)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={formData.duration_seconds}
+                    onChange={(e) => setFormData({ ...formData, duration_seconds: parseInt(e.target.value) || 0 })}
+                    className="text-right"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label className="text-sm font-medium text-foreground/80">הערות נוספות</Label>
