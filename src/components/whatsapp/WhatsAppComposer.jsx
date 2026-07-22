@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import {
   Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from '@/components/ui/command';
-import { Loader2, Send, Lock, AlertTriangle, BookText, Sparkles } from 'lucide-react';
+import { Loader2, Send, Lock, AlertTriangle, BookText, Sparkles, Paperclip } from 'lucide-react';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
 import { resolveTemplate, sendErrorMessage, buildImproveMessagePrompt } from './whatsappHelpers';
 
@@ -34,6 +34,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templateCategory, setTemplateCategory] = useState('all');
   const [slashOpen, setSlashOpen] = useState(false);
@@ -183,6 +184,49 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
     sendMutation.mutate(message);
   };
 
+  // Attach & send an image / document. The file is uploaded first (public URL),
+  // then sent through the same greenApiSend instance as text — using the
+  // current composer text as the caption. Green API decides image vs document
+  // from the file itself; our recorder maps the extension so it renders inline.
+  const sendFileMutation = useMutation({
+    mutationFn: async (file) => {
+      const caption = text.trim();
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      const res = await base44.functions.invoke('greenApiSend', {
+        action: 'file',
+        chat_ref: chat.id,
+        file_url,
+        file_name: file.name,
+        message: caption || undefined,
+      });
+      if (!res?.ok) throw new Error(sendErrorMessage(res?.error));
+      return res;
+    },
+    onSuccess: () => {
+      setText('');
+      queryClient.invalidateQueries({ queryKey: messagesQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      queryClient.invalidateQueries({ queryKey: ['wa-waiting-count'] });
+    },
+    onError: (err) => toast.error(`שליחת הקובץ נכשלה: ${err?.message || 'שגיאה'}`),
+  });
+
+  const handleFilePicked = (e) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the SAME file again still fires onChange.
+    e.target.value = '';
+    if (!file || sendFileMutation.isPending) return;
+    // Green API caps media at 100MB; stop oversized files before the upload.
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error('הקובץ גדול מדי (מקסימום 100MB)');
+      return;
+    }
+    setSlashOpen(false);
+    sendFileMutation.mutate(file);
+  };
+
+  const busy = sendMutation.isPending || sendFileMutation.isPending;
+
   // Improve the rep's OWN draft with AI (clarity/tone), replacing the composer
   // text in place — they still review and can edit/undo before sending. Does
   // NOT generate from scratch: it enhances what they wrote, preserving
@@ -248,7 +292,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
             onKeyDown={handleKeyDown}
             onBlur={() => setSlashOpen(false)}
             placeholder="הקלד/י הודעה… (נסה /קיצור)"
-            disabled={statusLoading || sendMutation.isPending}
+            disabled={statusLoading || busy}
             rows={1}
             className="min-h-[40px] max-h-[160px] resize-none text-sm"
           />
@@ -271,6 +315,26 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
           )}
         </div>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+          onChange={handleFilePicked}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy || statusLoading}
+          className="h-10 w-10 shrink-0"
+          aria-label="צרף קובץ או תמונה"
+          title="צרף קובץ או תמונה"
+        >
+          {sendFileMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+        </Button>
+
         <Popover open={templatesOpen} onOpenChange={setTemplatesOpen}>
           <PopoverTrigger asChild>
             <Button
@@ -280,6 +344,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
               className="h-10 w-10 shrink-0"
               aria-label="תבניות הודעה"
               title="תבניות הודעה"
+              disabled={busy}
             >
               <BookText className="h-4 w-4" />
             </Button>
@@ -329,7 +394,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
           variant="outline"
           size="icon"
           onClick={handleImprove}
-          disabled={!text.trim() || improving || sendMutation.isPending}
+          disabled={!text.trim() || improving || busy}
           className="h-10 w-10 shrink-0 text-primary"
           aria-label="שפר עם AI"
           title="שפר עם AI — משפר את מה שכתבת, לא כותב מחדש"
@@ -340,7 +405,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
         <Button
           size="icon"
           onClick={handleSend}
-          disabled={!text.trim() || sendMutation.isPending || statusLoading}
+          disabled={!text.trim() || busy || statusLoading}
           className="h-10 w-10 shrink-0 bg-green-600 hover:bg-green-700"
           aria-label="שלח הודעה"
         >
