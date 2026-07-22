@@ -19,7 +19,7 @@ import {
 import {
   Search, MessageCircle, Loader2, ArrowRight, Phone, Users as UsersIcon,
   Circle, Inbox, Check, UserCheck, UserPlus, CircleUserRound, Timer, BarChart3,
-  ChevronUp, ChevronDown, Clock,
+  ChevronUp, ChevronDown, Clock, Tag,
 } from 'lucide-react';
 import MessageBubble from '@/components/whatsapp/MessageBubble';
 import WhatsAppComposer from '@/components/whatsapp/WhatsAppComposer';
@@ -29,7 +29,7 @@ import { useWhatsAppContext } from '@/components/whatsapp/useWhatsAppContext';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import {
   chatStatusMeta, chatTitle, chatInitial, prettyPhone, listTime, dayLabel, colorFromString,
-  formatDuration,
+  formatDuration, WHATSAPP_TAGS, WHATSAPP_TAG_MAP,
 } from '@/components/whatsapp/whatsappHelpers';
 
 function localPhoneDigits(phone) {
@@ -64,6 +64,7 @@ export default function WhatsAppChat() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [repFilter, setRepFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
   const rootRef = useRef(null);
   const [areaH, setAreaH] = useState(null);
   const { openLead } = useLeadModal();
@@ -161,13 +162,17 @@ export default function WhatsAppChat() {
     return chats.filter((c) => {
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
       if (isAdmin && repFilter !== 'all' && c.user_id !== repFilter) return false;
+      if (tagFilter !== 'all') {
+        if (tagFilter === 'none') { if (c.tag) return false; }
+        else if (c.tag !== tagFilter) return false;
+      }
       if (term) {
         const hay = `${c.contact_name || ''} ${c.contact_phone || ''} ${c.chat_id || ''} ${c.last_message_text || ''}`.toLowerCase();
         if (!hay.includes(term)) return false;
       }
       return true;
     });
-  }, [chats, search, statusFilter, repFilter, isAdmin]);
+  }, [chats, search, statusFilter, repFilter, tagFilter, isAdmin]);
 
   const selectedChat = useMemo(() => chats.find((c) => c.id === selectedId) || null, [chats, selectedId]);
 
@@ -238,6 +243,16 @@ export default function WhatsAppChat() {
       toast.success('סומן כטופל');
     },
     onError: (err) => toast.error(`לא ניתן לסמן כטופל: ${err?.message || 'שגיאה'}`),
+  });
+
+  // Set / clear the sales-status tag on a conversation.
+  const setTag = useMutation({
+    mutationFn: ({ chatId, tag }) => base44.entities.WhatsAppChat.update(chatId, { tag }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wa-chats'] });
+      toast.success('התגית עודכנה');
+    },
+    onError: (err) => toast.error(`עדכון התגית נכשל: ${err?.message || 'שגיאה'}`),
   });
 
   // Reps who actually have conversations — for the admin filter dropdown.
@@ -335,6 +350,18 @@ export default function WhatsAppChat() {
                 </SelectContent>
               </Select>
             )}
+            <Select value={tagFilter} onValueChange={setTagFilter} dir="rtl">
+              <SelectTrigger className="h-8 text-xs">
+                <span className="flex items-center gap-1.5"><Tag className="h-3.5 w-3.5 text-muted-foreground" /><SelectValue placeholder="כל התגיות" /></span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">כל התגיות</SelectItem>
+                <SelectItem value="none">ללא תגית</SelectItem>
+                {WHATSAPP_TAGS.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto">
@@ -368,6 +395,8 @@ export default function WhatsAppChat() {
               onBack={() => setSelectedId(null)}
               onMarkHandled={() => markHandled.mutate(selectedChat.id)}
               marking={markHandled.isPending}
+              onSetTag={(tag) => setTag.mutate({ chatId: selectedChat.id, tag })}
+              settingTag={setTag.isPending}
               onShowInfo={() => setInfoOpen(true)}
               ctxHasMatch={ctxHasMatch}
               ctxLoading={ctxQuery.isLoading}
@@ -473,17 +502,26 @@ function ChatRow({ chat, active, rep, now, onClick }) {
             </span>
           ) : null}
         </div>
-        {rep && (
-          <span className="inline-block mt-1 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            נציג: {rep.full_name || rep.email}
-          </span>
+        {(chat.tag || rep) && (
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {chat.tag && WHATSAPP_TAG_MAP[chat.tag] && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${WHATSAPP_TAG_MAP[chat.tag].className}`}>
+                {WHATSAPP_TAG_MAP[chat.tag].label}
+              </span>
+            )}
+            {rep && (
+              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                נציג: {rep.full_name || rep.email}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </button>
   );
 }
 
-function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onShowInfo, ctxHasMatch, ctxLoading, currentUser, isAdmin, leadName }) {
+function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, onSetTag, settingTag, onShowInfo, ctxHasMatch, ctxLoading, currentUser, isAdmin, leadName }) {
   const meta = chatStatusMeta(chat.status);
   const title = chatTitle(chat);
   const bottomRef = useRef(null);
@@ -535,6 +573,20 @@ function Thread({ chat, rep, messages, loading, onBack, onMarkHandled, marking, 
             {rep && <span className="ms-2">· נציג: {rep.full_name || rep.email}</span>}
           </p>
         </div>
+        {onSetTag && (
+          <Select value={chat.tag || 'none'} onValueChange={(v) => onSetTag(v === 'none' ? null : v)} dir="rtl" disabled={settingTag}>
+            <SelectTrigger className={`h-8 w-[132px] text-xs shrink-0 gap-1 ${chat.tag && WHATSAPP_TAG_MAP[chat.tag] ? WHATSAPP_TAG_MAP[chat.tag].className : ''}`}>
+              <Tag className="h-3.5 w-3.5 shrink-0 opacity-70" />
+              <SelectValue placeholder="הוסף תגית" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">ללא תגית</SelectItem>
+              {WHATSAPP_TAGS.map((t) => (
+                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         {onShowInfo && (
           <Button
             size="sm"
