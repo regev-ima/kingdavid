@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { canonicalPhoneKey, findCustomersByPhone, findLeadsByPhone } from '@/lib/phoneLookup';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -98,15 +99,28 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     enabled: lookupEnabled,
     staleTime: 60_000,
     queryFn: async () => {
-      const tail = debouncedPhone.slice(-9);
-      const pattern = `%${tail}%`;
-      const [{ data: customers }, { data: leads }] = await Promise.all([
-        base44.supabase.from('customers').select('id, full_name, phone, email').ilike('phone', pattern).limit(5),
-        base44.supabase.from('leads').select('id, full_name, phone, email').ilike('phone', pattern).limit(5),
-      ]);
+      const SELECT = 'id, full_name, phone, email';
+      // Complete number → canonical key (finds a record saved in any format);
+      // partial input → tail search, as before.
+      let customers = [];
+      let leads = [];
+      if (canonicalPhoneKey(debouncedPhone)) {
+        [customers, leads] = await Promise.all([
+          findCustomersByPhone(base44.supabase, debouncedPhone, { select: SELECT, limit: 5 }),
+          findLeadsByPhone(base44.supabase, debouncedPhone, { select: SELECT, limit: 5 }),
+        ]);
+      } else {
+        const pattern = `%${debouncedPhone.slice(-9)}%`;
+        const [c, l] = await Promise.all([
+          base44.supabase.from('customers').select(SELECT).ilike('phone', pattern).limit(5),
+          base44.supabase.from('leads').select(SELECT).ilike('phone', pattern).limit(5),
+        ]);
+        customers = c.data || [];
+        leads = l.data || [];
+      }
       return [
-        ...(customers || []).map((r) => ({ kind: 'customer', ...r })),
-        ...(leads || []).map((r) => ({ kind: 'lead', ...r })),
+        ...customers.map((r) => ({ kind: 'customer', ...r })),
+        ...leads.map((r) => ({ kind: 'lead', ...r })),
       ];
     },
   });

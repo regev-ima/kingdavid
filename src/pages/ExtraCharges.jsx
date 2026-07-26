@@ -23,7 +23,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus, Edit, Trash2, Loader2 } from "lucide-react";
+import { DELIVERY_CATEGORIES, chargeRule, describeChargeRule } from '@/lib/deliveryCharges';
 
 export default function ExtraCharges() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -33,6 +41,12 @@ export default function ExtraCharges() {
     description: '',
     cost: 0,
     is_active: true,
+    // Which items this charge is priced for. 'any' = not category-specific
+    // (floors, elevator, assembly) and is offered on every quote/order.
+    applies_to_category: 'any',
+    min_qty: 1,
+    max_qty: '',
+    hide_from_quote: false,
   });
 
   const queryClient = useQueryClient();
@@ -95,7 +109,10 @@ export default function ExtraCharges() {
   });
 
   const resetForm = () => {
-    setFormData({ name: '', description: '', cost: 0, is_active: true });
+    setFormData({
+      name: '', description: '', cost: 0, is_active: true,
+      applies_to_category: 'any', min_qty: 1, max_qty: '', hide_from_quote: false,
+    });
     setEditingCharge(null);
   };
 
@@ -106,16 +123,36 @@ export default function ExtraCharges() {
       description: charge.description || '',
       cost: charge.cost,
       is_active: charge.is_active,
+      // Rows created before the rule columns existed have no category — show
+      // what the name-based fallback resolves to, so saving makes it explicit.
+      applies_to_category: charge.applies_to_category || (chargeRule(charge).category ?? 'any'),
+      min_qty: charge.min_qty ?? chargeRule(charge).min ?? 1,
+      max_qty: charge.max_qty ?? chargeRule(charge).max ?? '',
+      hide_from_quote: charge.hide_from_quote ?? false,
     });
     setIsDialogOpen(true);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const isCategoryRule = formData.applies_to_category && formData.applies_to_category !== 'any';
+    const payload = {
+      ...formData,
+      // Quantity bounds only mean something for a category rule; blank max = no
+      // upper bound. Numbers, not the strings the inputs hand back.
+      min_qty: isCategoryRule ? Math.max(1, Number(formData.min_qty) || 1) : 1,
+      max_qty: isCategoryRule && String(formData.max_qty).trim() !== ''
+        ? Math.max(1, Number(formData.max_qty))
+        : null,
+    };
+    if (payload.max_qty != null && payload.max_qty < payload.min_qty) {
+      toast.error('כמות מקסימלית לא יכולה להיות קטנה מהמינימלית');
+      return;
+    }
     if (editingCharge) {
-      updateMutation.mutate({ id: editingCharge.id, data: formData });
+      updateMutation.mutate({ id: editingCharge.id, data: payload });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(payload);
     }
   };
 
@@ -133,7 +170,7 @@ export default function ExtraCharges() {
               הוסף תוספת
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-h-[92vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingCharge ? 'ערוך תוספת' : 'תוספת חדשה'}</DialogTitle>
             </DialogHeader>
@@ -157,7 +194,7 @@ export default function ExtraCharges() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>עלות *</Label>
+                <Label>עלות * <span className="text-xs font-normal text-muted-foreground">(כולל מע״מ)</span></Label>
                 <Input
                   type="number"
                   min="0"
@@ -166,12 +203,80 @@ export default function ExtraCharges() {
                   required
                 />
               </div>
+
+              {/* מתי התוספת מוצעת: לפי קטגוריית המוצרים בהזמנה וכמה מהם יש.
+                  זה מה שקובע אם התוספת תופיע במסך ההצעה/הזמנה. */}
+              <div className="rounded-lg border border-border p-3 space-y-3 bg-muted/30">
+                <div className="space-y-1">
+                  <Label>מתי להציע את התוספת</Label>
+                  <p className="text-xs text-muted-foreground">
+                    התוספת תוצע רק כשבהזמנה יש את הקטגוריה הזו, בכמות שבטווח.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5 col-span-3 sm:col-span-1">
+                    <Label className="text-xs">קטגוריה</Label>
+                    <Select
+                      value={formData.applies_to_category}
+                      onValueChange={(v) => setFormData({ ...formData, applies_to_category: v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="any">כל הזמנה (לא תלוי קטגוריה)</SelectItem>
+                        {DELIVERY_CATEGORIES.map((c) => (
+                          <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">כמות מ־</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      disabled={formData.applies_to_category === 'any'}
+                      value={formData.min_qty}
+                      onChange={(e) => setFormData({ ...formData, min_qty: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">עד <span className="opacity-60">(ריק = ללא הגבלה)</span></Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      placeholder="∞"
+                      disabled={formData.applies_to_category === 'any'}
+                      value={formData.max_qty}
+                      onChange={(e) => setFormData({ ...formData, max_qty: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  לדוגמה: הובלה למיטה אחת = מיטה, 1 עד 1. הובלה ל-2 מיטות = מיטה, 2 עד 2.
+                  הזמנה של מיטה + מזרן תציע את שתי התוספות המתאימות בנפרד.
+                </p>
+              </div>
+
               <div className="flex items-center gap-3">
                 <Switch
                   checked={formData.is_active}
                   onCheckedChange={(v) => setFormData({...formData, is_active: v})}
                 />
                 <Label className="cursor-pointer">פעיל</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={formData.hide_from_quote}
+                  onCheckedChange={(v) => setFormData({...formData, hide_from_quote: v})}
+                />
+                <Label className="cursor-pointer">
+                  לא להציע בהצעה/הזמנה
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    לתוספות שנקבעות בשטח (מנוף, תשלום לפי קומה)
+                  </span>
+                </Label>
               </div>
               <div className="flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
@@ -225,6 +330,9 @@ export default function ExtraCharges() {
                   <div className="font-semibold text-lg">
                     ₪{charge.cost.toLocaleString()}
                   </div>
+                  <div className="text-xs text-muted-foreground">
+                    מוצעת עבור: <span className="font-medium text-foreground">{describeChargeRule(charge)}</span>
+                  </div>
                   <div className="flex items-center gap-2 pt-3 border-t">
                     <Button
                       variant="ghost"
@@ -262,6 +370,7 @@ export default function ExtraCharges() {
                   <TableHead className="text-start">שם</TableHead>
                   <TableHead className="text-start">תיאור</TableHead>
                   <TableHead className="text-start">עלות</TableHead>
+                  <TableHead className="text-start">מוצעת עבור</TableHead>
                   <TableHead className="text-start">סטטוס</TableHead>
                   <TableHead className="text-start w-32">פעולות</TableHead>
                 </TableRow>
@@ -269,13 +378,13 @@ export default function ExtraCharges() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8">
+                    <TableCell colSpan={6} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
                     </TableCell>
                   </TableRow>
                 ) : extraCharges.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       אין תוספות. הוסף תוספת ראשונה
                     </TableCell>
                   </TableRow>
@@ -285,6 +394,9 @@ export default function ExtraCharges() {
                       <TableCell className="font-medium">{charge.name}</TableCell>
                       <TableCell className="text-muted-foreground">{charge.description || '-'}</TableCell>
                       <TableCell className="font-semibold">₪{charge.cost.toLocaleString()}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {describeChargeRule(charge)}
+                      </TableCell>
                       <TableCell>
                         <span className={`inline-block px-2 py-1 rounded text-xs ${
                           charge.is_active 

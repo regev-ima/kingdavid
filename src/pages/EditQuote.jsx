@@ -20,10 +20,11 @@ import {
 
 
 import { ArrowRight, Save, Loader2, Check } from "lucide-react";
-import { hasBedType } from '@/utils/bedType';
+import { countItemsByCategory, resolveDeliveryCharges } from '@/lib/deliveryCharges';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
+import DeliveryExtrasPicker from '@/components/quote/DeliveryExtrasPicker';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import { genBedConfigToken, legacyFabricToFields } from '@/lib/bedConfig';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -497,35 +498,11 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     );
   }
 
-  const mattressCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (product?.category === 'mattress' ? (item.quantity || 0) : 0);
-  }, 0);
-
-  // Sum quantity of bed-type line items so we can hide delivery options that
-  // don't match the exact bed count on the quote. See NewQuote.jsx for the
-  // shape of the rules — kept in sync intentionally.
-  const bedCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (hasBedType(product) ? (item.quantity || 0) : 0);
-  }, 0);
-
-  const filteredExtraCharges = extraCharges.filter(ec => {
-    if (ec.name === 'שירותי מנוף') return false;
-    if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
-
-    const multiBedMatch = ec.name.match(/ל[- ]?(\d+) מיטות/);
-    if (multiBedMatch) return bedCount === parseInt(multiBedMatch[1], 10);
-    if (ec.name.includes('מיטות')) return bedCount >= 2;
-    if (ec.name.includes('מיטה')) return bedCount === 1;
-
-    const multiMattressMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
-    if (multiMattressMatch) return mattressCount === parseInt(multiMattressMatch[1], 10);
-    if (ec.name === 'הובלה למזרן' || ec.name === 'הובלה מזרן') {
-      return mattressCount >= 1 && bedCount === 0;
-    }
-    return true;
-  });
+  // Delivery extras that apply to these items — per category, by quantity.
+  // Same helper as NewQuote / NewOrder (see src/lib/deliveryCharges.js).
+  const itemCounts = countItemsByCategory(formData.items, products);
+  const { available: filteredExtraCharges, offerable: allExtraCharges, missingCategories } =
+    resolveDeliveryCharges(extraCharges, itemCounts);
 
   return (
     <div className={isModal ? 'space-y-6 p-6' : 'max-w-6xl mx-auto space-y-6'}>
@@ -718,34 +695,19 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                 <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {filteredExtraCharges.map(ec => {
-                    const isSelected = formData.extras.some(ex => ex.extra_charge_id === ec.id);
-                    return (
-                      <button
-                        key={ec.id}
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            const idx = formData.extras.findIndex(ex => ex.extra_charge_id === ec.id);
-                            if (idx >= 0) removeExtra(idx);
-                          } else {
-                            addExtra(ec.id);
-                          }
-                        }}
-                        className={`relative p-4 border rounded-xl text-center transition-all duration-200 ${isSelected ? 'border-primary/40 bg-primary/[0.04] shadow-[0_0_0_1px_rgba(79,70,229,0.15)]' : 'border-border bg-white hover:border-primary/20 hover:bg-muted/30'}`}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                            <Check className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                        <div className="font-medium text-sm text-foreground">{ec.name}</div>
-                        <div className={`text-lg font-bold mt-1.5 ${isSelected ? 'text-primary' : 'text-foreground'}`}>₪{ec.cost.toLocaleString()}</div>
-                      </button>
-                    );
-                  })}
-                </div>
+                <DeliveryExtrasPicker
+                  charges={filteredExtraCharges}
+                  allCharges={allExtraCharges}
+                  missingCategories={missingCategories}
+                  counts={itemCounts}
+                  selectedExtras={formData.extras}
+                  onToggle={(ec) => {
+                    const idx = formData.extras.findIndex((ex) => ex.extra_charge_id === ec.id);
+                    if (idx >= 0) removeExtra(idx);
+                    else addExtra(ec.id);
+                  }}
+                  onRemoveAt={removeExtra}
+                />
               </CardContent>
             </Card>
 

@@ -10,6 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Search, Phone, ArrowLeft, UserPlus, Users } from 'lucide-react';
 import { SOURCE_LABELS } from '@/constants/leadOptions';
+import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
+import { findLeadsByPhone } from '@/lib/phoneLookup';
 
 // Treat anything with 5+ digits (ignoring formatting chars) as a phone-
 // shaped query, otherwise search the name/email fields.
@@ -60,18 +62,35 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const safe = debouncedQuery.replace(/[",()]/g, '');
-      let q = supabase
-        .from('leads')
-        .select('id, full_name, phone, email, status, source, rep1, rep2, pending_rep_email, unique_id, created_date, effective_sort_date, utm_source, utm_campaign')
-        .order('effective_sort_date', { ascending: false, nullsFirst: false })
-        .limit(30);
+      const SELECT = 'id, full_name, phone, email, status, source, rep1, rep2, pending_rep_email, unique_id, created_date, effective_sort_date, utm_source, utm_campaign';
+
       if (isPhoneShapedQuery(safe)) {
         const digits = safe.replace(/\D/g, '');
-        q = q.ilike('phone', `%${digits}%`);
-      } else {
-        q = q.or(`full_name.ilike.%${safe}%,email.ilike.%${safe}%,unique_id.ilike.%${safe}%`);
+        // A complete Israeli number is matched on the canonical key, so a lead
+        // saved as "050-1234567" is also found by "+972501234567" (the old
+        // substring search missed it — the separators break the digit run).
+        if (normalizeIsraeliPhone(safe)?.startsWith('972')) {
+          return findLeadsByPhone(supabase, safe, {
+            select: SELECT, limit: 30, orderBy: 'effective_sort_date', ascending: false,
+          });
+        }
+        // Partial input ("054", "1234") — still a plain substring search.
+        const { data, error } = await supabase
+          .from('leads')
+          .select(SELECT)
+          .ilike('phone', `%${digits}%`)
+          .order('effective_sort_date', { ascending: false, nullsFirst: false })
+          .limit(30);
+        if (error) throw error;
+        return data || [];
       }
-      const { data, error } = await q;
+
+      const { data, error } = await supabase
+        .from('leads')
+        .select(SELECT)
+        .or(`full_name.ilike.%${safe}%,email.ilike.%${safe}%,unique_id.ilike.%${safe}%`)
+        .order('effective_sort_date', { ascending: false, nullsFirst: false })
+        .limit(30);
       if (error) throw error;
       return data || [];
     },

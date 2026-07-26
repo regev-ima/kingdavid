@@ -126,39 +126,12 @@ Deno.serve(async (req) => {
     for (const task of tasks) {
       let leadId = task.lead_id || null;
 
-      // If no lead_id but phone is provided, search for lead by phone
+      // If no lead_id but phone is provided, search for lead by phone. One
+      // lookup on the canonical key replaces the hand-rolled list of format
+      // variants this used to try one query at a time.
       if (!leadId && task.phone) {
-        // Build search variants for Israeli phone formats
-        const digits = task.phone.replace(/[^0-9]/g, '');
-        const searchPhones: string[] = [];
-        if (digits.startsWith('05') && digits.length === 10) {
-          searchPhones.push(digits);
-          searchPhones.push('972' + digits.substring(1));
-        } else if (digits.startsWith('9725') && digits.length === 12) {
-          searchPhones.push(digits);
-          searchPhones.push('0' + digits.substring(3));
-        } else if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) {
-          searchPhones.push(digits);
-          searchPhones.push('972' + digits.substring(1));
-        } else if (digits.startsWith('972') && digits.length >= 11) {
-          searchPhones.push(digits);
-          searchPhones.push('0' + digits.substring(3));
-        } else {
-          searchPhones.push(digits);
-        }
-
-        for (const sPhone of searchPhones) {
-          const { data: leads } = await supabase
-            .from('leads')
-            .select('id')
-            .eq('phone', sPhone)
-            .limit(1);
-
-          if (leads && leads.length > 0) {
-            leadId = leads[0].id;
-            break;
-          }
-        }
+        const lead = await findLeadByPhone(supabase, task.phone, 'id');
+        if (lead) leadId = (lead as { id: string }).id;
       }
 
       if (!leadId) {

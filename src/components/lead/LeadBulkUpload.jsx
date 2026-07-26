@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
+import { findLeadByPhone } from '@/lib/phoneLookup';
 
 export default function LeadBulkUpload({ onComplete }) {
   const [file, setFile] = useState(null);
@@ -58,21 +60,39 @@ export default function LeadBulkUpload({ onComplete }) {
       const results = {
         created: 0,
         updated: 0,
+        skipped: 0,
         failed: 0,
         errors: []
       };
 
+      // Phones already handled from THIS file, so a number listed twice (or
+      // twice in two formats) doesn't create two leads.
+      const seenPhones = new Set();
+
       // 3. Process each lead
       for (let i = 0; i < leads.length; i++) {
         const leadData = leads[i];
-        
+
         try {
-          // Check if lead exists by phone
-          const existingLeads = await base44.entities.Lead.filter({ phone: leadData.phone });
-          
-          if (existingLeads.length > 0) {
+          const phoneKey = normalizeIsraeliPhone(leadData.phone);
+
+          // Same number twice in one file: the first row already created or
+          // updated the lead, so skip the rest instead of adding a copy.
+          if (phoneKey && seenPhones.has(phoneKey)) {
+            results.skipped++;
+            setProgress({ current: i + 1, total: leads.length });
+            continue;
+          }
+          if (phoneKey) seenPhones.add(phoneKey);
+
+          // Match on the canonical phone key — the raw-string compare this used
+          // to do missed a lead that was saved in any other format.
+          const existingLead = await findLeadByPhone(base44.supabase, leadData.phone, {
+            select: 'id, notes, email, city, address',
+          });
+
+          if (existingLead) {
             // Update existing lead
-            const existingLead = existingLeads[0];
             await base44.entities.Lead.update(existingLead.id, {
               full_name: leadData.full_name,
               email: leadData.email || existingLead.email,
@@ -92,7 +112,8 @@ export default function LeadBulkUpload({ onComplete }) {
               city: leadData.city || '',
               address: leadData.address || '',
               source: leadData.source || 'digital',
-              status: 'new',
+              // Canonical value; 'new' isn't in LEAD_STATUS_OPTIONS at all.
+              status: 'new_lead',
               notes: leadData.notes || ''
             });
             results.created++;
@@ -213,6 +234,11 @@ export default function LeadBulkUpload({ onComplete }) {
                 <p className="text-sm font-medium text-blue-800">
                   ✓ עודכנו {uploadMutation.data.updated} לידים קיימים
                 </p>
+                {uploadMutation.data.skipped > 0 && (
+                  <p className="text-sm font-medium text-amber-800">
+                    ⤺ דולגו {uploadMutation.data.skipped} שורות כפולות בקובץ (אותו טלפון)
+                  </p>
+                )}
                 {uploadMutation.data.failed > 0 && (
                   <p className="text-sm font-medium text-red-800">
                     ✗ נכשלו {uploadMutation.data.failed} לידים

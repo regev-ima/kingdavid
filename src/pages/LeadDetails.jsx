@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { findCustomerByPhone } from '@/lib/phoneLookup';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -305,9 +306,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
   const convertToCustomerMutation = useMutation({
     mutationFn: async () => {
-      // Check if customer already exists
-      const existingCustomers = await base44.entities.Customer.filter({ phone: lead.phone });
-      if (existingCustomers.length > 0) {
+      // Check if customer already exists — on the canonical phone key, so a
+      // customer saved in another format isn't duplicated (and the "already
+      // exists" guard actually fires).
+      const existingCustomer = await findCustomerByPhone(base44.supabase, lead.phone, { select: 'id' });
+      if (existingCustomer) {
         throw new Error('לקוח כבר קיים במערכת');
       }
 

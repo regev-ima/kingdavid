@@ -30,10 +30,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
-import { hasBedType } from '@/utils/bedType';
+import { countItemsByCategory, resolveDeliveryCharges } from '@/lib/deliveryCharges';
+import { canonicalPhoneKey, findCustomersByPhone, findLeadsByPhone } from '@/lib/phoneLookup';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
+import DeliveryExtrasPicker from '@/components/quote/DeliveryExtrasPicker';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
@@ -124,6 +126,17 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // the dropdown doesn't blink between keystrokes.
     placeholderData: (prev) => prev,
     queryFn: async () => {
+      const CUSTOMER_SELECT = 'id, full_name, phone, email, address, city';
+      const LEAD_SELECT = 'id, full_name, phone, email, address, city, status';
+      // A complete Israeli number matches the canonical key (so a record saved
+      // in any other format is found); partial input stays a tail search.
+      if (canonicalPhoneKey(debouncedPhone)) {
+        const [customers, leads] = await Promise.all([
+          findCustomersByPhone(base44.supabase, debouncedPhone, { select: CUSTOMER_SELECT, limit: 5 }),
+          findLeadsByPhone(base44.supabase, debouncedPhone, { select: LEAD_SELECT, limit: 5 }),
+        ]);
+        return { customers, leads };
+      }
       // Use the longest available tail (up to 9 digits) — short queries
       // could match a lot of rows so the limit clamps the result anyway.
       const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
@@ -131,12 +144,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
           .from('customers')
-          .select('id, full_name, phone, email, address, city')
+          .select(CUSTOMER_SELECT)
           .ilike('phone', pattern)
           .limit(5),
         base44.supabase
           .from('leads')
-          .select('id, full_name, phone, email, address, city, status')
+          .select(LEAD_SELECT)
           .ilike('phone', pattern)
           .limit(5),
       ]);
@@ -281,9 +294,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       // nothing" before we added onError below.
       let leadId = data.lead_id;
       if (!leadId) {
+        // Match on the canonical phone key. The old exact compare against the
+        // raw column meant a customer whose lead was stored in another format
+        // ("+972…" from the webhook vs "050-…" typed here) got a SECOND lead
+        // created for them every time a quote was saved.
         const phoneForLookup = (data.customer_phone || '').trim();
         const existingLeads = phoneForLookup
-          ? await base44.entities.Lead.filter({ phone: phoneForLookup })
+          ? await findLeadsByPhone(base44.supabase, phoneForLookup, { select: 'id', limit: 1 })
           : [];
 
         if (existingLeads.length > 0) {
@@ -513,41 +530,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     createQuoteMutation.mutate(formData);
   };
 
-  const mattressCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (product?.category === 'mattress' ? (item.quantity || 0) : 0);
-  }, 0);
-
-  // Sum quantity of bed-type line items, not just "is there one" — the
-  // delivery extras come in flavors keyed to an exact bed count
-  // ("ל-2 מיטות" vs. singular "מיטה") and we need to hide the ones that
-  // don't match what's actually on the quote.
-  const bedCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (hasBedType(product) ? (item.quantity || 0) : 0);
-  }, 0);
-
-  const filteredExtraCharges = extraCharges.filter(ec => {
-    if (ec.name === 'שירותי מנוף') return false;
-    if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
-
-    // Bed-count gating. Order matters: try the explicit count first,
-    // then fall through to the plural/singular heuristic. Note that "מיטה"
-    // is NOT a substring of "מיטות" (different ending letters in Hebrew),
-    // so a plain `includes('מיטה')` doesn't accidentally match the plural.
-    const multiBedMatch = ec.name.match(/ל[- ]?(\d+) מיטות/);
-    if (multiBedMatch) return bedCount === parseInt(multiBedMatch[1], 10);
-    if (ec.name.includes('מיטות')) return bedCount >= 2;
-    if (ec.name.includes('מיטה')) return bedCount === 1;
-
-    // Mattress-count gating.
-    const multiMattressMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
-    if (multiMattressMatch) return mattressCount === parseInt(multiMattressMatch[1], 10);
-    if (ec.name === 'הובלה למזרן' || ec.name === 'הובלה מזרן') {
-      return mattressCount >= 1 && bedCount === 0;
-    }
-    return true;
-  });
+  // Which delivery extras apply — per product CATEGORY, by quantity. Shared
+  // with EditQuote / NewOrder so all three screens offer the same set.
+  const itemCounts = countItemsByCategory(formData.items, products);
+  const { available: filteredExtraCharges, offerable: allExtraCharges, missingCategories } =
+    resolveDeliveryCharges(extraCharges, itemCounts);
 
   // Loading screen while saving quote — fixed min height so switching from the
   // form to this view doesn't make the dialog jump/expand.
@@ -939,34 +926,19 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {filteredExtraCharges.map(ec => {
-                    const isSelected = formData.extras.some(ex => ex.extra_charge_id === ec.id);
-                    return (
-                      <button
-                        key={ec.id}
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            const idx = formData.extras.findIndex(ex => ex.extra_charge_id === ec.id);
-                            if (idx >= 0) removeExtra(idx);
-                          } else {
-                            addExtra(ec.id);
-                          }
-                        }}
-                        className={`relative p-4 border rounded-xl text-center transition-all duration-200 ${isSelected ? 'border-primary/40 bg-primary/[0.04] shadow-[0_0_0_1px_rgba(79,70,229,0.15)]' : 'border-border bg-white hover:border-primary/20 hover:bg-muted/30'}`}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                            <Check className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                        <div className="font-medium text-sm text-foreground">{ec.name}</div>
-                        <div className={`text-lg font-bold mt-1.5 ${isSelected ? 'text-primary' : 'text-foreground'}`}>₪{ec.cost.toLocaleString()}</div>
-                      </button>
-                    );
-                  })}
-                </div>
+                <DeliveryExtrasPicker
+                  charges={filteredExtraCharges}
+                  allCharges={allExtraCharges}
+                  missingCategories={missingCategories}
+                  counts={itemCounts}
+                  selectedExtras={formData.extras}
+                  onToggle={(ec) => {
+                    const idx = formData.extras.findIndex((ex) => ex.extra_charge_id === ec.id);
+                    if (idx >= 0) removeExtra(idx);
+                    else addExtra(ec.id);
+                  }}
+                  onRemoveAt={removeExtra}
+                />
               </CardContent>
         </Card>
 

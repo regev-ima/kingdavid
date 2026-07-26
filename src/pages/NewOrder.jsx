@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -16,10 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check } from "lucide-react";
+import { ArrowRight, Save, Loader2, User, UserCheck, X, Check } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
+import DeliveryExtrasPicker from '@/components/quote/DeliveryExtrasPicker';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+import { countItemsByCategory, resolveDeliveryCharges } from '@/lib/deliveryCharges';
+import { canonicalPhoneKey, findCustomerByPhone, findCustomersByPhone, findLeadsByPhone } from '@/lib/phoneLookup';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
@@ -168,17 +170,28 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     staleTime: 60_000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
+      const CUSTOMER_SELECT = 'id, full_name, phone, email, address, city';
+      const LEAD_SELECT = 'id, full_name, phone, email, address, city, status';
+      // A complete Israeli number matches the canonical key (so a record saved
+      // in any other format is found); partial input stays a tail search.
+      if (canonicalPhoneKey(debouncedPhone)) {
+        const [customers, leads] = await Promise.all([
+          findCustomersByPhone(base44.supabase, debouncedPhone, { select: CUSTOMER_SELECT, limit: 5 }),
+          findLeadsByPhone(base44.supabase, debouncedPhone, { select: LEAD_SELECT, limit: 5 }),
+        ]);
+        return { customers, leads };
+      }
       const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
       const pattern = `%${tail}%`;
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
           .from('customers')
-          .select('id, full_name, phone, email, address, city')
+          .select(CUSTOMER_SELECT)
           .ilike('phone', pattern)
           .limit(5),
         base44.supabase
           .from('leads')
-          .select('id, full_name, phone, email, address, city, status')
+          .select(LEAD_SELECT)
           .ilike('phone', pattern)
           .limit(5),
       ]);
@@ -338,17 +351,22 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         status: 'pending',
       });
 
-      // Create or find customer
+      // Create or find customer, matching on the canonical phone key. With the
+      // old raw-string compare a customer stored in another format got a SECOND
+      // row here — which also split their total_orders / lifetime_value across
+      // two records, so the revenue on each was wrong.
       let customerId = null;
-      const existingCustomers = await base44.entities.Customer.filter({ phone: data.customer_phone });
-      
-      if (existingCustomers && existingCustomers.length > 0) {
+      const existingCustomer = await findCustomerByPhone(base44.supabase, data.customer_phone, {
+        select: 'id, total_orders, lifetime_value',
+      });
+
+      if (existingCustomer) {
         // Customer exists - update their data
-        customerId = existingCustomers[0].id;
+        customerId = existingCustomer.id;
         await base44.entities.Customer.update(customerId, {
           last_order_date: new Date().toISOString(),
-          total_orders: (existingCustomers[0].total_orders || 0) + 1,
-          lifetime_value: (existingCustomers[0].lifetime_value || 0) + data.total,
+          total_orders: (existingCustomer.total_orders || 0) + 1,
+          lifetime_value: (existingCustomer.lifetime_value || 0) + data.total,
         });
       } else {
         // Create new customer
@@ -576,6 +594,13 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
+
+  // Delivery extras that apply to these items — per product category, by
+  // quantity. Same helper (and therefore the same offered set) as the quote
+  // screens; this page used to list every extra unconditionally.
+  const itemCounts = countItemsByCategory(formData.items, products);
+  const { available: filteredExtraCharges, offerable: allExtraCharges, missingCategories } =
+    resolveDeliveryCharges(extraCharges, itemCounts);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -846,47 +871,27 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         {currentStep === 3 && (
         <>
         <Card className="mt-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>תוספות</CardTitle>
-            <Select onValueChange={addExtra}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="הוסף תוספת" />
-              </SelectTrigger>
-              <SelectContent>
-                {extraCharges.map(ec => (
-                  <SelectItem key={ec.id} value={ec.id}>
-                    {ec.name} - ₪{ec.cost.toLocaleString()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <CardHeader>
+            <CardTitle>תוספות להובלה</CardTitle>
+            <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
           </CardHeader>
           <CardContent>
-            {formData.extras.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">לא נוספו תוספות</p>
-            ) : (
-              <div className="space-y-3">
-                {formData.extras.map((extra, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium">{extra.name}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold text-lg">₪{extra.cost.toLocaleString()}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeExtra(index)}
-                        className="text-red-500"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Same picker (and the same category+quantity rules) as the quote
+                screens — this list used to show every extra regardless of what
+                was on the order. */}
+            <DeliveryExtrasPicker
+              charges={filteredExtraCharges}
+              allCharges={allExtraCharges}
+              missingCategories={missingCategories}
+              counts={itemCounts}
+              selectedExtras={formData.extras}
+              onToggle={(ec) => {
+                const idx = formData.extras.findIndex((ex) => ex.extra_charge_id === ec.id);
+                if (idx >= 0) removeExtra(idx);
+                else addExtra(ec.id);
+              }}
+              onRemoveAt={removeExtra}
+            />
           </CardContent>
         </Card>
 

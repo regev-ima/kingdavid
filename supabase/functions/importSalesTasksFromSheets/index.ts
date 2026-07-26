@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -71,12 +72,16 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Find the lead by phone (primary) and name (secondary validation)
+      // Find the lead by phone (primary) and name (secondary validation).
+      // Matched on the canonical key: an exact compare against the raw column
+      // reported "לא נמצא ליד" whenever the sheet and the lead used different
+      // formats for the same number.
       try {
+        const phoneKey = normalizeIsraeliPhone(taskData.phone);
         const { data: leads, error: filterError } = await supabase
           .from('leads')
           .select('*')
-          .eq('phone', taskData.phone);
+          .eq('phone_normalized', phoneKey);
 
         if (filterError || !leads || leads.length === 0) {
           errors.push({

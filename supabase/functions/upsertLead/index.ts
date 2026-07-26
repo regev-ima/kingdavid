@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
+import { findLeadByPhone } from '../_shared/phone.ts';
 
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
@@ -56,15 +57,16 @@ Deno.serve(async (req) => {
 
     if (leadData.status && !VALID_STATUSES.has(leadData.status)) leadData.status = 'new_lead';
 
-    // Find existing lead by unique_id or phone
+    // Find existing lead by unique_id, then by phone. The phone match uses the
+    // canonical key (972XXXXXXXXX), so "050-1234567" and "+972501234567" resolve
+    // to the same lead instead of creating a second one.
     let existingLead = null;
     if (leadData.unique_id) {
       const { data } = await supabase.from('leads').select('*').eq('unique_id', leadData.unique_id).limit(1);
       if (data?.length) existingLead = data[0];
     }
     if (!existingLead) {
-      const { data } = await supabase.from('leads').select('*').eq('phone', leadData.phone).limit(1);
-      if (data?.length) existingLead = data[0];
+      existingLead = await findLeadByPhone(supabase, leadData.phone);
     }
 
     // NOTE: we intentionally do NOT promote `pending_rep_email` to
