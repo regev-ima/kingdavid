@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders, getUser } from '../_shared/supabase.ts';
+import { phoneSearchVariants } from '../_shared/phone.ts';
 
 // Map Hebrew status values to English enum values
 const STATUS_MAP: Record<string, string> = {
@@ -129,23 +130,7 @@ Deno.serve(async (req) => {
       // If no lead_id but phone is provided, search for lead by phone
       if (!leadId && task.phone) {
         // Build search variants for Israeli phone formats
-        const digits = task.phone.replace(/[^0-9]/g, '');
-        const searchPhones: string[] = [];
-        if (digits.startsWith('05') && digits.length === 10) {
-          searchPhones.push(digits);
-          searchPhones.push('972' + digits.substring(1));
-        } else if (digits.startsWith('9725') && digits.length === 12) {
-          searchPhones.push(digits);
-          searchPhones.push('0' + digits.substring(3));
-        } else if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) {
-          searchPhones.push(digits);
-          searchPhones.push('972' + digits.substring(1));
-        } else if (digits.startsWith('972') && digits.length >= 11) {
-          searchPhones.push(digits);
-          searchPhones.push('0' + digits.substring(3));
-        } else {
-          searchPhones.push(digits);
-        }
+        const searchPhones = phoneSearchVariants(task.phone);
 
         for (const sPhone of searchPhones) {
           const { data: leads } = await supabase

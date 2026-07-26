@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone as normalizePhoneNumber } from '../_shared/phone.ts';
 
 /**
  * Unified VoiceCenter Call Sync
@@ -9,25 +10,6 @@ import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
  *
  * Should run every 15-30 minutes via scheduled invocation (pg_cron or external).
  */
-
-const normalizePhoneNumber = (phone: string | null): string | null => {
-  if (!phone) return null;
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return null;
-  if (digits.startsWith('05') && digits.length === 10) {
-    return '972' + digits.substring(1);
-  }
-  if (digits.startsWith('9725') && digits.length === 12) {
-    return digits;
-  }
-  if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) {
-    return '972' + digits.substring(1);
-  }
-  if (digits.startsWith('972') && digits.length >= 11) {
-    return digits;
-  }
-  return digits;
-};
 
 function mapCallStatus(dialStatus: string | null): string {
   if (!dialStatus) return 'no_answer';

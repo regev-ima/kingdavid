@@ -19,6 +19,7 @@ import {
   nextTicketNumber,
   normalizePhone,
 } from '@/constants/serviceOptions';
+import { phoneTail } from '@/utils/phoneUtils';
 
 // Rep-facing "open a service ticket" dialog for the new Service Center. A
 // richer sibling of the legacy NewServiceTicketDialog (kept untouched): adds
@@ -98,7 +99,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     enabled: lookupEnabled,
     staleTime: 60_000,
     queryFn: async () => {
-      const tail = debouncedPhone.slice(-9);
+      const tail = phoneTail(debouncedPhone);
       const pattern = `%${tail}%`;
       const [{ data: customers }, { data: leads }] = await Promise.all([
         base44.supabase.from('customers').select('id, full_name, phone, email').ilike('phone', pattern).limit(5),

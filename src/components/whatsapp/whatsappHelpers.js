@@ -1,4 +1,5 @@
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
+import { formatIsraeliPhone } from '@/utils/phoneUtils';
 
 // Conversation status → label + colours. Mirrors the product rule:
 //   waiting  = last message was INCOMING → customer waiting for a reply (red)
@@ -28,14 +29,8 @@ export const WHATSAPP_TAGS = [
 ];
 export const WHATSAPP_TAG_MAP = Object.fromEntries(WHATSAPP_TAGS.map((t) => [t.value, t]));
 
-// 972501234567@c.us / 972501234567 → 050-1234567 (best-effort, falls back to raw)
-export function prettyPhone(raw) {
-  if (!raw) return '';
-  let n = String(raw).replace(/@c\.us$|@g\.us$/, '').replace(/\D/g, '');
-  if (n.startsWith('972')) n = '0' + n.slice(3);
-  if (n.length === 10 && n.startsWith('0')) return `${n.slice(0, 3)}-${n.slice(3)}`;
-  return n || String(raw);
-}
+// 972501234567@c.us / 972501234567 → 050-123-4567 (falls back to raw).
+export { formatIsraeliPhone as prettyPhone };
 
 export function chatTitle(chat) {
   if (!chat) return '';

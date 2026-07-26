@@ -12,14 +12,7 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
 
-function formatPhone(phone) {
-  if (!phone) return '';
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length === 10) {
-    return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
-  }
-  return phone;
-}
+import { formatIsraeliPhone as formatPhone } from '@/utils/phoneUtils';
 
 function getTreatmentText(row) {
   if (!row.first_action_at || !row.created_date) return 'טרם טופל';

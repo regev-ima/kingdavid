@@ -10,14 +10,9 @@ import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 // amounts, which now show agorot so the parts sum exactly to the total.
 const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Strip everything but digits, then drop a leading country prefix so
-// "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
-function normalizePhoneForLookup(raw) {
-  if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
-  return digits;
-}
+// Local form, so "0537772829", "053-777-2829", "+972537772829" and
+// "972537772829" all resolve to the same lookup key.
+const normalizePhoneForLookup = toLocalIsraeliPhone;
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { QUOTE_DEFAULTS_FALLBACK } from '@/constants/quoteDefaultsFallback';
@@ -36,7 +31,7 @@ import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
-import { formatPhoneForWhatsApp, isValidIsraeliPhone } from '@/utils/phoneUtils';
+import { formatPhoneForWhatsApp, isValidIsraeliPhone, toLocalIsraeliPhone } from '@/utils/phoneUtils';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';

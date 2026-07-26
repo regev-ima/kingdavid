@@ -1,141 +1,149 @@
 /**
- * Unified Israeli phone number normalization utility.
- * Converts any Israeli phone format to international format (972XXXXXXXXX).
+ * Israeli phone numbers — THE single source of truth for the browser.
  *
- * Handles:
- * - Local format: 05X-XXXXXXX, 05XXXXXXXX
- * - International: +972-5X-XXXXXXX, 9725XXXXXXXX
- * - With dashes, spaces, parentheses
+ * Import from here. Do not hand-roll `.replace(/\D/g, '')` in a component:
+ * this logic used to exist in a dozen near-identical copies scattered across
+ * the app, each subtly different, which is exactly how one person ends up
+ * stored as several contacts.
+ *
+ * Canonical form is bare international — `972XXXXXXXXX`. It matches what the
+ * Green API chat_id and the 019 SMS gateway already use, and it is the same
+ * rule as `public.normalize_il_phone()` in the database
+ * (supabase/migrations/20260726000001_lead_import.sql).
+ *
+ * THREE mirrors of this logic exist and must stay in step, because Edge
+ * Functions cannot import frontend source and SQL cannot import either:
+ *   1. this file                              — browser
+ *   2. supabase/functions/_shared/phone.ts    — Edge Functions (Deno)
+ *   3. public.normalize_il_phone()            — database, and the authority:
+ *      leads.phone_normalized / customers.phone_normalized are GENERATED from
+ *      it, so it decides identity. 1 and 2 only need to agree with it.
  */
+
+/** Digits only, with WhatsApp chat-id suffixes (@c.us / @g.us) stripped first. */
+export function phoneDigits(raw) {
+  if (raw == null) return '';
+  return String(raw).replace(/@[cg]\.us$/, '').replace(/\D/g, '');
+}
 
 /**
- * Normalize an Israeli phone number to international format (972XXXXXXXXX).
- * Returns null if the input is empty or invalid.
+ * Normalize to `972XXXXXXXXX`. Returns null for empty input.
+ *
+ * Foreign or malformed numbers fall through to their bare digits rather than
+ * null, so identical inputs still match each other instead of every one of
+ * them collapsing into a single "unknown" bucket.
  */
 export function normalizeIsraeliPhone(phone) {
-  if (!phone) return null;
-
-  // Strip all non-digit characters
-  const digits = phone.replace(/\D/g, '');
-
+  let digits = phoneDigits(phone);
   if (!digits) return null;
 
-  // Local Israeli mobile: 05X... (10 digits)
-  if (digits.startsWith('05') && digits.length === 10) {
-    return '972' + digits.substring(1);
+  // 00972… → 972…
+  if (digits.startsWith('00972')) digits = digits.slice(2);
+
+  // Local with a leading zero: 0501234567 / 031234567
+  if (digits.startsWith('0') && digits.length >= 9 && digits.length <= 10) {
+    return '972' + digits.slice(1);
   }
 
-  // International Israeli mobile: 9725X... (12 digits)
-  if (digits.startsWith('9725') && digits.length === 12) {
-    return digits;
-  }
-
-  // Israeli landline: 0X... (9-10 digits)
-  if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) {
-    return '972' + digits.substring(1);
-  }
-
-  // Already international without leading 0 (972X...)
+  // Already international
   if (digits.startsWith('972') && digits.length >= 11 && digits.length <= 12) {
     return digits;
   }
 
-  // Fallback: return digits as-is
+  // Bare local without the leading zero: 501234567 / 721234567
+  if (digits.length === 9 && (digits[0] === '5' || digits[0] === '7')) {
+    return '972' + digits;
+  }
+
   return digits;
 }
 
+/** Normalize to local form `0XXXXXXXXX` (what people read and dial). */
+export function toLocalIsraeliPhone(phone) {
+  const norm = normalizeIsraeliPhone(phone);
+  if (!norm) return '';
+  return norm.startsWith('972') ? '0' + norm.slice(3) : norm;
+}
+
 /**
- * Get all phone search variants for finding leads.
- * Returns both local (05X) and international (9725X) formats.
+ * Last N digits of the normalized number — the substring every `ilike` lookup
+ * matches on, so a query finds the row whichever format it happens to be
+ * stored in ("0507864614", "050-786-4614", "+972507864614", "972507864614").
+ */
+export function phoneTail(phone, n = 9) {
+  const norm = normalizeIsraeliPhone(phone);
+  return norm ? norm.slice(-n) : '';
+}
+
+/**
+ * Every shape a number might be stored as, for building an `$or` filter
+ * against columns that have not been normalized yet.
  */
 export function getPhoneSearchVariants(phone) {
-  if (!phone) return [];
-
-  const digits = phone.replace(/\D/g, '');
-  if (!digits) return [];
-
-  const variants = new Set();
-
-  if (digits.startsWith('05') && digits.length === 10) {
-    variants.add(digits);                          // 05XXXXXXXX
-    variants.add('972' + digits.substring(1));     // 9725XXXXXXXX
-  } else if (digits.startsWith('9725') && digits.length === 12) {
-    variants.add(digits);                          // 9725XXXXXXXX
-    variants.add('0' + digits.substring(3));       // 05XXXXXXXX
-  } else if (digits.startsWith('0') && digits.length >= 9) {
-    variants.add(digits);
-    variants.add('972' + digits.substring(1));
-  } else if (digits.startsWith('972') && digits.length >= 11) {
-    variants.add(digits);
-    variants.add('0' + digits.substring(3));
-  } else {
-    variants.add(digits);
-  }
-
+  const norm = normalizeIsraeliPhone(phone);
+  if (!norm) return [];
+  const variants = new Set([norm]);
+  if (norm.startsWith('972')) variants.add('0' + norm.slice(3));
   return [...variants];
 }
 
-/**
- * Format phone for WhatsApp link (international without +).
- */
+/** International without the plus — what wa.me and the 019 gateway want. */
 export function formatPhoneForWhatsApp(phone) {
-  const normalized = normalizeIsraeliPhone(phone);
-  return normalized || '';
+  return normalizeIsraeliPhone(phone) || '';
+}
+
+/** Green API chat id, or null when the number is too short to be real. */
+export function toWhatsAppChatId(phone) {
+  const norm = normalizeIsraeliPhone(phone);
+  if (!norm || norm.length < 11) return null;
+  return `${norm}@c.us`;
+}
+
+/** Display form: `050-123-4567`. Falls back to the raw input when unsure. */
+export function formatIsraeliPhone(phone) {
+  const local = toLocalIsraeliPhone(phone);
+  if (local.length === 10) return `${local.slice(0, 3)}-${local.slice(3, 6)}-${local.slice(6)}`;
+  if (local.length === 9)  return `${local.slice(0, 2)}-${local.slice(2, 5)}-${local.slice(5)}`;
+  return phone == null ? '' : String(phone);
 }
 
 /**
- * Heuristic: is this search query "phone-shaped"? Used to decide whether
- * a 0-results search should offer a "create new lead with this phone" CTA.
- * 7 digits is the minimum Israeli landline length (03-XXXXXXX).
- */
-export function isPhoneShapedQuery(query) {
-  if (!query) return false;
-  const digits = String(query).replace(/\D/g, '');
-  return digits.length >= 7;
-}
-
-/**
- * Strict validation of an Israeli phone number. Accepts both local (0...)
- * and international (+972 / 972...) formats, with or without separators.
+ * Is this search query phone-shaped? Decides whether to search the phone
+ * column or the name/email ones, and whether a 0-result search should offer
+ * "create a new lead with this number".
  *
- * Valid shapes (after stripping non-digits and the country code / leading 0):
- *   - Mobile:   5XXXXXXXX  (9 digits, e.g. 050-1234567)
- *   - VoIP:     7[2-9]XXXXXXX (9 digits, e.g. 077-1234567)
- *   - Landline: [23489]XXXXXXX (8 digits, e.g. 03-1234567)
+ * `minDigits` defaults to 7, the shortest Israeli landline (03-XXXXXXX).
+ * Lookup screens that match on a partial number pass a lower bound.
+ */
+export function isPhoneShapedQuery(query, minDigits = 7) {
+  return phoneDigits(query).length >= minDigits;
+}
+
+/**
+ * Strict validation. Accepts local and international, with or without
+ * separators:
+ *   - Mobile:   5XXXXXXXX      (050-1234567)
+ *   - VoIP:     7[2-9]XXXXXXX  (077-1234567)
+ *   - Landline: [23489]XXXXXXX (03-1234567)
  */
 export function isValidIsraeliPhone(phone) {
-  if (!phone) return false;
-  const digits = String(phone).replace(/\D/g, '');
-  if (!digits) return false;
-
-  let local;
-  if (digits.startsWith('972')) {
-    local = digits.substring(3);
-  } else if (digits.startsWith('0')) {
-    local = digits.substring(1);
-  } else {
-    return false;
-  }
-
-  if (/^5\d{8}$/.test(local)) return true;       // mobile
-  if (/^7[2-9]\d{7}$/.test(local)) return true;  // VoIP / virtual
-  if (/^[23489]\d{7}$/.test(local)) return true; // landline
-  return false;
+  const norm = normalizeIsraeliPhone(phone);
+  if (!norm || !norm.startsWith('972')) return false;
+  const local = norm.slice(3);
+  return /^5\d{8}$/.test(local)        // mobile
+      || /^7[2-9]\d{7}$/.test(local)   // VoIP / virtual
+      || /^[23489]\d{7}$/.test(local); // landline
 }
 
 /**
- * Sanitize raw input into a phone-friendly string: keep only digits, "+",
- * spaces and dashes, and hard-cap the digit count at 12 (the longest
- * valid Israeli phone shape — "9725XXXXXXXX"). Extra digits are silently
- * dropped so the input simply refuses keystrokes past a valid number.
- * Used as an `onChange` filter on phone inputs across the app.
+ * `onChange` filter for phone inputs: keep only digits, "+", spaces and
+ * dashes, and hard-cap at 12 digits (the longest valid shape, 9725XXXXXXXX)
+ * so the field simply refuses keystrokes past a complete number.
  */
 export function sanitizePhoneInput(raw) {
   if (raw == null) return '';
   const cleaned = String(raw).replace(/[^\d+\-\s]/g, '');
 
-  // Walk the string and drop any digit beyond the 12th. Non-digit
-  // separators (spaces, dashes, the leading "+") are preserved as-is.
   let digitCount = 0;
   let out = '';
   for (const c of cleaned) {

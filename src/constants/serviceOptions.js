@@ -141,21 +141,13 @@ export const CONTACT_PREFERENCE_LABELS = Object.fromEntries(
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// Strip everything but digits, then normalise to local Israeli form so any
-// stored variant ("0537772829", "053-777-2829", "+972537772829") matches.
-export function normalizePhone(raw) {
-  if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
-  return digits;
-}
+// Local Israeli form, so any stored variant ("0537772829", "053-777-2829",
+// "+972537772829") matches. Re-exported under the names the service screens
+// already use; the rule itself lives in @/utils/phoneUtils.
+export { toLocalIsraeliPhone as normalizePhone } from '@/utils/phoneUtils';
 
 // 019 / international format: 972XXXXXXXXX (no plus, no leading zero).
-export function toInternationalPhone(raw) {
-  const local = normalizePhone(raw);
-  if (!local) return '';
-  return local.startsWith('0') ? '972' + local.slice(1) : local;
-}
+export { formatPhoneForWhatsApp as toInternationalPhone } from '@/utils/phoneUtils';
 
 // Next ticket number given the most-recent ticket (TKT#### sequence).
 export function nextTicketNumber(lastTicketNumber) {

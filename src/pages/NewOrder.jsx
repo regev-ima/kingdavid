@@ -26,21 +26,16 @@ import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
-import { isValidIsraeliPhone } from '@/utils/phoneUtils';
+import { isValidIsraeliPhone, toLocalIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
 
 // ₪ with two decimals (agorot) so totals match the per-line amounts.
 const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Strip everything but digits, then drop a leading country prefix so
-// "0537772829", "053-777-2829", "+972537772829", "972537772829" all match.
-// Mirrors the helper in NewQuote.jsx — same lookup, same expected behaviour.
-function normalizePhoneForLookup(raw) {
-  if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
-  return digits;
-}
+// Local form, so "0537772829", "053-777-2829", "+972537772829" and
+// "972537772829" all resolve to the same lookup key. Same helper NewQuote
+// uses — one rule, one place.
+const normalizePhoneForLookup = toLocalIsraeliPhone;
 
 export default function NewOrder({ asDialog = false, dialogLeadId = null, dialogQuoteId = null, onDialogClose = null }) {
   const navigate = useNavigate();

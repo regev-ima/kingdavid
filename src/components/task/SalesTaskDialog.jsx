@@ -26,15 +26,7 @@ import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import NewQuote from '@/pages/NewQuote';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { isAdmin as isAdminUser, canAccessSalesWorkspace } from '@/components/shared/rbac';
-
-// Strip everything but digits, then drop a leading country prefix so any
-// stored form ("0537772829", "053-777-2829", "+972537772829") matches.
-function normalizePhoneForLeadLookup(raw) {
-  if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
-  return digits;
-}
+import { phoneTail as phoneTailOf, isPhoneShapedQuery } from '@/utils/phoneUtils';
 
 const TASK_STATUS_STYLES = {
   not_completed: { on: 'border-amber-400/50 bg-amber-50 text-amber-700', off: 'border-border hover:border-amber-300 hover:bg-amber-50/50 text-muted-foreground' },
@@ -135,10 +127,10 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     return () => clearTimeout(t);
   }, [leadSearch]);
 
-  const phoneTail = useMemo(() => {
-    const norm = normalizePhoneForLeadLookup(debouncedLeadSearch);
-    return norm.length >= 4 ? norm.slice(-9) : '';
-  }, [debouncedLeadSearch]);
+  const phoneTail = useMemo(
+    () => (isPhoneShapedQuery(debouncedLeadSearch, 4) ? phoneTailOf(debouncedLeadSearch) : ''),
+    [debouncedLeadSearch]
+  );
 
   const currentLeadId = editingTask?.lead_id || '';
   const currentLead = editingTask?.lead || null;

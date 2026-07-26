@@ -1,14 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
+import { phoneTail } from '@/utils/phoneUtils';
 
-// Last 9 digits of the normalized number — matches any stored form
-// ("0507864614", "050-786-4614", "+972507864614", "972507864614") with one
-// ilike-substring, exactly like the global search does.
-export function phoneTail(phone) {
-  const norm = normalizeIsraeliPhone(phone) || String(phone || '').replace(/\D/g, '');
-  return norm ? norm.slice(-9) : '';
-}
+// Re-exported so the WhatsApp components keep importing it from here.
+export { phoneTail };
 
 const OPEN_TICKET_STATUSES = new Set(['open', 'in_progress', 'pending', 'waiting', 'new', 'assigned']);
 export function isOpenTicket(t) {

@@ -7,7 +7,7 @@ import { supabase } from '@/api/supabaseClient';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
-import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
+import { toLocalIsraeliPhone as localPhoneDigits } from '@/utils/phoneUtils';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,12 +31,6 @@ import {
   chatStatusMeta, chatTitle, chatInitial, prettyPhone, listTime, dayLabel, colorFromString,
   formatDuration, WHATSAPP_TAGS, WHATSAPP_TAG_MAP,
 } from '@/components/whatsapp/whatsappHelpers';
-
-function localPhoneDigits(phone) {
-  const norm = normalizeIsraeliPhone(phone);
-  if (norm && norm.startsWith('972')) return '0' + norm.slice(3);
-  return String(phone || '').replace(/\D/g, '');
-}
 
 // Urgency colour for how long a customer has been waiting (seconds).
 function waitChipClass(seconds) {

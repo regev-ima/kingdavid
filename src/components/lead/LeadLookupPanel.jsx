@@ -10,18 +10,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { Search, Phone, ArrowLeft, UserPlus, Users } from 'lucide-react';
 import { SOURCE_LABELS } from '@/constants/leadOptions';
+import {
+  formatIsraeliPhone as formatPhone,
+  isPhoneShapedQuery as isPhoneShapedQueryFor,
+} from '@/utils/phoneUtils';
 
 // Treat anything with 5+ digits (ignoring formatting chars) as a phone-
-// shaped query, otherwise search the name/email fields.
-function isPhoneShapedQuery(s) {
-  const digits = String(s || '').replace(/\D/g, '');
-  return digits.length >= 5;
-}
-function formatPhone(p) {
-  const cleaned = String(p || '').replace(/\D/g, '');
-  if (cleaned.length === 10) return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
-  return p || '';
-}
+// shaped query, otherwise search the name/email fields. Lower bound than the
+// 7-digit default so a partial number still matches while typing.
+const isPhoneShapedQuery = (s) => isPhoneShapedQueryFor(s, 5);
 function useDebouncedValue(value, delay = 300) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {

@@ -88,10 +88,21 @@ Database → Webhooks כדי שאדע מה בדיוק צריך לכבות בזמ
   `972501234567@c.us` (וואטסאפ), ו-digits-only (מייבוא Sheets).
 - **אין אף אילוץ UNIQUE** על `leads.phone` או `customers.phone`. שתי כתיבות מקבילות לאותו
   מספר שתיהן יצליחו.
-- יש 6 פונקציות נרמול שונות בקוד שלא מסכימות ביניהן:
-  `phoneUtils.normalizeIsraeliPhone` (→972), `serviceOptions.normalizePhone` (→0),
-  `whatsappHelpers`, `useWhatsAppContext.phoneTail`, `GlobalSearch.normalizePhoneForSearch`,
-  `SalesTaskDialog.normalizePhoneForLeadLookup`.
+- ~~יש 6 פונקציות נרמול שונות בקוד שלא מסכימות ביניהן~~ → **תוקן.** בפועל נמצאו **15**
+  מימושים נפרדים של אותו רעיון (11 בפרונט, 4 ב-Edge Functions). כולם אוחדו:
+  - **פרונט:** `src/utils/phoneUtils.js` הוא מקור האמת היחיד. הוסרו העותקים המקומיים מ-
+    `serviceOptions.js`, `GlobalSearch.jsx`, `SalesTaskDialog.jsx`, `useWhatsAppContext.js`,
+    `WhatsAppContextPanel.jsx`, `whatsappHelpers.js`, `LeadListTable.jsx`,
+    `ResponsiveLeadsTable.jsx`, `LeadLookupPanel.jsx`, `NewQuote.jsx`, `NewOrder.jsx`,
+    `WhatsAppChat.jsx`. השמות המקומיים נשמרו כ-alias כדי לא לגעת בקוד הקורא.
+  - **Edge Functions:** `supabase/functions/_shared/phone.ts` חדש. הוסרו העותקים מ-
+    `greenApi.ts`, `syncVoicenterCalls`, `createSalesTaskAPI`, `sms019.ts`.
+  - **DB:** `public.normalize_il_phone()` — והיא **הסמכות**, כי `phone_normalized` נגזרת ממנה
+    ולכן היא זו שקובעת זהות. שלושת המימושים (דפדפן / Deno / SQL) מיושרים ומתועדים
+    זה מול זה, כי Edge Functions לא יכולות לייבא מ-`src/` ו-SQL לא יכול לייבא כלל.
+
+  אגב האיחוד תוקנו גם שלושה פערים שהיו בין המימושים: `00972...` לא טופל בשום מקום,
+  מספר מקומי בלי אפס מוביל (`501234567`) לא זוהה, וסיומת `@c.us` לא נוקתה אחידה.
 
 ### 2.2 לקוחות — אין סטטוס, ויש שני נתיבי המרה סותרים
 - `customers` היא טבלה משנת base44. ~15k שורות, מולאו ע"י גיבוב חד-פעמי מכל ליד ב-`deal_closed`.
