@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { createPageUrl } from '@/utils';
 import { createAuditLog } from '@/utils/auditLog';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,15 +15,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2 } from "lucide-react";
+import { ArrowRight, Save, Loader2, AlertTriangle } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
-import { isValidIsraeliPhone } from '@/utils/phoneUtils';
+import { isValidIsraeliPhone, normalizeIsraeliPhone } from '@/utils/phoneUtils';
+import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
+
+const LEAD_STATUS_LABELS = Object.fromEntries(LEAD_STATUS_OPTIONS.map((o) => [o.value, o.label]));
 
 export default function NewLead({ asDialog = false, dialogPhone = null, onDialogClose = null }) {
   const navigate = useNavigate();
@@ -44,7 +48,27 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
     preferred_product: '',
     budget: '',
     notes: '',
-    status: 'new',
+    // 'new_lead' is the canonical value. This used to be 'new', which isn't in
+    // LEAD_STATUS_OPTIONS at all — so a manually created lead was invisible to
+    // the "משויך ולא טופל" tile and fell into the "בטיפול" bucket instead.
+    status: 'new_lead',
+  });
+
+  // Live "this number already exists" check. Debounced, only once the number is
+  // actually valid, and matched on the canonical phone key — so it catches a
+  // lead that was saved in another format (webhook / sheet import) too.
+  const [debouncedPhone, setDebouncedPhone] = useState('');
+  const [dupAcknowledged, setDupAcknowledged] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedPhone(formData.phone), 300);
+    return () => clearTimeout(t);
+  }, [formData.phone]);
+
+  const { data: duplicates = [] } = useQuery({
+    queryKey: ['newLeadDuplicateCheck', normalizeIsraeliPhone(debouncedPhone)],
+    enabled: isValidIsraeliPhone(debouncedPhone),
+    staleTime: 30_000,
+    queryFn: () => findLeadsByPhone(base44.supabase, debouncedPhone, { limit: 5 }),
   });
 
   const createLeadMutation = useMutation({
@@ -91,11 +115,25 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
       // Browser-native required already caught empty; this guards format.
       return;
     }
+    // A lead with this number already exists → don't create a second copy of
+    // the same customer silently. First submit explains and offers the existing
+    // record; a second submit is the explicit "create anyway".
+    if (duplicates.length > 0 && !dupAcknowledged) {
+      setDupAcknowledged(true);
+      toast.error(
+        `קיים כבר ליד עם הטלפון הזה (${duplicates[0].full_name || 'ללא שם'}). ` +
+        'פתח את הליד הקיים, או לחץ "צור בכל זאת" כדי ליצור רשומה נוספת.',
+        { duration: 12_000 },
+      );
+      return;
+    }
     createLeadMutation.mutate(formData);
   };
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    // Changing the number invalidates a previous "create anyway" decision.
+    if (field === 'phone') setDupAcknowledged(false);
   };
 
   if (isLoadingUser) {
@@ -154,6 +192,39 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
                   required
                 />
               </div>
+
+              {/* Same number already in the system — surfaced before saving, not
+                  discovered later as two half-worked copies of one customer. */}
+              {duplicates.length > 0 ? (
+                <div className="sm:col-span-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2.5 space-y-2">
+                  <p className="text-sm font-semibold flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    {duplicates.length === 1
+                      ? 'קיים כבר ליד עם מספר הטלפון הזה'
+                      : `קיימים ${duplicates.length} לידים עם מספר הטלפון הזה`}
+                  </p>
+                  <div className="space-y-1.5">
+                    {duplicates.map((dup) => (
+                      <div key={dup.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 px-2.5 py-1.5">
+                        <div className="text-xs">
+                          <span className="font-medium">{dup.full_name || 'ללא שם'}</span>
+                          {dup.phone ? <span className="opacity-70" dir="ltr"> · {dup.phone}</span> : null}
+                          {dup.status ? <span className="opacity-70"> · {LEAD_STATUS_LABELS[dup.status] || dup.status}</span> : null}
+                        </div>
+                        <Link
+                          to={createPageUrl('LeadDetails') + `?id=${dup.id}`}
+                          className="text-xs font-semibold text-primary hover:underline"
+                        >
+                          פתח את הליד הקיים
+                        </Link>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[11px] opacity-80">
+                    עדיף להמשיך לעבוד על הרשומה הקיימת — כך ההיסטוריה, ההצעות והמשימות נשארות במקום אחד.
+                  </p>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="email">אימייל</Label>
                 <Input
@@ -271,7 +342,7 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
             ) : (
               <Save className="h-4 w-4 me-2" />
             )}
-            שמור ליד
+            {duplicates.length > 0 && dupAcknowledged ? 'צור בכל זאת' : 'שמור ליד'}
           </Button>
         </div>
       </form>

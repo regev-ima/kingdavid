@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders, getUser } from '../_shared/supabase.ts';
+import { fetchLeadsByPhones, normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 const SPREADSHEET_ID = '1On0QrIVZ-rQw47A676EGui2fHGBJcBEhugcpCmB_fIU';
 const SHEET_NAME = 'Sheet 1';
@@ -154,13 +155,30 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Bulk insert all at once (no duplicate check for speed)
+    // Skip rows whose phone already exists, and rows that repeat within this
+    // batch. This used to insert everything unconditionally ("no duplicate check
+    // for speed"), so every re-run of the import duplicated the whole sheet.
+    // Cost is one batched lookup per import batch, not one query per row.
+    let deduped = toInsert;
     if (toInsert.length > 0) {
-      const { error } = await supabase.from('leads').insert(toInsert);
+      const existingByPhone = await fetchLeadsByPhones(supabase, toInsert.map((l) => l.phone), 'id, phone_normalized');
+      const seen = new Set<string>();
+      deduped = toInsert.filter((lead) => {
+        const key = normalizeIsraeliPhone(lead.phone);
+        if (!key) return true;
+        if (existingByPhone.has(key)) { results.skipped++; return false; }
+        if (seen.has(key)) { results.skipped++; return false; }
+        seen.add(key);
+        return true;
+      });
+    }
+
+    if (deduped.length > 0) {
+      const { error } = await supabase.from('leads').insert(deduped);
       if (error) {
         results.errors.push(error.message);
       } else {
-        results.created = toInsert.length;
+        results.created = deduped.length;
       }
     }
 

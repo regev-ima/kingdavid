@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -142,10 +143,15 @@ Deno.serve(async (req) => {
     const existingByPhone: Record<string, any> = {};
     const existingByUniqueId: Record<string, any> = {};
 
-    // Build lookup dictionaries
+    // Build lookup dictionaries. The phone map is keyed by the CANONICAL phone
+    // (972XXXXXXXXX) rather than the raw string — the sheet writes numbers in a
+    // different format than the webhook and than manual entry, so keying on the
+    // raw value re-imported the same customer as a new lead every run.
     allExistingLeads.forEach(lead => {
-      if (lead.phone) {
-        existingByPhone[lead.phone] = lead;
+      const key = lead.phone_normalized || normalizeIsraeliPhone(lead.phone);
+      // Oldest row wins: it's the one holding the history.
+      if (key && !existingByPhone[key]) {
+        existingByPhone[key] = lead;
       }
       if (lead.unique_id) {
         existingByUniqueId[lead.unique_id] = lead;
@@ -158,19 +164,30 @@ Deno.serve(async (req) => {
     const toCreate: Record<string, any>[] = [];
     const toUpdate: { id: string; data: Record<string, any> }[] = [];
 
+    // Phones already queued for creation in THIS batch — without it, a sheet
+    // listing the same number twice (or twice in two formats) inserted it twice.
+    const queuedPhones = new Set<string>();
+    let duplicatesInBatch = 0;
+
     for (let i = 0; i < leads.length; i++) {
       const leadData = leads[i];
 
       try {
         let existingLead = null;
+        const phoneKey = normalizeIsraeliPhone(leadData.phone);
 
         // Check by unique_id first (highest priority)
         if (leadData.unique_id && existingByUniqueId[leadData.unique_id]) {
           existingLead = existingByUniqueId[leadData.unique_id];
         }
         // Then check by phone
-        else if (existingByPhone[leadData.phone]) {
-          existingLead = existingByPhone[leadData.phone];
+        else if (phoneKey && existingByPhone[phoneKey]) {
+          existingLead = existingByPhone[phoneKey];
+        }
+        else if (phoneKey && queuedPhones.has(phoneKey)) {
+          // Same number twice in one batch: keep the first row, skip the rest.
+          duplicatesInBatch++;
+          continue;
         }
 
         if (existingLead) {
@@ -194,6 +211,7 @@ Deno.serve(async (req) => {
           updatedLeads.push({ name: leadData.full_name, phone: leadData.phone });
         } else {
           // New lead
+          if (phoneKey) queuedPhones.add(phoneKey);
           toCreate.push(leadData);
         }
       } catch (e) {
@@ -235,13 +253,14 @@ Deno.serve(async (req) => {
       success: true,
       imported: importedLeads.length,
       updated: updatedLeads.length,
+      duplicatesInBatch,
       errors: errors.length > 0 ? errors : undefined,
       updatedList: updatedLeads,
       hasMore,
       nextStartRow,
       totalRows,
       processedRows: dataRows.length,
-      message: `נוצרו ${importedLeads.length} לידים חדשים${updatedLeads.length > 0 ? `, עודכנו ${updatedLeads.length} לידים קיימים` : ''}${errors.length > 0 ? `, ${errors.length} שגיאות` : ''}`,
+      message: `נוצרו ${importedLeads.length} לידים חדשים${updatedLeads.length > 0 ? `, עודכנו ${updatedLeads.length} לידים קיימים` : ''}${duplicatesInBatch > 0 ? `, ${duplicatesInBatch} שורות כפולות בקובץ דולגו` : ''}${errors.length > 0 ? `, ${errors.length} שגיאות` : ''}`,
     }, { headers: corsHeaders });
 
   } catch (error) {

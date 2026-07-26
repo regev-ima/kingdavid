@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
+import { findLeadByPhone } from '../_shared/phone.ts';
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -25,10 +26,11 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const { data: existing } = await supabase.from('leads').select('*').eq('phone', leadData.phone).limit(1);
+        // Match on the canonical phone key, so a number that was stored in a
+        // different format updates that lead instead of duplicating it.
+        const existingLead = await findLeadByPhone(supabase, leadData.phone);
 
-        if (existing?.length) {
-          const existingLead = existing[0];
+        if (existingLead) {
           const updateData: any = {
             full_name: leadData.full_name,
             email: leadData.email || existingLead.email,

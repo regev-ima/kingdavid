@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
 import { countItemsByCategory, resolveDeliveryCharges } from '@/lib/deliveryCharges';
+import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
@@ -282,9 +283,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       // nothing" before we added onError below.
       let leadId = data.lead_id;
       if (!leadId) {
+        // Match on the canonical phone key. The old exact compare against the
+        // raw column meant a customer whose lead was stored in another format
+        // ("+972…" from the webhook vs "050-…" typed here) got a SECOND lead
+        // created for them every time a quote was saved.
         const phoneForLookup = (data.customer_phone || '').trim();
         const existingLeads = phoneForLookup
-          ? await base44.entities.Lead.filter({ phone: phoneForLookup })
+          ? await findLeadsByPhone(base44.supabase, phoneForLookup, { select: 'id', limit: 1 })
           : [];
 
         if (existingLeads.length > 0) {

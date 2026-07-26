@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
+import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, X } from "lucide-react";
@@ -96,12 +97,11 @@ export default function VoiceCenterCallPopup() {
     // Fetch lead information based on phone number
     if (phoneNumber) {
       try {
-        const leads = await base44.entities.Lead.filter({ phone: phoneNumber });
-        if (leads.length > 0) {
-          setLeadData(leads[0]);
-        } else {
-          setLeadData(null);
-        }
+        // Canonical-key match: an exact compare against the raw column showed
+        // an incoming call as "unknown" whenever the lead happened to be stored
+        // in a different phone format than the one the switchboard reports.
+        const leads = await findLeadsByPhone(base44.supabase, phoneNumber, { limit: 1 });
+        setLeadData(leads.length > 0 ? leads[0] : null);
       } catch (error) {
         console.error('Error fetching lead:', error);
         setLeadData(null);

@@ -27,6 +27,7 @@ import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
+import { leadPhoneFilter, probeLeadPhoneKey } from '@/lib/leadPhoneLookup';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import LeadQuickActions from '@/components/lead/LeadQuickActions';
 
@@ -130,7 +131,7 @@ function handlingStatusTone(value) {
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
-function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCond }) {
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCond, phoneKeySupported }) {
   const conditions = [];
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
@@ -171,9 +172,14 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCo
   }
   if (filters.search) {
     const s = filters.search;
+    // The phone leg matches the canonical key when the text is a complete
+    // Israeli number, so searching "050-123-4567" also finds the lead that a
+    // webhook stored as "+972501234567" (a raw ILIKE never did — the separators
+    // break the digit run). Partial input still matches the raw column.
+    const phoneLeg = leadPhoneFilter(s, { canonical: phoneKeySupported });
     conditions.push({ $or: [
       { full_name: { $regex: s, $options: 'i' } },
-      { phone: { $regex: s, $options: 'i' } },
+      phoneLeg,
       { email: { $regex: s, $options: 'i' } },
     ] });
   }
@@ -318,6 +324,18 @@ export default function LeadManagement() {
       }
       return true;
     },
+  });
+
+  // Same one-shot probe for the canonical phone key: the phone leg of the search
+  // uses it only where it exists, so a not-yet-migrated environment keeps the
+  // old substring behaviour instead of failing the request.
+  const { data: phoneKeySupported = false } = useQuery({
+    queryKey: ['leadPhoneKeySupported'],
+    enabled: !!effectiveUser,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    queryFn: () => probeLeadPhoneKey(base44.supabase),
   });
 
   const hourCond = useMemo(
@@ -466,8 +484,8 @@ export default function LeadManagement() {
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCond }),
-    [filters, dateRange, scope, userEmail, isAdmin, hourCond],
+    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCond, phoneKeySupported }),
+    [filters, dateRange, scope, userEmail, isAdmin, hourCond, phoneKeySupported],
   );
   // Reset paging to the first page whenever the query itself changes (scope /
   // filter / rep / status / date / search) — without this, switching views
@@ -513,7 +531,7 @@ export default function LeadManagement() {
     placeholderData: (p) => p,
     queryFn: async () => {
       const ctx = (status, forcedScope) => buildLeadsQuery({
-        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, isAdmin, hourCond,
+        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, isAdmin, hourCond, phoneKeySupported,
       });
       const [total, ...perStatus] = await Promise.all([
         base44.entities.Lead.count(ctx('all', 'handling')),
