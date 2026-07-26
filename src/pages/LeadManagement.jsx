@@ -17,7 +17,7 @@ import UserAvatar from '@/components/shared/UserAvatar';
 import {
   Users, UserPlus, UserCheck, Calendar as CalendarIcon,
   Filter, X as XIcon, FileSpreadsheet, ArrowRightLeft, Sparkles,
-  Moon, Sun, Hourglass, Loader2, CheckCircle2,
+  Clock, Hourglass, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
@@ -45,34 +45,46 @@ const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,facebook_a
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
-// "New leads" are triaged over a 20:00→20:00 cycle, split into two
-// operational shifts, all anchored to Israel wall-clock time regardless of
-// the viewer's device timezone:
-//   • night → previous day 20:00 until today 08:00
-//   • day   → today 08:00 until today 20:00
-//   • cycle → previous day 20:00 until today 20:00 (night + day)
-// Boundaries are constructed in Asia/Jerusalem and returned as UTC ISO
-// strings so they can be handed straight to an effective_sort_date range
-// filter. Negative/overflowing day numbers (e.g. the 0th of a month) are
+// The full calendar DAY containing `now`, anchored to Israel wall-clock time
+// regardless of the viewer's device timezone: 00:00:00 → next day 00:00:00.
+// Returned as UTC ISO strings so the boundaries can be handed straight to an
+// effective_sort_date range filter. Overflowing day numbers (e.g. the 32nd) are
 // normalised by the Date constructor, so month/year rollover is automatic.
-function israelShiftWindows(now = new Date()) {
+//
+// This replaces the old 20:00→20:00 "shift cycle": intake is counted per real
+// day (all 24 hours), and any narrower cut is done with the hour filter below.
+function israelDayWindow(now = new Date()) {
   const zoned = toZonedTime(now, TIMEZONE);
   const y = zoned.getFullYear();
   const mo = zoned.getMonth();
   const d = zoned.getDate();
   const at = (day, hour) => fromZonedTime(new Date(y, mo, day, hour, 0, 0, 0), TIMEZONE).toISOString();
-  return {
-    night: { from: at(d - 1, 20), to: at(d, 8) },
-    day: { from: at(d, 8), to: at(d, 20) },
-    cycle: { from: at(d - 1, 20), to: at(d, 20) },
-  };
+  return { from: at(d, 0), to: at(d + 1, 0) };
 }
 
-// effective_sort_date condition for a half-open [from, to) window. Half-open
-// so the night and day shifts partition the cycle with no double-counting at
-// the shared 08:00 / 20:00 boundaries (cycle total === night + day exactly).
-function windowCond(w) {
-  return { effective_sort_date: { $gte: w.from, $lt: w.to } };
+// ─── Hour-of-day (Israel time) intake filter ────────────────────
+// Narrows the list to the hours a lead ARRIVED in — e.g. 09:00–12:00 — on top
+// of the selected date range. `to` is EXCLUSIVE, so 9→12 means the 09/10/11
+// hours and 0→24 means the whole day. The hour itself is computed in SQL by the
+// `arrival_hour_il` computed column (effective_sort_date AT TIME ZONE
+// Asia/Jerusalem), so the filter works server-side for any range and stays
+// consistent between the list, the counts and the KPI tiles.
+// An end earlier than the start is a window that crosses midnight (20:00→08:00)
+// and becomes an OR of the two halves.
+const HOUR_COLUMN = 'arrival_hour_il';
+
+function hourRangeCondition(from, to) {
+  const f = Number.isInteger(from) ? from : 0;
+  const t = Number.isInteger(to) ? to : 24;
+  if (f === t) return null;            // nonsense/empty selection → no filter
+  if (f === 0 && t === 24) return null; // whole day → no filter
+  if (f < t) return { [HOUR_COLUMN]: { $gte: f, $lt: t } };
+  return { $or: [{ [HOUR_COLUMN]: { $gte: f } }, { [HOUR_COLUMN]: { $lt: t } }] };
+}
+
+// Label for an hour boundary: 9 → "09:00", 24 → "24:00".
+function hourLabel(h) {
+  return `${String(h).padStart(2, '0')}:00`;
 }
 
 // Statuses that mean a lead has moved past the "new_lead" stage but isn't
@@ -86,8 +98,8 @@ const LOST_STATUSES = CLOSED_STATUSES.filter((s) => s !== 'deal_closed');
 // Lifecycle buckets used to drill into a single rep's workload card. Each id
 // maps to the status condition that DEFINES that bucket — identical to how the
 // per-rep counts are computed below — so clicking a bucket produces a list
-// whose count matches the number on the card. These honor the date range (they
-// are not shift scopes), exactly like the counts on the cards.
+// whose count matches the number on the card. These honor the date range and
+// the hour window, exactly like the counts on the cards.
 const LIFECYCLE_SCOPES = {
   lc_new: { status: 'new_lead' },
   lc_handling: { status: { $nin: HANDLING_EXCLUDED_STATUSES } },
@@ -118,15 +130,11 @@ function handlingStatusTone(value) {
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
-function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }) {
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCond }) {
   const conditions = [];
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
   const hasRange = startDate && endDate && !Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime());
-  // The "new leads" shift scopes carry their OWN fixed time window, so they
-  // ignore the page-level date-range picker (intersecting the two would be
-  // confusing and usually empty). Every other scope honors the picker.
-  const isShiftScope = scope === 'new_night' || scope === 'new_day' || scope === 'new_cycle';
 
   if (!isAdmin) {
     conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
@@ -142,24 +150,16 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
   } else if (scope === 'handling') {
     // בטיפול — past the new_lead stage and not yet closed.
     conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
-  } else if (isShiftScope) {
-    // לידים שנכנסו (לילה/יום/מחזור) — every lead that ARRIVED in the window,
-    // regardless of its current status. Counting only the ones still sitting
-    // at new_lead made the tile decay toward 0 as reps worked the queue
-    // ("נכנסו מעל 200 לידים" while the tile said 18) — arrivals is the number
-    // a manager actually means here.
-    const w = scope === 'new_night' ? windows?.night
-      : scope === 'new_day' ? windows?.day
-        : windows?.cycle;
-    if (w) conditions.push(windowCond(w));
   } else if (LIFECYCLE_SCOPES[scope]) {
     // Per-rep workload drill-down (חדשים/בטיפול/נסגרו/נאבדו). Combined with the
     // rep filter below it reproduces the count shown on that rep's card.
     conditions.push(LIFECYCLE_SCOPES[scope]);
   }
-  if (hasRange && !isShiftScope) {
+  if (hasRange) {
     conditions.push({ effective_sort_date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } });
   }
+  // Hour-of-day narrowing rides on top of the date range.
+  if (hourCond) conditions.push(hourCond);
   if (filters.rep && filters.rep !== 'all') {
     conditions.push({ $or: [{ rep1: filters.rep }, { rep2: filters.rep }] });
   }
@@ -193,7 +193,12 @@ const DATE_PRESETS = [
 function resolveDatePreset(id, customRange) {
   const now = new Date();
   switch (id) {
-    case 'today': return { from: startOfDay(now), to: endOfDay(now) };
+    // "היום" = the whole Israel calendar day (00:00–23:59:59.999), so it means
+    // the same thing as the intake tile no matter where the viewer's device is.
+    case 'today': {
+      const w = israelDayWindow(now);
+      return { from: new Date(w.from), to: new Date(new Date(w.to).getTime() - 1) };
+    }
     case 'week':  return { from: startOfWeek(now, { weekStartsOn: 0 }), to: endOfDay(now) };
     case 'month': return { from: startOfMonth(now), to: endOfDay(now) };
     case 'range': return customRange?.from && customRange?.to
@@ -226,6 +231,16 @@ export default function LeadManagement() {
     return from && to ? { from: new Date(from), to: new Date(to) } : null;
   });
   const [scope, setScope] = useState(urlParams.get('scope') || 'all'); // 'all' | 'new' | 'unassigned' | 'open'
+  // Hour-of-day intake window (Israel time). null = no hour narrowing.
+  // `hourTo` is exclusive; hourTo < hourFrom means the window crosses midnight.
+  const [hourFrom, setHourFrom] = useState(() => {
+    const v = Number(urlParams.get('hourFrom'));
+    return Number.isInteger(v) && v >= 0 && v <= 23 && urlParams.get('hourFrom') !== null ? v : null;
+  });
+  const [hourTo, setHourTo] = useState(() => {
+    const v = Number(urlParams.get('hourTo'));
+    return Number.isInteger(v) && v >= 1 && v <= 24 && urlParams.get('hourTo') !== null ? v : null;
+  });
   const [filters, setFilters] = useState({
     search: urlParams.get('search') || '',
     status: urlParams.get('status') || 'all',
@@ -247,6 +262,8 @@ export default function LeadManagement() {
     if (next.range?.from) params.set('startDate', next.range.from.toISOString());
     if (next.range?.to)   params.set('endDate',   next.range.to.toISOString());
     if (next.scope && next.scope !== 'all') params.set('scope', next.scope);
+    if (next.hourFrom != null) params.set('hourFrom', String(next.hourFrom));
+    if (next.hourTo != null) params.set('hourTo', String(next.hourTo));
     if (next.filters?.search) params.set('search', next.filters.search);
     if (next.filters?.status && next.filters.status !== 'all') params.set('status', next.filters.status);
     if (next.filters?.source && next.filters.source !== 'all') params.set('source', next.filters.source);
@@ -257,8 +274,8 @@ export default function LeadManagement() {
   }, [navigate, location.pathname]);
 
   useEffect(() => {
-    updateUrl({ preset: datePresetId, range: customRange, scope, filters, limit });
-  }, [datePresetId, customRange, scope, filters, limit, updateUrl]);
+    updateUrl({ preset: datePresetId, range: customRange, scope, filters, limit, hourFrom, hourTo });
+  }, [datePresetId, customRange, scope, filters, limit, hourFrom, hourTo, updateUrl]);
 
   // Auth + role
   const [user, setUser] = useState(null);
@@ -280,15 +297,53 @@ export default function LeadManagement() {
   const dateRange = useMemo(() => resolveDatePreset(datePresetId, customRange), [datePresetId, customRange]);
   const fromIso = dateRange?.from ? dateRange.from.toISOString() : '';
   const toIso = dateRange?.to ? dateRange.to.toISOString() : '';
-  // Night/day shift windows. Anchored to the END of the selected date range
-  // (so picking a specific day shows THAT day's 20:00→20:00 cycle — the
-  // manager checking "כמה נכנסו ב-06.07" gets 06.07's cycle, not today's);
-  // with no range selected they anchor to today's Israel date. toIso keeps
-  // the ISO strings stable per selection so query keys stay steady.
-  const windows = useMemo(
-    () => israelShiftWindows(toIso ? new Date(toIso) : new Date()),
-    [toIso],
+  // Is the SQL side of the hour filter available? `arrival_hour_il` is a
+  // PostgREST computed column added by a migration; on an environment where the
+  // migration hasn't run yet the query would 400, so probe once and simply
+  // don't offer the control until it's there (same graceful-degradation
+  // approach the rest of this page uses for new DB objects).
+  const { data: hourFilterSupported = false } = useQuery({
+    queryKey: ['leadArrivalHourSupported'],
+    enabled: !!effectiveUser,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    queryFn: async () => {
+      const { error } = await base44.supabase.from('leads').select('id').gte(HOUR_COLUMN, 0).limit(1);
+      if (error) {
+        // Not fatal — the control simply stays hidden. Logged so a missing
+        // migration is obvious in the console instead of silently absent.
+        console.warn('[leads] hour filter unavailable (arrival_hour_il):', error.message);
+        return false;
+      }
+      return true;
+    },
+  });
+
+  const hourCond = useMemo(
+    () => (hourFilterSupported ? hourRangeCondition(hourFrom, hourTo) : null),
+    [hourFilterSupported, hourFrom, hourTo],
   );
+  const hourKey = hourCond ? `${hourFrom ?? 0}-${hourTo ?? 24}` : '';
+  const hourActive = Boolean(hourCond);
+
+  // Today's intake — the full Israel calendar day (all 24 hours), independent of
+  // the date-range picker and of the hour filter: the headline tile answers
+  // "how many leads came in today?" and must not move when the manager narrows
+  // the view. Computed on mount; a page left open past midnight is refreshed by
+  // the normal refetch cycle.
+  const todayWindow = useMemo(() => israelDayWindow(), []);
+  const { data: todayCount = null } = useQuery({
+    queryKey: ['leadMgmt-today', isAdmin, userEmail, todayWindow.from],
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    placeholderData: (p) => p,
+    queryFn: () => {
+      const conditions = [{ effective_sort_date: { $gte: todayWindow.from, $lt: todayWindow.to } }];
+      if (!isAdmin) conditions.unshift({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
+      return base44.entities.Lead.count(conditions.length === 1 ? conditions[0] : { $and: conditions });
+    },
+  });
 
   // ───────────────────────────────────────────────────────────────
   // Category KPI tiles. All buckets respect the selected date range.
@@ -297,16 +352,17 @@ export default function LeadManagement() {
     assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0,
   };
   const { data: kpiCounts = EMPTY_KPI } = useQuery({
-    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso],
+    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso, hourKey],
     enabled: !!effectiveUser && !!userEmail,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      // base(extra) builds a count filter honoring the page date range.
+      // base(extra) builds a count filter honoring the page date range + hour window.
       const base = (extra) => {
         const conditions = [];
         if (!isAdmin) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
         if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (hourCond) conditions.push(hourCond);
         if (Array.isArray(extra)) conditions.push(...extra);
         else if (extra) conditions.push(extra);
         if (conditions.length === 0) return {};
@@ -320,24 +376,6 @@ export default function LeadManagement() {
         base44.entities.Lead.count(base()),
       ]);
       return { assignedUnhandledCount, unassignedCount, handlingCount, totalCount };
-    },
-  });
-
-  // Arrivals split by work shift (day 08–20 / night 20–08) over the WHOLE
-  // selected range, via a SQL RPC so day + night == total for any range and the
-  // cube reconciles with the list (a fixed single-day window showed one day's
-  // cycle even when a week was selected). Admin-only, like the cube.
-  const EMPTY_ARRIVALS = { total: 0, day: 0, night: 0 };
-  const { data: arrivals = EMPTY_ARRIVALS } = useQuery({
-    queryKey: ['leadMgmt-arrivals', fromIso, toIso],
-    enabled: !!effectiveUser && isAdmin && !!fromIso && !!toIso,
-    staleTime: 60_000,
-    placeholderData: (p) => p,
-    queryFn: async () => {
-      const { data, error } = await base44.supabase.rpc('lead_arrivals_by_shift', { p_start: fromIso, p_end: toIso });
-      if (error) throw error;
-      const row = Array.isArray(data) ? data[0] : data;
-      return { total: Number(row?.total || 0), day: Number(row?.day_count || 0), night: Number(row?.night_count || 0) };
     },
   });
 
@@ -375,7 +413,7 @@ export default function LeadManagement() {
   );
   const EMPTY_WL = { newCount: 0, handlingCount: 0, wonCount: 0, lostCount: 0 };
   const { data: workloadByRep = { byRep: new Map(), team: EMPTY_WL } } = useQuery({
-    queryKey: ['leadMgmt-workload', fromIso, toIso, repEmailsKey],
+    queryKey: ['leadMgmt-workload', fromIso, toIso, hourKey, repEmailsKey],
     enabled: !!effectiveUser && isAdmin && repsForPanel.length > 0,
     staleTime: 60_000,
     placeholderData: (p) => p,
@@ -383,6 +421,7 @@ export default function LeadManagement() {
       const build = (conditions) => {
         const all = [...conditions];
         if (fromIso && toIso) all.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+        if (hourCond) all.push(hourCond);
         if (all.length === 0) return {};
         if (all.length === 1) return all[0];
         return { $and: all };
@@ -427,8 +466,8 @@ export default function LeadManagement() {
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }),
-    [filters, dateRange, scope, userEmail, isAdmin, windows],
+    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, hourCond }),
+    [filters, dateRange, scope, userEmail, isAdmin, hourCond],
   );
   // Reset paging to the first page whenever the query itself changes (scope /
   // filter / rep / status / date / search) — without this, switching views
@@ -468,13 +507,13 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   const handlingBreakdownActive = scope === 'handling' || scope === 'lc_handling';
   const { data: statusBreakdown = {} } = useQuery({
-    queryKey: ['leadMgmt-handling-breakdown', isAdmin, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso],
+    queryKey: ['leadMgmt-handling-breakdown', isAdmin, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso, hourKey],
     enabled: !!effectiveUser && handlingBreakdownActive,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
       const ctx = (status, forcedScope) => buildLeadsQuery({
-        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, isAdmin, windows,
+        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, isAdmin, hourCond,
       });
       const [total, ...perStatus] = await Promise.all([
         base44.entities.Lead.count(ctx('all', 'handling')),
@@ -714,15 +753,24 @@ export default function LeadManagement() {
             ({format(dateRange.from, 'dd.MM.yy')} – {format(dateRange.to, 'dd.MM.yy')})
           </span>
         ) : null}
+
+        {/* Hour-of-day narrowing, inside the same bar — it refines the range
+            above rather than replacing it. Hidden until the DB side exists. */}
+        {hourFilterSupported ? (
+          <HourRangeFilter
+            from={hourFrom}
+            to={hourTo}
+            onChange={(nextFrom, nextTo) => { setHourFrom(nextFrom); setHourTo(nextTo); }}
+          />
+        ) : null}
       </div>
 
       {/* Category tiles — clickable to filter the list. The three status
-          buckets follow the date range above; the arrivals cube uses its
-          own 20:00→20:00 cycle (total) split into night / day shifts,
-          anchored to the selected date. For a rep the whole strip is scoped
-          to their own leads, and the manager-only tiles (unassigned pool,
-          night/day intake) are replaced with a personal summary tile —
-          a rep's view stays focused on the leads that belong to them. */}
+          buckets follow the date range above; the intake cube is today's full
+          24 hours (Israel time), independent of the picker. For a rep the whole
+          strip is scoped to their own leads, and the manager-only tiles
+          (unassigned pool, today's intake) are replaced with a personal summary
+          tile — a rep's view stays focused on the leads that belong to them. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           ...(!isAdmin ? [{ id: '__mine', label: 'הלידים שלי', value: kpiCounts.totalCount, tone: 'sky', icon: Users, desc: 'כל הלידים המשויכים אליי בטווח' }] : []),
@@ -746,14 +794,22 @@ export default function LeadManagement() {
           />
         ))}
         {isAdmin ? (
-          <NewLeadsCube
-            // Total always from the plain count (works everywhere, matches the
-            // filter summary). The night/day split comes from the RPC and only
-            // shows once it returns data (i.e. after the migration is deployed).
-            total={kpiCounts.totalCount}
-            nightCount={arrivals.night}
-            dayCount={arrivals.day}
-            hasSplit={arrivals.total > 0}
+          <TodayLeadsCube
+            todayCount={todayCount}
+            rangeCount={kpiCounts.totalCount}
+            rangeLabel={dateRange
+              ? `${format(dateRange.from, 'dd.MM.yy')}–${format(dateRange.to, 'dd.MM.yy')}`
+              : 'כל הזמנים'}
+            isToday={datePresetId === 'today'}
+            hourLabel={hourActive ? `${hourLabel(hourFrom ?? 0)}–${hourLabel(hourTo ?? 24)}` : null}
+            onClick={() => {
+              setDatePresetId('today');
+              setCustomRange(null);
+              setHourFrom(null);
+              setHourTo(null);
+              setScope('all');
+              setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
+            }}
           />
         ) : null}
       </div>
@@ -826,11 +882,13 @@ export default function LeadManagement() {
 
       {/* Active filter summary card — the "בטיפול" status breakdown rides
           inside it (as `extra`) so it doesn't add a second purple bar. */}
-      {hasActiveFilter || dateRange ? (
+      {hasActiveFilter || dateRange || hourActive ? (
         <ActiveFilterSummary
           scope={scope}
           filters={filters}
           dateRange={dateRange}
+          hourLabel={hourActive ? `${hourLabel(hourFrom ?? 0)}–${hourLabel(hourTo ?? 24)}` : null}
+          onClearHour={() => { setHourFrom(null); setHourTo(null); }}
           repNameByEmail={repNameByEmail}
           customStatusesForFilter={customStatusesForFilter}
           filteredCount={filteredCount}
@@ -840,6 +898,8 @@ export default function LeadManagement() {
           onClearAll={() => {
             setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
             setScope('all');
+            setHourFrom(null);
+            setHourTo(null);
           }}
           extra={handlingBreakdownActive ? (
             <HandlingStatusBreakdown
@@ -1040,44 +1100,99 @@ function CategoryTile({ label, value, tone, icon: Icon, desc, isActive, onClick 
   );
 }
 
-// Arrivals cube — total leads that ENTERED within the selected date range (so it
-// always reconciles with the list/filter), split below by work shift: day
-// (08:00–20:00) vs night (20:00–08:00), summed across the whole range via the
-// lead_arrivals_by_shift RPC so day + night == total for any range. Informational
-// (the date picker above is what drives filtering) — no separate window that
-// could disagree with the rest of the screen.
-function NewLeadsCube({ total, nightCount, dayCount, hasSplit }) {
-  const sub = [
-    { id: 'night', label: 'לילה', range: '20:00–08:00', value: nightCount, icon: Moon },
-    { id: 'day',   label: 'יום',  range: '08:00–20:00', value: dayCount,   icon: Sun },
-  ];
+// ─── Hour-of-day filter ─────────────────────────────────────────
+// Two selects — "משעה" / "עד שעה" — narrowing the list to the hours leads
+// arrived in (Israel time), on top of the date range. The end hour is exclusive
+// (09:00 → 12:00 = the 09/10/11 hours), and picking an end earlier than the
+// start is a legitimate window across midnight (20:00 → 08:00).
+function HourRangeFilter({ from, to, onChange }) {
+  const active = from != null || to != null;
+  const starts = Array.from({ length: 24 }, (_, h) => h);        // 00:00 … 23:00
+  const ends = Array.from({ length: 24 }, (_, h) => h + 1);      // 01:00 … 24:00
   return (
-    <div className="rounded-xl border-2 border-border bg-muted/30 p-3 shadow-card">
-      <div className="px-1 py-0.5">
-        <div className="flex items-center justify-between mb-0.5">
-          <p className="text-xs font-medium text-muted-foreground">לידים שנכנסו <span className="text-[10px] opacity-70">בטווח שנבחר</span></p>
-          <Sparkles className="h-4 w-4 text-muted-foreground opacity-50" />
-        </div>
-        <p className="text-3xl font-bold tabular-nums text-muted-foreground">{fmt(total)}</p>
-      </div>
-      {hasSplit ? (
-        <div className="grid grid-cols-2 gap-2 mt-2">
-          {sub.map((s) => {
-            const Icon = s.icon;
-            return (
-              <div key={s.id} className="text-right rounded-lg border border-border bg-card p-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-muted-foreground">{s.label}</span>
-                  <Icon className="h-3.5 w-3.5 text-foreground opacity-60" />
-                </div>
-                <p className="text-xl font-bold tabular-nums leading-tight text-foreground">{fmt(s.value)}</p>
-                <p className="text-[9px] text-muted-foreground" dir="ltr">{s.range}</p>
-              </div>
-            );
-          })}
-        </div>
+    <div className="flex items-center gap-1.5 ps-2 border-s border-border">
+      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-xs font-medium text-muted-foreground">שעה:</span>
+      <Select
+        value={from == null ? 'any' : String(from)}
+        onValueChange={(v) => onChange(v === 'any' ? null : Number(v), to)}
+      >
+        <SelectTrigger className="h-8 w-[92px] text-xs" dir="ltr">
+          <SelectValue placeholder="משעה" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="any">כל השעות</SelectItem>
+          {starts.map((h) => (
+            <SelectItem key={h} value={String(h)} dir="ltr">{hourLabel(h)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <span className="text-xs text-muted-foreground">עד</span>
+      <Select
+        value={to == null ? 'any' : String(to)}
+        onValueChange={(v) => onChange(from, v === 'any' ? null : Number(v))}
+      >
+        <SelectTrigger className="h-8 w-[92px] text-xs" dir="ltr">
+          <SelectValue placeholder="עד שעה" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="any">סוף היום</SelectItem>
+          {ends.map((h) => (
+            <SelectItem key={h} value={String(h)} dir="ltr">{hourLabel(h)}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {active ? (
+        <button
+          type="button"
+          onClick={() => onChange(null, null)}
+          className="text-muted-foreground hover:text-foreground p-1"
+          aria-label="נקה סינון שעה"
+          title="נקה סינון שעה"
+        >
+          <XIcon className="h-3.5 w-3.5" />
+        </button>
       ) : null}
     </div>
+  );
+}
+
+// Intake cube — how many leads came in TODAY, counting the whole Israel calendar
+// day (00:00–23:59), so it doesn't move when the manager narrows the date range
+// or the hours. Clicking it pins the whole page to today. The selected range's
+// own total sits underneath as a secondary line (with the active hour window, if
+// any) so the tile still reconciles with the list below.
+function TodayLeadsCube({ todayCount, rangeCount, rangeLabel, isToday, hourLabel: hourText, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="הצג את הלידים שנכנסו היום"
+      className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${
+        isToday && !hourText ? 'border-primary bg-primary/[0.06]' : 'border-border bg-muted/30 hover:border-primary/40'
+      }`}
+    >
+      <div className="px-1 py-0.5">
+        <div className="flex items-center justify-between mb-0.5">
+          <p className="text-xs font-medium text-muted-foreground">
+            לידים שנכנסו היום <span className="text-[10px] opacity-70">00:00–23:59</span>
+          </p>
+          <Sparkles className="h-4 w-4 text-muted-foreground opacity-50" />
+        </div>
+        <p className="text-3xl font-bold tabular-nums text-foreground">
+          {todayCount == null ? '...' : fmt(todayCount)}
+        </p>
+      </div>
+      <div className="mt-2 rounded-lg border border-border bg-card px-2.5 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-medium text-muted-foreground">בטווח שנבחר</span>
+          <span className="text-base font-bold tabular-nums text-foreground">{fmt(rangeCount)}</span>
+        </div>
+        <p className="text-[9px] text-muted-foreground" dir="ltr">
+          {rangeLabel}{hourText ? ` · ${hourText}` : ''}
+        </p>
+      </div>
+    </button>
   );
 }
 
@@ -1201,16 +1316,13 @@ function RepWorkloadCard({ repEmail, label, avatar, newCount, handlingCount, won
 
 // ─── Active filter summary ──────────────────────────────────────
 function ActiveFilterSummary({
-  scope, filters, dateRange, repNameByEmail, customStatusesForFilter,
-  filteredCount, totalCount, onClearScope, onClearFilter, onClearAll, extra,
+  scope, filters, dateRange, hourLabel: hourText, repNameByEmail, customStatusesForFilter,
+  filteredCount, totalCount, onClearScope, onClearFilter, onClearHour, onClearAll, extra,
 }) {
   const SCOPE_LABELS = {
     assigned_unhandled: 'משויך ולא טופל',
     unassigned: 'לא משויכים',
     handling: 'בטיפול',
-    new_cycle: 'לידים חדשים (20:00–20:00)',
-    new_night: 'לידים חדשים לילה',
-    new_day: 'לידים חדשים יום',
     lc_new: 'חדשים שטרם טופלו',
     lc_handling: 'בטיפול',
     lc_won: 'נסגרו',
@@ -1223,24 +1335,22 @@ function ActiveFilterSummary({
     : null;
   const sourceLabel = filters.source !== 'all' ? (SOURCE_LABELS[filters.source] || filters.source) : null;
   const repLabel = filters.rep !== 'all' ? (repNameByEmail.get(filters.rep) || filters.rep) : null;
-  // The "new leads" shift scopes use their own fixed window and ignore the
-  // date-range picker, so don't advertise a date chip that has no effect.
-  const isShiftScope = scope === 'new_night' || scope === 'new_day' || scope === 'new_cycle';
   const chips = [
     scope !== 'all' && { key: 'scope', label: SCOPE_LABELS[scope] || scope, onClear: onClearScope },
     statusLabel && { key: 'status', label: `סטטוס: ${statusLabel}`, onClear: () => onClearFilter('status') },
     sourceLabel && { key: 'source', label: `מקור: ${sourceLabel}`,   onClear: () => onClearFilter('source') },
     repLabel    && { key: 'rep',    label: `נציג: ${repLabel}`,      onClear: () => onClearFilter('rep') },
     filters.search && { key: 'search', label: `חיפוש: "${filters.search}"`, onClear: () => onClearFilter('search') },
-    dateRange && !isShiftScope && {
+    dateRange && {
       key: 'date',
       label: `תאריך: ${format(dateRange.from, 'dd.MM.yy')}–${format(dateRange.to, 'dd.MM.yy')}`,
       onClear: null, // date is cleared via the preset bar above
     },
+    hourText && { key: 'hour', label: `שעה: ${hourText}`, onClear: onClearHour },
   ].filter(Boolean);
-  // A date range on its own isn't really a "filter" — it's just the period.
-  // Only rep/status/source/scope/search count as an actual filter.
-  const hasNonDateFilter = chips.some((c) => c.key !== 'date');
+  // A date range / hour window on its own isn't really a "filter" — it's just
+  // the period. Only rep/status/source/scope/search count as an actual filter.
+  const hasNonDateFilter = chips.some((c) => c.key !== 'date' && c.key !== 'hour');
   const pct = totalCount > 0 && filteredCount != null
     ? Math.round((Number(filteredCount) / Number(totalCount)) * 1000) / 10
     : null;
@@ -1262,7 +1372,9 @@ function ActiveFilterSummary({
               ({pct}% מתוך {fmt(totalCount)} בטווח)
             </span>
           ) : (
-            <span className="text-xs text-muted-foreground whitespace-nowrap">כל הלידים שנכנסו בתאריך הנבחר (= קוביית "לידים שנכנסו")</span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              כל הלידים שנכנסו בטווח שנבחר{hourText ? ` בין ${hourText}` : ''}
+            </span>
           )}
         </div>
         <button
