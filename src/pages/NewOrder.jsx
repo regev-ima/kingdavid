@@ -21,6 +21,7 @@ import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import DeliveryExtrasPicker from '@/components/quote/DeliveryExtrasPicker';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import { countItemsByCategory, resolveDeliveryCharges } from '@/lib/deliveryCharges';
+import { canonicalPhoneKey, findCustomerByPhone, findCustomersByPhone, findLeadsByPhone } from '@/lib/phoneLookup';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
@@ -169,17 +170,28 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     staleTime: 60_000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
+      const CUSTOMER_SELECT = 'id, full_name, phone, email, address, city';
+      const LEAD_SELECT = 'id, full_name, phone, email, address, city, status';
+      // A complete Israeli number matches the canonical key (so a record saved
+      // in any other format is found); partial input stays a tail search.
+      if (canonicalPhoneKey(debouncedPhone)) {
+        const [customers, leads] = await Promise.all([
+          findCustomersByPhone(base44.supabase, debouncedPhone, { select: CUSTOMER_SELECT, limit: 5 }),
+          findLeadsByPhone(base44.supabase, debouncedPhone, { select: LEAD_SELECT, limit: 5 }),
+        ]);
+        return { customers, leads };
+      }
       const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
       const pattern = `%${tail}%`;
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
           .from('customers')
-          .select('id, full_name, phone, email, address, city')
+          .select(CUSTOMER_SELECT)
           .ilike('phone', pattern)
           .limit(5),
         base44.supabase
           .from('leads')
-          .select('id, full_name, phone, email, address, city, status')
+          .select(LEAD_SELECT)
           .ilike('phone', pattern)
           .limit(5),
       ]);
@@ -339,17 +351,22 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         status: 'pending',
       });
 
-      // Create or find customer
+      // Create or find customer, matching on the canonical phone key. With the
+      // old raw-string compare a customer stored in another format got a SECOND
+      // row here — which also split their total_orders / lifetime_value across
+      // two records, so the revenue on each was wrong.
       let customerId = null;
-      const existingCustomers = await base44.entities.Customer.filter({ phone: data.customer_phone });
-      
-      if (existingCustomers && existingCustomers.length > 0) {
+      const existingCustomer = await findCustomerByPhone(base44.supabase, data.customer_phone, {
+        select: 'id, total_orders, lifetime_value',
+      });
+
+      if (existingCustomer) {
         // Customer exists - update their data
-        customerId = existingCustomers[0].id;
+        customerId = existingCustomer.id;
         await base44.entities.Customer.update(customerId, {
           last_order_date: new Date().toISOString(),
-          total_orders: (existingCustomers[0].total_orders || 0) + 1,
-          lifetime_value: (existingCustomers[0].lifetime_value || 0) + data.total,
+          total_orders: (existingCustomer.total_orders || 0) + 1,
+          lifetime_value: (existingCustomer.lifetime_value || 0) + data.total,
         });
       } else {
         // Create new customer

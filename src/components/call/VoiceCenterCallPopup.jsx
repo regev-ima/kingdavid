@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
-import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
+import { findLeadsByPhone } from '@/lib/phoneLookup';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Phone, PhoneIncoming, PhoneOutgoing, User, MapPin, Mail, Clock, X } from "lucide-react";

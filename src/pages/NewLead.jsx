@@ -23,7 +23,7 @@ import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone, normalizeIsraeliPhone } from '@/utils/phoneUtils';
 import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
-import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
+import { findLeadsByPhone } from '@/lib/phoneLookup';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
 

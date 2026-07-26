@@ -11,7 +11,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import { Search, Phone, ArrowLeft, UserPlus, Users } from 'lucide-react';
 import { SOURCE_LABELS } from '@/constants/leadOptions';
 import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
-import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
+import { findLeadsByPhone } from '@/lib/phoneLookup';
 
 // Treat anything with 5+ digits (ignoring formatting chars) as a phone-
 // shaped query, otherwise search the name/email fields.

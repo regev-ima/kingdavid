@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Upload, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
-import { findLeadByPhone } from '@/lib/leadPhoneLookup';
+import { findLeadByPhone } from '@/lib/phoneLookup';
 
 export default function LeadBulkUpload({ onComplete }) {
   const [file, setFile] = useState(null);

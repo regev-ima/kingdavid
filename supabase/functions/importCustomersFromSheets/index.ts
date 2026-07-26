@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -87,8 +88,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch existing customers in bulk
-    const allPhones = customers.map(c => c.data.phone).filter(Boolean);
+    // Fetch existing customers in bulk. Phones are compared on the CANONICAL key
+    // (972XXXXXXXXX) — the sheet writes numbers in a different format than the
+    // order screen and the convert-to-customer flow, so keying on the raw string
+    // re-created the same customer on every import (splitting their order count
+    // and lifetime value across the copies).
+    const allPhones = customers.map(c => normalizeIsraeliPhone(c.data.phone)).filter(Boolean);
     const allUniqueIds = customers.map(c => c.data.unique_id).filter(Boolean);
 
     const existingByPhone: Record<string, any> = {};
@@ -108,8 +113,10 @@ Deno.serve(async (req) => {
       offset += pageSize;
     }
     allCustomers.forEach(customer => {
-      if (customer.phone && allPhones.includes(customer.phone)) {
-        existingByPhone[customer.phone] = customer;
+      const phoneKey = customer.phone_normalized || normalizeIsraeliPhone(customer.phone);
+      // Oldest row wins — it's the one the history hangs off.
+      if (phoneKey && allPhones.includes(phoneKey) && !existingByPhone[phoneKey]) {
+        existingByPhone[phoneKey] = customer;
       }
       if (customer.unique_id && allUniqueIds.includes(customer.unique_id)) {
         existingByUniqueId[customer.unique_id] = customer;
@@ -127,8 +134,11 @@ Deno.serve(async (req) => {
 
         if (customerData.unique_id && existingByUniqueId[customerData.unique_id]) {
           existingCustomer = existingByUniqueId[customerData.unique_id];
-        } else if (existingByPhone[customerData.phone]) {
-          existingCustomer = existingByPhone[customerData.phone];
+        } else {
+          const phoneKey = normalizeIsraeliPhone(customerData.phone);
+          if (phoneKey && existingByPhone[phoneKey]) {
+            existingCustomer = existingByPhone[phoneKey];
+          }
         }
 
         if (existingCustomer) {

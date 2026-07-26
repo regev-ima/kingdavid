@@ -27,7 +27,7 @@ import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
-import { leadPhoneFilter, probeLeadPhoneKey } from '@/lib/leadPhoneLookup';
+import { leadPhoneFilter, probePhoneKey } from '@/lib/phoneLookup';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import LeadQuickActions from '@/components/lead/LeadQuickActions';
 
@@ -335,7 +335,7 @@ export default function LeadManagement() {
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
-    queryFn: () => probeLeadPhoneKey(base44.supabase),
+    queryFn: () => probePhoneKey(base44.supabase),
   });
 
   const hourCond = useMemo(

@@ -31,7 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
 import { countItemsByCategory, resolveDeliveryCharges } from '@/lib/deliveryCharges';
-import { findLeadsByPhone } from '@/lib/leadPhoneLookup';
+import { canonicalPhoneKey, findCustomersByPhone, findLeadsByPhone } from '@/lib/phoneLookup';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
@@ -126,6 +126,17 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // the dropdown doesn't blink between keystrokes.
     placeholderData: (prev) => prev,
     queryFn: async () => {
+      const CUSTOMER_SELECT = 'id, full_name, phone, email, address, city';
+      const LEAD_SELECT = 'id, full_name, phone, email, address, city, status';
+      // A complete Israeli number matches the canonical key (so a record saved
+      // in any other format is found); partial input stays a tail search.
+      if (canonicalPhoneKey(debouncedPhone)) {
+        const [customers, leads] = await Promise.all([
+          findCustomersByPhone(base44.supabase, debouncedPhone, { select: CUSTOMER_SELECT, limit: 5 }),
+          findLeadsByPhone(base44.supabase, debouncedPhone, { select: LEAD_SELECT, limit: 5 }),
+        ]);
+        return { customers, leads };
+      }
       // Use the longest available tail (up to 9 digits) — short queries
       // could match a lot of rows so the limit clamps the result anyway.
       const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
@@ -133,12 +144,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
           .from('customers')
-          .select('id, full_name, phone, email, address, city')
+          .select(CUSTOMER_SELECT)
           .ilike('phone', pattern)
           .limit(5),
         base44.supabase
           .from('leads')
-          .select('id, full_name, phone, email, address, city, status')
+          .select(LEAD_SELECT)
           .ilike('phone', pattern)
           .limit(5),
       ]);
