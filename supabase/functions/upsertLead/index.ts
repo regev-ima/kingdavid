@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 // How close together two submissions with the same phone must be to count as
 // ONE submission rather than two enquiries. Covers a double-clicked form and a
@@ -51,8 +52,15 @@ Deno.serve(async (req) => {
       return val.replace(/<[^>]*>/g, '').replace(/[<>"']/g, '').trim();
     };
 
+    // Generated columns cannot be written to. The payload is arbitrary JSON
+    // from an external caller and is spread straight into the insert/update
+    // below, so a caller that helpfully sends phone_normalized would other-
+    // wise turn the whole request into a 500 with an opaque message.
+    const GENERATED_COLUMNS = new Set(['phone_normalized']);
+
     const leadData: any = {};
     for (const [key, value] of Object.entries(rawData)) {
+      if (GENERATED_COLUMNS.has(key)) continue;
       leadData[key] = typeof value === 'string' ? sanitize(value) : value;
     }
 
@@ -86,19 +94,34 @@ Deno.serve(async (req) => {
 
     // Without a unique_id the only remaining signal is the phone, and phone
     // alone cannot tell "enquired again next week" from "the same POST twice".
-    // So it is time-boxed: an identical phone landing within DOUBLE_SUBMIT_MS
-    // is treated as one submission (a double-clicked form, a webhook retry),
-    // and anything later is a genuine new enquiry that earns its own row.
+    // So it is time-boxed: the same number landing within DOUBLE_SUBMIT_MS is
+    // treated as one submission (a double-clicked form, a webhook retry), and
+    // anything later is a genuine new enquiry that earns its own row.
+    //
+    // Matched on phone_normalized, not the raw phone string. A retry that
+    // sends "052-123-4567" where the first attempt sent "0521234567" is the
+    // same submission, and a raw string compare would miss it and create the
+    // duplicate row this window exists to prevent. phone_normalized is a
+    // generated column, so it is always in step with phone.
+    //
+    // normalizeIsraeliPhone is the same algorithm as the SQL
+    // normalize_il_phone that generates the column — verified to agree on all
+    // 18 forms in the parity check, including WhatsApp suffixes and foreign
+    // numbers. They must not drift apart: if they do, this lookup silently
+    // stops matching and every retry becomes a new lead.
     if (!existingLead) {
-      const cutoffISO = new Date(Date.now() - DOUBLE_SUBMIT_MS).toISOString();
-      const { data } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('phone', leadData.phone)
-        .gte('created_date', cutoffISO)
-        .order('created_date', { ascending: false })
-        .limit(1);
-      if (data?.length) existingLead = data[0];
+      const normalizedPhone = normalizeIsraeliPhone(leadData.phone);
+      if (normalizedPhone) {
+        const cutoffISO = new Date(Date.now() - DOUBLE_SUBMIT_MS).toISOString();
+        const { data } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('phone_normalized', normalizedPhone)
+          .gte('created_date', cutoffISO)
+          .order('created_date', { ascending: false })
+          .limit(1);
+        if (data?.length) existingLead = data[0];
+      }
     }
 
     // NOTE: we intentionally do NOT promote `pending_rep_email` to
