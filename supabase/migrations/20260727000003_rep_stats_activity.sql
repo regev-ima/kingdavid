@@ -120,8 +120,17 @@ BEGIN
 
   PERFORM set_config('rep_stats.sources', chosen::text, false);
 
+  -- DROP then CREATE, not CREATE OR REPLACE. Replace refuses to reorder or
+  -- rename existing columns, and the rep_stats already in production has a
+  -- different column order than this definition — it failed with
+  -- "cannot change name of view column last_sign_in_at to total_leads".
+  -- Deliberately no CASCADE: if some other object depends on this view, the
+  -- migration should stop and say so rather than quietly dropping it. The
+  -- whole file is one transaction, so the view is never missing to readers.
+  EXECUTE 'DROP VIEW IF EXISTS public.rep_stats';
+
   EXECUTE format($view$
-    CREATE OR REPLACE VIEW public.rep_stats AS
+    CREATE VIEW public.rep_stats AS
     WITH activity AS (
       SELECT email, max(last_at) AS last_activity_at
       FROM ( %s ) s
