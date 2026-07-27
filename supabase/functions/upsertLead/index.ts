@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
@@ -45,8 +46,15 @@ Deno.serve(async (req) => {
       return val.replace(/<[^>]*>/g, '').replace(/[<>"']/g, '').trim();
     };
 
+    // Generated columns cannot be written to. The payload is arbitrary JSON
+    // from an external caller and is spread straight into the insert/update
+    // below, so a caller that helpfully sends phone_normalized would other-
+    // wise turn the whole request into a 500 with an opaque message.
+    const GENERATED_COLUMNS = new Set(['phone_normalized']);
+
     const leadData: any = {};
     for (const [key, value] of Object.entries(rawData)) {
+      if (GENERATED_COLUMNS.has(key)) continue;
       leadData[key] = typeof value === 'string' ? sanitize(value) : value;
     }
 
@@ -56,15 +64,60 @@ Deno.serve(async (req) => {
 
     if (leadData.status && !VALID_STATUSES.has(leadData.status)) leadData.status = 'new_lead';
 
-    // Find existing lead by unique_id or phone
+    // Find the lead this submission belongs to.
+    //
+    // The rule is "same SUBMISSION", not "same person". A person who enquires
+    // twice must produce two lead rows: the daily lead count is a count of
+    // those rows, and it is compared against what Facebook and Google report,
+    // where every form fill is one conversion. Folding the second enquiry into
+    // the first made the CRM report fewer leads than the ad networks did.
+    //
+    // Being the same person is already handled, one layer down: a database
+    // trigger attaches every lead to a contact by normalized phone, so both
+    // rows resolve to one contact — updated if it exists, created if it does
+    // not. Deduplicating here as well would collapse the enquiry the business
+    // wants to count.
     let existingLead = null;
+
+    // unique_id is a true submission identifier: a re-sync of the same
+    // submission carries the same one, a new enquiry does not.
     if (leadData.unique_id) {
       const { data } = await supabase.from('leads').select('*').eq('unique_id', leadData.unique_id).limit(1);
       if (data?.length) existingLead = data[0];
     }
-    if (!existingLead) {
-      const { data } = await supabase.from('leads').select('*').eq('phone', leadData.phone).limit(1);
-      if (data?.length) existingLead = data[0];
+
+    // Phone alone is deliberately NOT a match, but phone + when the submission
+    // was made is.
+    //
+    // Phone answers "who is this", and for a repeat enquiry the answer is
+    // always the same person — which is exactly the case that must produce a
+    // second row. Matching on phone alone would swallow it.
+    //
+    // What separates a repeat enquiry from a re-sent one is WHEN it was
+    // submitted. A scheduled sync re-pushing yesterday's lead carries
+    // yesterday's original timestamp; a person enquiring again carries a new
+    // one. So the natural key is (phone, original submission time) — no
+    // external identifier required, and the phone stays the business's own
+    // identifier exactly as intended.
+    //
+    // When the caller sends no created_date there is nothing to compare and
+    // the submission becomes its own lead. That is the intended default:
+    // every enquiry is a row unless something proves it is a duplicate.
+    if (!existingLead && leadData.created_date) {
+      const submittedAt = new Date(leadData.created_date);
+      const normalizedPhone = normalizeIsraeliPhone(leadData.phone);
+
+      // An unparseable date is not evidence of anything — fall through and
+      // create, rather than matching on a bad key.
+      if (normalizedPhone && !Number.isNaN(submittedAt.getTime())) {
+        const { data } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('phone_normalized', normalizedPhone)
+          .eq('created_date', submittedAt.toISOString())
+          .limit(1);
+        if (data?.length) existingLead = data[0];
+      }
     }
 
     // NOTE: we intentionally do NOT promote `pending_rep_email` to

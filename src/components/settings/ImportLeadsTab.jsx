@@ -242,7 +242,7 @@ export default function ImportLeadsTab() {
       setProgress({ current: 0, total: rows.length, label: 'מעבד ומקשר לאנשי קשר…' });
 
       const totals = {
-        created_leads: 0, updated_leads: 0, failed_rows: 0,
+        created_leads: 0, updated_leads: 0, adopted_leads: 0, failed_rows: 0,
         created_contacts: 0, matched_contacts: 0,
       };
       let processed = 0;
@@ -476,6 +476,11 @@ export default function ImportLeadsTab() {
                     <div className="flex flex-wrap gap-2 pt-1">
                       <Badge variant="outline">לידים חדשים: {result.created_leads.toLocaleString('he-IL')}</Badge>
                       <Badge variant="outline">לידים שעודכנו: {result.updated_leads.toLocaleString('he-IL')}</Badge>
+                      {/* Adoption is the headline number on the first Kaveret run:
+                          it is how many existing leads were claimed in place
+                          instead of duplicated, with their orders and quotes
+                          left attached. */}
+                      <Badge variant="outline">שויכו ללידים קיימים: {(result.adopted_leads || 0).toLocaleString('he-IL')}</Badge>
                       <Badge variant="outline">אנשי קשר חדשים: {result.created_contacts.toLocaleString('he-IL')}</Badge>
                       <Badge variant="outline">שויכו לאנשי קשר קיימים: {result.matched_contacts.toLocaleString('he-IL')}</Badge>
                       {result.failed_rows > 0 && (
