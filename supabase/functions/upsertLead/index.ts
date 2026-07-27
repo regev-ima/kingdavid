@@ -1,11 +1,4 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
-import { normalizeIsraeliPhone } from '../_shared/phone.ts';
-
-// How close together two submissions with the same phone must be to count as
-// ONE submission rather than two enquiries. Covers a double-clicked form and a
-// webhook retry; anything beyond it is a real second enquiry and gets its own
-// lead row, so the daily count matches what the ad networks report.
-const DOUBLE_SUBMIT_MS = 10 * 60 * 1000; // 10 minutes
 
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
@@ -92,37 +85,23 @@ Deno.serve(async (req) => {
       if (data?.length) existingLead = data[0];
     }
 
-    // Without a unique_id the only remaining signal is the phone, and phone
-    // alone cannot tell "enquired again next week" from "the same POST twice".
-    // So it is time-boxed: the same number landing within DOUBLE_SUBMIT_MS is
-    // treated as one submission (a double-clicked form, a webhook retry), and
-    // anything later is a genuine new enquiry that earns its own row.
+    // There is deliberately NO phone-based fallback here.
     //
-    // Matched on phone_normalized, not the raw phone string. A retry that
-    // sends "052-123-4567" where the first attempt sent "0521234567" is the
-    // same submission, and a raw string compare would miss it and create the
-    // duplicate row this window exists to prevent. phone_normalized is a
-    // generated column, so it is always in step with phone.
+    // Matching on phone answers "is this the same person", and the answer is
+    // always yes for a repeat enquiry — which is exactly the case that must
+    // produce a second row. Every submission is a lead, with no exception and
+    // no time window: two enquiries ten seconds apart are two rows, the same
+    // as two a week apart.
     //
-    // normalizeIsraeliPhone is the same algorithm as the SQL
-    // normalize_il_phone that generates the column — verified to agree on all
-    // 18 forms in the parity check, including WhatsApp suffixes and foreign
-    // numbers. They must not drift apart: if they do, this lookup silently
-    // stops matching and every retry becomes a new lead.
-    if (!existingLead) {
-      const normalizedPhone = normalizeIsraeliPhone(leadData.phone);
-      if (normalizedPhone) {
-        const cutoffISO = new Date(Date.now() - DOUBLE_SUBMIT_MS).toISOString();
-        const { data } = await supabase
-          .from('leads')
-          .select('*')
-          .eq('phone_normalized', normalizedPhone)
-          .gte('created_date', cutoffISO)
-          .order('created_date', { ascending: false })
-          .limit(1);
-        if (data?.length) existingLead = data[0];
-      }
-    }
+    // The person-level view is not lost by this, it just lives one layer down:
+    // a database trigger attaches every lead to a contact by normalized phone,
+    // so both rows resolve to a single contact — updated if it exists, created
+    // if it does not. Leads count enquiries; contacts identify people.
+    //
+    // Consequence worth knowing: an integration that re-sends the same
+    // submission without a unique_id now creates a row each time, because
+    // nothing distinguishes that from a genuine repeat enquiry. unique_id is
+    // the only signal that can, which is why it is the sole match above.
 
     // NOTE: we intentionally do NOT promote `pending_rep_email` to
     // `rep1` here. The product decision is that every incoming lead
