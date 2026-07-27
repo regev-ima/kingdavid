@@ -1,0 +1,104 @@
+name: Backfill lead contacts — run to completion
+
+# Attaches every existing lead to a contact, looping until there is nothing
+# left. Replaces clicking SELECT backfill_lead_contacts_all() a dozen times in
+# the SQL editor.
+#
+# Manual only (workflow_dispatch) — this writes data, and nothing about a push
+# to main means "now is a good time to run a 45-minute backfill".
+#
+# Safe to re-run and safe to interrupt: each call only touches leads whose
+# contact_id is still NULL, so a cancelled run simply leaves the rest for the
+# next one. Nothing is deleted and no lead is processed twice.
+
+on:
+  workflow_dispatch:
+    inputs:
+      chunk:
+        description: 'Leads per round'
+        required: false
+        default: '2000'
+      max_seconds:
+        description: 'Seconds of work per API call (keep under the API timeout)'
+        required: false
+        default: '240'
+      max_calls:
+        description: 'Safety cap on the number of API calls'
+        required: false
+        default: '60'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # 45 min of database work plus slack. Well under the 6h job limit, but
+    # bounded so a stuck run cannot idle for hours.
+    timeout-minutes: 120
+
+    steps:
+      - name: Run backfill until done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          CHUNK: ${{ inputs.chunk }}
+          MAX_SECONDS: ${{ inputs.max_seconds }}
+          MAX_CALLS: ${{ inputs.max_calls }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+
+          url="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query"
+          total_attached=0
+
+          for i in $(seq 1 "${MAX_CALLS}"); do
+            sql="SELECT public.backfill_lead_contacts_all(${CHUNK}, ${MAX_SECONDS});"
+            payload=$(jq -Rns --arg q "$sql" '{query: $q}')
+
+            code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST "$url" \
+              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "$payload")
+
+            if [ "$code" -ge 400 ]; then
+              echo "::error::Management API returned HTTP $code"
+              cat /tmp/resp.json || true
+              exit 1
+            fi
+
+            # The API answers [{"backfill_lead_contacts_all": {...}}]. Pull the
+            # object out once and read every field from it, so a shape change
+            # fails loudly here instead of looping forever on a null `done`.
+            result=$(jq -c '.[0].backfill_lead_contacts_all // empty' /tmp/resp.json)
+            if [ -z "$result" ]; then
+              echo "::error::Unexpected response shape"; cat /tmp/resp.json; exit 1
+            fi
+
+            done_flag=$(printf '%s' "$result" | jq -r '.done')
+            attached=$(printf '%s' "$result"  | jq -r '.attached // 0')
+            remaining=$(printf '%s' "$result" | jq -r '.remaining // 0')
+            elapsed=$(printf '%s' "$result"   | jq -r '.elapsed_seconds // 0')
+            total_attached=$(( total_attached + attached ))
+
+            echo "call ${i}: attached ${attached} (total ${total_attached}) — remaining ${remaining} — ${elapsed}s"
+
+            if [ "$done_flag" = "true" ]; then
+              echo "✅ backfill complete — ${total_attached} leads attached across ${i} call(s)"
+              echo "### Backfill complete" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Leads attached this run: **${total_attached}**" >> "$GITHUB_STEP_SUMMARY"
+              echo "- API calls: **${i}**" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            # A call that attaches nothing while still reporting work left means
+            # every remaining lead is unprocessable — a phone that normalizes to
+            # NULL, for instance. Looping would spin forever without progress.
+            if [ "$attached" = "0" ]; then
+              echo "::warning::No progress on call ${i} with ${remaining} still unlinked — stopping."
+              echo "These rows are likely leads whose phone cannot be normalized. Check with:"
+              echo "  SELECT id, phone FROM public.leads WHERE contact_id IS NULL LIMIT 20;"
+              exit 0
+            fi
+          done
+
+          echo "::warning::Hit the ${MAX_CALLS}-call cap with work remaining. Re-run to continue."
