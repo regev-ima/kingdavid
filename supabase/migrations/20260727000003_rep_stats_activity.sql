@@ -53,16 +53,20 @@ $$;
 
 DO $build$
 DECLARE
-  -- Ordered by preference: the first name found in a table wins.
-  user_cands text[] := ARRAY['performed_by','created_by','user_email','rep_email',
-                             'rep','agent_email','user_id','created_by_id'];
-  time_cands text[] := ARRAY['created_date','created_at','call_time','msg_timestamp',
-                             'started_at','start_time','timestamp'];
+  -- Every column that might name the acting rep. ALL of the ones present are
+  -- used, coalesced in this order, not just the first: communication_logs
+  -- carries both rep1 and rep_id, and picking one blindly loses every row
+  -- where that one happens to be null.
+  user_cands text[] := ARRAY['performed_by','created_by','rep1','rep','rep_id',
+                             'rep_email','user_email','agent_email','user_id',
+                             'created_by_id'];
+  time_cands text[] := ARRAY['created_date','created_at','call_started_at',
+                             'call_time','msg_timestamp','started_at',
+                             'start_time','timestamp'];
   tbl        text;
-  user_col   text;
-  user_type  text;
+  user_cols  text[];
   time_col   text;
-  email_expr text;
+  val_expr   text;
   parts      text[] := ARRAY[]::text[];
   chosen     text[] := ARRAY[]::text[];
   activity   text;
@@ -74,12 +78,11 @@ BEGIN
       CONTINUE;
     END IF;
 
-    SELECT c.column_name, c.data_type INTO user_col, user_type
+    SELECT array_agg(c.column_name::text ORDER BY array_position(user_cands, c.column_name))
+    INTO user_cols
     FROM information_schema.columns c
     WHERE c.table_schema = 'public' AND c.table_name = tbl
-      AND c.column_name = ANY (user_cands)
-    ORDER BY array_position(user_cands, c.column_name)
-    LIMIT 1;
+      AND c.column_name = ANY (user_cands);
 
     SELECT c.column_name INTO time_col
     FROM information_schema.columns c
@@ -88,27 +91,37 @@ BEGIN
     ORDER BY array_position(time_cands, c.column_name)
     LIMIT 1;
 
-    IF user_col IS NULL OR time_col IS NULL THEN
+    IF user_cols IS NULL OR time_col IS NULL THEN
       RAISE NOTICE 'rep_activity: % has no recognised user/time column (user=%, time=%), skipping',
-                   tbl, coalesce(user_col,'-'), coalesce(time_col,'-');
+                   tbl, coalesce(array_to_string(user_cols, '|'), '-'), coalesce(time_col, '-');
       CONTINUE;
     END IF;
 
-    -- The user column is an email on some tables and a users.id uuid on others.
-    -- Normalise both to a lowercase email so the sources can be unioned.
-    IF user_type = 'uuid' THEN
-      email_expr := format(
-        '(SELECT lower(u2.email) FROM public.users u2 WHERE u2.id = t.%I)', user_col);
-    ELSE
-      email_expr := format('lower(nullif(btrim(t.%I::text), %L))', user_col, '');
-    END IF;
+    -- First non-null of every candidate present, cast to text so uuid and
+    -- email columns can share one expression.
+    SELECT string_agg(format('nullif(btrim(t.%I::text), %L)', col, ''), ', ')
+    INTO val_expr
+    FROM unnest(user_cols) WITH ORDINALITY AS u(col, ord);
+    val_expr := format('coalesce(%s)', val_expr);
 
+    -- Resolve against users by email OR by id-as-text. call_logs.rep_id and
+    -- communication_logs.rep_id are typed text but named like ids, and nothing
+    -- in the repo says which they hold — matching both ways settles it without
+    -- guessing, and the join doubles as a filter that drops values naming no
+    -- real user. A join, not a correlated subquery: this runs over every row
+    -- of the log tables before grouping.
     parts := parts || format(
-      'SELECT %s AS email, max(t.%I) AS last_at FROM public.%I t WHERE t.%I IS NOT NULL GROUP BY 1',
-      email_expr, time_col, tbl, user_col);
+      'SELECT lower(u2.email) AS email, max(t.%I) AS last_at
+         FROM public.%I t
+         JOIN public.users u2
+           ON lower(u2.email) = lower(%s) OR u2.id::text = %s
+        GROUP BY 1',
+      time_col, tbl, val_expr, val_expr);
 
-    chosen := chosen || format('%s(user=%s,time=%s)', tbl, user_col, time_col);
-    RAISE NOTICE 'rep_activity: using % (user=% [%], time=%)', tbl, user_col, user_type, time_col;
+    chosen := chosen || format('%s(user=%s,time=%s)',
+                               tbl, array_to_string(user_cols, '+'), time_col);
+    RAISE NOTICE 'rep_activity: using % (user=%, time=%)',
+                 tbl, array_to_string(user_cols, '+'), time_col;
   END LOOP;
 
   IF array_length(parts, 1) IS NULL THEN
