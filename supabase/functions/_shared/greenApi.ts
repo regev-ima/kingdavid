@@ -64,31 +64,12 @@ export async function sendFileByUrl(
 }
 
 /**
- * Israeli phone → Green API chatId ("9725XXXXXXXX@c.us"). TS port of
- * src/utils/phoneUtils.js normalizeIsraeliPhone — kept in sync manually since
- * Edge Functions can't import frontend source. Returns null if the number
- * can't be normalized to anything chat-id-shaped.
+ * Israeli phone → Green API chatId ("9725XXXXXXXX@c.us"), or null when the
+ * number is too short to be real. Kept as a named re-export so existing
+ * callers don't change; the logic itself lives in _shared/phone.ts, which is
+ * the one place this rule is written for Edge Functions.
  */
-export function normalizeIsraeliPhoneToChatId(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-  const digits = String(phone).replace(/\D/g, '');
-  if (!digits) return null;
-
-  let intl: string;
-  if (digits.startsWith('05') && digits.length === 10) {
-    intl = '972' + digits.substring(1);
-  } else if (digits.startsWith('9725') && digits.length === 12) {
-    intl = digits;
-  } else if (digits.startsWith('0') && (digits.length === 9 || digits.length === 10)) {
-    intl = '972' + digits.substring(1);
-  } else if (digits.startsWith('972') && digits.length >= 11 && digits.length <= 12) {
-    intl = digits;
-  } else {
-    intl = digits;
-  }
-  if (intl.length < 11) return null; // too short to be a real number
-  return `${intl}@c.us`;
-}
+export { toWhatsAppChatId as normalizeIsraeliPhoneToChatId } from './phone.ts';
 
 /** Read the instance's current settings (webhookUrl, notification flags, …). */
 export async function getGreenSettings(acc: GreenAccount) {

@@ -12,6 +12,7 @@ import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
 import { ALL_TASK_TYPE_LABELS, SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { formatIsraeliPhone as formatPhone } from '@/utils/phoneUtils';
 
 // Lead table for the lead-management page. Desktop renders a DataTable (via
 // ResponsiveLeadsTable); on a phone the same component swaps to stacked cards
@@ -76,11 +77,6 @@ export default function LeadListTable({
     onSelectionChange?.(checked
       ? [...selectedLeads, id]
       : selectedLeads.filter((x) => x !== id));
-  };
-  const formatPhone = (p) => {
-    if (!p) return '';
-    const cleaned = p.replace(/\D/g, '');
-    return cleaned.length === 10 ? `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}` : p;
   };
   const columns = [
     ...(isAdmin && onSelectionChange ? [{

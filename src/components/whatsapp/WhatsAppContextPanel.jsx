@@ -8,15 +8,9 @@ import {
   Loader2, UserCheck, UserPlus, ExternalLink, Phone, LifeBuoy, FileText,
   ShoppingCart, Crown, ChevronLeft, CircleUserRound,
 } from 'lucide-react';
-import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
+import { toLocalIsraeliPhone as localPhone } from '@/utils/phoneUtils';
 import { isOpenTicket } from './useWhatsAppContext';
 import WhatsAppSendPdfButton from './WhatsAppSendPdfButton';
-
-function localPhone(phone) {
-  const norm = normalizeIsraeliPhone(phone);
-  if (norm && norm.startsWith('972')) return '0' + norm.slice(3);
-  return String(phone || '').replace(/\D/g, '');
-}
 
 function Section({ icon: Icon, title, count, children }) {
   if (!count) return null;

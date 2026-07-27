@@ -32,6 +32,7 @@ const Representatives = lazy(() => import('@/pages/Representatives'));
 const MenuManagementTab = lazy(() => import('@/components/settings/MenuManagementTab'));
 const WhatsAppTemplatesTab = lazy(() => import('@/components/settings/WhatsAppTemplatesTab'));
 const AiSettingsTab = lazy(() => import('@/components/settings/AiSettingsTab'));
+const ImportLeadsTab = lazy(() => import('@/components/settings/ImportLeadsTab'));
 
 // Centered spinner shown while a section's chunk downloads.
 function SectionFallback() {
@@ -85,6 +86,7 @@ export default function Settings() {
     { value: 'profile',        label: 'פרופיל',            desc: 'פרטי החשבון והתראות',       icon: 'account_circle', show: true },
     { value: 'users',          label: 'נציגים',            desc: 'ניהול צוות המכירות, הזמנות והרשאות', icon: 'group',     show: isAdmin },
     { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      show: isAdmin },
+    { value: 'lead-import',    label: 'ייבוא לידים',        desc: 'ייבוא מכוורת / CSV עם איתור אנשי קשר', icon: 'group_add', show: isAdmin },
     { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    show: isAdmin },
     { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   show: isAdmin },
     { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     show: isAdmin },
@@ -306,6 +308,14 @@ export default function Settings() {
         {isAdmin && (
           <TabsContent value="statuses">
             <StatusManagement />
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="lead-import" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <ImportLeadsTab />
+            </Suspense>
           </TabsContent>
         )}
 

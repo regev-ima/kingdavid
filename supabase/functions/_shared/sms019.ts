@@ -4,6 +4,7 @@
 // another gateway later is a change to this file alone.
 
 import { createServiceClient } from './supabase.ts';
+import { normalizeIsraeliPhone } from './phone.ts';
 
 export const ENDPOINT = 'https://019sms.co.il/api';
 
@@ -19,13 +20,10 @@ export interface Sms019Config {
 }
 
 // Normalise an Israeli number to 972XXXXXXXXX (no plus, no leading zero),
-// which is what the 019 API expects for `destinations.phone`.
+// which is what the 019 API expects for `destinations.phone`. The rule lives
+// in _shared/phone.ts — this is just the name the SMS callers already use.
 export function toInternational(raw: string): string {
-  const digits = String(raw || '').replace(/\D/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('972')) return digits;
-  if (digits.startsWith('0')) return '972' + digits.slice(1);
-  return digits;
+  return normalizeIsraeliPhone(raw) ?? '';
 }
 
 // Resolve the active 019 credentials. The DB (set from the Settings UI) wins;

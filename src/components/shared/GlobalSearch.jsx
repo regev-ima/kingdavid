@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useLeadModal } from "@/components/lead/LeadModalContext";
+import { phoneTail as phoneTailOf } from '@/utils/phoneUtils';
 import { getUserScope, USER_SCOPES } from "@/lib/rbac";
 import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 
@@ -21,12 +22,6 @@ import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 // leads alone hit 100k+. Now every keystroke (debounced) fires a real
 // server-side search via the entities helper's $or + $regex translation.
 
-function normalizePhoneForSearch(raw) {
-  if (!raw) return '';
-  const digits = String(raw).replace(/\D/g, '');
-  if (digits.startsWith('972') && digits.length >= 11) return '0' + digits.slice(3);
-  return digits;
-}
 
 export default function GlobalSearch({ isOpen, onClose, user }) {
   const { openLead } = useLeadModal();
@@ -58,10 +53,10 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
   // For phone-shaped inputs use the last 9 normalized digits so any stored
   // form ("0537772829", "053-777-2829", "+972537772829") matches the same row.
   // Otherwise fall back to the raw query.
-  const phoneTail = useMemo(() => {
-    const norm = normalizePhoneForSearch(debouncedQuery);
-    return norm.length >= 4 ? norm.slice(-9) : '';
-  }, [debouncedQuery]);
+  const phoneTail = useMemo(
+    () => (isPhoneShapedQuery(debouncedQuery, 4) ? phoneTailOf(debouncedQuery) : ''),
+    [debouncedQuery]
+  );
 
   const buildOrFilter = (fields) => ({
     $or: fields.map((f) => {
