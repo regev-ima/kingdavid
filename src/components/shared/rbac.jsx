@@ -1,6 +1,7 @@
 /**
  * Role-Based Access Control helpers for the sales/factory workspace.
  */
+import { canSeeAllLeads } from '@/lib/leadVisibility';
 
 export function buildLeadsById(leads) {
   const map = {};
@@ -80,6 +81,7 @@ export function filterSalesTasksForUser(user, allTasks, leadsById) {
 export function filterLeadsForUser(user, leads) {
   if (!user || !leads) return [];
   if (user.role === 'admin') return leads;
+  if (canSeeAllLeads(user)) return leads;
   const email = user.email?.toLowerCase();
   if (!email) return [];
   return leads.filter((lead) => {
@@ -94,6 +96,10 @@ export function filterLeadsForUser(user, leads) {
 export function canViewLead(user, lead) {
   if (!user || !lead) return false;
   if (user.role === 'admin') return true;
+  // LeadDetails.jsx guards the whole page on this. It has to agree with the
+  // list query in LeadManagement, or a rep clicks a lead they can see and
+  // lands on a refusal.
+  if (canSeeAllLeads(user)) return true;
   const email = user.email?.toLowerCase();
   if (!email) return false;
   if (lead.rep1?.toLowerCase() === email) return true;
