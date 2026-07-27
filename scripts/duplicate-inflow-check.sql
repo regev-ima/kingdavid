@@ -5,10 +5,15 @@
 -- same phone string, appending a "עודכן מ-API" note instead of creating a row.
 -- The ad networks count that submission as a conversion; the CRM does not.
 --
--- Removing the phone fallback would make every submission its own lead — but
--- only if integrations send unique_id. If they do not, an integration that
--- re-syncs would stop matching anything and duplicate the whole pipeline on
--- every run. Row 1 is what decides that, so read it before changing anything.
+-- upsertLead now matches a submission on unique_id, or failing that on
+-- (phone_normalized + the original created_date the caller sent). A repeat
+-- enquiry carries a new timestamp and becomes its own row; a scheduled re-sync
+-- carries the original one and updates in place.
+--
+-- Row 1 therefore no longer gates a decision — it reports how many leads carry
+-- unique_id, the strongest of the two keys. Callers that send NEITHER a
+-- unique_id nor a created_date have no key at all and will produce a row per
+-- send; rows 3 and 4 are where that would show up as growth.
 --
 -- Read-only.
 -- ============================================================================

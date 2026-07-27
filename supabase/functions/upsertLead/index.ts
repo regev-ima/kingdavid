@@ -1,4 +1,5 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
+import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
@@ -85,23 +86,39 @@ Deno.serve(async (req) => {
       if (data?.length) existingLead = data[0];
     }
 
-    // There is deliberately NO phone-based fallback here.
+    // Phone alone is deliberately NOT a match, but phone + when the submission
+    // was made is.
     //
-    // Matching on phone answers "is this the same person", and the answer is
-    // always yes for a repeat enquiry — which is exactly the case that must
-    // produce a second row. Every submission is a lead, with no exception and
-    // no time window: two enquiries ten seconds apart are two rows, the same
-    // as two a week apart.
+    // Phone answers "who is this", and for a repeat enquiry the answer is
+    // always the same person — which is exactly the case that must produce a
+    // second row. Matching on phone alone would swallow it.
     //
-    // The person-level view is not lost by this, it just lives one layer down:
-    // a database trigger attaches every lead to a contact by normalized phone,
-    // so both rows resolve to a single contact — updated if it exists, created
-    // if it does not. Leads count enquiries; contacts identify people.
+    // What separates a repeat enquiry from a re-sent one is WHEN it was
+    // submitted. A scheduled sync re-pushing yesterday's lead carries
+    // yesterday's original timestamp; a person enquiring again carries a new
+    // one. So the natural key is (phone, original submission time) — no
+    // external identifier required, and the phone stays the business's own
+    // identifier exactly as intended.
     //
-    // Consequence worth knowing: an integration that re-sends the same
-    // submission without a unique_id now creates a row each time, because
-    // nothing distinguishes that from a genuine repeat enquiry. unique_id is
-    // the only signal that can, which is why it is the sole match above.
+    // When the caller sends no created_date there is nothing to compare and
+    // the submission becomes its own lead. That is the intended default:
+    // every enquiry is a row unless something proves it is a duplicate.
+    if (!existingLead && leadData.created_date) {
+      const submittedAt = new Date(leadData.created_date);
+      const normalizedPhone = normalizeIsraeliPhone(leadData.phone);
+
+      // An unparseable date is not evidence of anything — fall through and
+      // create, rather than matching on a bad key.
+      if (normalizedPhone && !Number.isNaN(submittedAt.getTime())) {
+        const { data } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('phone_normalized', normalizedPhone)
+          .eq('created_date', submittedAt.toISOString())
+          .limit(1);
+        if (data?.length) existingLead = data[0];
+      }
+    }
 
     // NOTE: we intentionally do NOT promote `pending_rep_email` to
     // `rep1` here. The product decision is that every incoming lead
