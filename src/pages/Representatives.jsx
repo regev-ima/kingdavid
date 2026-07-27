@@ -502,6 +502,7 @@ export default function Representatives({ embedded = false }) {
       won: row?.closed_won ?? 0,
       lost: row?.closed_lost ?? 0,
       lastSignIn: row?.last_sign_in_at ?? null,
+      lastActivity: row?.last_activity_at ?? null,
     };
   };
 
@@ -1140,7 +1141,7 @@ export default function Representatives({ embedded = false }) {
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">נציג</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">תפקיד</th>
                 <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">טלפון נייד</th>
-                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">כניסה אחרונה</th>
+                <th className="text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעילות אחרונה</th>
                 <th className="text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider py-3 px-4 whitespace-nowrap">פעולות</th>
               </tr>
             </thead>
@@ -1170,12 +1171,32 @@ export default function Representatives({ embedded = false }) {
                     <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{rep.phone || '—'}</td>
                     <td className="py-3 px-4">
                       {(() => {
+                        // Activity leads, sign-in is the footnote. A rep who
+                        // stays signed in works for weeks while last_sign_in_at
+                        // never moves, so showing sign-in alone reports someone
+                        // who used the system this morning as dormant.
+                        const lastActivity = parseDbTimestamp(stats.lastActivity);
                         const lastSignIn = parseDbTimestamp(stats.lastSignIn);
-                        if (!lastSignIn) return <span className="text-xs text-muted-foreground/70">-</span>;
+                        if (!lastActivity && !lastSignIn) {
+                          return <span className="text-xs text-muted-foreground/70">-</span>;
+                        }
                         return (
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Clock className="h-3 w-3" />
-                            <span>{formatDistanceToNow(lastSignIn, { addSuffix: true, locale: he })}</span>
+                          <div className="flex flex-col gap-0.5">
+                            {lastActivity ? (
+                              <div className="flex items-center gap-1 text-xs text-foreground" title="פעולה אחרונה שביצע במערכת">
+                                <Clock className="h-3 w-3" />
+                                <span>{formatDistanceToNow(lastActivity, { addSuffix: true, locale: he })}</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/70" title="לא נמצאה פעולה במערכת">ללא פעילות</span>
+                            )}
+                            {lastSignIn ? (
+                              <span className="text-[11px] text-muted-foreground/70" title="התחברות אחרונה">
+                                התחברות: {formatDistanceToNow(lastSignIn, { addSuffix: true, locale: he })}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground/70" title="מעולם לא התחבר">מעולם לא התחבר</span>
+                            )}
                           </div>
                         );
                       })()}
