@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ContactEnquiriesCard from "@/components/customer/ContactEnquiriesCard";
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -308,6 +309,12 @@ export default function CustomerDetails() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Every enquiry this person made, read from leads.contact_id. The
+              page's own `lead` query resolves only customer.lead_id — a single
+              legacy pointer — so without this a repeat enquirer looked like a
+              one-time one. */}
+          <ContactEnquiriesCard customerId={customer?.id} />
 
           {/* Customer Details */}
           <Card>

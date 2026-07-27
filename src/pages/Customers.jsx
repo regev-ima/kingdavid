@@ -34,7 +34,17 @@ const AGG_LIMIT = 5000;
 // case-insensitive comparison on rep emails — defensive against
 // data that's a mix of "izhak" / "Izhak" / "izhak " (trailing space
 // from older imports).
-function applyCustomerFilters(query, { search, rep }) {
+function applyCustomerFilters(query, { search, rep, audience }) {
+  // Contacts and customers share one table: a database trigger creates a
+  // customers row for every incoming lead, so after the lead backfill this
+  // table holds everyone who ever enquired, not only people who bought. The
+  // screen is built around orders, revenue and LTV, which are all zero for a
+  // pure enquiry — so it defaults to buyers and keeps the rest one click away.
+  //
+  // .gt(0) also excludes NULL, which is what a never-ordered contact carries.
+  if (audience === 'buyers') {
+    query = query.gt('total_orders', 0);
+  }
   if (rep && rep !== 'all') {
     // PostgREST `.or()` lets us OR account_manager / rep2 in one
     // expression. Wrap the rep value in quotes so a `+` or `,` inside
@@ -52,11 +62,14 @@ function applyCustomerFilters(query, { search, rep }) {
 export default function Customers() {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const [filterValues, setFilterValues] = useState({ search: '', rep: 'all' });
+  const [filterValues, setFilterValues] = useState({ search: '', rep: 'all', audience: 'buyers' });
   const [showImportDialog, setShowImportDialog] = useState(false);
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
   const adminUser = isAdmin(effectiveUser);
-  const hasFilter = filterValues.rep !== 'all' || Boolean(filterValues.search.trim());
+  const hasFilter =
+    filterValues.rep !== 'all' ||
+    filterValues.audience !== 'all' ||
+    Boolean(filterValues.search.trim());
 
   // Server-side filtered + paginated list. Replaces the previous
   // fetchAllList(Customer) which pulled all 15k+ rows in 31 sequential
@@ -180,6 +193,12 @@ export default function Customers() {
     .map((u) => ({ value: u.email, label: u.full_name || u.email }));
   const filterOptions = [
     { key: 'rep', label: 'נציג מטפל', allLabel: 'כל הנציגים', options: repOptions },
+    {
+      key: 'audience',
+      label: 'סוג רשומה',
+      allLabel: 'כולם (כולל פניות)',
+      options: [{ value: 'buyers', label: 'לקוחות שרכשו' }],
+    },
   ];
 
   // KPI numbers. When a filter is active we read the count from the
@@ -321,7 +340,7 @@ export default function Customers() {
         filters={filterOptions}
         values={filterValues}
         onChange={(key, value) => setFilterValues(prev => ({ ...prev, [key]: value }))}
-        onClear={() => setFilterValues({ search: '', rep: 'all' })}
+        onClear={() => setFilterValues({ search: '', rep: 'all', audience: 'buyers' })}
       />
 
       <DataTable
