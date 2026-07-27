@@ -52,7 +52,22 @@ jobs:
           total_attached=0
 
           for i in $(seq 1 "${MAX_CALLS}"); do
-            sql="SELECT public.backfill_lead_contacts_all(${CHUNK}, ${MAX_SECONDS});"
+            # session_replication_role='replica' suppresses user triggers for
+            # THIS transaction only — not globally, so concurrent app traffic is
+            # untouched.
+            #
+            # This is the whole reason the backfill crawled and then died. leads
+            # carries auto_update_lead_counters(), which on EVERY single row
+            # update runs
+            #   UPDATE lead_counters SET total_leads = (SELECT COUNT(*) FROM leads …)
+            # — a full scan of 115k rows. A 2000-row chunk therefore performed
+            # 2000 full table scans and hit the statement timeout.
+            #
+            # Safe to suppress here: the backfill sets contact_id explicitly
+            # rather than relying on the attach trigger, and lead_counters is
+            # recomputed absolutely (SET = COUNT(*)), so it self-corrects on the
+            # next lead write. The nudge below forces that immediately.
+            sql="SET LOCAL session_replication_role = 'replica'; SELECT public.backfill_lead_contacts_all(${CHUNK}, ${MAX_SECONDS});"
             payload=$(jq -Rns --arg q "$sql" '{query: $q}')
 
             code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST "$url" \
@@ -69,7 +84,10 @@ jobs:
             # The API answers [{"backfill_lead_contacts_all": {...}}]. Pull the
             # object out once and read every field from it, so a shape change
             # fails loudly here instead of looping forever on a null `done`.
-            result=$(jq -c '.[0].backfill_lead_contacts_all // empty' /tmp/resp.json)
+            # Found recursively, not by position: with two statements the API
+            # may answer one result array per statement, and indexing [0] blindly
+            # errors out.
+            result=$(jq -c '[.. | objects | select(has("backfill_lead_contacts_all"))] | first | .backfill_lead_contacts_all // empty' /tmp/resp.json)
             if [ -z "$result" ]; then
               echo "::error::Unexpected response shape"; cat /tmp/resp.json; exit 1
             fi
@@ -83,6 +101,15 @@ jobs:
             echo "call ${i}: attached ${attached} (total ${total_attached}) — remaining ${remaining} — ${elapsed}s"
 
             if [ "$done_flag" = "true" ]; then
+              # Counters went unmaintained while triggers were suppressed. One
+              # ordinary write with triggers live makes the trigger recompute
+              # them from scratch — which is how it computes them anyway.
+              nudge="UPDATE public.leads SET updated_date = updated_date WHERE id = (SELECT id FROM public.leads LIMIT 1);"
+              curl -sS -o /dev/null -X POST "$url" \
+                -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "$(jq -Rns --arg q "$nudge" '{query: $q}')" || true
+              echo "counters recomputed"
               echo "✅ backfill complete — ${total_attached} leads attached across ${i} call(s)"
               echo "### Backfill complete" >> "$GITHUB_STEP_SUMMARY"
               echo "- Leads attached this run: **${total_attached}**" >> "$GITHUB_STEP_SUMMARY"
