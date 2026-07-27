@@ -80,6 +80,7 @@ import NewOrder from '@/pages/NewOrder';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_LABELS } from '@/constants/leadOptions';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
+import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
@@ -976,6 +977,13 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             the task history: the rep reads who the lead is, then what
             they need to do next, then what's already been done. */}
         <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
+
+        {/* Other enquiries from the same person. Deliberately ABOVE the tabs
+            and not inside "פרטי לקוח מלאים": a rep must know they are calling
+            someone who already contacted us before they pick up the phone, not
+            after clicking through to a tab. Renders nothing when this is the
+            person's only enquiry, so a first-time lead stays uncluttered. */}
+        <OtherEnquiriesCard lead={lead} />
 
         {/* Detail tabs — customer details, marketing, deals/service and the
             lead snapshot. Activity now lives in the left timeline rail. */}
