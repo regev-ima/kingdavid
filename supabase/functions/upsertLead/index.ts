@@ -1,5 +1,11 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
 
+// How close together two submissions with the same phone must be to count as
+// ONE submission rather than two enquiries. Covers a double-clicked form and a
+// webhook retry; anything beyond it is a real second enquiry and gets its own
+// lead row, so the daily count matches what the ad networks report.
+const DOUBLE_SUBMIT_MS = 10 * 60 * 1000; // 10 minutes
+
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
   'no_answer_1','no_answer_2','no_answer_3','no_answer_4','no_answer_5',
@@ -56,14 +62,42 @@ Deno.serve(async (req) => {
 
     if (leadData.status && !VALID_STATUSES.has(leadData.status)) leadData.status = 'new_lead';
 
-    // Find existing lead by unique_id or phone
+    // Find the lead this submission belongs to.
+    //
+    // The rule is "same SUBMISSION", not "same person". A person who enquires
+    // twice must produce two lead rows: the daily lead count is a count of
+    // those rows, and it is compared against what Facebook and Google report,
+    // where every form fill is one conversion. Folding the second enquiry into
+    // the first made the CRM report fewer leads than the ad networks did.
+    //
+    // Being the same person is already handled, one layer down: a database
+    // trigger attaches every lead to a contact by normalized phone, so both
+    // rows resolve to one contact — updated if it exists, created if it does
+    // not. Deduplicating here as well would collapse the enquiry the business
+    // wants to count.
     let existingLead = null;
+
+    // unique_id is a true submission identifier: a re-sync of the same
+    // submission carries the same one, a new enquiry does not.
     if (leadData.unique_id) {
       const { data } = await supabase.from('leads').select('*').eq('unique_id', leadData.unique_id).limit(1);
       if (data?.length) existingLead = data[0];
     }
+
+    // Without a unique_id the only remaining signal is the phone, and phone
+    // alone cannot tell "enquired again next week" from "the same POST twice".
+    // So it is time-boxed: an identical phone landing within DOUBLE_SUBMIT_MS
+    // is treated as one submission (a double-clicked form, a webhook retry),
+    // and anything later is a genuine new enquiry that earns its own row.
     if (!existingLead) {
-      const { data } = await supabase.from('leads').select('*').eq('phone', leadData.phone).limit(1);
+      const cutoffISO = new Date(Date.now() - DOUBLE_SUBMIT_MS).toISOString();
+      const { data } = await supabase
+        .from('leads')
+        .select('*')
+        .eq('phone', leadData.phone)
+        .gte('created_date', cutoffISO)
+        .order('created_date', { ascending: false })
+        .limit(1);
       if (data?.length) existingLead = data[0];
     }
 
