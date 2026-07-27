@@ -15,17 +15,17 @@ on:
   workflow_dispatch:
     inputs:
       chunk:
-        description: 'Leads per round'
+        description: 'Leads per request (each request is its own transaction)'
         required: false
-        default: '2000'
+        default: '1000'
       max_seconds:
         description: 'Seconds of work per API call (keep under the API timeout)'
         required: false
         default: '240'
       max_calls:
-        description: 'Safety cap on the number of API calls'
+        description: 'Safety cap on the number of requests'
         required: false
-        default: '60'
+        default: '400'
 
 jobs:
   backfill:
@@ -67,7 +67,22 @@ jobs:
             # rather than relying on the attach trigger, and lead_counters is
             # recomputed absolutely (SET = COUNT(*)), so it self-corrects on the
             # next lead write. The nudge below forces that immediately.
-            sql="SET LOCAL session_replication_role = 'replica'; SELECT public.backfill_lead_contacts_all(${CHUNK}, ${MAX_SECONDS});"
+            # ONE CHUNK PER REQUEST — deliberately backfill_lead_contacts, not
+            # the _all wrapper.
+            #
+            # resolve_or_create_contact takes pg_advisory_xact_lock per phone to
+            # stop two sessions creating the same contact twice. Transaction
+            # locks are only released at COMMIT, and the _all wrapper loops
+            # every chunk inside ONE transaction — so locks piled up until the
+            # lock table overflowed:
+            #   ERROR 53200: out of shared memory
+            #   HINT: You might need to increase "max_locks_per_transaction"
+            #
+            # Looping out here instead makes every chunk its own transaction, so
+            # its locks are freed before the next one starts. The advisory lock
+            # keeps doing its job within a chunk, which is where the race it
+            # guards against actually lives.
+            sql="SET LOCAL session_replication_role = 'replica'; SELECT public.backfill_lead_contacts(${CHUNK});"
             payload=$(jq -Rns --arg q "$sql" '{query: $q}')
 
             code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST "$url" \
@@ -87,18 +102,21 @@ jobs:
             # Found recursively, not by position: with two statements the API
             # may answer one result array per statement, and indexing [0] blindly
             # errors out.
-            result=$(jq -c '[.. | objects | select(has("backfill_lead_contacts_all"))] | first | .backfill_lead_contacts_all // empty' /tmp/resp.json)
-            if [ -z "$result" ]; then
+            # backfill_lead_contacts returns a bare row count, so the answer is
+            # [{"backfill_lead_contacts": 1000}]. Located recursively for the
+            # same reason as before: two statements can yield two result arrays.
+            attached=$(jq -r '[.. | objects | select(has("backfill_lead_contacts"))] | first | .backfill_lead_contacts // empty' /tmp/resp.json)
+            if [ -z "$attached" ] || [ "$attached" = "null" ]; then
               echo "::error::Unexpected response shape"; cat /tmp/resp.json; exit 1
             fi
 
-            done_flag=$(printf '%s' "$result" | jq -r '.done')
-            attached=$(printf '%s' "$result"  | jq -r '.attached // 0')
-            remaining=$(printf '%s' "$result" | jq -r '.remaining // 0')
-            elapsed=$(printf '%s' "$result"   | jq -r '.elapsed_seconds // 0')
             total_attached=$(( total_attached + attached ))
+            echo "chunk ${i}: attached ${attached} (total ${total_attached})"
 
-            echo "call ${i}: attached ${attached} (total ${total_attached}) — remaining ${remaining} — ${elapsed}s"
+            # A chunk that returns fewer rows than asked for means the queue is
+            # drained — nothing left that matches the WHERE clause.
+            done_flag=false
+            if [ "$attached" -lt "${CHUNK}" ]; then done_flag=true; fi
 
             if [ "$done_flag" = "true" ]; then
               # Counters went unmaintained while triggers were suppressed. One
@@ -110,10 +128,10 @@ jobs:
                 -H "Content-Type: application/json" \
                 --data "$(jq -Rns --arg q "$nudge" '{query: $q}')" || true
               echo "counters recomputed"
-              echo "✅ backfill complete — ${total_attached} leads attached across ${i} call(s)"
+              echo "✅ backfill complete — ${total_attached} leads attached across ${i} chunk(s)"
               echo "### Backfill complete" >> "$GITHUB_STEP_SUMMARY"
               echo "- Leads attached this run: **${total_attached}**" >> "$GITHUB_STEP_SUMMARY"
-              echo "- API calls: **${i}**" >> "$GITHUB_STEP_SUMMARY"
+              echo "- Chunks: **${i}**" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
 
