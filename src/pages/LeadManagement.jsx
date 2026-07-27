@@ -26,6 +26,7 @@ import { toZonedTime, fromZonedTime } from '@/lib/safe-date-fns-tz';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
 import { canSeeAllLeads } from '@/lib/leadVisibility';
+import { useLeadVisibilityPolicy } from '@/hooks/useLeadVisibilityPolicy';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
@@ -276,7 +277,11 @@ export default function LeadManagement() {
   // unassigned pool). seesAllLeads gates DATA. They used to be the same flag,
   // which is exactly why opening visibility would otherwise have handed every
   // rep the admin toolbar.
-  const seesAllLeads = canSeeAllLeads(effectiveUser);
+  // Passed explicitly rather than read from the module cache, so flipping
+  // the setting in Settings re-renders this page instead of waiting for the
+  // next unrelated render to pick the new value up.
+  const leadVisibilityPolicy = useLeadVisibilityPolicy();
+  const seesAllLeads = canSeeAllLeads(effectiveUser, leadVisibilityPolicy);
 
   useEffect(() => {
     if (!effectiveUser) return;

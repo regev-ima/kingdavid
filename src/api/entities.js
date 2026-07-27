@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient';
  * Maps PascalCase entity names to snake_case table names in Supabase.
  */
 const TABLE_MAP = {
+  AppPolicy: 'app_policies',
   Lead: 'leads',
   User: 'users',
   Customer: 'customers',

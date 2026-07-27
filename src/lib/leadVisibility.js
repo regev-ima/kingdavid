@@ -14,13 +14,16 @@
  * where their email is rep1, rep2 or pending_rep_email". Changing that policy
  * meant editing four files and hoping none was missed — and #1 is a database
  * query while #3 and #4 are in-memory predicates, so a miss produced the worst
- * kind of bug: rows fetched but then filtered out, or shown in a list and then
- * refused on the detail page.
+ * kind of bug: rows fetched but then filtered out, or a lead shown in the list
+ * that then refuses to open.
  *
- * Everything now routes through this module. It is deliberately the only place
- * the policy is written down, so the permissions screen can later change the
- * behaviour by changing what resolveLeadVisibility() reads, without touching a
- * single call site.
+ * Everything now routes through this module.
+ *
+ * Two inputs decide the answer, in order:
+ *   • users.extra_permissions.view_all_leads — a per-rep grant, toggled from
+ *     the existing "נהל נציג ← הרשאות" tab. Only ever widens.
+ *   • app_policies.lead_visibility — the global default, set from
+ *     Settings ← הרשאות צפייה, and cached here by hydrateLeadVisibility().
  */
 
 /** Every lead in the system, regardless of who the rep is. */
@@ -29,46 +32,58 @@ export const LEAD_VISIBILITY_ALL = 'all';
 export const LEAD_VISIBILITY_OWN = 'own';
 
 /**
- * The policy in force when nothing overrides it.
- *
- * This is 'all': the sales floor works a shared pipeline, and reps were losing
- * leads simply because the lead had been created under someone else's name.
- * Admins were already unrestricted, so this only changes what non-admin sales
- * users see.
+ * Used until the real policy arrives from the database, and if the fetch ever
+ * fails. 'all' is the safer default of the two *for this app*: the failure it
+ * produces is a rep seeing a colleague's lead, whereas defaulting to 'own'
+ * would silently empty the pipeline for the whole sales floor on a transient
+ * network error — a far louder and more damaging failure.
  */
 export const DEFAULT_LEAD_VISIBILITY = LEAD_VISIBILITY_ALL;
+
+export function isValidLeadVisibility(value) {
+  return value === LEAD_VISIBILITY_ALL || value === LEAD_VISIBILITY_OWN;
+}
+
+// ── Cached global policy ────────────────────────────────────────────────────
+// canViewLead() is a synchronous predicate called from render paths and from
+// plain helpers that have no access to hooks, so the policy has to be readable
+// without awaiting anything. useLeadVisibilityPolicy() owns the fetch and calls
+// hydrateLeadVisibility(); this module just remembers the answer.
+let cachedPolicy = DEFAULT_LEAD_VISIBILITY;
+
+export function hydrateLeadVisibility(value) {
+  cachedPolicy = isValidLeadVisibility(value) ? value : DEFAULT_LEAD_VISIBILITY;
+  return cachedPolicy;
+}
+
+export function getLeadVisibilityPolicy() {
+  return cachedPolicy;
+}
 
 /**
  * Resolve the policy for a user.
  *
- * `settings` is the per-role configuration the permissions screen will write —
- * shaped `{ leadVisibilityByRole: { user: 'all', admin: 'all' } }`. It is
- * optional, and while it is absent every caller gets DEFAULT_LEAD_VISIBILITY,
- * which is what makes the shared-pipeline behaviour live today without a
- * database round-trip on every render.
+ * `policy` may be passed explicitly by a component that already holds the live
+ * value from the query — that path re-renders when an admin flips the setting.
+ * Callers that omit it get the cached value, which is correct but only updates
+ * on the next render triggered by something else.
  *
- * Admins are not consulted against settings at all: an admin who cannot see a
- * lead cannot administer it, and letting the screen express that would only
- * create a way to lock yourself out.
+ * Admins are never consulted against the policy: an admin who cannot see a lead
+ * cannot administer it, and honouring 'own' for them would only create a way to
+ * lock yourself out of your own data.
  */
-export function resolveLeadVisibility(user, settings = null) {
+export function resolveLeadVisibility(user, policy = null) {
   if (!user) return LEAD_VISIBILITY_OWN;
   if (user.role === 'admin') return LEAD_VISIBILITY_ALL;
 
-  // Per-rep grant, stored in users.extra_permissions and toggled from the
-  // existing "נהל נציג → הרשאות" tab. It can only widen access, never narrow
-  // it, so it stays meaningful whichever way the default points: today the
-  // default is already 'all' and the grant is a no-op; flip the default to
-  // 'own' and this becomes the per-rep exception without touching call sites.
+  // Per-rep grant. Only ever widens, never narrows — so it stays meaningful
+  // whichever way the global default points. While the default is 'all' it is
+  // a no-op; flip the default to 'own' and it becomes the per-rep exception,
+  // without touching a single call site.
   if (user.extra_permissions?.view_all_leads === true) return LEAD_VISIBILITY_ALL;
 
-  const byRole = settings?.leadVisibilityByRole;
-  const configured = byRole ? byRole[user.role] : undefined;
-
-  if (configured === LEAD_VISIBILITY_ALL || configured === LEAD_VISIBILITY_OWN) {
-    return configured;
-  }
-  return DEFAULT_LEAD_VISIBILITY;
+  const effective = isValidLeadVisibility(policy) ? policy : cachedPolicy;
+  return isValidLeadVisibility(effective) ? effective : DEFAULT_LEAD_VISIBILITY;
 }
 
 /**
@@ -80,6 +95,6 @@ export function resolveLeadVisibility(user, settings = null) {
  * was — opening the pipeline to the sales floor is not the same as opening it
  * to the whole company.
  */
-export function canSeeAllLeads(user, settings = null) {
-  return resolveLeadVisibility(user, settings) === LEAD_VISIBILITY_ALL;
+export function canSeeAllLeads(user, policy = null) {
+  return resolveLeadVisibility(user, policy) === LEAD_VISIBILITY_ALL;
 }

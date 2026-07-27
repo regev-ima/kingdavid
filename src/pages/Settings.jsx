@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import LeadVisibilityTab from "@/components/settings/LeadVisibilityTab";
 import { Loader2, Save, MessageCircle, Phone, Eye, EyeOff, Plus, Trash2, ShoppingCart, Upload } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -94,6 +95,7 @@ export default function Settings() {
     { value: 'wa-templates',   label: 'תבניות וואטסאפ',    desc: 'תבניות הודעה וקיצורים לקומפוזר', icon: 'forum', show: isAdmin },
     { value: 'ai',             label: 'בינה מלאכותית',     desc: 'בחירת מודל AI לניסוח תוכן',  icon: 'smart_toy',      show: isAdmin },
     { value: 'bulk',           label: 'עדכון המוני',        desc: 'עדכון נתונים בכמות',         icon: 'sync',           show: canBulkUpdate },
+    { value: 'lead-visibility', label: 'הרשאות צפייה',      desc: 'מי רואה אילו לידים',          icon: 'visibility',     show: isAdmin },
     { value: 'menu',           label: 'תפריט',             desc: 'הסתרה וסידור התפריט',        icon: 'menu',           show: isAdmin },
   ].filter((s) => s.show);
   const activeSection = SETTINGS_SECTIONS.find((s) => s.value === section);
@@ -302,6 +304,12 @@ export default function Settings() {
             <Suspense fallback={<SectionFallback />}>
               <Representatives embedded />
             </Suspense>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="lead-visibility" className="space-y-6">
+            <LeadVisibilityTab />
           </TabsContent>
         )}
 

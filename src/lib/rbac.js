@@ -39,6 +39,11 @@ export const GRANTABLE_PERMISSIONS = [
     label: 'עריכת שיבוץ משמרות',
     description: 'שיבוץ נציגים למשמרות בעמוד "שיבוץ משמרות". שאר הנציגים רק צופים.',
   },
+  {
+    key: 'view_all_leads',
+    label: 'צפייה בכל הלידים',
+    description: 'רואה את כל הלידים במערכת, גם כשההגדרה הכללית היא "כל אחד רק את שלו". מרחיב בלבד.',
+  },
 ];
 
 // True when `key` is switched on in the rep's extra_permissions blob.
