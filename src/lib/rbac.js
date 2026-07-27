@@ -1,3 +1,5 @@
+import { canSeeAllLeads } from '@/lib/leadVisibility';
+
 export const USER_SCOPES = {
   ADMIN: 'admin',
   SALES: 'sales_user',
@@ -194,6 +196,10 @@ export function matchesUserIdentifier(user, ...values) {
 export function canViewLead(user, lead) {
   if (!lead || !canAccessSalesWorkspace(user)) return false;
   if (isAdmin(user)) return true;
+  // Must agree with buildLeadsQuery() in LeadManagement — that query decides
+  // which rows are fetched, this decides whether one may be opened. When the
+  // two disagree the lead appears in the list and then refuses to open.
+  if (canSeeAllLeads(user)) return true;
   return matchesUserIdentifier(user, lead.rep1, lead.rep2, lead.pending_rep_email);
 }
 

@@ -25,6 +25,7 @@ import { startOfDay, endOfDay, startOfWeek, startOfMonth, format } from '@/lib/s
 import { toZonedTime, fromZonedTime } from '@/lib/safe-date-fns-tz';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac';
+import { canSeeAllLeads } from '@/lib/leadVisibility';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
@@ -118,7 +119,7 @@ function handlingStatusTone(value) {
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
-function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }) {
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, windows }) {
   const conditions = [];
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
@@ -128,7 +129,10 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, window
   // confusing and usually empty). Every other scope honors the picker.
   const isShiftScope = scope === 'new_night' || scope === 'new_day' || scope === 'new_cycle';
 
-  if (!isAdmin) {
+  // Narrow to the user's own leads only when the visibility policy says so.
+  // This is the filter that decides which rows leave the database, so it has to
+  // agree with canViewLead() downstream — both now read the same switch.
+  if (!seesAllLeads) {
     conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
   }
   if (scope === 'unassigned') {
@@ -268,6 +272,11 @@ export default function LeadManagement() {
   const effectiveUser = getEffectiveUser(user);
   const isAdmin = effectiveUser?.role === 'admin';
   const userEmail = effectiveUser?.email;
+  // isAdmin still gates management CHROME (bulk assign, the reps panel, the
+  // unassigned pool). seesAllLeads gates DATA. They used to be the same flag,
+  // which is exactly why opening visibility would otherwise have handed every
+  // rep the admin toolbar.
+  const seesAllLeads = canSeeAllLeads(effectiveUser);
 
   useEffect(() => {
     if (!effectiveUser) return;
@@ -297,7 +306,7 @@ export default function LeadManagement() {
     assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0,
   };
   const { data: kpiCounts = EMPTY_KPI } = useQuery({
-    queryKey: ['leadMgmt-kpis', isAdmin, userEmail, fromIso, toIso],
+    queryKey: ['leadMgmt-kpis', seesAllLeads, userEmail, fromIso, toIso],
     enabled: !!effectiveUser && !!userEmail,
     staleTime: 60_000,
     placeholderData: (p) => p,
@@ -305,7 +314,7 @@ export default function LeadManagement() {
       // base(extra) builds a count filter honoring the page date range.
       const base = (extra) => {
         const conditions = [];
-        if (!isAdmin) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
+        if (!seesAllLeads) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
         if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
         if (Array.isArray(extra)) conditions.push(...extra);
         else if (extra) conditions.push(extra);
@@ -427,8 +436,8 @@ export default function LeadManagement() {
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, isAdmin, windows }),
-    [filters, dateRange, scope, userEmail, isAdmin, windows],
+    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, windows }),
+    [filters, dateRange, scope, userEmail, seesAllLeads, windows],
   );
   // Reset paging to the first page whenever the query itself changes (scope /
   // filter / rep / status / date / search) — without this, switching views
@@ -468,13 +477,13 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   const handlingBreakdownActive = scope === 'handling' || scope === 'lc_handling';
   const { data: statusBreakdown = {} } = useQuery({
-    queryKey: ['leadMgmt-handling-breakdown', isAdmin, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso],
+    queryKey: ['leadMgmt-handling-breakdown', seesAllLeads, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso],
     enabled: !!effectiveUser && handlingBreakdownActive,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
       const ctx = (status, forcedScope) => buildLeadsQuery({
-        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, isAdmin, windows,
+        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, seesAllLeads, windows,
       });
       const [total, ...perStatus] = await Promise.all([
         base44.entities.Lead.count(ctx('all', 'handling')),
@@ -725,7 +734,18 @@ export default function LeadManagement() {
           a rep's view stays focused on the leads that belong to them. */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          ...(!isAdmin ? [{ id: '__mine', label: 'הלידים שלי', value: kpiCounts.totalCount, tone: 'sky', icon: Users, desc: 'כל הלידים המשויכים אליי בטווח' }] : []),
+          // This tile shows kpiCounts.totalCount, which follows the same
+          // visibility policy as the list. Once a rep sees the whole pipeline
+          // that number is no longer "mine", so the label has to follow it —
+          // otherwise the tile reads "my leads" over a company-wide total.
+          ...(!isAdmin ? [{
+            id: '__mine',
+            label: seesAllLeads ? 'כל הלידים' : 'הלידים שלי',
+            value: kpiCounts.totalCount,
+            tone: 'sky',
+            icon: Users,
+            desc: seesAllLeads ? 'כל הלידים במערכת בטווח' : 'כל הלידים המשויכים אליי בטווח',
+          }] : []),
           { id: 'assigned_unhandled', label: 'משויך ולא טופל', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
           // "לא משויכים" is a management-only pool — reps only handle leads
           // assigned to them, so the unassigned tile is hidden for them.
