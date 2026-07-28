@@ -15,6 +15,7 @@ import { readFileToRows, parseImportDate } from '@/utils/importFile';
 import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
 import { isKaveretExport, kaveretMapping } from '@/lib/kaveretPreset';
 import { extractEmail, auditRepEmails } from '@/lib/repEmailExtract';
+import { toLocalIsraeliPhone } from '@/utils/phoneUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk lead import: CSV/Excel → staging table → one server-side SQL merge.
@@ -222,6 +223,16 @@ export default function ImportLeadsTab() {
         if (iso) out.created_date = iso;
       } else if (field.key === 'status') {
         out.status = normalizeStatus(raw);
+      } else if (field.key === 'phone') {
+        // Kaveret writes "טלפון: 0547333975" — a label, not just a number.
+        //
+        // Matching never noticed: phone_normalized is a GENERATED column and
+        // normalize_il_phone drops every non-digit, which is why the pilot
+        // adopted 68 of 71 rows correctly. But `phone` itself is what the UI
+        // renders and links, and `tel:טלפון: 0547333975` does not dial. The
+        // stored value is normalized to local form so the number a rep clicks
+        // is a number.
+        out.phone = toLocalIsraeliPhone(raw) || raw;
       } else if (field.key === 'rep1') {
         // Parsed, not copied — the Kaveret rep cell is a rendered blob that
         // merely CONTAINS an address. A cell with no address at all assigns
