@@ -28,10 +28,16 @@ const SIGNATURE_ANY = ['[[lead.id]]', '[[Lead.leadCode]]', '[[Lead.creationDateT
 
 // target field ← exact Kaveret column header
 //
+// `מנהל תיק` IS mapped to rep1, but its value is parsed rather than copied:
+// the cell reads "י yonikd01@gmail.com 0502628991 שלוחה xEyIGGq9" and only the
+// address is kept (see lib/repEmailExtract.js). Copying it whole wrote a blob
+// into a field the app compares against user emails, which left the lead
+// matching no rep AND excluded from the unassigned queue.
+//
 // Deliberately NOT mapped:
-//   מנהל תיק / [[Lead.manager]] → rep1. One is a blob, the other a Hebrew name;
-//     rep1 expects an email and neither would resolve to a user. Leads are also
-//     meant to land unassigned for a manager to triage.
+//   [[Lead.manager]] → rep1. It is a Hebrew display name ("יהונתן רחמני"), and
+//     rep1 holds an email. `מנהל תיק` carries the same person with an actual
+//     address, so it is the better source for the same fact.
 //   [[Lead.landingPage]] → landing_page. It repeats מקור הגעה verbatim
 //     ("פייסבוק טופס פנימי"), so it adds a second copy of `source`, not a URL.
 //   lead.name / [[lead.id]] / [[Lead.leadCode]] — duplicates of columns already
@@ -47,6 +53,7 @@ const KAVERET_COLUMNS = {
   notes:        'משימות פתוחות',
   facebook_ad_name: 'שם מודעה',
   click_id:     'gclid',
+  rep1:         'מנהל תיק',
 };
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
