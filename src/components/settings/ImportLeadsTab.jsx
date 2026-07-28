@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { readFileToRows, parseImportDate } from '@/utils/importFile';
-import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
+import { isKaveretExport, kaveretMapping } from '@/lib/kaveretPreset';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk lead import: CSV/Excel → staging table → one server-side SQL merge.
@@ -57,6 +58,15 @@ const FIELDS = [
   { key: 'subject',      label: 'נושא',          aliases: ['subject', 'topic', 'נושא'] },
   { key: 'budget',       label: 'תקציב',         aliases: ['budget', 'תקציב'] },
   { key: 'preferred_product', label: 'מוצר מבוקש', aliases: ['product', 'מוצר', 'מוצר מבוקש'] },
+  // Marketing attribution. These are what the repeat-enquiry card shows per
+  // enquiry ("this person came back three times — from which ad?"), so losing
+  // them on import empties that screen for every historical lead.
+  { key: 'facebook_ad_name', label: 'שם מודעה',
+    aliases: ['ad name', 'שם מודעה', 'מודעה'] },
+  { key: 'facebook_campaign_name', label: 'שם קמפיין',
+    aliases: ['campaign name', 'שם קמפיין'] },
+  { key: 'source_form',  label: 'טופס מקור',     aliases: ['form', 'source form', 'טופס', 'טופס מקור'] },
+  { key: 'click_id',     label: 'Click ID',      aliases: ['gclid', 'click id', 'click_id'] },
   { key: 'utm_source',   label: 'UTM Source',    aliases: ['utm_source', 'utm source'] },
   { key: 'utm_medium',   label: 'UTM Medium',    aliases: ['utm_medium', 'utm medium'] },
   { key: 'utm_campaign', label: 'UTM Campaign',  aliases: ['utm_campaign', 'utm campaign', 'campaign', 'קמפיין'] },
@@ -66,8 +76,6 @@ const FIELDS = [
 ];
 
 const REQUIRED = FIELDS.filter((f) => f.required).map((f) => f.key);
-const VALID_STATUSES = new Set(LEAD_STATUS_OPTIONS.map((s) => s.value));
-const STATUS_BY_LABEL = new Map(LEAD_STATUS_OPTIONS.map((s) => [s.label.trim(), s.value]));
 
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/[_\-\s"']+/g, ' ');
 
@@ -82,12 +90,11 @@ function autoDetect(headers) {
   return mapping;
 }
 
-// Accepts the English key, the Hebrew label, or anything else (→ new_lead).
+// Accepts the English key, the Hebrew label, or a spelling variant of it.
+// Anything genuinely unrecognised still becomes new_lead — but the audit panel
+// lists those values first, so it is a decision rather than a silent default.
 function normalizeStatus(raw) {
-  const s = String(raw || '').trim();
-  if (!s) return 'new_lead';
-  if (VALID_STATUSES.has(s)) return s;
-  return STATUS_BY_LABEL.get(s) || 'new_lead';
+  return matchStatus(raw) || 'new_lead';
 }
 
 // DD/MM/YYYY (with or without a time part) → ISO. parseImportDate handles the
@@ -119,6 +126,7 @@ export default function ImportLeadsTab() {
   const [progress, setProgress]   = useState({ current: 0, total: 0, label: '' });
   const [result, setResult]       = useState(null);
   const [parseError, setParseError] = useState('');
+  const [isKaveret, setIsKaveret] = useState(false);
 
   const { data: batches = [] } = useQuery({
     queryKey: ['lead-import-batches'],
@@ -139,10 +147,19 @@ export default function ImportLeadsTab() {
     [mapping]
   );
 
+  // Every distinct status in the file and what it resolves to. Computed over
+  // ALL rows, not the 3-row preview: a status that appears once in row 40,000
+  // is exactly the one a preview would miss.
+  const statusAudit = useMemo(() => {
+    const idx = mapping.status;
+    if (idx === undefined || idx === null || !rows.length) return null;
+    return auditStatuses(rows.map((r) => r[idx]));
+  }, [mapping.status, rows]);
+
   const reset = () => {
     setFileName(''); setHeaders([]); setRows([]); setMapping({});
     setPhase('idle'); setProgress({ current: 0, total: 0, label: '' });
-    setResult(null); setParseError('');
+    setResult(null); setParseError(''); setIsKaveret(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -161,7 +178,14 @@ export default function ImportLeadsTab() {
       const hdr = all[0].map((h) => String(h ?? '').trim());
       setHeaders(hdr);
       setRows(all.slice(1));
-      setMapping(autoDetect(hdr));
+
+      // A Kaveret export gets its known-good mapping outright. The generic
+      // alias detection is still run underneath so any column the preset does
+      // not name (a new custom field) is still picked up, with the preset
+      // winning where both have an opinion.
+      const kaveret = isKaveretExport(hdr);
+      setIsKaveret(kaveret);
+      setMapping(kaveret ? { ...autoDetect(hdr), ...kaveretMapping(hdr) } : autoDetect(hdr));
     } catch (err) {
       console.error('[ImportLeadsTab] parse failed', err);
       setParseError(`קריאת הקובץ נכשלה: ${err?.message || 'פורמט לא נתמך'}`);
@@ -345,6 +369,17 @@ export default function ImportLeadsTab() {
             </Alert>
           )}
 
+          {isKaveret && (
+            <Alert className="border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <AlertDescription className="text-sm">
+                <strong>זוהה ייצוא כוורת</strong> — המיפוי הוגדר אוטומטית, כולל מזהה השורה
+                (<code dir="ltr">lead.id</code>), הטלפון עם הקידומת, שם המודעה ו-gclid.
+                אפשר לרוץ ישירות. עבור על השדות למטה רק אם משהו נראה לא במקום.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {headers.length > 0 && (
             <>
               {/* ── step 2: source label ── */}
@@ -412,6 +447,50 @@ export default function ImportLeadsTab() {
                   })}
                 </div>
               </div>
+
+              {/* ── status audit ──
+                  Unrecognised statuses all collapse to new_lead. On a 115k-row
+                  import that silently republishes every closed and dead lead as
+                  fresh work, so the unmatched values are shown BEFORE the run,
+                  with row counts, rather than being discovered afterwards. */}
+              {statusAudit && (
+                <div className="space-y-2">
+                  <Label className="text-xs">סטטוסים שזוהו בקובץ</Label>
+                  {statusAudit.unmatched.length > 0 ? (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm space-y-2">
+                        <p>
+                          <strong>{statusAudit.unmatched.length}</strong> סטטוסים לא זוהו
+                          ויכנסו כ״ליד חדש״
+                          {' '}({statusAudit.unmatched.reduce((n, r) => n + r.count, 0).toLocaleString('he-IL')} שורות):
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {statusAudit.unmatched.slice(0, 12).map((r) => (
+                            <Badge key={r.raw} variant="outline" className="font-normal">
+                              {r.raw} · {r.count.toLocaleString('he-IL')}
+                            </Badge>
+                          ))}
+                          {statusAudit.unmatched.length > 12 && (
+                            <Badge variant="outline">+{statusAudit.unmatched.length - 12}</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs">
+                          אם אלה סטטוסים אמיתיים שחשוב לשמר — בטל את מיפוי הסטטוס והרץ,
+                          או בקש להוסיף אותם לטבלת ההתאמה.
+                        </p>
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      <AlertDescription className="text-sm">
+                        כל {statusAudit.matched.length} הסטטוסים בקובץ זוהו והותאמו לסטטוסי המערכת.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+              )}
 
               {/* ── preview ── */}
               {missingRequired.length === 0 && rows.length > 0 && (

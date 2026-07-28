@@ -18,7 +18,7 @@ const STATUS_LABEL = Object.fromEntries(
 // lead screen so the same field is never called two things.
 const DETAIL_FIELDS = [
   { key: 'source_form',       label: 'טופס מקור' },
-  { key: 'campaign_name',     label: 'קמפיין' },
+  { key: 'facebook_campaign_name', label: 'קמפיין' },
   { key: 'facebook_ad_name',  label: 'מודעה' },
   { key: 'utm_campaign',      label: 'UTM קמפיין' },
   { key: 'utm_source',        label: 'UTM מקור' },
