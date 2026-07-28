@@ -135,15 +135,12 @@ jobs:
               exit 0
             fi
 
-            # A call that attaches nothing while still reporting work left means
-            # every remaining lead is unprocessable — a phone that normalizes to
-            # NULL, for instance. Looping would spin forever without progress.
-            if [ "$attached" = "0" ]; then
-              echo "::warning::No progress on call ${i} with ${remaining} still unlinked — stopping."
-              echo "These rows are likely leads whose phone cannot be normalized. Check with:"
-              echo "  SELECT id, phone FROM public.leads WHERE contact_id IS NULL LIMIT 20;"
-              exit 0
-            fi
+            # NOTE: the "attached is 0" case is already covered above — 0 is
+            # less than any chunk size, so it exits through the done branch.
+            # An earlier revision repeated the check here and referenced a
+            # ${remaining} variable that no longer exists; under `set -u` that
+            # would have aborted the run rather than warning. Removed rather
+            # than repaired: one exit path is easier to reason about than two.
           done
 
           echo "::warning::Hit the ${MAX_CALLS}-call cap with work remaining. Re-run to continue."
