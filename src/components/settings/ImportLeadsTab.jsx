@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { readFileToRows, parseImportDate } from '@/utils/importFile';
 import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
 import { isKaveretExport, kaveretMapping } from '@/lib/kaveretPreset';
+import { extractEmail, auditRepEmails } from '@/lib/repEmailExtract';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk lead import: CSV/Excel → staging table → one server-side SQL merge.
@@ -156,6 +157,20 @@ export default function ImportLeadsTab() {
     return auditStatuses(rows.map((r) => r[idx]));
   }, [mapping.status, rows]);
 
+  // Loaded only to tell "assigned to a real rep" from "assigned to an address
+  // nobody here uses" — the import writes the extracted email either way.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const repAudit = useMemo(() => {
+    const idx = mapping.rep1;
+    if (idx === undefined || idx === null || !rows.length) return null;
+    return auditRepEmails(rows.map((r) => r[idx]), users.map((u) => u.email));
+  }, [mapping.rep1, rows, users]);
+
   const reset = () => {
     setFileName(''); setHeaders([]); setRows([]); setMapping({});
     setPhase('idle'); setProgress({ current: 0, total: 0, label: '' });
@@ -208,7 +223,11 @@ export default function ImportLeadsTab() {
       } else if (field.key === 'status') {
         out.status = normalizeStatus(raw);
       } else if (field.key === 'rep1') {
-        out.rep1 = raw.toLowerCase();
+        // Parsed, not copied — the Kaveret rep cell is a rendered blob that
+        // merely CONTAINS an address. A cell with no address at all assigns
+        // nobody rather than writing junk into a field the app matches on.
+        const email = extractEmail(raw);
+        if (email) out.rep1 = email;
       } else {
         out[field.key] = raw;
       }
@@ -492,6 +511,60 @@ export default function ImportLeadsTab() {
                 </div>
               )}
 
+              {/* ── rep audit ──
+                  The rep column is a blob; only the address inside it is kept.
+                  Shown per distinct address with a row count, and flagged when
+                  no user carries it — a lead assigned to a non-user looks fine
+                  in the import summary but belongs to nobody in the lead list,
+                  and is excluded from the unassigned queue too. */}
+              {repAudit && (
+                <div className="space-y-2">
+                  <Label className="text-xs">נציגים שחולצו מהקובץ</Label>
+                  <div className="rounded-lg border border-border divide-y divide-border">
+                    {repAudit.rows.slice(0, 15).map((r) => (
+                      <div key={r.email} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                        <span dir="ltr" className="font-mono text-xs truncate">{r.email}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {r.count.toLocaleString('he-IL')} לידים
+                          </span>
+                          {r.isUser ? (
+                            <Badge variant="outline" className="gap-1 text-emerald-700 border-emerald-300">
+                              <CheckCircle2 className="h-3 w-3" /> נציג במערכת
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive">לא קיים כמשתמש</Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {repAudit.rows.length > 15 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">
+                        ועוד {repAudit.rows.length - 15} נציגים
+                      </div>
+                    )}
+                    {repAudit.rows.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">
+                        לא נמצאה אף כתובת מייל בעמודה שמופתה לנציג.
+                      </div>
+                    )}
+                  </div>
+                  {repAudit.unmatched.length > 0 && (
+                    <p className="text-xs text-destructive">
+                      {repAudit.unmatched.length} כתובות אינן משתמשים במערכת. הלידים שלהן ישויכו
+                      לכתובת הזו ולא יופיעו בתור ״לא משויכים״ — הוסף אותם כנציגים, או בטל את
+                      מיפוי הנציג כדי שייכנסו לטריאז׳.
+                    </p>
+                  )}
+                  {repAudit.withoutEmail > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {repAudit.withoutEmail.toLocaleString('he-IL')} שורות עם ערך בעמודת הנציג
+                      שלא הכיל כתובת מייל — ייכנסו ללא שיוך.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {/* ── preview ── */}
               {missingRequired.length === 0 && rows.length > 0 && (
                 <div className="space-y-2">
@@ -500,7 +573,7 @@ export default function ImportLeadsTab() {
                     <table className="w-full text-xs">
                       <thead className="bg-muted/50">
                         <tr>
-                          {['מזהה', 'שם', 'טלפון', 'סטטוס', 'תאריך'].map((h) => (
+                          {['מזהה', 'שם', 'טלפון', 'סטטוס', 'תאריך', 'נציג'].map((h) => (
                             <th key={h} className="px-3 py-2 text-right font-medium whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
@@ -515,6 +588,7 @@ export default function ImportLeadsTab() {
                               <td className="px-3 py-2 whitespace-nowrap" dir="ltr">{p.phone || '—'}</td>
                               <td className="px-3 py-2 whitespace-nowrap">{p.status}</td>
                               <td className="px-3 py-2 whitespace-nowrap" dir="ltr">{p.created_date || '—'}</td>
+                              <td className="px-3 py-2 whitespace-nowrap" dir="ltr">{p.rep1 || '—'}</td>
                             </tr>
                           );
                         })}
