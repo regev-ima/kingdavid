@@ -1,0 +1,41 @@
+name: Lead Sources RPC — apply migration
+
+# Applies the lead_sources() RPC to the Supabase DB via the Management API
+# query endpoint. The migration is idempotent (CREATE OR REPLACE FUNCTION), so
+# re-runs are safe.
+#
+# MANUAL ONLY: this runs solely on manual dispatch — it does NOT trigger on
+# push — so applying the function to the shared database is a deliberate,
+# controlled step. Until it is run, the UI falls back to the curated source
+# list, so nothing breaks. Trigger it from the Actions tab ("Run workflow")
+# when you're ready, on whichever branch holds the migration file.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply lead_sources RPC migration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+          f=supabase/migrations/20260604000001_lead_sources_rpc.sql
+          payload=$(jq -Rs '{query: .}' "$f")
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          echo "Management API HTTP $code"
+          cat /tmp/resp.json || true
+          echo
+          test "$code" -lt 400
