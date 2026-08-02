@@ -18,6 +18,7 @@ import { getDateRange } from '@/utils/dateRange';
 import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
 import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
 import NewOrderDialog from '@/components/order/NewOrderDialog';
+import DeleteOrderDialog from '@/components/order/DeleteOrderDialog';
 
 // The Orders page adds an "all time" option on top of the shared presets so
 // the operational list defaults to every order, not an empty "today".
@@ -87,6 +88,8 @@ export default function Orders() {
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
   const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' });
   const [showNewOrder, setShowNewOrder] = useState(false);
+  // Order pending deletion (admin only) — null when the dialog is closed.
+  const [orderToDelete, setOrderToDelete] = useState(null);
   const queryClient = useQueryClient();
   const canAccessSales = canViewOrdersWorkspace(effectiveUser);
   const isManager = canAccessAdminOnly(effectiveUser);
@@ -242,6 +245,7 @@ export default function Orders() {
           type="order"
           data={row}
           onView={() => openOrder(row.id)}
+          onDelete={isManager ? (order) => setOrderToDelete(order) : undefined}
         />
       )
     }
@@ -387,6 +391,12 @@ export default function Orders() {
         emptyMessage="לא נמצאו הזמנות"
         onRowClick={(row) => openOrder(row.id)}
         rowClassName={(row) => (row.id === lastOpenedOrderId ? LAST_OPENED_ROW_CLASS : '')}
+      />
+
+      <DeleteOrderDialog
+        open={!!orderToDelete}
+        onOpenChange={(open) => { if (!open) setOrderToDelete(null); }}
+        order={orderToDelete}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { createPageUrl } from '@/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -52,6 +52,7 @@ import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
+import DeleteOrderDialog from '@/components/order/DeleteOrderDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
@@ -70,7 +71,9 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
   const [showServiceTicket, setShowServiceTicket] = useState(false);
+  const [showDeleteOrder, setShowDeleteOrder] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // In popup mode the id arrives as a prop (the list opens the order without
   // navigating, so the URL carries no ?id=). On the standalone page it still
@@ -288,6 +291,19 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
             בקשת החזרה
           </Button>
         </Link>
+        {/* Admin-only, and last in the bar so it isn't next to anything a rep
+            clicks routinely. */}
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDeleteOrder(true)}
+            className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+          >
+            <Trash2 className="h-3.5 w-3.5 me-1.5" />
+            מחק הזמנה
+          </Button>
+        )}
       </div>
 
       {/* Body — the only scrollable region in popup mode. */}
@@ -773,6 +789,19 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
         onOpenChange={setShowServiceTicket}
         order={order}
         currentUser={effectiveUser}
+      />
+
+      {/* Delete (admin only). In popup mode the list behind us is still there,
+          so we just close; on the standalone page there's nothing left to show
+          and we go back to the list. */}
+      <DeleteOrderDialog
+        open={showDeleteOrder}
+        onOpenChange={setShowDeleteOrder}
+        order={order}
+        onDeleted={() => {
+          if (isModal) onClose?.();
+          else navigate(createPageUrl('Orders'));
+        }}
       />
 
       {/* Manual payment — shared with the new-order screen. */}
