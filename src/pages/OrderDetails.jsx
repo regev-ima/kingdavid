@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -47,12 +46,14 @@ import {
   Home,
   Package,
   Clock,
+  Info,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
+import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
 import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
@@ -61,34 +62,14 @@ import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 const VAT = 1.18;
 const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const PAYMENT_METHODS = {
-  cash: 'מזומן',
-  credit_card: 'כרטיס אשראי',
-  bank_transfer: 'העברה בנקאית',
-  check: 'צ\'ק',
-  bit: 'ביט',
-  paybox: 'פייבוקס',
-  other: 'אחר',
-};
-
-function calcPaymentStatus(payments, total) {
-  const totalPaid = (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-  if (totalPaid <= 0) return 'unpaid';
-  if (totalPaid >= total) return 'paid';
-  return 'deposit_paid';
-}
+// PAYMENT_METHODS / calcPaymentStatus live with the payment dialog now, so the
+// create and the edit screens can't drift apart on what "שולם" means.
 
 export default function OrderDetails({ orderId: orderIdProp, isModal = false, onClose }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
   const [showServiceTicket, setShowServiceTicket] = useState(false);
-  const [newPayment, setNewPayment] = useState({
-    amount: '',
-    method: 'credit_card',
-    date: new Date().toISOString().split('T')[0],
-    notes: '',
-  });
   const queryClient = useQueryClient();
 
   // In popup mode the id arrives as a prop (the list opens the order without
@@ -526,6 +507,8 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {payment.date ? format(new Date(payment.date), 'dd/MM/yyyy') : ''}
+                            {payment.card_last4 ? ` · **** ${payment.card_last4}` : ''}
+                            {payment.card_holder ? ` · ${payment.card_holder}` : ''}
                             {payment.notes ? ` · ${payment.notes}` : ''}
                           </div>
                           {(payment.hyp_transaction_id || payment.hyp_acode || payment.hyp_brand || payment.hyp_l4digit) && (
@@ -569,118 +552,29 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 </div>
               )}
 
-              {/* Add Payment Form */}
-              {showAddPayment ? (
-                <div className="space-y-3 border-t pt-3">
-                  <Label className="text-xs font-medium">תשלום חדש</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">סכום</Label>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">₪</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={newPayment.amount}
-                          onChange={(e) => setNewPayment(prev => ({ ...prev, amount: e.target.value }))}
-                          placeholder="0"
-                          className="h-8 text-sm"
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">אמצעי</Label>
-                      <Select value={newPayment.method} onValueChange={(v) => setNewPayment(prev => ({ ...prev, method: v }))}>
-                        <SelectTrigger className="h-8 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(PAYMENT_METHODS).map(([key, label]) => (
-                            <SelectItem key={key} value={key}>{label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">תאריך</Label>
-                    <Input
-                      type="date"
-                      value={newPayment.date}
-                      onChange={(e) => setNewPayment(prev => ({ ...prev, date: e.target.value }))}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">הערה (אופציונלי)</Label>
-                    <Input
-                      value={newPayment.notes}
-                      onChange={(e) => setNewPayment(prev => ({ ...prev, notes: e.target.value }))}
-                      placeholder="מספר צ'ק, אסמכתא..."
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      disabled={!newPayment.amount || parseFloat(newPayment.amount) <= 0 || updateOrderMutation.isPending}
-                      onClick={() => {
-                        const paymentEntry = {
-                          amount: parseFloat(newPayment.amount),
-                          method: newPayment.method,
-                          date: newPayment.date,
-                          notes: newPayment.notes,
-                          recorded_at: new Date().toISOString(),
-                          recorded_by: effectiveUser?.email,
-                        };
-                        const updatedPayments = [...(order.payments || []), paymentEntry];
-                        const newStatus = calcPaymentStatus(updatedPayments, order.total);
-                        // amount_paid is derived (not a stored column) — persist only
-                        // the payments array + the recomputed status.
-                        updateOrderMutation.mutate({
-                          payments: updatedPayments,
-                          payment_status: newStatus,
-                        });
-                        setNewPayment({ amount: '', method: 'credit_card', date: new Date().toISOString().split('T')[0], notes: '' });
-                        setShowAddPayment(false);
-                      }}
-                    >
-                      {updateOrderMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'שמור'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowAddPayment(false)}
-                    >
-                      ביטול
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setShowHypPayment(true)}
-                    disabled={!canEdit || (order?.total || 0) - (order.payments || []).reduce((s, p) => s + (p.amount || 0), 0) <= 0}
-                  >
-                    <CreditCard className="h-3.5 w-3.5 me-1.5" />
-                    תשלום באשראי (Hyp)
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => setShowAddPayment(true)}
-                    disabled={!canEdit}
-                  >
-                    <Plus className="h-3.5 w-3.5 me-1.5" />
-                    הוסף תשלום ידני
-                  </Button>
-                </div>
-              )}
+              {/* Add Payment — the same dialog the new-order screen opens. */}
+              <div className="space-y-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setShowHypPayment(true)}
+                  disabled={!canEdit || (order?.total || 0) - sumPayments(order.payments) <= 0}
+                >
+                  <CreditCard className="h-3.5 w-3.5 me-1.5" />
+                  תשלום באשראי (Hyp)
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setShowAddPayment(true)}
+                  disabled={!canEdit}
+                >
+                  <Plus className="h-3.5 w-3.5 me-1.5" />
+                  הוסף תשלום ידני
+                </Button>
+              </div>
 
               {/* Manual status override for refunds */}
               <div className="border-t pt-3 space-y-1">
@@ -879,6 +773,27 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
         onOpenChange={setShowServiceTicket}
         order={order}
         currentUser={effectiveUser}
+      />
+
+      {/* Manual payment — shared with the new-order screen. */}
+      <OrderPaymentDialog
+        open={showAddPayment}
+        onOpenChange={setShowAddPayment}
+        total={order.total || 0}
+        alreadyPaid={sumPayments(order.payments)}
+        defaultMethod="credit_card"
+        recordedBy={effectiveUser?.email}
+        isSaving={updateOrderMutation.isPending}
+        onConfirm={(entry) => {
+          const updatedPayments = [...(order.payments || []), entry];
+          // amount_paid is derived (not a stored column) — persist only the
+          // payments array + the recomputed status.
+          updateOrderMutation.mutate({
+            payments: updatedPayments,
+            payment_status: calcPaymentStatus(updatedPayments, order.total),
+          });
+          setShowAddPayment(false);
+        }}
       />
 
       {/* Hyp Payment Dialog */}
