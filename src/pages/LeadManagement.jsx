@@ -235,6 +235,36 @@ export default function LeadManagement() {
   // exactly where the manager was. Read once on mount, then writes happen
   // through `updateUrl` below.
   const urlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+
+  // Auth + role. Resolved up here because the rep filter's DEFAULT depends on
+  // who is looking (see defaultRep below), and updateUrl needs that default to
+  // know whether the current selection is worth writing to the URL.
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    base44.auth.me().then(setUser).catch(() => {});
+  }, []);
+  const effectiveUser = getEffectiveUser(user);
+  const isAdmin = effectiveUser?.role === 'admin';
+  // isAdmin still gates management CHROME (bulk assign, reps panel, the
+  // unassigned pool). seesAllLeads gates DATA. Keeping them separate is what
+  // stops opening visibility from handing every rep the admin toolbar.
+  // Passed explicitly rather than read from the module cache, so flipping the
+  // setting in Settings re-renders this page.
+  const leadVisibilityPolicy = useLeadVisibilityPolicy();
+  const seesAllLeads = canSeeAllLeads(effectiveUser, leadVisibilityPolicy);
+  const userEmail = effectiveUser?.email;
+
+  // Where the rep filter STARTS. Every rep can see every lead, but "my leads"
+  // is the list they actually work from — opening on the whole floor's pipeline
+  // buries their own. So a rep lands on themselves and can widen to all; a
+  // manager lands on all, which is their job. Reps who only see their own leads
+  // are excluded: the server already scopes them, and the filter chip would be
+  // a control that appears to do nothing.
+  const defaultRep = useMemo(
+    () => (!isAdmin && seesAllLeads && userEmail ? userEmail : 'all'),
+    [isAdmin, seesAllLeads, userEmail],
+  );
+
   const [datePresetId, setDatePresetId] = useState(urlParams.get('preset') || 'all');
   const [customRange, setCustomRange] = useState(() => {
     const from = urlParams.get('startDate');
@@ -258,6 +288,17 @@ export default function LeadManagement() {
     source: urlParams.get('source') || 'all',
     rep: urlParams.get('rep') || 'all',
   });
+  // A rep pinned in the URL is an explicit choice — a deep link, or back-nav
+  // from a lead — and must beat the default. Otherwise we wait for the user to
+  // load and apply defaultRep exactly once; `repResolved` also gates the list
+  // queries below, so the page doesn't fetch the whole floor and then
+  // immediately re-fetch the rep's own slice.
+  const [repResolved, setRepResolved] = useState(() => urlParams.has('rep'));
+  useEffect(() => {
+    if (repResolved || !effectiveUser) return;
+    setFilters((prev) => ({ ...prev, rep: defaultRep }));
+    setRepResolved(true);
+  }, [repResolved, effectiveUser, defaultRep]);
   const [selectedLeads, setSelectedLeads] = useState([]);
   const [assigningRep, setAssigningRep] = useState('');
   const [showImport, setShowImport] = useState(false);
@@ -278,31 +319,20 @@ export default function LeadManagement() {
     if (next.filters?.search) params.set('search', next.filters.search);
     if (next.filters?.status && next.filters.status !== 'all') params.set('status', next.filters.status);
     if (next.filters?.source && next.filters.source !== 'all') params.set('source', next.filters.source);
-    if (next.filters?.rep && next.filters.rep !== 'all') params.set('rep', next.filters.rep);
+    // Written whenever it DEVIATES from this user's default, not whenever it
+    // isn't 'all'. That way a rep who widens to "כל הנציגים" gets ?rep=all and
+    // keeps it across back-nav, while everyone sitting on their own default
+    // keeps a clean URL — and a clean URL re-applies the default on the next
+    // visit, which is the whole point.
+    if (next.filters?.rep && next.filters.rep !== defaultRep) params.set('rep', next.filters.rep);
     if (next.limit && next.limit !== 100) params.set('limit', String(next.limit));
     const search = params.toString();
     navigate(search ? `${location.pathname}?${search}` : location.pathname, { replace: true });
-  }, [navigate, location.pathname]);
+  }, [navigate, location.pathname, defaultRep]);
 
   useEffect(() => {
     updateUrl({ preset: datePresetId, range: customRange, scope, filters, limit, hourFrom, hourTo });
   }, [datePresetId, customRange, scope, filters, limit, hourFrom, hourTo, updateUrl]);
-
-  // Auth + role
-  const [user, setUser] = useState(null);
-  useEffect(() => {
-    base44.auth.me().then(setUser).catch(() => {});
-  }, []);
-  const effectiveUser = getEffectiveUser(user);
-  const isAdmin = effectiveUser?.role === 'admin';
-  // isAdmin still gates management CHROME (bulk assign, reps panel, the
-  // unassigned pool). seesAllLeads gates DATA. Keeping them separate is what
-  // stops opening visibility from handing every rep the admin toolbar.
-  // Passed explicitly rather than read from the module cache, so flipping the
-  // setting in Settings re-renders this page.
-  const leadVisibilityPolicy = useLeadVisibilityPolicy();
-  const seesAllLeads = canSeeAllLeads(effectiveUser, leadVisibilityPolicy);
-  const userEmail = effectiveUser?.email;
 
   useEffect(() => {
     if (!effectiveUser) return;
@@ -513,14 +543,14 @@ export default function LeadManagement() {
   }, [leadsQueryKey]);
   const { data: leads = [], isLoading, isFetching } = useQuery({
     queryKey: ['leadMgmt-leads', leadsQuery, limit],
-    enabled: !!effectiveUser,
+    enabled: !!effectiveUser && repResolved,
     staleTime: 60_000,
     placeholderData: (prev) => prev, // ← key: don't drop rows on loadMore so the scroll stays put
     queryFn: () => base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', limit, undefined, LEAD_LIST_COLUMNS),
   });
   const { data: filteredCount = null } = useQuery({
     queryKey: ['leadMgmt-count', leadsQuery],
-    enabled: !!effectiveUser,
+    enabled: !!effectiveUser && repResolved,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: () => base44.entities.Lead.count(leadsQuery),
@@ -907,7 +937,10 @@ export default function LeadManagement() {
         filters={[
           { key: 'status', label: 'סטטוס', allLabel: 'כל הסטטוסים', options: [...LEAD_STATUS_OPTIONS, ...customStatusesForFilter] },
           { key: 'source', label: 'מקור',  allLabel: 'כל המקורות',  options: LEAD_SOURCE_OPTIONS },
-          ...(isAdmin ? [{
+          // Shown to anyone who can see the whole floor, not just admins — a
+          // rep who now OPENS on their own leads needs a way back to all of
+          // them, and this is it.
+          ...(isAdmin || seesAllLeads ? [{
             key: 'rep',
             label: 'נציג',
             allLabel: 'כל הנציגים',
