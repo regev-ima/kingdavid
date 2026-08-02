@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -16,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check } from "lucide-react";
+import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, Sparkles, Info } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
@@ -25,6 +24,9 @@ import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
+import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
+import { recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
+import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone, toLocalIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
@@ -36,6 +38,15 @@ const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFr
 // "972537772829" all resolve to the same lookup key. Same helper NewQuote
 // uses — one rule, one place.
 const normalizePhoneForLookup = toLocalIsraeliPhone;
+
+// The payment-terms chips are labels that go on the printed order; the payment
+// dialog needs a concrete method code. Picking a term opens the dialog on the
+// matching method so "בחרתי אשראי" and "בוא נגבה עכשיו" are one action.
+const TERM_TO_PAYMENT_METHOD = {
+  'אשראי': 'credit_card',
+  'מזומן': 'cash',
+  'תשלום בבית למוביל': 'cash',
+};
 
 export default function NewOrder({ asDialog = false, dialogLeadId = null, dialogQuoteId = null, onDialogClose = null }) {
   const navigate = useNavigate();
@@ -80,7 +91,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     notes_sales: '',
     special_requests: '',
     payment_terms_selection: [],
+    // Payments collected while the order is being written. Saved with the order
+    // itself, so a paid-on-the-spot sale never has to be re-opened to record it.
+    payments: [],
   });
+
+  // Payment dialog — `method` is what the rep's payment-terms click implies.
+  const [paymentDialog, setPaymentDialog] = useState({ open: false, method: 'credit_card' });
+
+  // Delivery extras the rep removed by hand. Auto-add must never resurrect one:
+  // "I don't want this" has to outlive the next items change.
+  const [dismissedExtraIds, setDismissedExtraIds] = useState([]);
 
   const canAccessSales = canAccessSalesWorkspace(effectiveUser);
 
@@ -318,7 +339,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         status: 'need_scheduling',
       });
 
-      // Create commission
+      // Create commission. An order that arrives already paid must not leave a
+      // pending commission behind: OrderDetails only auto-approves on a LATER
+      // payment update, so a sale paid at creation would sit pending forever.
+      const alreadyPaid = data.payment_status === 'paid' || data.payment_status === 'deposit_paid';
       await base44.entities.Commission.create({
         order_id: order.id,
         order_number: order.order_number,
@@ -330,7 +354,13 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         total_commission: data.subtotal * 0.05,
         rep1_amount: data.subtotal * 0.05,
         rep2_amount: 0,
-        status: 'pending',
+        ...(alreadyPaid
+          ? {
+              status: 'approved',
+              approved_by: effectiveUser?.email,
+              approved_date: new Date().toISOString().split('T')[0],
+            }
+          : { status: 'pending' }),
       });
 
       // Create or find customer
@@ -467,6 +497,71 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     });
   };
 
+  // ── Delivery & assembly auto-detection ──────────────────────────────────
+  // What's on the order (beds / mattresses / single vs. double), and which
+  // extra_charges row that implies. Both memoised: they run on every items
+  // keystroke otherwise.
+  const itemProfile = useMemo(() => summarizeItems(formData.items, products), [formData.items, products]);
+  const recommendation = useMemo(
+    () => recommendDeliveryExtras(extraCharges, itemProfile),
+    [extraCharges, itemProfile],
+  );
+  const recommendedIds = useMemo(() => recommendation.extras.map((ec) => ec.id), [recommendation]);
+  const recommendedKey = recommendedIds.join('|');
+  // An order converted from a quote already has a price the customer has seen —
+  // silently adding a delivery charge to it would change that number behind
+  // their back. Recommend, never auto-add.
+  const fromQuote = Boolean(quoteId);
+  const needsDelivery = itemProfile.bedCount > 0 || itemProfile.mattressCount > 0;
+
+  useEffect(() => {
+    if (fromQuote) return;
+    setFormData((prev) => {
+      // Keep everything the rep added by hand; keep an auto row only while it's
+      // still the recommendation (change the items → the old one goes).
+      const keep = prev.extras.filter((ex) => !ex.auto_added || recommendedIds.includes(ex.extra_charge_id));
+      const toAdd = recommendation.extras
+        .filter((ec) => !dismissedExtraIds.includes(ec.id) && !keep.some((ex) => ex.extra_charge_id === ec.id))
+        .map((ec) => ({ extra_charge_id: ec.id, name: ec.name, cost: ec.cost, auto_added: true }));
+      const nextExtras = [...keep, ...toAdd];
+      const unchanged = nextExtras.length === prev.extras.length
+        && nextExtras.every((ex, i) => ex.extra_charge_id === prev.extras[i].extra_charge_id);
+      if (unchanged) return prev;
+      return { ...prev, extras: nextExtras, ...calculateTotals(prev.items, nextExtras) };
+    });
+    // recommendedKey stands in for recommendation.extras — same ids, same work,
+    // and it keeps the effect from re-firing on every unrelated render.
+  }, [recommendedKey, fromQuote, dismissedExtraIds]);
+
+  // ── Payments taken during creation ──────────────────────────────────────
+  const paidSoFar = sumPayments(formData.payments);
+  const paymentStatus = calcPaymentStatus(formData.payments, formData.total);
+
+  const recordPayment = (entry) => {
+    setFormData((prev) => ({ ...prev, payments: [...(prev.payments || []), entry] }));
+    setPaymentDialog({ open: false, method: 'credit_card' });
+    toast.success('התשלום נרשם ויישמר יחד עם ההזמנה');
+  };
+
+  const removePayment = (index) => {
+    setFormData((prev) => ({ ...prev, payments: prev.payments.filter((_, i) => i !== index) }));
+  };
+
+  // Selecting a payment method is the rep saying "we're collecting now" — open
+  // the payment window straight away instead of making them save the order and
+  // come back to it.
+  const togglePaymentTerm = (opt) => {
+    const current = formData.payment_terms_selection || [];
+    const wasSelected = current.includes(opt);
+    setFormData((prev) => ({
+      ...prev,
+      payment_terms_selection: wasSelected ? current.filter((x) => x !== opt) : [...current, opt],
+    }));
+    if (!wasSelected) {
+      setPaymentDialog({ open: true, method: TERM_TO_PAYMENT_METHOD[opt] || 'other' });
+    }
+  };
+
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
   }
@@ -490,12 +585,15 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   const addExtra = (extraChargeId) => {
     const extraCharge = extraCharges.find(ec => ec.id === extraChargeId);
     if (!extraCharge) return;
-    
+
+    // Adding it back by hand clears the "I removed this" memory.
+    setDismissedExtraIds((prev) => prev.filter((id) => id !== extraCharge.id));
     setFormData(prev => {
-      const newExtras = [...prev.extras, { 
+      if (prev.extras.some((ex) => ex.extra_charge_id === extraCharge.id)) return prev;
+      const newExtras = [...prev.extras, {
         extra_charge_id: extraCharge.id,
-        name: extraCharge.name, 
-        cost: extraCharge.cost 
+        name: extraCharge.name,
+        cost: extraCharge.cost
       }];
       const totals = calculateTotals(prev.items, newExtras);
       return { ...prev, extras: newExtras, ...totals };
@@ -503,9 +601,21 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   };
 
   const removeExtra = (index) => {
+    const removed = formData.extras[index];
+    // Remember the removal so the auto-detection doesn't put it straight back
+    // on the next items change.
+    if (removed?.extra_charge_id) {
+      setDismissedExtraIds((prev) => (prev.includes(removed.extra_charge_id) ? prev : [...prev, removed.extra_charge_id]));
+    }
     const newExtras = formData.extras.filter((_, i) => i !== index);
     const totals = calculateTotals(formData.items, newExtras);
     setFormData(prev => ({ ...prev, extras: newExtras, ...totals }));
+  };
+
+  const toggleRecommendedExtra = (extraCharge) => {
+    const idx = formData.extras.findIndex((ex) => ex.extra_charge_id === extraCharge.id);
+    if (idx >= 0) removeExtra(idx);
+    else addExtra(extraCharge.id);
   };
 
   const addItem = () => {
@@ -587,12 +697,30 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
       return;
     }
+    // Blank rows are dropped silently; a custom line the rep priced but never
+    // named is a real mistake and has to be fixed before saving.
+    const items = cleanOrderItems(formData.items);
+    const itemsError = validateOrderItems(items);
+    if (itemsError) {
+      setCurrentStep(2);
+      toast.error(itemsError);
+      return;
+    }
     // Trial flag is derived from the products on the order, not a manual toggle.
-    const trial_30d_enabled = formData.items.some((it) => {
+    const trial_30d_enabled = items.some((it) => {
       const p = products.find((pp) => pp.id === it.product_id);
       return Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
     });
-    createOrderMutation.mutate({ ...formData, trial_30d_enabled });
+    const totals = calculateTotals(items, formData.extras);
+    const payments = formData.payments || [];
+    createOrderMutation.mutate({
+      ...formData,
+      items,
+      ...totals,
+      trial_30d_enabled,
+      payments,
+      payment_status: calcPaymentStatus(payments, totals.total),
+    });
   };
 
   return (
@@ -617,7 +745,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
           {steps.map((step, idx) => {
             // Can't jump forward past an incomplete step (same rules as "המשך").
             const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone) && !!formData.delivery_city?.trim() && !!formData.delivery_address?.trim();
-            const step2Valid = formData.items.some(item => item.product_id);
+            const step2Valid = hasSellableItem(formData.items);
             const locked = step.id > currentStep && !(
               (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
             );
@@ -856,7 +984,44 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
               </SelectContent>
             </Select>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Delivery & assembly, matched to what's on the order. One click
+                each; the row we picked ourselves says so on its badge. */}
+            {recommendation.extras.length > 0 ? (
+              <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
+                <p className="text-xs font-medium text-primary flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {fromQuote
+                    ? 'מומלץ להזמנה (לא נוסף אוטומטית — ההצעה כבר תומחרה ללקוח)'
+                    : 'זוהו תוספות הובלה והרכבה מתאימות'}
+                  {recommendation.fallbackUsed ? ' — התאמה כללית, כדאי לוודא' : ''}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {recommendation.extras.map((ec) => {
+                    const selected = formData.extras.some((ex) => ex.extra_charge_id === ec.id);
+                    return (
+                      <Button
+                        key={ec.id}
+                        type="button"
+                        variant={selected ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => toggleRecommendedExtra(ec)}
+                      >
+                        {selected ? <Check className="h-3 w-3 me-1" /> : <Plus className="h-3 w-3 me-1" />}
+                        {ec.name} — ₪{Number(ec.cost || 0).toLocaleString()}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : needsDelivery ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
+                <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                לא נמצאה תוספת הובלה מתאימה, יש לבחור ידנית.
+              </div>
+            ) : null}
+
             {formData.extras.length === 0 ? (
               <p className="text-muted-foreground text-center py-4">לא נוספו תוספות</p>
             ) : (
@@ -864,7 +1029,14 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 {formData.extras.map((extra, index) => (
                   <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex-1">
-                      <p className="font-medium">{extra.name}</p>
+                      <p className="font-medium flex items-center gap-2 flex-wrap">
+                        {extra.name}
+                        {extra.auto_added ? (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary ring-1 ring-primary/20">
+                            נוסף אוטומטית
+                          </span>
+                        ) : null}
+                      </p>
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-lg">₪{extra.cost.toLocaleString()}</span>
@@ -880,6 +1052,84 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              מנוף ותוספת קומה אף פעם לא נוספים אוטומטית — יש לסכם אותם מול הלקוח ולהוסיף ידנית.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Payments taken now, saved together with the order. */}
+        <Card className="mt-6">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+              תשלום
+            </CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setPaymentDialog({ open: true, method: 'credit_card' })}
+            >
+              <Plus className="h-3.5 w-3.5 me-1.5" />
+              רשום תשלום
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              <div className="rounded-lg bg-muted/40 p-2.5">
+                <p className="text-[11px] text-muted-foreground">סה״כ הזמנה</p>
+                <p className="font-semibold tabular-nums">{money2(formData.total)}</p>
+              </div>
+              <div className="rounded-lg bg-emerald-50 p-2.5">
+                <p className="text-[11px] text-emerald-700/80">שולם</p>
+                <p className="font-semibold tabular-nums text-emerald-700">{money2(paidSoFar)}</p>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-2.5">
+                <p className="text-[11px] text-muted-foreground">יתרה</p>
+                <p className="font-semibold tabular-nums">{money2(Math.max(0, formData.total - paidSoFar))}</p>
+              </div>
+            </div>
+
+            {(formData.payments || []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                לא נרשם תשלום. בחירת אמצעי תשלום למטה תפתח את חלון התשלום.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {formData.payments.map((payment, index) => (
+                  <div key={index} className="flex items-start justify-between p-2.5 bg-muted/50 rounded-lg text-sm">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-emerald-600 tabular-nums">{money2(payment.amount)}</span>
+                        <span className="text-xs text-muted-foreground">{PAYMENT_METHODS[payment.method] || payment.method}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {payment.date || ''}
+                        {payment.card_last4 ? ` · כרטיס **** ${payment.card_last4}` : ''}
+                        {payment.card_holder ? ` · ${payment.card_holder}` : ''}
+                        {payment.notes ? ` · ${payment.notes}` : ''}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-red-400 hover:text-red-600 shrink-0"
+                      onClick={() => removePayment(index)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+                <p className="text-[11px] text-muted-foreground">
+                  סטטוס תשלום שיישמר: <span className="font-medium text-foreground">
+                    {{ paid: 'שולם', deposit_paid: 'תשלום חלקי', unpaid: 'לא שולם' }[paymentStatus]}
+                  </span>
+                </p>
               </div>
             )}
           </CardContent>
@@ -911,7 +1161,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             </div>
             <div className="space-y-2">
               <Label>אמצעי תשלום</Label>
-              <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההזמנה.</p>
+              <p className="text-[11px] text-muted-foreground">
+                בחר אחד או יותר. יופיע על ההזמנה, ופותח מיד את חלון התשלום.
+              </p>
               <div className="flex flex-wrap gap-2">
                 {PAYMENT_TERMS_OPTIONS.map((opt) => {
                   const selected = (formData.payment_terms_selection || []).includes(opt);
@@ -922,15 +1174,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                       variant={selected ? 'default' : 'outline'}
                       size="sm"
                       className="h-8 text-xs"
-                      onClick={() => {
-                        const current = formData.payment_terms_selection || [];
-                        setFormData({
-                          ...formData,
-                          payment_terms_selection: selected
-                            ? current.filter((x) => x !== opt)
-                            : [...current, opt],
-                        });
-                      }}
+                      onClick={() => togglePaymentTerm(opt)}
                     >
                       {selected && <Check className="h-3 w-3 me-1" />}
                       {opt}
@@ -970,7 +1214,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                   className="h-11 px-8 text-base font-semibold"
                   disabled={
                     (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()))
-                    || (currentStep === 2 && !formData.items.some(item => item.product_id))
+                    || (currentStep === 2 && !hasSellableItem(formData.items))
                   }
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
                 >
@@ -978,7 +1222,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 </Button>
                 {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) ? (
                   <span className="text-[11px] text-muted-foreground">יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך</span>
-                ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
+                ) : currentStep === 2 && !hasSellableItem(formData.items) ? (
                   <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
                 ) : null}
               </>
@@ -999,6 +1243,18 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
           </div>
         </div>
       </form>
+
+      {/* Same dialog the existing-order screen uses, so recording a payment is
+          one experience whether the order exists yet or not. */}
+      <OrderPaymentDialog
+        open={paymentDialog.open}
+        onOpenChange={(open) => setPaymentDialog((prev) => ({ ...prev, open }))}
+        total={formData.total}
+        alreadyPaid={paidSoFar}
+        defaultMethod={paymentDialog.method}
+        recordedBy={effectiveUser?.email}
+        onConfirm={recordPayment}
+      />
     </div>
   );
 }
