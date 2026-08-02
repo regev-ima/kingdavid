@@ -3,7 +3,8 @@ import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import DiscountPopover from '@/components/quote/DiscountPopover';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft, PencilLine } from 'lucide-react';
 import { productMatchesBedType } from '@/utils/bedType';
 import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
 
@@ -53,6 +54,24 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
 
   // Pencil on a non-bed row → re-open the picker to change its product/size.
   const editProduct = (index) => { setEditIndex(index); setSelectorOpen(true); };
+
+  // "פריט כללי" — a line that isn't in the catalog at all: the rep types the
+  // name and the price. `is_custom` is what tells the rest of the app (and the
+  // sub-row branch below) that a missing product_id here is deliberate.
+  const addCustomItem = () => {
+    onChange([...items, {
+      is_custom: true,
+      product_id: '',
+      variation_id: '',
+      sku: '',
+      name: '',
+      quantity: 1,
+      unit_price: 0,
+      discount_percent: 0,
+      total: 0,
+      selected_addons: [],
+    }]);
+  };
 
   // Add a product line straight from the picker's product + size selection.
   const addFromSelection = (variation) => {
@@ -158,11 +177,16 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="text-base font-semibold text-foreground">פריטים</h3>
-        <Button type="button" size="sm" className="gap-1.5" onClick={() => setSelectorOpen(true)}>
-          <Plus className="h-4 w-4" /> הוסף פריט
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={addCustomItem}>
+            <PencilLine className="h-4 w-4" /> הוסף פריט כללי
+          </Button>
+          <Button type="button" size="sm" className="gap-1.5" onClick={() => setSelectorOpen(true)}>
+            <Plus className="h-4 w-4" /> הוסף פריט
+          </Button>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -191,6 +215,55 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
             </thead>
             <tbody className="divide-y divide-border/60">
               {items.map((item, index) => {
+                if (item.is_custom) {
+                  // Free-text line: name + price are typed, everything else
+                  // (quantity, discount, totals) behaves like a catalog row.
+                  return (
+                    <tr key={index} className="hover:bg-muted/20 transition-colors">
+                      <td className="text-center py-2.5 px-2 text-muted-foreground tabular-nums">{index + 1}</td>
+                      <td className="py-2.5 px-3">
+                        <Input
+                          value={item.name || ''}
+                          onChange={(e) => updateItem(index, 'name', e.target.value)}
+                          placeholder="שם הפריט"
+                          className="h-8 text-sm"
+                        />
+                        <span className="text-[10px] text-muted-foreground">פריט כללי</span>
+                      </td>
+                      <td className="text-center py-2.5 px-2 text-xs text-muted-foreground">—</td>
+                      <td className="py-2.5 px-2">
+                        <div className="flex items-center justify-center">
+                          <div className="flex items-center border rounded-lg overflow-hidden">
+                            <button type="button" onClick={() => updateItem(index, 'quantity', Math.max(1, (item.quantity || 1) - 1))} className="h-7 w-7 flex items-center justify-center hover:bg-muted">−</button>
+                            <span className="h-7 w-8 flex items-center justify-center text-sm font-semibold border-x tabular-nums">{item.quantity || 1}</span>
+                            <button type="button" onClick={() => updateItem(index, 'quantity', (item.quantity || 1) + 1)} className="h-7 w-7 flex items-center justify-center hover:bg-muted">+</button>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unit_price ?? 0}
+                          onFocus={(e) => { if (Number(e.target.value) === 0) e.target.select(); }}
+                          onChange={(e) => updateItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
+                          className="h-8 text-sm text-center"
+                          dir="ltr"
+                        />
+                      </td>
+                      <td className="text-center py-2.5 px-2">
+                        <DiscountPopover item={item} onApplyDiscount={(p) => updateItem(index, 'discount_percent', p)} />
+                      </td>
+                      <td className="text-center py-2.5 px-2 font-bold text-primary tabular-nums">{ils((item.total || 0) * VAT)}</td>
+                      <td className="py-2.5 px-2 text-center">
+                        <button type="button" onClick={() => removeItem(index)} className="text-muted-foreground/40 hover:text-red-500 p-1.5" title="מחק">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                }
                 const isSub = !item.product_id;
                 if (isSub) {
                   // Add-on / bed-configurator line — a compact child row.
