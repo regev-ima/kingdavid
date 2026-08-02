@@ -1,5 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle } from 'react-leaflet';
+// Leaflet itself, for the default-icon patch below. react-leaflet v4 pulls in
+// the ESM build, which does NOT publish a window.L — so the bare `L` this file
+// used resolved to nothing and threw at module load. The stylesheet next to it
+// was already imported from the same package.
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Badge } from "@/components/ui/badge";
 

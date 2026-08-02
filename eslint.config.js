@@ -35,6 +35,16 @@ export default [
       "unused-imports": pluginUnusedImports,
     },
     rules: {
+      // `...pluginJs.configs.recommended` and `...pluginReact.configs.flat
+      // .recommended` above each carry a `rules` key, and this object replaces
+      // both of them wholesale — so everything they switched on is off unless
+      // it is re-stated here. That silently cost us no-undef, and with it the
+      // one rule that matters most in this codebase: a component used in JSX
+      // without an import is a blank error screen at runtime, not a build
+      // failure. It has shipped twice (Info in OrderDetails, CreditCard in
+      // NewOrder). Both rules below are what would have caught it.
+      "no-undef": "error",
+      "react/jsx-no-undef": "error",
       "no-unused-vars": "off",
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",

@@ -30,7 +30,11 @@ export const WHATSAPP_TAGS = [
 export const WHATSAPP_TAG_MAP = Object.fromEntries(WHATSAPP_TAGS.map((t) => [t.value, t]));
 
 // 972501234567@c.us / 972501234567 → 050-123-4567 (falls back to raw).
-export { formatIsraeliPhone as prettyPhone };
+// A re-export (`export { formatIsraeliPhone as prettyPhone }`) would name the
+// export correctly but create NO local binding, so chatTitle() below threw
+// ReferenceError on every chat that fell through to the phone number. A const
+// gives both.
+export const prettyPhone = formatIsraeliPhone;
 
 export function chatTitle(chat) {
   if (!chat) return '';
