@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, Sparkles, Info } from "lucide-react";
+import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, Sparkles, Info, CreditCard } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';

@@ -32,6 +32,7 @@ import {
   Save,
   Loader2,
   Plus,
+  Info,
   User as UserIcon,
 } from "lucide-react";
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
