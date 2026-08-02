@@ -523,8 +523,6 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {payment.date ? format(new Date(payment.date), 'dd/MM/yyyy') : ''}
-                            {payment.card_last4 ? ` · **** ${payment.card_last4}` : ''}
-                            {payment.card_holder ? ` · ${payment.card_holder}` : ''}
                             {payment.notes ? ` · ${payment.notes}` : ''}
                           </div>
                           {(payment.hyp_transaction_id || payment.hyp_acode || payment.hyp_brand || payment.hyp_l4digit) && (
@@ -810,9 +808,13 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
         onOpenChange={setShowAddPayment}
         total={order.total || 0}
         alreadyPaid={sumPayments(order.payments)}
-        defaultMethod="credit_card"
+        defaultMethod="cash"
         recordedBy={effectiveUser?.email}
         isSaving={updateOrderMutation.isPending}
+        // The order exists here, so a card CAN actually be charged — offer the
+        // real thing rather than letting the rep record a charge that never
+        // happened.
+        onStartCardClearing={() => setShowHypPayment(true)}
         onConfirm={(entry) => {
           const updatedPayments = [...(order.payments || []), entry];
           // amount_paid is derived (not a stored column) — persist only the

@@ -21,9 +21,15 @@ import { CreditCard, Loader2, ShieldCheck, Wallet } from 'lucide-react';
 // recording a payment feels the same in either place (the two used to be a
 // modal on one screen and an inline mini-form on the other).
 //
-// Security: card details are typed here only to be validated. The entry we hand
-// back carries the last 4 digits + the cardholder name and NOTHING else — no
-// PAN, no expiry, no CVV ever leaves this component or reaches the database.
+// This dialog RECORDS a payment that already happened — cash in the shop, a
+// bank transfer, a cheque, a charge put through the shop's terminal. It does
+// not take money.
+//
+// It deliberately has no card-number / expiry / CVV fields. Charging a card
+// goes through Hyp (HypPaymentDialog + the hyp-sign / hyp-verify Edge
+// Functions), where the card is entered inside Hyp's own iframe and never
+// touches our DOM. A card form here would collect real card data, carry the PCI
+// exposure that the iframe exists to avoid — and charge nothing.
 
 export const PAYMENT_METHODS = {
   cash: 'מזומן',
@@ -53,45 +59,20 @@ export function calcPaymentStatus(payments, total) {
   return 'deposit_paid';
 }
 
-// Group digits in fours while typing, so a 16-digit number stays readable.
-const formatCardNumber = (raw) => (raw.replace(/\D/g, '').slice(0, 19).match(/.{1,4}/g) || []).join(' ');
-
-// "1226" / "12/26" → "12/26". Typing is forward-only; the slash appears itself.
-const formatExpiry = (raw) => {
-  const digits = raw.replace(/\D/g, '').slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-};
-
-function validateCard({ number, expiry, cvv, holder }) {
-  const digits = (number || '').replace(/\D/g, '');
-  if (digits.length < 13 || digits.length > 19) return 'מספר כרטיס לא תקין (13–19 ספרות)';
-
-  const m = /^(\d{2})\/(\d{2})$/.exec((expiry || '').trim());
-  if (!m) return 'תוקף לא תקין — הזן בפורמט MM/YY';
-  const month = parseInt(m[1], 10);
-  const year = 2000 + parseInt(m[2], 10);
-  if (month < 1 || month > 12) return 'חודש תוקף לא תקין';
-  const now = new Date();
-  // A card is valid through the LAST day of its expiry month.
-  const expiresAfter = new Date(year, month, 1);
-  if (expiresAfter <= now) return 'הכרטיס פג תוקף';
-
-  if (!/^\d{3,4}$/.test((cvv || '').trim())) return 'CVV לא תקין (3–4 ספרות)';
-  if (!(holder || '').trim()) return 'יש להזין שם בעל הכרטיס';
-  return null;
-}
-
 export default function OrderPaymentDialog({
   open,
   onOpenChange,
   total = 0,
   alreadyPaid = 0,
-  defaultMethod = 'credit_card',
+  defaultMethod = 'cash',
   onConfirm,
   recordedBy,
   isSaving = false,
   title = 'רישום תשלום',
+  // Optional escape hatch to real clearing. Screens that CAN charge a card
+  // (i.e. the order already exists, so hyp-sign has an order_id) pass this and
+  // get a "go to Hyp" button when the method is credit card.
+  onStartCardClearing,
 }) {
   const remaining = useMemo(() => Math.max(0, round2(total - alreadyPaid)), [total, alreadyPaid]);
 
@@ -99,18 +80,16 @@ export default function OrderPaymentDialog({
   const [method, setMethod] = useState(defaultMethod);
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
-  const [card, setCard] = useState({ number: '', expiry: '', cvv: '', holder: '' });
   const [error, setError] = useState(null);
 
   // Re-arm on every open: default to the outstanding balance and the method the
-  // caller asked for, and drop any card digits left over from a previous run.
+  // caller asked for.
   useEffect(() => {
     if (!open) return;
     setAmount(remaining > 0 ? String(remaining) : '');
-    setMethod(defaultMethod || 'credit_card');
+    setMethod(defaultMethod || 'cash');
     setDate(new Date().toISOString().split('T')[0]);
     setNotes('');
-    setCard({ number: '', expiry: '', cvv: '', holder: '' });
     setError(null);
   }, [open, defaultMethod, remaining]);
 
@@ -126,12 +105,7 @@ export default function OrderPaymentDialog({
       setError(`הסכום חורג מהיתרה לתשלום (${money(remaining)})`);
       return;
     }
-    if (isCard) {
-      const cardError = validateCard(card);
-      if (cardError) { setError(cardError); return; }
-    }
 
-    const digits = card.number.replace(/\D/g, '');
     onConfirm?.({
       amount: round2(numericAmount),
       method,
@@ -139,11 +113,7 @@ export default function OrderPaymentDialog({
       notes: notes.trim(),
       recorded_at: new Date().toISOString(),
       recorded_by: recordedBy || null,
-      // PCI: the last 4 digits and the name on the card are all we keep.
-      ...(isCard ? { card_last4: digits.slice(-4), card_holder: card.holder.trim() } : {}),
     });
-    // Wipe the card fields immediately — they must not survive the dialog.
-    setCard({ number: '', expiry: '', cvv: '', holder: '' });
   };
 
   return (
@@ -227,61 +197,27 @@ export default function OrderPaymentDialog({
           </div>
 
           {isCard && (
-            <div className="rounded-lg border border-border p-3 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0" />
-                נשמרות רק 4 הספרות האחרונות ושם בעל הכרטיס.
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">מספר כרטיס</Label>
-                <Input
-                  value={card.number}
-                  onChange={(e) => setCard((c) => ({ ...c, number: formatCardNumber(e.target.value) }))}
-                  placeholder="0000 0000 0000 0000"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  dir="ltr"
-                  className="h-9 text-left"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">תוקף</Label>
-                  <Input
-                    value={card.expiry}
-                    onChange={(e) => setCard((c) => ({ ...c, expiry: formatExpiry(e.target.value) }))}
-                    placeholder="MM/YY"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    dir="ltr"
-                    className="h-9 text-left"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">CVV</Label>
-                  <Input
-                    value={card.cvv}
-                    onChange={(e) => setCard((c) => ({ ...c, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
-                    placeholder="000"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    dir="ltr"
-                    className="h-9 text-left"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">שם בעל הכרטיס</Label>
-                <Input
-                  value={card.holder}
-                  onChange={(e) => setCard((c) => ({ ...c, holder: e.target.value }))}
-                  placeholder="שם מלא"
-                  autoComplete="off"
-                  className="h-9"
-                />
-              </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-900">
+              <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+              <span>
+                כאן רק מתעדים חיוב אשראי שכבר בוצע (למשל במסוף בחנות).
+                {onStartCardClearing ? ' לחיוב בפועל יש להשתמש בסליקת Hyp.' : ''}
+                {' '}מומלץ לציין את מספר האישור בהערה.
+              </span>
             </div>
           )}
+
+          {isCard && onStartCardClearing ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              onClick={() => { onOpenChange(false); onStartCardClearing(); }}
+            >
+              <CreditCard className="h-4 w-4 me-1.5" />
+              מעבר לסליקת Hyp
+            </Button>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">הערה (אופציונלי)</Label>
