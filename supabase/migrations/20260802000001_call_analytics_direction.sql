@@ -169,6 +169,13 @@ $$;
 -- Detail rows: expose the direction already bucketed, so the table can filter
 -- with a plain .eq('call_direction', 'unknown') instead of an is-null-or-empty
 -- dance on the client.
+--
+-- call_direction is APPENDED, not slotted in next to the other call_* columns:
+-- CREATE OR REPLACE VIEW may only add columns at the END of the list, and
+-- inserting one mid-list fails with 42P16 "cannot change name of view column".
+-- The client reads by name, so the position is immaterial — and appending
+-- avoids a DROP that would take the grants (and any future dependent view)
+-- with it.
 CREATE OR REPLACE VIEW public.call_logs_detailed AS
 SELECT
   cl.id,
@@ -180,9 +187,9 @@ SELECT
   cl.rep_id,
   cl.lead_id,
   cl.phone_number,
-  public.call_direction_bucket(cl.call_direction) AS call_direction,
   l.full_name AS lead_full_name,
-  l.phone     AS lead_phone
+  l.phone     AS lead_phone,
+  public.call_direction_bucket(cl.call_direction) AS call_direction
 FROM public.call_logs cl
 LEFT JOIN public.leads l ON l.id = cl.lead_id;
 
