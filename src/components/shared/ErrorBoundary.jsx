@@ -13,10 +13,11 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log to console in development only
-    if (import.meta.env.DEV) {
-      console.error('ErrorBoundary caught:', error, errorInfo);
-    }
+    // Always log, production included. Gating this on DEV meant a crash in
+    // production left NOTHING behind — not in the console, not on screen — so
+    // "משהו השתבש" was all anyone could report, and the cause had to be guessed
+    // at from a screenshot. The console is where a user can actually read it.
+    console.error('ErrorBoundary caught:', error, errorInfo?.componentStack || errorInfo);
   }
 
   render() {
@@ -28,6 +29,22 @@ export default class ErrorBoundary extends React.Component {
           <p className="text-sm text-muted-foreground mb-4 max-w-md">
             אירעה שגיאה לא צפויה. נסה לרענן את הדף.
           </p>
+          {/* The actual message, one click away. Without it a crash report is
+              just a screenshot of this screen, which says nothing about what
+              broke — and the fix ends up being guesswork. */}
+          {this.state.error ? (
+            <details className="mb-4 max-w-xl w-full text-right">
+              <summary className="text-xs text-muted-foreground cursor-pointer select-none">
+                פרטי השגיאה (להעתקה ולשליחה לתמיכה)
+              </summary>
+              <pre
+                dir="ltr"
+                className="mt-2 max-h-48 overflow-auto rounded-lg bg-muted p-3 text-[11px] leading-snug text-left whitespace-pre-wrap break-words"
+              >
+                {String(this.state.error?.stack || this.state.error?.message || this.state.error)}
+              </pre>
+            </details>
+          ) : null}
           <Button
             onClick={() => {
               this.setState({ hasError: false, error: null });
