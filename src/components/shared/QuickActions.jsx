@@ -18,7 +18,8 @@ import {
   MoreVertical,
   Send,
   Eye,
-  Loader2
+  Loader2,
+  Trash2
 } from "lucide-react";
 import { toast } from 'sonner';
 import { formatPhoneForWhatsApp } from '@/utils/phoneUtils';
@@ -34,6 +35,9 @@ export default function QuickActions({
   onCreateTicket,
   onCreateReturn,
   onView,
+  // Destructive, so it's opt-in: a screen passes it only for users allowed to
+  // delete (today: admins on orders). No handler → no menu item.
+  onDelete,
   hideContactButtons
 }) {
   const { openNewOrder, openNewQuote } = useCreationModal();
@@ -74,7 +78,10 @@ export default function QuickActions({
   };
 
   return (
-    <div className="flex items-center gap-1">
+    // Tables that use onRowClick would otherwise navigate when a menu item is
+    // clicked: the dropdown renders in a portal, but React events still bubble
+    // up the COMPONENT tree — through here — to the row. Stop them at the root.
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
       {!hideContactButtons && (
         <>
           <Button
@@ -157,6 +164,19 @@ export default function QuickActions({
               <RotateCcw className="h-4 w-4 me-2" />
               בקשת החזרה
             </DropdownMenuItem>
+          )}
+
+          {onDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onDelete(data)}
+                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4 me-2" />
+                מחק
+              </DropdownMenuItem>
+            </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>

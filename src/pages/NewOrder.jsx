@@ -25,6 +25,7 @@ import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
+import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -39,13 +40,15 @@ const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFr
 // uses — one rule, one place.
 const normalizePhoneForLookup = toLocalIsraeliPhone;
 
-// The payment-terms chips are labels that go on the printed order; the payment
-// dialog needs a concrete method code. Picking a term opens the dialog on the
-// matching method so "בחרתי אשראי" and "בוא נגבה עכשיו" are one action.
-const TERM_TO_PAYMENT_METHOD = {
-  'אשראי': 'credit_card',
-  'מזומן': 'cash',
-  'תשלום בבית למוביל': 'cash',
+// What picking a payment-terms chip should DO, beyond labelling the order.
+//   'hyp'    — real card clearing. The order has to exist first (hyp-sign needs
+//              an order_id), so it runs straight after save.
+//   'record' — money changing hands here and now; open the manual record dialog.
+//   null     — paid later, on delivery. Nothing to collect at this point.
+const TERM_ACTION = {
+  'אשראי': { kind: 'hyp' },
+  'מזומן': { kind: 'record', method: 'cash' },
+  'תשלום בבית למוביל': null,
 };
 
 export default function NewOrder({ asDialog = false, dialogLeadId = null, dialogQuoteId = null, onDialogClose = null }) {
@@ -96,8 +99,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     payments: [],
   });
 
-  // Payment dialog — `method` is what the rep's payment-terms click implies.
-  const [paymentDialog, setPaymentDialog] = useState({ open: false, method: 'credit_card' });
+  // Manual record dialog — `method` is what the rep's payment-terms click implies.
+  const [paymentDialog, setPaymentDialog] = useState({ open: false, method: 'cash' });
+  // The order we just created, held so Hyp clearing can run against it before
+  // we leave the screen. hyp-sign needs a persisted order_id, which is exactly
+  // why card clearing can't happen before save.
+  const [createdOrder, setCreatedOrder] = useState(null);
 
   // Delivery extras the rep removed by hand. Auto-add must never resurrect one:
   // "I don't want this" has to outlive the next items change.
@@ -423,6 +430,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       return order;
     },
     onSuccess: (order) => {
+      // "בחרתי אשראי" has to end in an actual charge. The order exists now, so
+      // hyp-sign has its order_id — open the Hyp iframe right here instead of
+      // dumping the rep on the order page to find the payment button.
+      if (wantsCardClearing) { setCreatedOrder(order); return; }
       if (asDialog && onDialogClose) { onDialogClose(order); return; }
       navigate(createPageUrl('OrderDetails') + `?id=${order.id}`);
     },
@@ -539,7 +550,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
   const recordPayment = (entry) => {
     setFormData((prev) => ({ ...prev, payments: [...(prev.payments || []), entry] }));
-    setPaymentDialog({ open: false, method: 'credit_card' });
+    setPaymentDialog({ open: false, method: 'cash' });
     toast.success('התשלום נרשם ויישמר יחד עם ההזמנה');
   };
 
@@ -547,9 +558,14 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     setFormData((prev) => ({ ...prev, payments: prev.payments.filter((_, i) => i !== index) }));
   };
 
-  // Selecting a payment method is the rep saying "we're collecting now" — open
-  // the payment window straight away instead of making them save the order and
-  // come back to it.
+  // Card clearing is wanted when the rep marked אשראי and there's still a
+  // balance left after whatever was recorded by hand.
+  const wantsCardClearing = (formData.payment_terms_selection || []).includes('אשראי')
+    && formData.total - paidSoFar > 0.01;
+
+  // Picking a payment method is the rep saying how this order gets paid — so it
+  // acts, instead of just tagging the order and leaving them to hunt for the
+  // payment screen afterwards.
   const togglePaymentTerm = (opt) => {
     const current = formData.payment_terms_selection || [];
     const wasSelected = current.includes(opt);
@@ -557,9 +573,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       ...prev,
       payment_terms_selection: wasSelected ? current.filter((x) => x !== opt) : [...current, opt],
     }));
-    if (!wasSelected) {
-      setPaymentDialog({ open: true, method: TERM_TO_PAYMENT_METHOD[opt] || 'other' });
+    if (wasSelected) return;
+    const action = TERM_ACTION[opt];
+    if (action?.kind === 'record') {
+      setPaymentDialog({ open: true, method: action.method });
     }
+    // 'hyp' needs a saved order, so it fires from the mutation's onSuccess.
   };
 
   if (isLoadingUser) {
@@ -1072,10 +1091,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
               variant="outline"
               size="sm"
               className="h-8 text-xs"
-              onClick={() => setPaymentDialog({ open: true, method: 'credit_card' })}
+              onClick={() => setPaymentDialog({ open: true, method: 'cash' })}
             >
               <Plus className="h-3.5 w-3.5 me-1.5" />
-              רשום תשלום
+              רשום תשלום שהתקבל
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -1094,9 +1113,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
               </div>
             </div>
 
+            {wantsCardClearing ? (
+              <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-2.5 flex items-start gap-2 text-xs text-primary">
+                <CreditCard className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                עם השמירה תיפתח סליקת Hyp על היתרה ({money2(Math.max(0, formData.total - paidSoFar))}).
+              </div>
+            ) : null}
+
             {(formData.payments || []).length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                לא נרשם תשלום. בחירת אמצעי תשלום למטה תפתח את חלון התשלום.
+                לא נרשם תשלום. "רשום תשלום שהתקבל" מיועד לכסף שכבר עבר (מזומן, העברה, צ׳ק);
+                חיוב אשראי נעשה בסליקת Hyp.
               </p>
             ) : (
               <div className="space-y-2">
@@ -1109,8 +1136,6 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {payment.date || ''}
-                        {payment.card_last4 ? ` · כרטיס **** ${payment.card_last4}` : ''}
-                        {payment.card_holder ? ` · ${payment.card_holder}` : ''}
                         {payment.notes ? ` · ${payment.notes}` : ''}
                       </div>
                     </div>
@@ -1162,7 +1187,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             <div className="space-y-2">
               <Label>אמצעי תשלום</Label>
               <p className="text-[11px] text-muted-foreground">
-                בחר אחד או יותר. יופיע על ההזמנה, ופותח מיד את חלון התשלום.
+                בחר אחד או יותר. יופיע על ההזמנה. "אשראי" יפתח סליקת Hyp מיד אחרי השמירה,
+                "מזומן" יפתח רישום תשלום עכשיו, ו"תשלום בבית למוביל" נגבה במסירה.
               </p>
               <div className="flex flex-wrap gap-2">
                 {PAYMENT_TERMS_OPTIONS.map((opt) => {
@@ -1245,7 +1271,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       </form>
 
       {/* Same dialog the existing-order screen uses, so recording a payment is
-          one experience whether the order exists yet or not. */}
+          one experience whether the order exists yet or not. Records money that
+          already changed hands — it never charges a card. */}
       <OrderPaymentDialog
         open={paymentDialog.open}
         onOpenChange={(open) => setPaymentDialog((prev) => ({ ...prev, open }))}
@@ -1254,6 +1281,22 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         defaultMethod={paymentDialog.method}
         recordedBy={effectiveUser?.email}
         onConfirm={recordPayment}
+      />
+
+      {/* Real clearing, on the order we just saved. Leaving the screen waits for
+          this to finish either way — a cancelled charge still leaves a valid
+          order the rep can collect on later. */}
+      <HypPaymentDialog
+        open={!!createdOrder}
+        onOpenChange={(open) => {
+          if (open || !createdOrder) return;
+          const order = createdOrder;
+          setCreatedOrder(null);
+          if (asDialog && onDialogClose) onDialogClose(order);
+          else navigate(createPageUrl('OrderDetails') + `?id=${order.id}`);
+        }}
+        order={createdOrder}
+        onPaid={() => toast.success('התשלום התקבל')}
       />
     </div>
   );

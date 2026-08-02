@@ -12,6 +12,7 @@ const VAT = 1.18;
 // Two decimals (agorot) so the displayed line totals sum exactly to the grand
 // total — whole-₪ rounding per line drifted by up to ₪0.50 each.
 const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const CATEGORY_LABELS = { bed: 'מיטה', mattress: 'מזרון', topper: 'תוספת', accessory: 'נלווה' };
 const hasTrialPeriod = (p) => Boolean(p?.has_trial_period ?? p?.data?.has_trial_period);
 
@@ -29,6 +30,11 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
   // Non-null while the picker is editing an existing row's product/size (pencil)
   // rather than adding a new one.
   const [editIndex, setEditIndex] = useState(null);
+  // What the rep is currently typing into a custom row's price box, as text.
+  // The stored unit_price is pre-VAT, so echoing it back through ×1.18 while
+  // they type turns "100" into "99.99999" mid-keystroke. Hold the raw text for
+  // the focused field only and let the stored value catch up behind it.
+  const [customPriceDraft, setCustomPriceDraft] = useState(null); // { index, text }
 
   const productById = (id) => products.find((p) => p.id === id);
 
@@ -241,16 +247,33 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                         </div>
                       </td>
                       <td className="py-2.5 px-2">
+                        {/* The rep types the price the customer pays — incl.
+                            VAT — and we store the pre-VAT figure the rest of
+                            the app works in. */}
                         <Input
                           type="number"
                           min="0"
                           step="0.01"
-                          value={item.unit_price ?? 0}
+                          value={
+                            customPriceDraft?.index === index
+                              ? customPriceDraft.text
+                              : round2((item.unit_price || 0) * VAT)
+                          }
                           onFocus={(e) => { if (Number(e.target.value) === 0) e.target.select(); }}
-                          onChange={(e) => updateItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
+                          onChange={(e) => {
+                            const text = e.target.value;
+                            setCustomPriceDraft({ index, text });
+                            // Stored at full precision on purpose: rounding the
+                            // pre-VAT figure to agorot makes ₪100 come back as
+                            // ₪100.01 on the way out. Totals round once, at the
+                            // end, where it belongs.
+                            updateItem(index, 'unit_price', (parseFloat(text) || 0) / VAT);
+                          }}
+                          onBlur={() => setCustomPriceDraft(null)}
                           className="h-8 text-sm text-center"
                           dir="ltr"
                         />
+                        <span className="block text-[9px] text-muted-foreground text-center mt-0.5">כולל מע״מ</span>
                       </td>
                       <td className="text-center py-2.5 px-2">
                         <DiscountPopover item={item} onApplyDiscount={(p) => updateItem(index, 'discount_percent', p)} />
