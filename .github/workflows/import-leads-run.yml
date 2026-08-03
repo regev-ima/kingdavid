@@ -1,0 +1,148 @@
+name: Lead import — run a staged batch to completion
+
+# Drives an already-uploaded lead_import_batches row to done, looping until
+# nothing is pending. Replaces holding a browser tab open for an hour, or
+# clicking process_lead_import() in the SQL editor ninety times.
+#
+# The import screen uploads the CSV to staging and then drives the merge from
+# the tab, one chunk per request. That works for a small file and falls apart on
+# a large one: the 125,280-row Kaveret import stalled because a 500-row chunk
+# outran the statement timeout PostgREST applies to `authenticated`, and even at
+# a chunk size that fits, the tab has to stay open for the whole run.
+#
+# Manual only (workflow_dispatch) — this writes data, and a push to main does
+# not mean "now is a good time to merge 125k leads".
+#
+# Safe to re-run and safe to interrupt: every call is its own transaction and
+# only touches rows still marked pending, so a cancelled run leaves the rest for
+# the next one. Re-importing the same Kaveret id updates in place rather than
+# duplicating, so nothing is ever processed twice into two leads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch_id:
+        description: 'Batch UUID. Empty = the most recently created batch.'
+        required: false
+        default: ''
+      chunk:
+        description: 'Rows per request (each request is its own transaction)'
+        required: false
+        default: '500'
+      max_calls:
+        description: 'Safety cap on the number of requests'
+        required: false
+        default: '400'
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    # A full 125k file plus slack. Bounded so a stuck run cannot idle for hours.
+    timeout-minutes: 180
+
+    steps:
+      - name: Process the batch until done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          BATCH_ID: ${{ inputs.batch_id }}
+          CHUNK: ${{ inputs.chunk }}
+          MAX_CALLS: ${{ inputs.max_calls }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+
+          url="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query"
+
+          run_sql() {
+            payload=$(jq -Rns --arg q "$1" '{query: $q}')
+            code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST "$url" \
+              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "$payload")
+            if [ "$code" -ge 400 ]; then
+              echo "::error::Management API returned HTTP $code"
+              cat /tmp/resp.json || true
+              return 1
+            fi
+          }
+
+          # Resolve the batch once, so every later call names it explicitly. If
+          # the caller left it blank and somebody uploads another file mid-run,
+          # "the latest batch" would otherwise change under us.
+          if [ -z "${BATCH_ID}" ]; then
+            run_sql "SELECT id::text FROM public.lead_import_batches ORDER BY created_date DESC LIMIT 1;"
+            BATCH_ID=$(jq -r '[.. | objects | select(has("id"))] | first | .id // empty' /tmp/resp.json)
+          fi
+          if [ -z "${BATCH_ID}" ] || [ "${BATCH_ID}" = "null" ]; then
+            echo "::error::No batch to process"; exit 1
+          fi
+          echo "batch: ${BATCH_ID}"
+
+          total=0
+          for i in $(seq 1 "${MAX_CALLS}"); do
+            # session_replication_role='replica' suppresses user triggers for
+            # THIS transaction only — not globally, so concurrent app traffic is
+            # untouched.
+            #
+            # Same lesson as backfill-lead-contacts.yml: leads carries
+            # auto_update_lead_counters(), which on every row write runs
+            #   UPDATE lead_counters SET total_leads = (SELECT COUNT(*) FROM leads …)
+            # — a full scan of 116k rows. Unsuppressed, the import measured 35
+            # rows/sec, because every single row triggered a full table scan.
+            #
+            # Safe here because process_lead_import does not depend on any of
+            # the triggers it switches off: it resolves contact_id itself, sets
+            # effective_sort_date itself (20260803000005 — the trigger used to
+            # cover that and no longer has to), and lead_counters recomputes
+            # absolutely, so the nudge below restores it in one write. The
+            # activity-log triggers are skipped on purpose: 125k rows recording
+            # a bulk backfill is noise, not history.
+            sql="SET LOCAL session_replication_role = 'replica'; SELECT public.process_lead_import('${BATCH_ID}'::uuid, ${CHUNK});"
+            run_sql "$sql"
+
+            # Located recursively rather than by index: two statements can yield
+            # two result arrays, so [0] is not reliably the one we want.
+            r=$(jq -c '[.. | objects | select(has("process_lead_import"))] | first | .process_lead_import // empty' /tmp/resp.json)
+            if [ -z "$r" ] || [ "$r" = "null" ]; then
+              echo "::error::Unexpected response shape"; cat /tmp/resp.json; exit 1
+            fi
+
+            now=$(jq -r '.processed_now'   <<<"$r")
+            rem=$(jq -r '.remaining'       <<<"$r")
+            adp=$(jq -r '.adopted_leads'   <<<"$r")
+            crt=$(jq -r '.created_leads'   <<<"$r")
+            fld=$(jq -r '.failed_rows'     <<<"$r")
+            done_flag=$(jq -r '.done'      <<<"$r")
+            total=$(( total + now ))
+            echo "call ${i}: +${now} (adopted ${adp}, created ${crt}, failed ${fld}) — ${rem} left"
+
+            # `done` covers the drained case; processed_now = 0 catches a batch
+            # that can no longer make progress, so the loop cannot spin.
+            if [ "$done_flag" = "true" ] || [ "$now" = "0" ]; then
+              # Counters went unmaintained while triggers were suppressed. One
+              # ordinary write with triggers live makes the trigger recompute
+              # them from scratch — which is how it computes them anyway.
+              run_sql "UPDATE public.leads SET updated_date = updated_date WHERE id = (SELECT id FROM public.leads LIMIT 1);" || true
+              echo "counters recomputed"
+
+              run_sql "SELECT status, processed_rows, created_leads, updated_leads, adopted_leads, failed_rows FROM public.lead_import_batches WHERE id = '${BATCH_ID}'::uuid;" || true
+              summary=$(jq -c '[.. | objects | select(has("processed_rows"))] | first' /tmp/resp.json)
+              echo "✅ ${summary}"
+              {
+                echo "### Import complete"
+                echo "- Batch: \`${BATCH_ID}\`"
+                echo "- Rows processed this run: **${total}**"
+                echo "- Calls: **${i}**"
+                echo ""
+                echo "\`\`\`json"
+                echo "${summary}"
+                echo "\`\`\`"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done
+
+          echo "::warning::Hit the ${MAX_CALLS}-call cap with ${rem} rows remaining. Re-run to continue."
