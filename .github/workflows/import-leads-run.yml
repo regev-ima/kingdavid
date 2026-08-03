@@ -33,6 +33,11 @@ on:
         description: 'Safety cap on the number of requests'
         required: false
         default: '400'
+      retry_failed:
+        description: 'Reset already-failed rows to pending before running'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   import:
@@ -48,6 +53,7 @@ jobs:
           BATCH_ID: ${{ inputs.batch_id }}
           CHUNK: ${{ inputs.chunk }}
           MAX_CALLS: ${{ inputs.max_calls }}
+          RETRY_FAILED: ${{ inputs.retry_failed }}
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
@@ -56,17 +62,34 @@ jobs:
 
           url="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query"
 
+          # Retries 5xx, and only 5xx. The last run died at call 71 of ~250 on a
+          # Cloudflare 524 — the gateway gave up while the statement was still
+          # running, which says nothing about whether the statement succeeded.
+          # Retrying is safe either way: process_lead_import only touches rows
+          # still marked pending, so a chunk that did commit before the gateway
+          # timed out is simply skipped by the retry. A 4xx is a real error
+          # (bad SQL, bad token) and fails immediately — retrying it would just
+          # loop on the same mistake.
           run_sql() {
             payload=$(jq -Rns --arg q "$1" '{query: $q}')
-            code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST "$url" \
-              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-              -H "Content-Type: application/json" \
-              --data "$payload")
-            if [ "$code" -ge 400 ]; then
-              echo "::error::Management API returned HTTP $code"
-              cat /tmp/resp.json || true
-              return 1
-            fi
+            for attempt in 1 2 3 4 5; do
+              code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" --max-time 900 -X POST "$url" \
+                -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "$payload") || code=000
+              if [ "$code" -lt 400 ] && [ "$code" != "000" ]; then return 0; fi
+              if [ "$code" -ge 400 ] && [ "$code" -lt 500 ]; then
+                echo "::error::Management API returned HTTP $code"
+                cat /tmp/resp.json || true
+                return 1
+              fi
+              wait=$(( attempt * 15 ))
+              echo "::warning::HTTP ${code} — retrying in ${wait}s (attempt ${attempt}/5)"
+              sleep "$wait"
+            done
+            echo "::error::Gave up after 5 attempts"
+            cat /tmp/resp.json || true
+            return 1
           }
 
           # Resolve the batch once, so every later call names it explicitly. If
@@ -80,6 +103,17 @@ jobs:
             echo "::error::No batch to process"; exit 1
           fi
           echo "batch: ${BATCH_ID}"
+
+          # A failed row stays failed — the merge only picks up `pending`, so
+          # rows that died are silently left behind on a re-run. After fixing
+          # whatever killed them, this puts them back in the queue. Rows whose
+          # cause was not fixed simply fail again with the same message, which
+          # is the honest outcome and costs one pass over them.
+          if [ "${RETRY_FAILED}" = "true" ]; then
+            run_sql "UPDATE public.lead_import_rows SET status = 'pending', error = NULL WHERE batch_id = '${BATCH_ID}'::uuid AND status = 'failed';"
+            run_sql "UPDATE public.lead_import_batches SET failed_rows = 0 WHERE id = '${BATCH_ID}'::uuid;"
+            echo "failed rows reset to pending"
+          fi
 
           total=0
           for i in $(seq 1 "${MAX_CALLS}"); do
