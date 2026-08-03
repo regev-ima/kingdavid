@@ -39,6 +39,29 @@ function waitChipClass(seconds) {
   return 'bg-red-600 text-white';
 }
 
+// One page of conversations. The list grows by this much on "טען עוד"; it is a
+// page size, not a ceiling — every COUNT and every card comes from SQL.
+const PAGE_SIZE = 100;
+
+// Free-text search hits the server now, so don't fire one per keystroke.
+function useDebounced(value, ms) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return debounced;
+}
+
+// Start of the selected overview period, in ms. null = all time.
+export function periodStartMs(period, now) {
+  const day = 24 * 60 * 60 * 1000;
+  if (period === 'today') { const d = new Date(now); d.setHours(0, 0, 0, 0); return d.getTime(); }
+  if (period === '7d') return now - 7 * day;
+  if (period === '30d') return now - 30 * day;
+  return null;
+}
+
 const STATUS_FILTERS = [
   { value: 'all', label: 'הכל' },
   { value: 'waiting', label: 'ממתינים' },
@@ -86,12 +109,85 @@ export default function WhatsAppChat() {
     return () => clearInterval(t);
   }, []);
 
+  // How many conversations the list currently holds. Grows on "טען עוד"; reset
+  // whenever the filters change so a new cut starts from one page.
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const debouncedSearch = useDebounced(search, 300);
+
+  // Every filter now runs in SQL. It used to fetch the newest 500 rows and
+  // filter them in the browser, which meant the filters only ever saw whatever
+  // was inside that window — and the window is smaller than the table.
+  const listFilter = useMemo(() => {
+    const conditions = [];
+    if (statusFilter !== 'all') conditions.push({ status: statusFilter });
+    if (isAdmin && repFilter !== 'all') conditions.push({ user_id: repFilter });
+    if (tagFilter === 'none') conditions.push({ tag: null });
+    else if (tagFilter !== 'all') conditions.push({ tag: tagFilter });
+    const term = debouncedSearch.trim();
+    if (term) {
+      conditions.push({ $or: [
+        { contact_name: { $regex: term } },
+        { contact_phone: { $regex: term } },
+        { chat_id: { $regex: term } },
+        { last_message_text: { $regex: term } },
+      ] });
+    }
+    if (conditions.length === 0) return {};
+    if (conditions.length === 1) return conditions[0];
+    return { $and: conditions };
+  }, [statusFilter, repFilter, tagFilter, debouncedSearch, isAdmin]);
+
+  const listFilterKey = useMemo(() => JSON.stringify(listFilter), [listFilter]);
+  useEffect(() => { setLimit(PAGE_SIZE); }, [listFilterKey]);
+
   // Conversations (RLS scopes: rep → own, admin → all).
   const { data: chats = [], isLoading: chatsLoading } = useQuery({
-    queryKey: ['wa-chats'],
-    queryFn: () => base44.entities.WhatsAppChat.list('-last_message_at', 500),
+    queryKey: ['wa-chats', listFilterKey, limit],
+    queryFn: () => base44.entities.WhatsAppChat.filter(listFilter, '-last_message_at', limit),
     refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev, // don't blank the list while a page loads
     refetchInterval: 20000, // resilience: refresh even if Realtime is unavailable
+  });
+
+  // Total matching the current cut, so "מציג X מתוך Y" is honest and the
+  // "טען עוד" button knows when to stop.
+  const { data: matchCount = null } = useQuery({
+    queryKey: ['wa-chats-count', listFilterKey],
+    queryFn: () => base44.entities.WhatsAppChat.count(listFilter),
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+  });
+
+  // ── Server-side aggregates ────────────────────────────────────────────────
+  // The rep list and every headline number come from SQL over the WHOLE table.
+  // Deriving them from the fetched page is what made the "כל הצוות" card read
+  // exactly 500 and made two reps disappear.
+  const { data: repIdsWithChats = [] } = useQuery({
+    queryKey: ['wa-chat-reps'],
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('whatsapp_chat_reps').select('user_id');
+      if (error) throw error;
+      return (data || []).map((r) => r.user_id).filter(Boolean);
+    },
+  });
+
+  const overviewStartIso = useMemo(() => {
+    const ms = periodStartMs(period, now);
+    return ms ? new Date(ms).toISOString() : null;
+  }, [period, now]);
+
+  const { data: overviewRows = [] } = useQuery({
+    queryKey: ['wa-chat-overview', overviewStartIso],
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('whatsapp_chat_overview', { p_start: overviewStartIso });
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   // Admin needs the rep directory to label each conversation + drive the filter.
@@ -151,22 +247,9 @@ export default function WhatsAppChat() {
     return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
-  const filteredChats = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return chats.filter((c) => {
-      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-      if (isAdmin && repFilter !== 'all' && c.user_id !== repFilter) return false;
-      if (tagFilter !== 'all') {
-        if (tagFilter === 'none') { if (c.tag) return false; }
-        else if (c.tag !== tagFilter) return false;
-      }
-      if (term) {
-        const hay = `${c.contact_name || ''} ${c.contact_phone || ''} ${c.chat_id || ''} ${c.last_message_text || ''}`.toLowerCase();
-        if (!hay.includes(term)) return false;
-      }
-      return true;
-    });
-  }, [chats, search, statusFilter, repFilter, tagFilter, isAdmin]);
+  // `chats` already IS the filtered cut — the query above applied every filter
+  // in SQL, so there is nothing left to narrow here.
+  const filteredChats = chats;
 
   const selectedChat = useMemo(() => chats.find((c) => c.id === selectedId) || null, [chats, selectedId]);
 
@@ -187,7 +270,35 @@ export default function WhatsAppChat() {
     email: '',
   } : null);
 
-  const waitingCount = chats.filter((c) => c.status === 'waiting').length;
+  const overview = useMemo(() => {
+    const reps = overviewRows
+      .map((r) => ({
+        user_id: r.user_id,
+        total: Number(r.total) || 0,
+        waiting: Number(r.waiting) || 0,
+        activePeriod: Number(r.active_period) || 0,
+        answeredPeriod: Number(r.answered_period) || 0,
+        oldestWaitingMs: r.oldest_waiting_at ? new Date(r.oldest_waiting_at).getTime() : null,
+      }))
+      .sort((a, b) => b.waiting - a.waiting || b.activePeriod - a.activePeriod);
+    const team = reps.reduce((t, m) => ({
+      total: t.total + m.total,
+      waiting: t.waiting + m.waiting,
+      answeredPeriod: t.answeredPeriod + m.answeredPeriod,
+      activePeriod: t.activePeriod + m.activePeriod,
+      oldestWaitingMs: m.oldestWaitingMs != null && (t.oldestWaitingMs == null || m.oldestWaitingMs < t.oldestWaitingMs)
+        ? m.oldestWaitingMs
+        : t.oldestWaitingMs,
+    }), { total: 0, waiting: 0, answeredPeriod: 0, activePeriod: 0, oldestWaitingMs: null });
+    return { reps, team };
+  }, [overviewRows]);
+
+  // From SQL over the whole table. Counting the fetched page instead is what
+  // made this banner under-report once the table passed the page size.
+  const waitingCount = useMemo(
+    () => overviewRows.reduce((sum, r) => sum + (Number(r.waiting) || 0), 0),
+    [overviewRows],
+  );
 
   // Arriving from the red banner (?focus=waiting) → jump straight to the most
   // recent conversation still waiting for a reply (chats are sorted newest
@@ -250,11 +361,13 @@ export default function WhatsAppChat() {
   });
 
   // Reps who actually have conversations — for the admin filter dropdown.
+  // Every rep who has conversations, from the whatsapp_chat_reps view — NOT
+  // from the fetched page. Two reps whose last activity was in July used to
+  // fall outside the newest-500 window and disappear from this dropdown.
   const repsWithChats = useMemo(() => {
     if (!isAdmin) return [];
-    const ids = [...new Set(chats.map((c) => c.user_id))];
-    return ids.map((id) => usersById[id]).filter(Boolean);
-  }, [isAdmin, chats, usersById]);
+    return repIdsWithChats.map((id) => usersById[id]).filter(Boolean);
+  }, [isAdmin, repIdsWithChats, usersById]);
 
   return (
     <div ref={rootRef} dir="rtl" style={areaH ? { height: areaH } : undefined} className="min-h-[360px] flex flex-col">
@@ -295,7 +408,8 @@ export default function WhatsAppChat() {
       {/* Manager bird's-eye overview — per-rep numbers + click-to-filter */}
       {isAdmin && overviewOpen && (
         <WhatsAppManagerOverview
-          chats={chats}
+          reps={overview.reps}
+          team={overview.team}
           usersById={usersById}
           viewStatsById={viewStatsById}
           period={period}
@@ -374,6 +488,22 @@ export default function WhatsAppChat() {
                   onClick={() => setSelectedId(chat.id)}
                 />
               ))
+            )}
+            {/* Paging, not a ceiling: the count below comes from a COUNT over
+                the whole table, so the rep can see there IS more and reach it. */}
+            {!chatsLoading && filteredChats.length > 0 && (
+              <div className="px-3 py-3 text-center space-y-2 border-t bg-muted/20">
+                <p className="text-[11px] text-muted-foreground">
+                  מציג {filteredChats.length.toLocaleString()}
+                  {matchCount != null ? ` מתוך ${matchCount.toLocaleString()}` : ''} שיחות
+                </p>
+                {matchCount != null && filteredChats.length < matchCount && (
+                  <Button variant="outline" size="sm" className="h-8 text-xs"
+                    onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+                    טען עוד
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>

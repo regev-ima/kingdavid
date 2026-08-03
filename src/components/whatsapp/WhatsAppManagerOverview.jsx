@@ -1,8 +1,7 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
-import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { Users, Timer, Clock, Loader2, Trash2 } from 'lucide-react';
 import {
@@ -19,13 +18,6 @@ const PERIODS = [
   { value: 'all', label: 'כל הזמנים' },
 ];
 
-function periodStartMs(period, now) {
-  const d = new Date(now);
-  if (period === 'today') { d.setHours(0, 0, 0, 0); return d.getTime(); }
-  if (period === '7d') return now - 7 * 86400000;
-  if (period === '30d') return now - 30 * 86400000;
-  return 0;
-}
 
 // Urgency colour for how long the oldest waiting customer has waited (seconds).
 function waitChipClass(seconds) {
@@ -94,11 +86,14 @@ function RepWaCard({ id, label, avatar, stats, repActive, activeStatus, onFilter
 // Manager bird's-eye view above the chat: per-rep numbers for the chosen period,
 // click-to-filter, and a live "longest waiting" timer.
 export default function WhatsAppManagerOverview({
-  chats = [], usersById = {}, viewStatsById = {}, period, setPeriod,
+  // reps/team arrive already aggregated by whatsapp_chat_overview(). They used
+  // to be counted here from the fetched `chats` array, which silently made
+  // every card a report on the page size rather than on the table.
+  reps = [], team = { total: 0, waiting: 0, answeredPeriod: 0, activePeriod: 0, oldestWaitingMs: null },
+  usersById = {}, viewStatsById = {}, period, setPeriod,
   now, activeRep, activeStatus, onFilter,
 }) {
   const queryClient = useQueryClient();
-  const startMs = useMemo(() => periodStartMs(period, now), [period, now]);
 
   // Admin-only "wipe everyone's history" — same purge as WhatsAppSettingsTab,
   // looped server-side over every connected account. Credentials/connections
@@ -115,32 +110,6 @@ export default function WhatsAppManagerOverview({
     },
     onError: (err) => toast.error(`המחיקה נכשלה: ${err?.message || 'שגיאה'}`),
   });
-
-  const { reps, team } = useMemo(() => {
-    const map = {};
-    const t = { total: 0, waiting: 0, answeredPeriod: 0, activePeriod: 0, oldestWaitingMs: null };
-    for (const c of chats) {
-      const uid = c.user_id;
-      if (!uid) continue;
-      if (!map[uid]) map[uid] = { user_id: uid, total: 0, waiting: 0, answeredPeriod: 0, activePeriod: 0, oldestWaitingMs: null };
-      const m = map[uid];
-      const lastMs = parseDbTimestamp(c.last_message_at)?.getTime() ?? 0;
-      m.total += 1; t.total += 1;
-      if (lastMs >= startMs) {
-        m.activePeriod += 1; t.activePeriod += 1;
-        if (c.status === 'answered') { m.answeredPeriod += 1; t.answeredPeriod += 1; }
-      }
-      if (c.status === 'waiting') {
-        m.waiting += 1; t.waiting += 1;
-        if (lastMs) {
-          if (m.oldestWaitingMs == null || lastMs < m.oldestWaitingMs) m.oldestWaitingMs = lastMs;
-          if (t.oldestWaitingMs == null || lastMs < t.oldestWaitingMs) t.oldestWaitingMs = lastMs;
-        }
-      }
-    }
-    const reps = Object.values(map).sort((a, b) => b.waiting - a.waiting || b.activePeriod - a.activePeriod);
-    return { reps, team: t };
-  }, [chats, startMs]);
 
   const buckets = (m) => [
     { key: 'active', label: 'פעילות', value: m.activePeriod, status: 'all', title: 'שיחות עם פעילות בתקופה', box: 'bg-sky-50', text: 'text-sky-700', sub: 'text-sky-700/80', ring: 'ring-sky-400 border-sky-500' },
