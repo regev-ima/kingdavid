@@ -10,8 +10,8 @@ const STUCK_LEAD_DAYS = 7;
 
 // Lead statuses that terminate the sales pipeline. Anything not in this set
 // is considered "open" for the unassigned/stuck-leads alerts. Mirrors
-// CLOSED_STATUSES in src/constants/leadOptions.js — kept in sync manually
-// since edge functions can't import frontend modules.
+// CLOSED_STATUSES in src/constants/leadOptions.js and public.lead_closed_statuses()
+// — kept in sync manually since edge functions can't import either.
 const CLOSED_LEAD_STATUSES = [
   'deal_closed',
   'not_relevant_duplicate',
@@ -27,6 +27,17 @@ const CLOSED_LEAD_STATUSES = [
   'heard_price_not_interested',
   'not_relevant_wrong_number',
   'closed_by_manager_to_mailing',
+  // Keys migration 20260426000004 wrote into leads.status. A handled service
+  // ticket and a system-test row are not open pipeline; the un-handled half of
+  // each service pair is, so it is deliberately absent here.
+  'not_relevant_not_mature',
+  'system_test',
+  'service_handled',
+  'service_30_nights_trial_handled',
+  'service_warranty_handled',
+  'service_cancellations_handled',
+  'service_missing_items_handled',
+  'delivery_inquiry_handled',
 ];
 
 function normalizeLower(v: unknown) { return typeof v === 'string' ? v.trim().toLowerCase() : ''; }

@@ -62,6 +62,13 @@ const BY_KEY = (() => {
 // Terms that are not spelling variants of a CRM label but genuinely mean one.
 // `התקבל` is Kaveret's [[Lead.state]] — "the lead arrived" — not a handling
 // status, so it maps to the entry state rather than being reported as unknown.
+//
+// The second block is the residue of a real 116k-row Kaveret export. Most of
+// its statuses now match on the label alone, because LEAD_STATUS_OPTIONS was
+// extended to carry every key migration 20260426000004 wrote. What is left are
+// labels the mater-lectionis key cannot bridge on its own — a thousands
+// separator, an abbreviation, or trailing words the CRM label does not have.
+// Each one is a status the file really uses, with the row count it carried.
 const ALIASES = new Map(
   Object.entries({
     'התקבל': 'new_lead',
@@ -72,6 +79,23 @@ const ALIASES = new Map(
     'ללא מענה': 'no_answer_calls',
     'סגור': 'deal_closed',
     'עסקה נסגרה': 'deal_closed',
+
+    // ── from the Kaveret export ──
+    // "ב1,000" vs the CRM's "ב 1000": the comma becomes a space, so the key is
+    // "ב1 000" and no amount of spelling normalization closes that gap. (3,405)
+    'לא רלוונטי - מחפש מזרן ב1,000 ש"ח': 'not_relevant_1000_nis',
+    // Trailing "לשמוע עוד" the CRM label does not carry. (2,247)
+    'שמע מחיר ולא מעוניין לשמוע עוד': 'heard_price_not_interested',
+    // Trailing "בחברה". (1,436)
+    'מחפש מוצרים שלא קיימים בחברה': 'products_not_available',
+    // "מס'" abbreviated vs "מספר" spelled out. (1,316)
+    "לא רלוונטי - מס' שגוי": 'not_relevant_wrong_number',
+
+    // Two keys share this label — see the note on will_arrive_for_meeting in
+    // leadOptions. statusKey drops a label claimed twice, so without this entry
+    // the text would resolve to nothing and import as new_lead. It resolves to
+    // the key the app itself writes.
+    'יגיע לסניף לפגישה': 'coming_to_branch',
   }).map(([k, v]) => [statusKey(k), v])
 );
 
