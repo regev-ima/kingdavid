@@ -64,15 +64,19 @@ export default function WhatsAppChat() {
   const { openLead } = useLeadModal();
   const [infoOpen, setInfoOpen] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
-  // Remember the manager overview open/closed choice. Default: open on wide
-  // screens, collapsed on small ones — the cards take real vertical space and
-  // on a laptop/low resolution they crowd out the actual chat.
+  // Remember the manager overview open/closed choice. Default: open only when
+  // there is vertical room for it.
+  //
+  // This used to key off innerWidth >= 1024, which measures the wrong axis —
+  // the cards cost ~370px of HEIGHT. A wide-but-short screen (1500×820 is an
+  // ordinary laptop) passed the width test and then had two conversations
+  // visible. Height is what the decision is actually about.
   const [overviewOpen, setOverviewOpen] = useState(() => {
     try {
       const saved = localStorage.getItem('wa-overview-open');
       if (saved !== null) return saved === '1';
     } catch { /* ignore */ }
-    return typeof window !== 'undefined' ? window.innerWidth >= 1024 : true;
+    return typeof window !== 'undefined' ? window.innerHeight >= 900 : true;
   });
   useEffect(() => {
     try { localStorage.setItem('wa-overview-open', overviewOpen ? '1' : '0'); } catch { /* ignore */ }
@@ -292,22 +296,31 @@ export default function WhatsAppChat() {
         </div>
       </div>
 
-      {/* Manager bird's-eye overview — per-rep numbers + click-to-filter */}
+      {/* Manager bird's-eye overview — per-rep numbers + click-to-filter.
+          min-h-0 + its own overflow so it can SHRINK. Without that its content
+          sets a floor no flexbox can go under, and since the page height is
+          fixed the cards ate the conversation list instead: 154px of list on a
+          1500×820 screen, 54px at 1280×720, and exactly 0px at 1280×650 —
+          nothing left to even point at, so the wheel went to the page behind. */}
       {isAdmin && overviewOpen && (
-        <WhatsAppManagerOverview
-          chats={chats}
-          usersById={usersById}
-          viewStatsById={viewStatsById}
-          period={period}
-          setPeriod={setPeriod}
-          now={now}
-          activeRep={repFilter === 'all' ? null : repFilter}
-          activeStatus={statusFilter}
-          onFilter={applyRepFilter}
-        />
+        <div className="min-h-0 overflow-y-auto flex-shrink">
+          <WhatsAppManagerOverview
+            chats={chats}
+            usersById={usersById}
+            viewStatsById={viewStatsById}
+            period={period}
+            setPeriod={setPeriod}
+            now={now}
+            activeRep={repFilter === 'all' ? null : repFilter}
+            activeStatus={statusFilter}
+            onFilter={applyRepFilter}
+          />
+        </div>
       )}
 
-      <div className={`flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[320px_1fr] ${selectedChat ? 'xl:grid-cols-[320px_1fr_340px]' : ''} gap-0 rounded-xl border bg-card overflow-hidden`}>
+      {/* min-h-[420px] is the guarantee: whatever else wants room, the chat
+          itself keeps enough rows to be usable. */}
+      <div className={`flex-1 min-h-[420px] grid grid-cols-1 md:grid-cols-[320px_1fr] ${selectedChat ? 'xl:grid-cols-[320px_1fr_340px]' : ''} gap-0 rounded-xl border bg-card overflow-hidden`}>
         {/* ── Conversation list ── */}
         <div className={`flex flex-col border-l min-h-0 ${selectedId ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-3 space-y-2 border-b bg-muted/30">
