@@ -1,6 +1,10 @@
 import { createServiceClient, getCorsHeaders } from '../_shared/supabase.ts';
 import { normalizeIsraeliPhone } from '../_shared/phone.ts';
 
+// Mirrors VALID_LEAD_STATUSES in src/constants/leadOptions.js. The second half
+// is the set migration 20260426000004 normalized into leads.status; a caller
+// re-sending one of those was being rejected as an invalid status even though
+// the value came out of this database.
 const VALID_STATUSES = new Set([
   'new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch',
   'no_answer_1','no_answer_2','no_answer_3','no_answer_4','no_answer_5',
@@ -10,6 +14,15 @@ const VALID_STATUSES = new Set([
   'not_relevant_denies_contact','not_relevant_service','not_interested_hangs_up',
   'not_relevant_no_explanation','heard_price_not_interested','not_relevant_wrong_number',
   'closed_by_manager_to_mailing',
+  'second_line_lead','return_to_followup','will_arrive_for_meeting',
+  'manager_call_potential_close','transferred_by_manager_for_followup',
+  'no_answer_8_calls','call_from_google','call_from_facebook',
+  'already_purchased_inquiry','not_relevant_not_mature','system_test',
+  'service_30_nights_trial','service_30_nights_trial_handled',
+  'service_warranty','service_warranty_handled',
+  'service_cancellations','service_cancellations_handled',
+  'service_missing_items','service_missing_items_handled','service_handled',
+  'delivery_inquiry','delivery_inquiry_handled',
 ]);
 
 Deno.serve(async (req) => {

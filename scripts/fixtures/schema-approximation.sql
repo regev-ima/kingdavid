@@ -34,6 +34,14 @@ CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
 CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS
   $$ SELECT COALESCE(current_setting('test.jwt', true), '{}')::jsonb $$;
 
+-- Only the three columns rep_stats reads. Without the table that migration
+-- cannot be rehearsed here at all, which is how its closed-status list drifted.
+CREATE TABLE IF NOT EXISTS auth.users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  email text,
+  last_sign_in_at timestamptz
+);
+
 DO $$ BEGIN
   CREATE ROLE authenticated;  EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
@@ -66,6 +74,9 @@ CREATE TABLE public.leads (
   unique_id text, owner text, budget numeric, preferred_product text,
   utm_source text, utm_medium text, utm_campaign text, utm_content text,
   utm_term text, click_id text, landing_page text,
+  -- Marketing attribution. dashboard_stats_v1 derives 'facebook' as a source
+  -- from these three, and ContactEnquiriesCard renders ad/campaign per enquiry.
+  facebook_ad_name text, facebook_campaign_name text, facebook_adset_name text,
   first_action_at timestamptz, last_api_update timestamptz,
   effective_sort_date timestamptz,
   created_date timestamptz DEFAULT now(), updated_date timestamptz DEFAULT now()

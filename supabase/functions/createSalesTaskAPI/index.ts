@@ -54,8 +54,10 @@ const TASK_TYPE_MAP: Record<string, string> = {
   'אחר': 'other',
 };
 
-// Valid enum values from schema
-const VALID_STATUSES = ['new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch','no_answer_1','no_answer_2','no_answer_3','no_answer_4','no_answer_5','no_answer_whatsapp_sent','no_answer_calls','changed_direction','deal_closed','not_relevant_duplicate','mailing_remove_request','lives_far_phone_concern','products_not_available','not_relevant_bought_elsewhere','not_relevant_1000_nis','not_relevant_denies_contact','not_relevant_service','not_interested_hangs_up','not_relevant_no_explanation','heard_price_not_interested','not_relevant_wrong_number','closed_by_manager_to_mailing'];
+// Valid enum values from schema. Mirrors VALID_LEAD_STATUSES in
+// src/constants/leadOptions.js, including the keys migration 20260426000004
+// normalized into leads.status.
+const VALID_STATUSES = ['new_lead','hot_lead','followup_before_quote','followup_after_quote','coming_to_branch','no_answer_1','no_answer_2','no_answer_3','no_answer_4','no_answer_5','no_answer_whatsapp_sent','no_answer_calls','changed_direction','deal_closed','not_relevant_duplicate','mailing_remove_request','lives_far_phone_concern','products_not_available','not_relevant_bought_elsewhere','not_relevant_1000_nis','not_relevant_denies_contact','not_relevant_service','not_interested_hangs_up','not_relevant_no_explanation','heard_price_not_interested','not_relevant_wrong_number','closed_by_manager_to_mailing','second_line_lead','return_to_followup','will_arrive_for_meeting','manager_call_potential_close','transferred_by_manager_for_followup','no_answer_8_calls','call_from_google','call_from_facebook','already_purchased_inquiry','not_relevant_not_mature','system_test','service_30_nights_trial','service_30_nights_trial_handled','service_warranty','service_warranty_handled','service_cancellations','service_cancellations_handled','service_missing_items','service_missing_items_handled','service_handled','delivery_inquiry','delivery_inquiry_handled'];
 const VALID_TASK_STATUSES = ['not_completed', 'completed', 'not_done', 'cancelled'];
 const VALID_TASK_TYPES = ['call','whatsapp','email','meeting','quote_preparation','followup','assignment','other'];
 

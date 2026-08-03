@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download } from 'lucide-react';
+import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { readFileToRows, parseImportDate } from '@/utils/importFile';
 import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
@@ -129,6 +129,8 @@ export default function ImportLeadsTab() {
   const [result, setResult]       = useState(null);
   const [parseError, setParseError] = useState('');
   const [isKaveret, setIsKaveret] = useState(false);
+  const [showAllStatuses, setShowAllStatuses] = useState(false);
+  const [showAllReps, setShowAllReps] = useState(false);
 
   const { data: batches = [] } = useQuery({
     queryKey: ['lead-import-batches'],
@@ -158,13 +160,45 @@ export default function ImportLeadsTab() {
     return auditStatuses(rows.map((r) => r[idx]));
   }, [mapping.status, rows]);
 
-  // Loaded only to tell "assigned to a real rep" from "assigned to an address
-  // nobody here uses" — the import writes the extracted email either way.
+  // Loaded to tell "assigned to a real rep" from "assigned to an address nobody
+  // here uses", and to populate the fallback picker below.
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
     queryFn: () => base44.entities.User.list(),
     staleTime: 5 * 60 * 1000,
   });
+  const { data: me = null } = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: () => base44.auth.me().catch(() => null),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const knownEmails = useMemo(
+    () => new Set(users.map((u) => String(u?.email || '').toLowerCase()).filter(Boolean)),
+    [users]
+  );
+  const admins = useMemo(
+    () => users
+      .filter((u) => u?.role === 'admin' && u?.email)
+      .map((u) => String(u.email).toLowerCase())
+      .sort(),
+    [users]
+  );
+
+  // Where a lead goes when the file names a rep who is not a user here. The
+  // Kaveret export still carries reps who left: 9 of the 15 addresses in the
+  // last file, ~32k leads. Writing those addresses through means the leads
+  // belong to nobody AND are excluded from the unassigned queue, because that
+  // queue tests rep1 for empty — so they are invisible twice over.
+  //
+  // '' keeps the file's address as-is (the previous behaviour).
+  const [unknownRepTo, setUnknownRepTo] = useState('');
+  useEffect(() => {
+    // Default to whoever is running the import, when they are an admin. Only
+    // ever fills a blank choice, so a deliberate "leave as-is" is not undone.
+    const mine = String(me?.email || '').toLowerCase();
+    if (!unknownRepTo && mine && admins.includes(mine)) setUnknownRepTo(mine);
+  }, [me, admins, unknownRepTo]);
 
   const repAudit = useMemo(() => {
     const idx = mapping.rep1;
@@ -172,10 +206,31 @@ export default function ImportLeadsTab() {
     return auditRepEmails(rows.map((r) => r[idx]), users.map((u) => u.email));
   }, [mapping.rep1, rows, users]);
 
+  // Rows that the fallback will actually move, for the label on the picker.
+  const reassignedRows = useMemo(
+    () => (repAudit && unknownRepTo
+      ? repAudit.unmatched.reduce((n, r) => n + r.count, 0)
+      : 0),
+    [repAudit, unknownRepTo]
+  );
+
+  const copyList = async (lines, what) => {
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      toast.success(`${what} הועתקו ללוח`);
+    } catch {
+      toast.error('ההעתקה נכשלה — הדפדפן חסם את הגישה ללוח');
+    }
+  };
+
   const reset = () => {
     setFileName(''); setHeaders([]); setRows([]); setMapping({});
     setPhase('idle'); setProgress({ current: 0, total: 0, label: '' });
     setResult(null); setParseError(''); setIsKaveret(false);
+    setShowAllStatuses(false); setShowAllReps(false);
+    // unknownRepTo is deliberately kept: it is a choice about this operator's
+    // workflow, not about this file, and re-picking it on every upload is how
+    // an import ends up silently running with the wrong one.
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -238,7 +293,13 @@ export default function ImportLeadsTab() {
         // merely CONTAINS an address. A cell with no address at all assigns
         // nobody rather than writing junk into a field the app matches on.
         const email = extractEmail(raw);
-        if (email) out.rep1 = email;
+        if (email) {
+          // An address belonging to a rep who has left goes to the chosen
+          // admin instead. A cell with NO address is untouched by this — it is
+          // an unassigned lead, not a lead assigned to somebody who is gone,
+          // and triage is the right destination for it.
+          out.rep1 = unknownRepTo && !knownEmails.has(email) ? unknownRepTo : email;
+        }
       } else {
         out[field.key] = raw;
       }
@@ -495,15 +556,40 @@ export default function ImportLeadsTab() {
                           ויכנסו כ״ליד חדש״
                           {' '}({statusAudit.unmatched.reduce((n, r) => n + r.count, 0).toLocaleString('he-IL')} שורות):
                         </p>
+                        {/* Every value, not a sample. Deciding whether an
+                            unmatched status matters means reading it, and the
+                            tail is exactly where the surprises live — the ones
+                            hidden behind a "+13" are the ones nobody has seen
+                            before. Collapsed by default so a file with 200
+                            distinct statuses does not bury the page. */}
                         <div className="flex flex-wrap gap-1.5">
-                          {statusAudit.unmatched.slice(0, 12).map((r) => (
-                            <Badge key={r.raw} variant="outline" className="font-normal">
-                              {r.raw} · {r.count.toLocaleString('he-IL')}
-                            </Badge>
-                          ))}
+                          {(showAllStatuses ? statusAudit.unmatched : statusAudit.unmatched.slice(0, 12))
+                            .map((r) => (
+                              <Badge key={r.raw} variant="outline" className="font-normal">
+                                {r.raw} · {r.count.toLocaleString('he-IL')}
+                              </Badge>
+                            ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
                           {statusAudit.unmatched.length > 12 && (
-                            <Badge variant="outline">+{statusAudit.unmatched.length - 12}</Badge>
+                            <Button
+                              type="button" size="sm" variant="outline" className="h-7 text-xs"
+                              onClick={() => setShowAllStatuses((v) => !v)}
+                            >
+                              {showAllStatuses
+                                ? 'הצג פחות'
+                                : `הצג את כל ${statusAudit.unmatched.length} הסטטוסים`}
+                            </Button>
                           )}
+                          <Button
+                            type="button" size="sm" variant="outline" className="h-7 gap-1.5 text-xs"
+                            onClick={() => copyList(
+                              statusAudit.unmatched.map((r) => `${r.raw}\t${r.count}`),
+                              'הסטטוסים'
+                            )}
+                          >
+                            <Copy className="h-3 w-3" /> העתק רשימה
+                          </Button>
                         </div>
                         <p className="text-xs">
                           אם אלה סטטוסים אמיתיים שחשוב לשמר — בטל את מיפוי הסטטוס והרץ,
@@ -532,7 +618,7 @@ export default function ImportLeadsTab() {
                 <div className="space-y-2">
                   <Label className="text-xs">נציגים שחולצו מהקובץ</Label>
                   <div className="rounded-lg border border-border divide-y divide-border">
-                    {repAudit.rows.slice(0, 15).map((r) => (
+                    {(showAllReps ? repAudit.rows : repAudit.rows.slice(0, 15)).map((r) => (
                       <div key={r.email} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                         <span dir="ltr" className="font-mono text-xs truncate">{r.email}</span>
                         <div className="flex items-center gap-2 shrink-0">
@@ -543,6 +629,10 @@ export default function ImportLeadsTab() {
                             <Badge variant="outline" className="gap-1 text-emerald-700 border-emerald-300">
                               <CheckCircle2 className="h-3 w-3" /> נציג במערכת
                             </Badge>
+                          ) : unknownRepTo ? (
+                            <Badge variant="outline" className="text-amber-700 border-amber-300">
+                              יעבור לאדמין
+                            </Badge>
                           ) : (
                             <Badge variant="destructive">לא קיים כמשתמש</Badge>
                           )}
@@ -550,9 +640,13 @@ export default function ImportLeadsTab() {
                       </div>
                     ))}
                     {repAudit.rows.length > 15 && (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">
-                        ועוד {repAudit.rows.length - 15} נציגים
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAllReps((v) => !v)}
+                        className="w-full px-3 py-2 text-right text-xs text-muted-foreground hover:bg-muted/50"
+                      >
+                        {showAllReps ? 'הצג פחות' : `הצג את כל ${repAudit.rows.length} הנציגים`}
+                      </button>
                     )}
                     {repAudit.rows.length === 0 && (
                       <div className="px-3 py-2 text-xs text-muted-foreground">
@@ -560,12 +654,53 @@ export default function ImportLeadsTab() {
                       </div>
                     )}
                   </div>
+
+                  {/* ── where leads of departed reps go ──
+                      Writing a former rep's address through leaves the lead
+                      owned by nobody and outside the unassigned queue at the
+                      same time, because that queue tests rep1 for empty. So
+                      the choice is explicit, and defaults to the admin running
+                      the import rather than to the silently-broken option. */}
                   {repAudit.unmatched.length > 0 && (
-                    <p className="text-xs text-destructive">
-                      {repAudit.unmatched.length} כתובות אינן משתמשים במערכת. הלידים שלהן ישויכו
-                      לכתובת הזו ולא יופיעו בתור ״לא משויכים״ — הוסף אותם כנציגים, או בטל את
-                      מיפוי הנציג כדי שייכנסו לטריאז׳.
-                    </p>
+                    <div className="rounded-lg border border-border p-3 space-y-2">
+                      <Label className="text-xs">
+                        נציגים שאינם משתמשים במערכת ({repAudit.unmatched.length} כתובות
+                        {', '}
+                        {repAudit.unmatched.reduce((n, r) => n + r.count, 0).toLocaleString('he-IL')} לידים)
+                      </Label>
+                      <Select
+                        dir="rtl"
+                        value={unknownRepTo || '__keep__'}
+                        onValueChange={(v) => setUnknownRepTo(v === '__keep__' ? '' : v)}
+                        disabled={busy}
+                      >
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__keep__">השאר את הכתובת מהקובץ</SelectItem>
+                          {admins.map((email) => (
+                            <SelectItem key={email} value={email}>שייך ל־{email}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {unknownRepTo ? (
+                        <p className="text-xs text-muted-foreground">
+                          {reassignedRows.toLocaleString('he-IL')} לידים של נציגים שעזבו ישויכו
+                          ל־<span dir="ltr" className="font-mono">{unknownRepTo}</span>.
+                          שורות שבהן עמודת הנציג ריקה לגמרי לא מושפעות — הן נכנסות ללא שיוך,
+                          לטריאז׳.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-destructive">
+                          הלידים האלה ישויכו לכתובות שאינן משתמשים — הם לא יופיעו אצל אף נציג,
+                          וגם לא בתור ״לא משויכים״.
+                        </p>
+                      )}
+                      {admins.length === 0 && (
+                        <p className="text-xs text-destructive">
+                          לא נמצא אף משתמש עם תפקיד אדמין לשייך אליו.
+                        </p>
+                      )}
+                    </div>
                   )}
                   {repAudit.withoutEmail > 0 && (
                     <p className="text-xs text-muted-foreground">

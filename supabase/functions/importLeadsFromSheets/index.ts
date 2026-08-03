@@ -99,7 +99,17 @@ Deno.serve(async (req) => {
         'products_not_available', 'not_relevant_bought_elsewhere', 'not_relevant_1000_nis',
         'not_relevant_denies_contact', 'not_relevant_service', 'not_interested_hangs_up',
         'not_relevant_no_explanation', 'heard_price_not_interested', 'not_relevant_wrong_number',
-        'closed_by_manager_to_mailing'
+        'closed_by_manager_to_mailing',
+        // Keys migration 20260426000004 normalized into leads.status.
+        'second_line_lead', 'return_to_followup', 'will_arrive_for_meeting',
+        'manager_call_potential_close', 'transferred_by_manager_for_followup',
+        'no_answer_8_calls', 'call_from_google', 'call_from_facebook',
+        'already_purchased_inquiry', 'not_relevant_not_mature', 'system_test',
+        'service_30_nights_trial', 'service_30_nights_trial_handled',
+        'service_warranty', 'service_warranty_handled',
+        'service_cancellations', 'service_cancellations_handled',
+        'service_missing_items', 'service_missing_items_handled', 'service_handled',
+        'delivery_inquiry', 'delivery_inquiry_handled'
       ];
 
       if (leadData.status && !validStatuses.includes(leadData.status)) {
