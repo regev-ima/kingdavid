@@ -47,12 +47,15 @@ import {
   Package,
   Clock,
   Info,
+  Ban,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import DeleteOrderDialog from '@/components/order/DeleteOrderDialog';
+import CancelOrderDialog from '@/components/order/CancelOrderDialog';
+import { isCancelledOrder } from '@/lib/cancelOrder';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
@@ -72,6 +75,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   const [showHypPayment, setShowHypPayment] = useState(false);
   const [showServiceTicket, setShowServiceTicket] = useState(false);
   const [showDeleteOrder, setShowDeleteOrder] = useState(false);
+  const [showCancelOrder, setShowCancelOrder] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -231,6 +235,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               )}
             </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {isCancelledOrder(order) && <StatusBadge status="cancelled" />}
               <StatusBadge status={order.payment_status} />
               <StatusBadge status={order.production_status} />
               <StatusBadge status={order.delivery_status} />
@@ -291,6 +296,23 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
             בקשת החזרה
           </Button>
         </Link>
+        {/* Cancel is the non-destructive option, so unlike delete it is open to
+            whoever can edit the order — the rep who took the sale is usually
+            the one who hears it fell through. */}
+        {canEdit && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCancelOrder(true)}
+            className={isCancelledOrder(order)
+              ? 'h-8 text-xs text-primary border-primary/30 hover:bg-primary/5'
+              : 'h-8 text-xs text-amber-700 border-amber-200 hover:bg-amber-50'}
+          >
+            {isCancelledOrder(order)
+              ? <><RotateCcw className="h-3.5 w-3.5 me-1.5" />הפעל מחדש</>
+              : <><Ban className="h-3.5 w-3.5 me-1.5" />בטל הזמנה</>}
+          </Button>
+        )}
         {/* Admin-only, and last in the bar so it isn't next to anything a rep
             clicks routinely. */}
         {isAdmin && (
@@ -800,6 +822,13 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           if (isModal) onClose?.();
           else navigate(createPageUrl('Orders'));
         }}
+      />
+
+      <CancelOrderDialog
+        open={showCancelOrder}
+        onOpenChange={setShowCancelOrder}
+        order={order}
+        currentUserEmail={effectiveUser?.email}
       />
 
       {/* Manual payment — shared with the new-order screen. */}

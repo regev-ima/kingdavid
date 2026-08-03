@@ -1,0 +1,45 @@
+name: Import Attribution & Date Adoption — apply migration
+
+# Rebuilds process_lead_import(): adds facebook_ad_name / facebook_campaign_name
+# / source_form to the column whitelist (they were mapped in the import screen
+# but never written), and orders legacy-lead adoption by how close the existing
+# lead's created_date is to the imported row's, instead of by recency.
+# CREATE OR REPLACE only — idempotent. Runs on the feature branch too, so the
+# full Kaveret import can be rehearsed against the preview.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/payment-custom-items-ipi3jv
+    paths:
+      - 'supabase/migrations/20260803000003_import_attribution_and_date_adoption.sql'
+      - '.github/workflows/import-attribution-adoption-migrate.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply import attribution + date adoption migration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+          f=supabase/migrations/20260803000003_import_attribution_and_date_adoption.sql
+          payload=$(jq -Rs '{query: .}' "$f")
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          echo "Management API HTTP $code"
+          cat /tmp/resp.json || true
+          echo
+          test "$code" -lt 400

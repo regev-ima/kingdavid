@@ -19,6 +19,7 @@ import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Da
 import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
 import NewOrderDialog from '@/components/order/NewOrderDialog';
 import DeleteOrderDialog from '@/components/order/DeleteOrderDialog';
+import { excludeCancelled, isCancelledOrder } from '@/lib/cancelOrder';
 
 // The Orders page adds an "all time" option on top of the shared presets so
 // the operational list defaults to every order, not an empty "today".
@@ -51,6 +52,15 @@ const filterOptions = [
       { value: 'in_production', label: 'ייצור' },
       { value: 'ready', label: 'מוכן' },
     ]
+  },
+  {
+    key: 'cancelled',
+    label: 'ביטולים',
+    allLabel: 'ללא מבוטלות',
+    options: [
+      { value: 'only', label: 'מבוטלות בלבד' },
+      { value: 'include', label: 'כולל מבוטלות' },
+    ],
   },
   {
     key: 'delivery_status',
@@ -86,7 +96,7 @@ export default function Orders() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
-  const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' });
+  const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all' });
   const [showNewOrder, setShowNewOrder] = useState(false);
   // Order pending deletion (admin only) — null when the dialog is closed.
   const [orderToDelete, setOrderToDelete] = useState(null);
@@ -151,7 +161,17 @@ export default function Orders() {
       })
     : scopedOrders;
 
-  let filteredOrders = rangeOrders;
+  // The snapshot cubes are money and pipeline figures, so a cancelled order has
+  // no business in them. The LIST is a different question — see the 'cancelled'
+  // filter below; by default it hides them, but they are one click away and
+  // never deleted.
+  const liveRangeOrders = excludeCancelled(rangeOrders);
+
+  let filteredOrders = filters.cancelled === 'only'
+    ? rangeOrders.filter(isCancelledOrder)
+    : filters.cancelled === 'include'
+      ? rangeOrders
+      : liveRangeOrders;
 
   // Status quick-filter. For managers this is driven entirely by the cube
   // clicks (the old tab strip is gone); reps still get the tab strip. Either
@@ -193,6 +213,9 @@ export default function Orders() {
       render: (row) => (
         <div className="flex items-center gap-1.5">
           <span className="font-medium text-primary">#{row.order_number}</span>
+          {isCancelledOrder(row) && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-800 text-white whitespace-nowrap">בוטל</span>
+          )}
           {row.is_imported && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600 ring-1 ring-stone-200 whitespace-nowrap">הזמנה מיובאת</span>
           )}
@@ -263,19 +286,19 @@ export default function Orders() {
     );
   }
 
-  const pendingPaymentCount = rangeOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
-  const inProductionCount = rangeOrders.filter(o => o.production_status === 'in_production').length;
-  const readyDeliveryCount = rangeOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
-  const paidCount = rangeOrders.filter(o => o.payment_status === 'paid').length;
-  const deliveredCount = rangeOrders.filter(o => o.delivery_status === 'delivered').length;
-  const revenueTotal = rangeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const pendingPaymentCount = liveRangeOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
+  const inProductionCount = liveRangeOrders.filter(o => o.production_status === 'in_production').length;
+  const readyDeliveryCount = liveRangeOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
+  const paidCount = liveRangeOrders.filter(o => o.payment_status === 'paid').length;
+  const deliveredCount = liveRangeOrders.filter(o => o.delivery_status === 'delivered').length;
+  const revenueTotal = liveRangeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
 
   // Snapshot cubes derive from rangeOrders (same source as the list), so each
   // cube number is exactly the row count its click produces.
   const snapshot = {
-    ordersCount: rangeOrders.length,
+    ordersCount: liveRangeOrders.length,
     revenue: revenueTotal,
-    avgOrder: rangeOrders.length ? Math.round(revenueTotal / rangeOrders.length) : 0,
+    avgOrder: liveRangeOrders.length ? Math.round(revenueTotal / liveRangeOrders.length) : 0,
     unpaidOrders: pendingPaymentCount,
     paidOrders: paidCount,
     inProduction: inProductionCount,
@@ -346,7 +369,7 @@ export default function Orders() {
       {!isManager ? (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="flex flex-col sm:flex-row bg-card border h-auto gap-1 p-1.5 rounded-lg shadow-card">
-            <TabsTrigger value="all" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">כל ההזמנות ({rangeOrders.length})</TabsTrigger>
+            <TabsTrigger value="all" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">כל ההזמנות ({liveRangeOrders.length})</TabsTrigger>
             <TabsTrigger value="pending_payment" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               ממתין לתשלום ({pendingPaymentCount})
             </TabsTrigger>
@@ -380,7 +403,7 @@ export default function Orders() {
         filters={filterOptions}
         values={filters}
         onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all' }); setActiveTab('all'); }}
+        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all' }); setActiveTab('all'); }}
         searchPlaceholder="חפש לפי מספר הזמנה, שם או טלפון..."
       />
 

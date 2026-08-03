@@ -273,6 +273,9 @@ Deno.serve(async (req) => {
         safe('orders', fetchAll(supabase, 'orders', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
         safe('quotes', fetchAll(supabase, 'quotes', { gte: { created_date: startIso }, lte: { created_date: endIso }, order: 'created_date' }), [] as any[]),
       ]);
+      // A cancelled order is not revenue and not pipeline — it stays in the
+      // orders table for history, but every figure below has to ignore it.
+      const liveRangeOrders = rangeOrders.filter((o: any) => !o.cancelled_at);
       const rangeLeadsById = new Map(rangeLeads.map((l: any) => [l.id, l]));
       const leadsWithQuoteRange = new Set(rangeQuotes.map((q: any) => q.lead_id).filter(Boolean));
       const slaRedLeads = rangeLeads.filter((l: any) => {
@@ -282,7 +285,7 @@ Deno.serve(async (req) => {
       });
       rangeLeadsCount = rangeLeads.length;
       rangeWonLeadsCount = rangeLeads.filter((l: any) => isLeadWon(l.status)).length;
-      rangeRevenue = rangeOrders.reduce((a: number, o: any) => a + safeNumber(o.total), 0);
+      rangeRevenue = liveRangeOrders.reduce((a: number, o: any) => a + safeNumber(o.total), 0);
       liveSlaRedCount = slaRedLeads.length;
       slaRedLeads.forEach((l: any) => { const e = normalizeLower(l.rep1); if (e) bumpRep(e).slaRed += 1; });
 
@@ -303,7 +306,7 @@ Deno.serve(async (req) => {
         if (e) { const ra = bumpRep(e); ra.leads += 1; if (won) ra.won += 1; }
       });
 
-      rangeOrders.forEach((order: any) => {
+      liveRangeOrders.forEach((order: any) => {
         const lead = order.lead_id ? rangeLeadsById.get(order.lead_id) : null;
         const source = normalizeSource((lead && deriveSource(lead)) || order.source);
         const campaign = normalizeCampaign(lead?.utm_campaign || lead?.facebook_campaign_name);
@@ -317,7 +320,7 @@ Deno.serve(async (req) => {
       });
 
       leadsTrend = aggregateTrend(rangeLeads, 'effective_sort_date');
-      revenueTrend = aggregateTrend(rangeOrders, 'created_date', 'total');
+      revenueTrend = aggregateTrend(liveRangeOrders, 'created_date', 'total');
     }
 
     // Spend comes from the (small) marketing_costs table — merged in JS either

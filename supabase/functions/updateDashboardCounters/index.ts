@@ -44,6 +44,9 @@ Deno.serve(async (req) => {
       fetchAll('upsell_suggestions'),
       supabase.from('users').select('*').then(r => r.data || []),
     ]);
+    // Cancelled orders stay in the table for history but must not feed any
+    // counter — they are neither revenue nor pipeline.
+    const liveOrders = allOrders.filter((o: any) => !o.cancelled_at);
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -54,7 +57,7 @@ Deno.serve(async (req) => {
       const d = new Date(l.created_date);
       return d >= todayStart && d <= todayEnd;
     });
-    const todayOrders = allOrders.filter((o: any) => {
+    const todayOrders = liveOrders.filter((o: any) => {
       const d = new Date(o.created_date);
       return d >= todayStart && d <= todayEnd;
     });
@@ -79,9 +82,9 @@ Deno.serve(async (req) => {
       : 0;
 
     // === Upsell Rate ===
-    const ordersWithUpsell = allOrders.filter((o: any) => o.extras && o.extras.length > 0).length;
-    const upsellAttachRate = allOrders.length > 0
-      ? Math.round((ordersWithUpsell / allOrders.length) * 100)
+    const ordersWithUpsell = liveOrders.filter((o: any) => o.extras && o.extras.length > 0).length;
+    const upsellAttachRate = liveOrders.length > 0
+      ? Math.round((ordersWithUpsell / liveOrders.length) * 100)
       : 0;
 
     // === No Answer + WhatsApp Stats ===
