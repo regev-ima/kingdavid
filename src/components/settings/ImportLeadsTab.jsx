@@ -33,7 +33,19 @@ import { toLocalIsraeliPhone } from '@/utils/phoneUtils';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const UPLOAD_CHUNK  = 500;   // rows per insert request
-const PROCESS_CHUNK = 500;   // rows per process_lead_import() call
+
+// Rows per process_lead_import() call. 500 was chosen when the only evidence
+// was a 71-row pilot; on the real 125,280-row file it never returned a single
+// chunk. Each row costs ~4 statements plus an advisory lock (resolve the
+// contact, look for a legacy lead to adopt, then update or insert), so 500 rows
+// is a couple of thousand statements in one request — past the statement
+// timeout PostgREST applies to `authenticated`. The call hung, the batch stayed
+// `ready`, and nothing was ever committed.
+//
+// Measured against production: 100 rows is one comfortable call. More requests,
+// but each one lands, and every landed chunk is committed work the run no
+// longer has to repeat.
+const PROCESS_CHUNK = 100;
 
 // Canonical target fields. `aliases` drive header auto-detection — they are
 // matched case-insensitively against the file's header row, so a Kaveret
@@ -131,6 +143,12 @@ export default function ImportLeadsTab() {
   const [isKaveret, setIsKaveret] = useState(false);
   const [showAllStatuses, setShowAllStatuses] = useState(false);
   const [showAllReps, setShowAllReps] = useState(false);
+  // Chunk totals as they land, so a long merge shows it is moving. `result`
+  // only appears at the end, which on a 125k file is an hour of nothing.
+  const [running, setRunning] = useState({
+    created_leads: 0, updated_leads: 0, adopted_leads: 0, failed_rows: 0,
+    created_contacts: 0, matched_contacts: 0,
+  });
 
   const { data: batches = [] } = useQuery({
     queryKey: ['lead-import-batches'],
@@ -228,6 +246,10 @@ export default function ImportLeadsTab() {
     setPhase('idle'); setProgress({ current: 0, total: 0, label: '' });
     setResult(null); setParseError(''); setIsKaveret(false);
     setShowAllStatuses(false); setShowAllReps(false);
+    setRunning({
+      created_leads: 0, updated_leads: 0, adopted_leads: 0, failed_rows: 0,
+      created_contacts: 0, matched_contacts: 0,
+    });
     // unknownRepTo is deliberately kept: it is a choice about this operator's
     // workflow, not about this file, and re-picking it on every upload is how
     // an import ends up silently running with the wrong one.
@@ -351,8 +373,10 @@ export default function ImportLeadsTab() {
 
       await base44.supabase.from('lead_import_batches').update({ status: 'ready' }).eq('id', batchId);
 
-      // 3 — server-side merge, chunk by chunk. State lives in the table, so a
-      //     closed tab loses progress display but not the import itself.
+      // 3 — server-side merge, chunk by chunk. Every returned chunk is already
+      //     committed, so an interrupted run resumes instead of restarting —
+      //     but the LOOP lives here, in the tab. Closing it stops the import
+      //     after the chunk in flight; re-running picks the rest up.
       setPhase('processing');
       setProgress({ current: 0, total: rows.length, label: 'מעבד ומקשר לאנשי קשר…' });
 
@@ -360,6 +384,7 @@ export default function ImportLeadsTab() {
         created_leads: 0, updated_leads: 0, adopted_leads: 0, failed_rows: 0,
         created_contacts: 0, matched_contacts: 0,
       };
+      setRunning({ ...totals });
       let processed = 0;
       for (;;) {
         const { data, error } = await base44.supabase.rpc('process_lead_import', {
@@ -369,6 +394,7 @@ export default function ImportLeadsTab() {
         if (error) throw error;
         for (const k of Object.keys(totals)) totals[k] += data[k] || 0;
         processed += data.processed_now || 0;
+        setRunning({ ...totals });
         setProgress({ current: processed, total: rows.length, label: 'מעבד ומקשר לאנשי קשר…' });
         if (data.done || !data.processed_now) break;
       }
@@ -754,16 +780,37 @@ export default function ImportLeadsTab() {
                 </Alert>
               )}
 
-              {/* ── progress ── */}
+              {/* ── progress ──
+                  The counter restarts at 0 when the upload hands over to the
+                  merge, because they measure different work over the same
+                  rows. Unlabelled, that reads as a crash: watching 6,000 of
+                  125,280 drop back to 0 is indistinguishable from the import
+                  starting over. So the step is named, and the merge shows what
+                  it has actually landed — a slow run that is working now looks
+                  different from a stalled one. */}
               {busy && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">{progress.label}</span>
+                    <span className="text-muted-foreground">
+                      <span className="font-medium">
+                        שלב {phase === 'uploading' ? '1' : '2'} מתוך 2
+                      </span>
+                      {' · '}{progress.label}
+                    </span>
                     <span className="font-medium tabular-nums">
                       {progress.current.toLocaleString('he-IL')} / {progress.total.toLocaleString('he-IL')}
                     </span>
                   </div>
                   <Progress value={pct} />
+                  {phase === 'processing' && (
+                    <p className="text-xs text-muted-foreground">
+                      {running.adopted_leads.toLocaleString('he-IL')} שויכו ללידים קיימים
+                      {' · '}{running.created_leads.toLocaleString('he-IL')} חדשים
+                      {' · '}{running.failed_rows.toLocaleString('he-IL')} נכשלו
+                      {' — '}העיבוד רץ בצד השרת ומתחדש, אבל את הקצב מכתיב הדפדפן:
+                      השאר את הלשונית פתוחה.
+                    </p>
+                  )}
                 </div>
               )}
 
