@@ -142,7 +142,7 @@ export default function Finance() {
   // tracks anything pending right now (not period-bound), so its delta uses the
   // commission's own created_date as the time anchor.
   const totalRevenue = useMemo(() => monthOrders.reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
-  const paidRevenue = useMemo(() => monthOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
+  const paidRevenue = useMemo(() => monthOrders.filter(o => o.payment_status === 'paid' && !o.cancelled_at).reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   const unpaidAmount = useMemo(() => monthOrders.filter(o => o.payment_status === 'unpaid').reduce((s, o) => s + (o.total || 0), 0), [monthOrders]);
   // Tracked for completeness; not surfaced as a KPI card today.
   // eslint-disable-next-line no-unused-vars
@@ -158,7 +158,7 @@ export default function Finance() {
 
   // Previous-period values for the period-scoped KPIs.
   const prevRevenue = useMemo(() => previousOrders.reduce((s, o) => s + (o.total || 0), 0), [previousOrders]);
-  const prevPaidRevenue = useMemo(() => previousOrders.filter(o => o.payment_status === 'paid').reduce((s, o) => s + (o.total || 0), 0), [previousOrders]);
+  const prevPaidRevenue = useMemo(() => previousOrders.filter(o => o.payment_status === 'paid' && !o.cancelled_at).reduce((s, o) => s + (o.total || 0), 0), [previousOrders]);
   const prevUnpaidAmount = useMemo(() => previousOrders.filter(o => o.payment_status === 'unpaid').reduce((s, o) => s + (o.total || 0), 0), [previousOrders]);
   const prevRefundedAmount = useMemo(
     () => previousReturns.filter(r => r.refund_status === 'paid').reduce((s, r) => s + (r.refund_amount || 0), 0),
