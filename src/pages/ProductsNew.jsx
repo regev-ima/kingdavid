@@ -200,11 +200,48 @@ export default function ProductsNew() {
     }
   });
 
-  const deleteProductMutation = useMutation({
-    mutationFn: (id) => base44.entities.Product.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['products']);
+  // A DELETE that matches no row the caller is allowed to touch comes back from
+  // PostgREST as a success with an empty body — so a policy that permits SELECT
+  // but not DELETE looks exactly like a delete that worked, and the row is still
+  // there after the list refreshes. That is precisely the case here: every table
+  // carries
+  //   FOR DELETE USING (EXISTS (SELECT 1 FROM users
+  //                              WHERE auth_id = auth.uid() AND role = 'admin'))
+  // (migration 20240202000001), so a delete needs an admin users row LINKED to
+  // the login through auth_id. Asking for the deleted rows back turns the
+  // silence into a message that names the actual rule.
+  const deleteRowOrThrow = async (table, id, label) => {
+    const { data, error } = await base44.supabase.from(table).delete().eq('id', id).select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error(
+        `${label} לא נמחק: השרת לא מחק אף שורה. מחיקה מותרת רק למשתמש עם תפקיד אדמין שמקושר לחשבון ההתחברות (users.auth_id). כדאי לוודא שהשורה שלך בטבלת המשתמשים מקושרת.`,
+      );
     }
+    return data[0];
+  };
+
+  const deleteProductMutation = useMutation({
+    // Nothing cascades on the database side, so deleting a product with sizes
+    // was refused by the foreign key from product_variations — and with no
+    // onError the refusal was invisible: the confirm closed and the product
+    // stayed. The variations go first, which is also what the confirm promises.
+    mutationFn: async (id) => {
+      const children = variations.filter((v) => v.product_id === id);
+      for (const child of children) {
+        await deleteRowOrThrow('product_variations', child.id, 'המידה');
+      }
+      return deleteRowOrThrow('products', id, 'המוצר');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['product-variations'] });
+      toast.success('המוצר נמחק');
+    },
+    onError: (err) => {
+      console.error('מחיקת מוצר נכשלה', { message: err?.message, details: err?.details, hint: err?.hint, code: err?.code, raw: err });
+      toast.error(`מחיקת המוצר נכשלה: ${describeMutationError(err)}`, { duration: Infinity });
+    },
   });
 
   // Without an onError handler, every PostgREST insert/update failure (RLS,
@@ -259,10 +296,12 @@ export default function ProductsNew() {
   });
 
   const deleteVariationMutation = useMutation({
-    mutationFn: (id) => base44.entities.ProductVariation.delete(id),
+    mutationFn: (id) => deleteRowOrThrow('product_variations', id, 'המידה'),
     onSuccess: () => {
-      queryClient.invalidateQueries(['product-variations']);
-    }
+      queryClient.invalidateQueries({ queryKey: ['product-variations'] });
+      toast.success('המידה נמחקה');
+    },
+    onError: variationErrorToast('מחיקת מידה נכשלה'),
   });
 
   const resetProductForm = () => {
