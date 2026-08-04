@@ -128,6 +128,56 @@ console.log('\nGroups');
   check('member still recorded on the message', n.senderPhone === '972541112222', n.senderPhone);
 }
 
+// ── 3b. Content types that used to render as an empty bubble ───────────────
+console.log('\nReactions, stickers, edits, deletes');
+{
+  const react = (data: Record<string, unknown>) => asMsg(textPayload({
+    senderData: { chatId: CUSTOMER, chatName: 'אור מאיה', sender: CUSTOMER, senderName: 'אור מאיה' },
+    messageData: { typeMessage: 'reactionMessage', ...data },
+  }));
+  check('👍 on our message carries the emoji',
+    react({ extendedTextMessageData: { text: '👍' } }).body === '👍');
+  check('older payload shape also works',
+    react({ reactionMessageData: { text: '❤️' } }).body === '❤️');
+  // Empty text is the customer REMOVING the reaction — a real event, and the
+  // UI says so rather than drawing a blank bubble.
+  const removed = react({ extendedTextMessageData: { text: '' } });
+  check('removed reaction stays typed', removed.messageType === 'reaction' && removed.body === '',
+    `${removed.messageType}/${removed.body}`);
+
+  const sticker = asMsg(textPayload({
+    senderData: { chatId: CUSTOMER, chatName: 'אור מאיה', sender: CUSTOMER, senderName: 'אור מאיה' },
+    messageData: { typeMessage: 'stickerMessage', fileMessageData: { downloadUrl: 'https://x/y.webp' } },
+  }));
+  check('sticker keeps its url', sticker.messageType === 'sticker' && sticker.mediaUrl === 'https://x/y.webp');
+
+  const edited = asMsg(textPayload({
+    senderData: { chatId: CUSTOMER, chatName: 'אור מאיה', sender: CUSTOMER, senderName: 'אור מאיה' },
+    messageData: { typeMessage: 'editedMessage', editedMessageData: { textMessage: 'טקסט מתוקן' } },
+  }));
+  check('edited message shows its new text', edited.body === 'טקסט מתוקן', edited.body);
+
+  const deleted = asMsg(textPayload({
+    senderData: { chatId: CUSTOMER, chatName: 'אור מאיה', sender: CUSTOMER, senderName: 'אור מאיה' },
+    messageData: { typeMessage: 'deletedMessage' },
+  }));
+  check('deleted message is typed, not blank', deleted.messageType === 'deleted', deleted.messageType);
+}
+
+// ── 3c. Our own profile name, so later webhooks can reject it ──────────────
+console.log('\nLearning our own profile name');
+{
+  const out = asMsg(textPayload({
+    typeWebhook: 'outgoingAPIMessageReceived',
+    senderData: { chatId: CUSTOMER, chatName: '', sender: REP_WID, senderName: REP_NAME },
+  }));
+  check('outgoing webhook reveals it', out.ownName === REP_NAME, out.ownName);
+  const inc = asMsg(textPayload({
+    senderData: { chatId: CUSTOMER, chatName: 'אור מאיה', sender: CUSTOMER, senderName: 'אור מאיה' },
+  }));
+  check('an incoming one never claims to', inc.ownName === '', inc.ownName);
+}
+
 // ── 4. Non-message webhooks still normalise ────────────────────────────────
 console.log('\nOther webhooks');
 {

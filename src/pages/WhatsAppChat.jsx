@@ -255,7 +255,9 @@ export default function WhatsAppChat() {
 
   // CRM context (existing lead/customer/orders/quotes/tickets) for the open chat.
   const contactPhone = selectedChat?.contact_phone || selectedChat?.chat_id || '';
-  const ctxQuery = useWhatsAppContext(contactPhone, !!selectedChat);
+  // A group has no single contact, and its chat id is not a phone number — the
+  // lookup could only ever scan four tables to find nothing.
+  const ctxQuery = useWhatsAppContext(contactPhone, !!selectedChat && !selectedChat.is_group);
   const context = ctxQuery.data;
   const ctxHasMatch = !!(context && (
     context.leads.length || context.customers.length || context.orders.length ||
