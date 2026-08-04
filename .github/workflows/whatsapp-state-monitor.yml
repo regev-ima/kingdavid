@@ -88,4 +88,9 @@ jobs:
             echo "| נבדקו | לא נגישים | מנותקים | התראות נשלחו | חזרו לפעול | כשלונות |"
             echo "|---|---|---|---|---|---|"
             jq -r '"| \(.checked) | \(.unreachable) | \(.disconnected) | \(.sent) | \(.recovered) | \(.failed) |"' /tmp/sweep.json
+            echo
+            # The daily digest rides on this sweep — the first pass at or after
+            # digest_hour (Israel time) carries it, so most runs report a reason
+            # rather than a send.
+            echo "סיכום יומי: $(jq -r 'if .digest.sent then "נשלח (\(.digest.count) מנותקים)" else (.digest.reason // "לא רץ") end' /tmp/sweep.json)"
           } >> "$GITHUB_STEP_SUMMARY"

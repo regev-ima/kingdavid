@@ -20,6 +20,7 @@
 
 import {
   handleAccountState, sweepAccounts, normalizeChatId, buildDisconnectMessage,
+  maybeSendDailyDigest,
 } from './whatsappAlerts.ts';
 
 // ── Fake PostgREST ─────────────────────────────────────────────────────────
@@ -42,10 +43,32 @@ class Q {
   neq(c: string, v: any) { this.filters.push((r) => r[c] !== v); return this; }
   is(c: string, v: any) { this.filters.push((r) => (r[c] ?? null) === v); return this; }
   not(c: string, _op: string, v: any) { this.filters.push((r) => (r[c] ?? null) !== v); return this; }
-  order() { return this; }
+  in(c: string, vals: any[]) { this.filters.push((r) => vals.includes(r[c])); return this; }
+
+  // Chained filters AND together; .or() is one OR group among them — same as
+  // PostgREST. Only the "col.op.value" forms this module actually uses.
+  or(expr: string) {
+    const clauses = expr.split(',').map((clause) => {
+      const [col, op, ...rest] = clause.split('.');
+      const val = rest.join('.');
+      if (op === 'is') return (r: Row) => (r[col] ?? null) === (val === 'null' ? null : val);
+      if (op === 'eq') return (r: Row) => String(r[col] ?? '') === val;
+      if (op === 'neq') return (r: Row) => String(r[col] ?? '') !== val;
+      throw new Error(`fake .or(): unsupported operator "${op}"`);
+    });
+    this.filters.push((r) => clauses.some((f) => f(r)));
+    return this;
+  }
+
+  order(col: string, opts?: { ascending?: boolean }) {
+    this.sortBy = { col, asc: opts?.ascending !== false };
+    return this;
+  }
   limit() { return this; }
   maybeSingle() { this.single = true; return this.run(); }
   then(res: any, rej: any) { return this.run().then(res, rej); }
+
+  sortBy: { col: string; asc: boolean } | null = null;
 
   run(): Promise<{ data: any; error: any }> {
     const rows = db[this.table] ||= [];
@@ -54,6 +77,13 @@ class Q {
       return Promise.resolve({ data: this.wantRows ? [this.payload] : null, error: null });
     }
     const hit = rows.filter((r) => this.filters.every((f) => f(r)));
+    if (this.sortBy) {
+      const { col, asc } = this.sortBy;
+      hit.sort((a, b) => {
+        const x = String(a[col] ?? ''), y = String(b[col] ?? '');
+        return (x < y ? -1 : x > y ? 1 : 0) * (asc ? 1 : -1);
+      });
+    }
     if (this.op === 'update') {
       hit.forEach((r) => Object.assign(r, this.payload));
       return Promise.resolve({ data: this.wantRows ? hit : null, error: null });
@@ -94,6 +124,7 @@ function reset() {
   db.whatsapp_alert_settings = [{
     id: 1, enabled: true, notifier_user_id: 'u-maayan', group_chat_id: GROUP,
     cooldown_minutes: 60, notify_on_recovery: true, monitor_token: 'tok',
+    daily_digest: true, digest_hour: 0, digest_last_sent_on: null,
   }];
   db.users = [
     { id: 'u-elad', full_name: 'אלעד', email: 'elad@x.com' },
@@ -203,6 +234,7 @@ check('race sends exactly one message', sent.length === 1, `sent=${sent.length} 
 
 // ── 11. Full sweep, including an unreachable instance ──────────────────────
 reset();
+db.whatsapp_alert_settings[0].daily_digest = false;   // digest has its own section
 instanceStates['111'] = 'notAuthorized';   // elad dropped
 instanceStates['333'] = null;              // green api unreachable for this one
 const sum = await sweepAccounts(svc, 'sweep');
@@ -211,7 +243,83 @@ check('sweep alerted on the real drop', sum.sent === 1 && sent.length === 1, JSO
 check('unreachable instance never alerts', sum.unreachable === 1, JSON.stringify(sum));
 check('unreachable state left untouched', acc('a-new').state === 'notAuthorized');
 
-// ── 12. Pure helpers ───────────────────────────────────────────────────────
+// ── 12. The daily digest ───────────────────────────────────────────────────
+// digest_hour is 0 in the fixture, so the digest is always "due" and the tests
+// don't depend on what time they run at.
+const israelHour = Number(new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Jerusalem', hour: '2-digit', hourCycle: 'h23',
+}).format(new Date())) % 24;
+
+// Nobody down → total silence. A daily "all fine" would train people to ignore it.
+reset();
+let dig = await maybeSendDailyDigest(svc);
+check('digest silent when everyone is connected', !dig.sent && dig.reason === 'all_connected', JSON.stringify(dig));
+
+// Two reps down → one message naming both, oldest outage first.
+reset();
+acc('a-elad').disconnected_since = new Date(Date.now() - 3 * 3600_000).toISOString();
+acc('a-new').was_authorized = true;
+acc('a-new').disconnected_since = new Date(Date.now() - 40 * 60_000).toISOString();
+dig = await maybeSendDailyDigest(svc);
+check('digest sent as ONE message', dig.sent && dig.count === 2 && sent.length === 1, JSON.stringify(dig));
+check('digest names both reps', sent[0]?.message.includes('אלעד') && sent[0].message.includes('נציג חדש'), sent[0]?.message);
+check('digest reports how long', sent[0]?.message.includes('3 שעות') && sent[0].message.includes('40 דקות'), sent[0]?.message);
+check('digest oldest outage first',
+  sent[0].message.indexOf('אלעד') < sent[0].message.indexOf('נציג חדש'), sent[0]?.message);
+check('digest logged', logs().some((l: any) => l.kind === 'digest' && l.ok === true));
+
+// Once per day, no matter how many sweeps run.
+dig = await maybeSendDailyDigest(svc);
+check('digest sends once a day', !dig.sent && dig.reason === 'already_sent_today' && sent.length === 1, JSON.stringify(dig));
+
+// Muted reps stay out of it — mute means mute everywhere.
+reset();
+acc('a-elad').disconnected_since = new Date(Date.now() - 3600_000).toISOString();
+acc('a-elad').alerts_muted = true;
+dig = await maybeSendDailyDigest(svc);
+check('digest excludes muted reps', !dig.sent && dig.reason === 'all_connected', JSON.stringify(dig));
+
+// Before the configured hour, nothing goes out.
+if (israelHour < 23) {
+  reset();
+  db.whatsapp_alert_settings[0].digest_hour = israelHour + 1;
+  acc('a-elad').disconnected_since = new Date().toISOString();
+  dig = await maybeSendDailyDigest(svc);
+  check('digest waits for its hour', !dig.sent && dig.reason === 'too_early', JSON.stringify(dig));
+} else {
+  check('digest waits for its hour (skipped — it is 23:xx in Israel)', true);
+}
+
+// "Send now" ignores the hour AND must not swallow the scheduled one.
+reset();
+db.whatsapp_alert_settings[0].digest_hour = 23;
+acc('a-elad').disconnected_since = new Date().toISOString();
+dig = await maybeSendDailyDigest(svc, undefined, true);
+check('force sends regardless of the hour', dig.sent && sent.length === 1, JSON.stringify(dig));
+check("force doesn't consume today's slot",
+  db.whatsapp_alert_settings[0].digest_last_sent_on == null,
+  String(db.whatsapp_alert_settings[0].digest_last_sent_on));
+
+// Switched off → silent, even with someone down.
+reset();
+db.whatsapp_alert_settings[0].daily_digest = false;
+acc('a-elad').disconnected_since = new Date().toISOString();
+dig = await maybeSendDailyDigest(svc);
+check('digest off → silent', !dig.sent && dig.reason === 'disabled', JSON.stringify(dig));
+
+// The scheduled sweep carries it; the admin's "check now" button must not.
+reset();
+instanceStates['111'] = 'notAuthorized';
+const sum2 = await sweepAccounts(svc, 'sweep');
+check('scheduled sweep sends alert + digest', sum2.sent === 1 && sum2.digest?.sent === true && sent.length === 2,
+  `${JSON.stringify(sum2.digest)} sent=${sent.length}`);
+reset();
+instanceStates['111'] = 'notAuthorized';
+const sum3 = await sweepAccounts(svc, 'ui');
+check('manual check never broadcasts a digest', sum3.digest === undefined && sent.length === 1,
+  `${JSON.stringify(sum3.digest)} sent=${sent.length}`);
+
+// ── 13. Pure helpers ───────────────────────────────────────────────────────
 check('bare group id gets @g.us', normalizeChatId('120363410077585252') === GROUP);
 check('bare phone gets @c.us', normalizeChatId('972501111111') === '972501111111@c.us');
 check('existing suffix untouched', normalizeChatId(GROUP) === GROUP);
