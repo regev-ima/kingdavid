@@ -20,10 +20,10 @@ export default function GlobalSizesList() {
     dimensions: '',
     width_cm: '',
     length_cm: '',
-    size_surcharge: 0,
-    price: 0,
+    size_surcharge: '',
+    price: '',
     is_active: true,
-    sort_order: 0
+    sort_order: ''
   });
 
   const { data: sizes = [], isLoading } = useQuery({
@@ -49,6 +49,14 @@ export default function GlobalSizesList() {
     }
   });
 
+  // Separate from updateMutation on purpose: that one closes the dialog and
+  // clears the form on success, which is right for a dialog save and wrong for
+  // a cell that was edited in place.
+  const inlineUpdateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.GlobalSize.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries(['globalSizes']),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.GlobalSize.delete(id),
     onSuccess: () => {
@@ -62,10 +70,10 @@ export default function GlobalSizesList() {
       dimensions: '',
       width_cm: '',
       length_cm: '',
-      size_surcharge: 0,
-      price: 0,
+      size_surcharge: '',
+      price: '',
       is_active: true,
-      sort_order: 0
+      sort_order: ''
     });
     setEditingSize(null);
   };
@@ -80,8 +88,8 @@ export default function GlobalSizesList() {
       dimensions: size.dimensions || '',
       width_cm: size.width_cm ?? dims?.width_cm ?? '',
       length_cm: size.length_cm ?? dims?.length_cm ?? '',
-      size_surcharge: size.size_surcharge ?? 0,
-      price: size.price !== undefined ? size.price : 0,
+      size_surcharge: size.size_surcharge ?? '',
+      price: size.price ?? '',
       is_active: size.is_active,
       sort_order: size.sort_order || 0
     });
@@ -101,7 +109,11 @@ export default function GlobalSizesList() {
       ...formData,
       width_cm: toNumberOrNull(formData.width_cm),
       length_cm: toNumberOrNull(formData.length_cm),
+      // The three amount fields hold raw text while being typed (see the
+      // inputs); an empty one means 0, not "unknown".
       size_surcharge: Number(formData.size_surcharge) || 0,
+      price: Number(formData.price) || 0,
+      sort_order: Number(formData.sort_order) || 0,
     };
 
     if (editingSize) {
@@ -181,7 +193,7 @@ export default function GlobalSizesList() {
                 <Input
                   type="number"
                   value={formData.size_surcharge}
-                  onChange={(e) => setFormData({ ...formData, size_surcharge: Number(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, size_surcharge: e.target.value })}
                   placeholder="0"
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
@@ -193,7 +205,7 @@ export default function GlobalSizesList() {
                 <Input
                   type="number"
                   value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                   placeholder='0'
                 />
               </div>
@@ -202,7 +214,7 @@ export default function GlobalSizesList() {
                 <Input
                   type="number"
                   value={formData.sort_order}
-                  onChange={(e) => setFormData({ ...formData, sort_order: Number(e.target.value) })}
+                  onChange={(e) => setFormData({ ...formData, sort_order: e.target.value })}
                 />
               </div>
               <div className="flex items-center justify-between">
@@ -232,7 +244,7 @@ export default function GlobalSizesList() {
               <TableHead className="text-right">סטטוס</TableHead>
               <TableHead className="text-right">סדר</TableHead>
               <TableHead className="text-right">מחיר</TableHead>
-              <TableHead className="text-right">תוספת</TableHead>
+              <TableHead className="text-right">תוספת מעל הבסיס</TableHead>
               <TableHead className="text-right">מימדים</TableHead>
               <TableHead className="text-right">מידה</TableHead>
             </TableRow>
@@ -258,7 +270,28 @@ export default function GlobalSizesList() {
                 <TableCell className="text-right">{size.sort_order}</TableCell>
                 <TableCell className="text-right">₪{size.price?.toLocaleString() || '0'}</TableCell>
                 <TableCell className="text-right">
-                  {size.size_surcharge ? `+₪${Number(size.size_surcharge).toLocaleString()}` : '—'}
+                  {/* Edited in place: this column is the price table from the
+                      showroom card, and opening a dialog to change one number in
+                      it is the slow way to do the one thing this screen is for.
+                      Saved on blur — a half-typed "4" isn't an amount. */}
+                  <div className="flex items-center gap-1 justify-end">
+                    <span className="text-muted-foreground text-xs">+₪</span>
+                    <Input
+                      type="number"
+                      dir="ltr"
+                      className="h-8 w-24 text-sm text-start"
+                      defaultValue={size.size_surcharge ?? 0}
+                      // Re-key on the saved value so a failed save or an edit
+                      // from elsewhere doesn't leave a stale number on screen.
+                      key={`surcharge-${size.id}-${size.size_surcharge ?? 0}`}
+                      onBlur={(e) => {
+                        const next = Number(e.target.value);
+                        const current = Number(size.size_surcharge ?? 0);
+                        if (!Number.isFinite(next) || next === current) return;
+                        inlineUpdateMutation.mutate({ id: size.id, data: { size_surcharge: next } });
+                      }}
+                    />
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   {(() => {

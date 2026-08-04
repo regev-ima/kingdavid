@@ -175,12 +175,18 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
       const created = [];
       for (const row of selectedRows) {
         const price = Number(row.price);
+        const basePriceValue = Number.isFinite(price) && price > 0 ? price : null;
         created.push(await base44.entities.ProductVariation.create({
           product_id: product.id,
           sku: row.sku,
           width_cm: row.dims.width_cm,
           length_cm: row.dims.length_cm,
-          base_price: Number.isFinite(price) && price > 0 ? price : null,
+          base_price: basePriceValue,
+          // final_price is a stored column, not a derived one — the product
+          // screen reads it for every price it shows, and the single-variation
+          // form computes it on save the same way. Writing base_price alone left
+          // the new sizes reading as ₪0 even when a price had been entered.
+          final_price: basePriceValue,
           discount_percent: 0,
           stock_quantity: 0,
           is_active: true,
