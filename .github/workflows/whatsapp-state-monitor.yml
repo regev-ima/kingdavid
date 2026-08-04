@@ -1,0 +1,91 @@
+name: WhatsApp state monitor — sweep for disconnected reps
+
+# The BACKSTOP behind the live alert. When a rep's WhatsApp unlinks, Green API
+# pushes stateInstanceChanged to greenApiWebhook and the group is told within
+# seconds — that is the real mechanism. This sweep covers what a webhook can't:
+# an instance that stopped delivering webhooks at all, a webhook URL that
+# drifted, or a state change that happened while the function was unavailable.
+# It also closes out recoveries the webhook missed.
+#
+# Ten minutes is deliberate. The webhook already gives "instant", so this only
+# needs to bound the worst case when the webhook fails, and a tighter schedule
+# would just burn Green API calls. GitHub's scheduler is best-effort and may run
+# late under load — fine for a backstop, which is the only job it has.
+#
+# NOTE: GitHub only runs `schedule` from the repository's default branch, so
+# this starts sweeping once the PR is merged to main. Until then use
+# "Run workflow" (workflow_dispatch), or the "בדוק עכשיו" button in
+# הגדרות ← התראות ניתוק וואטסאפ, which runs the identical sweep.
+#
+# Auth uses no new repo secrets: the monitor token lives in
+# whatsapp_alert_settings and is read with the SUPABASE_ACCESS_TOKEN this repo
+# already has, then presented to the function as x-monitor-token.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+# A late run piling onto a running one would double-send nothing (alerts are
+# once-per-outage) but would waste Green API calls, so keep one at a time.
+concurrency:
+  group: whatsapp-state-monitor
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Read the monitor token
+        id: token
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+          payload=$(jq -n '{query: "select monitor_token from public.whatsapp_alert_settings where id = 1"}')
+          code=$(curl -sS -o /tmp/token.json -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          if [ "$code" -ge 400 ]; then
+            echo "Management API HTTP $code while reading the token"; exit 1
+          fi
+          # The endpoint has returned both a bare array and {result: [...]} —
+          # accept either rather than break on a shape change.
+          token=$(jq -r 'if type == "array" then .[0].monitor_token else .result[0].monitor_token end // empty' /tmp/token.json)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "No monitor_token found — has the whatsapp-alerts migration been applied?"; exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Sweep instance states
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          MONITOR_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          url="https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/greenApiStateMonitor"
+          code=$(curl -sS -o /tmp/sweep.json -w "%{http_code}" --max-time 300 -X POST "$url" \
+            -H "x-monitor-token: ${MONITOR_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{}')
+          echo "greenApiStateMonitor HTTP $code"
+          cat /tmp/sweep.json || true
+          echo
+          test "$code" -lt 400
+
+          {
+            echo "### WhatsApp state sweep"
+            echo
+            echo "| נבדקו | לא נגישים | מנותקים | התראות נשלחו | חזרו לפעול | כשלונות |"
+            echo "|---|---|---|---|---|---|"
+            jq -r '"| \(.checked) | \(.unreachable) | \(.disconnected) | \(.sent) | \(.recovered) | \(.failed) |"' /tmp/sweep.json
+          } >> "$GITHUB_STEP_SUMMARY"

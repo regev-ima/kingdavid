@@ -2,8 +2,10 @@
 // to. Deployed with --no-verify-jwt (like hyp-notify) so Green API can reach
 // it; we authenticate each call by matching the per-instance webhook token.
 //
-// This endpoint itself only records — it never calls a send method. It
-// mirrors BOTH directions into whatsapp_chats / whatsapp_messages: incoming
+// This endpoint records; the one thing it sends is the disconnect alert (see
+// the stateInstanceChanged branch below), which goes out through a DIFFERENT
+// rep's instance — never the one the webhook arrived from. It mirrors BOTH
+// directions into whatsapp_chats / whatsapp_messages: incoming
 // messages, and outgoing ones sent either from the rep's phone or through the
 // app via greenApiSend (phase 2). Green API echoes app-sent messages back
 // here too (outgoingAPIMessageReceived) — the dedupe on green_message_id
@@ -16,6 +18,7 @@
 
 import { createServiceClient } from '../_shared/supabase.ts';
 import { normalizeWebhook } from '../_shared/greenApi.ts';
+import { handleAccountState } from '../_shared/whatsappAlerts.ts';
 
 // Collect every token the caller supplied — Green carries it as ?token= (our
 // setup), but a stale config or the Supabase gateway may also put one in the
@@ -70,6 +73,8 @@ Deno.serve(async (req) => {
     const accUpdate: Record<string, unknown> = { last_webhook_at: new Date().toISOString() };
     if (widPhone && account.phone !== widPhone) accUpdate.phone = widPhone;
     await svc.from('whatsapp_accounts').update(accUpdate).eq('id', account.id);
+    // Keep the in-memory row in step — the disconnect alert quotes the number.
+    Object.assign(account, accUpdate);
 
     // Authenticate: the token must match what we configured (carried as
     // ?token= in the webhook URL, with an Authorization: Bearer fallback).
@@ -84,7 +89,23 @@ Deno.serve(async (req) => {
       await svc.from('whatsapp_accounts')
         .update({ state: norm.stateInstance, last_state_at: new Date().toISOString() })
         .eq('id', account.id);
-      return Response.json({ ok: true, handled: 'state' }, { status: 200 });
+
+      // THE live path for the disconnect alert. Green API pushes
+      // stateInstanceChanged the moment the rep's phone unlinks, so the team
+      // group hears about it in seconds — no polling involved. `account` still
+      // holds the pre-change bookkeeping, which is what decides whether this
+      // outage has already been announced. A failure here must not 500 the
+      // webhook: the state above is already recorded, and the scheduled sweep
+      // will pick the alert up.
+      let alert = 'noop';
+      try {
+        const res = await handleAccountState(svc, account, norm.stateInstance, 'webhook');
+        alert = res.action;
+      } catch (e) {
+        console.error('[greenApiWebhook] disconnect alert failed', e);
+        alert = 'error';
+      }
+      return Response.json({ ok: true, handled: 'state', alert }, { status: 200 });
     }
 
     if (norm.kind !== 'message' || !norm.chatId) {

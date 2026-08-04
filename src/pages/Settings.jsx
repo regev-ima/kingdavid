@@ -32,6 +32,7 @@ const BulkUpdate = lazy(() => import('@/pages/BulkUpdate'));
 const Representatives = lazy(() => import('@/pages/Representatives'));
 const MenuManagementTab = lazy(() => import('@/components/settings/MenuManagementTab'));
 const WhatsAppTemplatesTab = lazy(() => import('@/components/settings/WhatsAppTemplatesTab'));
+const WhatsAppAlertsTab = lazy(() => import('@/components/settings/WhatsAppAlertsTab'));
 const AiSettingsTab = lazy(() => import('@/components/settings/AiSettingsTab'));
 const ImportLeadsTab = lazy(() => import('@/components/settings/ImportLeadsTab'));
 
@@ -93,6 +94,7 @@ export default function Settings() {
     { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     show: isAdmin },
     { value: 'sms',            label: 'שליחת SMS',         desc: 'חיבור חשבון 019',           icon: 'sms',            show: isAdmin },
     { value: 'wa-templates',   label: 'תבניות וואטסאפ',    desc: 'תבניות הודעה וקיצורים לקומפוזר', icon: 'forum', show: isAdmin },
+    { value: 'wa-alerts',      label: 'התראות ניתוק וואטסאפ', desc: 'הודעה לקבוצה כשנציג מתנתק', icon: 'notification_important', show: isAdmin },
     { value: 'ai',             label: 'בינה מלאכותית',     desc: 'בחירת מודל AI לניסוח תוכן',  icon: 'smart_toy',      show: isAdmin },
     { value: 'bulk',           label: 'עדכון המוני',        desc: 'עדכון נתונים בכמות',         icon: 'sync',           show: canBulkUpdate },
     { value: 'lead-visibility', label: 'הרשאות צפייה',      desc: 'מי רואה אילו לידים',          icon: 'visibility',     show: isAdmin },
@@ -378,6 +380,14 @@ export default function Settings() {
           <TabsContent value="wa-templates" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <WhatsAppTemplatesTab />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="wa-alerts" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <WhatsAppAlertsTab />
             </Suspense>
           </TabsContent>
         )}
