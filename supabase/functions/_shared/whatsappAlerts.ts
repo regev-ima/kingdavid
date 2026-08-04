@@ -77,6 +77,9 @@ export interface AlertSettings {
   cooldown_minutes: number;
   notify_on_recovery: boolean;
   monitor_token: string;
+  daily_digest: boolean;
+  digest_hour: number;
+  digest_last_sent_on: string | null;   // Israel-local date, 'YYYY-MM-DD'
 }
 
 export async function loadAlertSettings(svc: any): Promise<AlertSettings | null> {
@@ -105,6 +108,27 @@ function durationHe(fromIso?: string | null, toIso?: string | null): string {
   const rest = mins % 60;
   const hoursTxt = hours === 1 ? 'שעה' : `${hours} שעות`;
   return rest ? `${hoursTxt} ו-${rest} דקות` : hoursTxt;
+}
+
+/**
+ * The date and hour as they are RIGHT NOW in Israel.
+ *
+ * The digest hour is a wall-clock time the team recognises ("09:00"), so it has
+ * to be evaluated in Asia/Jerusalem — deriving it from UTC would silently shift
+ * it by an hour twice a year when DST flips.
+ */
+function israelNow(): { date: string; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jerusalem',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || '';
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    // h23 gives 00–23, but guard anyway: some ICU builds still emit "24".
+    hour: Number(get('hour')) % 24,
+  };
 }
 
 async function repName(svc: any, userId?: string | null): Promise<string> {
@@ -140,6 +164,33 @@ export function buildRecoveryMessage(opts: { name: string; since?: string | null
     '',
     `הוואטסאפ של *${opts.name}* מחובר שוב${dur ? ` (היה מנותק ${dur})` : ''}.`,
   ].join('\n');
+}
+
+export interface DigestEntry {
+  name: string;
+  state?: string | null;
+  since?: string | null;
+}
+
+/**
+ * The once-a-day roll-call of everyone still down. Sorted oldest-outage-first
+ * by the caller, so the rep who has been disconnected longest reads first —
+ * that's the one costing the most.
+ */
+export function buildDigestMessage(entries: DigestEntry[]): string {
+  const lines = [
+    '📋 *סיכום יומי — וואטסאפ מנותק*',
+    '',
+    entries.length === 1 ? 'נציג אחד מנותק כרגע:' : `${entries.length} נציגים מנותקים כרגע:`,
+  ];
+  for (const e of entries) {
+    const dur = durationHe(e.since);
+    lines.push(`• *${e.name}* — ${stateLabelHe(e.state)}${dur ? ` · מנותק ${dur}` : ''}`);
+  }
+  lines.push('');
+  lines.push('כל עוד הם מנותקים לא נקלטות מהם הודעות ולא ניתן לשלוח מהמערכת.');
+  lines.push('לחיבור: נהל נציג ← וואטסאפ ← "חבר מכשיר (QR)".');
+  return lines.join('\n');
 }
 
 export interface SendOutcome {
@@ -405,6 +456,7 @@ export interface SweepSummary {
   sent: number;
   recovered: number;
   failed: number;
+  digest?: DigestResult;
   results: Array<{ user_id: string; state: string | null; action: AlertAction; error?: string }>;
 }
 
@@ -471,7 +523,119 @@ export async function sweepAccounts(
     }
   }
 
+  // The daily roll-call rides on the sweep — it runs after the states above are
+  // fresh, so it reports what is true now rather than what was true last pass.
+  // Only the scheduled sweep carries it: the admin's "בדוק עכשיו" button is for
+  // checking, and shouldn't broadcast to the whole group as a side effect.
+  if (source === 'sweep') {
+    try {
+      summary.digest = await maybeSendDailyDigest(svc);
+    } catch (e) {
+      console.error('[whatsappAlerts] daily digest failed', e);
+    }
+  }
+
   return summary;
+}
+
+export interface DigestResult {
+  sent: boolean;
+  reason?: 'disabled' | 'too_early' | 'already_sent_today' | 'all_connected' | 'send_failed' | 'settings_missing';
+  count?: number;
+  error?: string;
+}
+
+/**
+ * The daily "who is STILL disconnected" roll-call.
+ *
+ * The per-outage alert fires once and then goes quiet, which is right for noise
+ * but wrong for memory — a 🔴 nobody read at 02:00 leaves a rep down for days.
+ * This is the counterweight, shaped so it cannot become the noise it's guarding
+ * against: at most ONE extra message per day, however many reps are down and
+ * however long they stay down.
+ *
+ * Called from the scheduled sweep, so the first pass at or after digest_hour
+ * (Israel time) delivers it. `force` is the admin's "send now" button, which
+ * bypasses the schedule without consuming the day's slot.
+ */
+export async function maybeSendDailyDigest(
+  svc: any,
+  settingsIn?: AlertSettings | null,
+  force = false,
+): Promise<DigestResult> {
+  const settings = settingsIn !== undefined ? settingsIn : await loadAlertSettings(svc);
+  if (!settings) return { sent: false, reason: 'settings_missing' };
+
+  if (!force) {
+    if (!settings.enabled || !settings.daily_digest) return { sent: false, reason: 'disabled' };
+
+    const { date, hour } = israelNow();
+    if (hour < (settings.digest_hour ?? 9)) return { sent: false, reason: 'too_early' };
+    if (settings.digest_last_sent_on === date) return { sent: false, reason: 'already_sent_today' };
+
+    // Claim the day BEFORE building the message. Sweeps can overlap (a late run
+    // piling onto a slow one), and without this both would send.
+    //
+    // Claiming even when it turns out nobody is disconnected is deliberate: the
+    // digest is a daily roll-call, not a trigger. If everyone was fine at 09:00
+    // we don't want it firing again at 09:10 — and a rep who drops at 14:00
+    // gets the immediate 🔴 anyway.
+    const { data: claimed } = await svc
+      .from('whatsapp_alert_settings')
+      .update({ digest_last_sent_on: date })
+      .eq('id', 1)
+      .or(`digest_last_sent_on.is.null,digest_last_sent_on.neq.${date}`)
+      .select('id');
+    if (!claimed || claimed.length === 0) return { sent: false, reason: 'already_sent_today' };
+  }
+
+  // Everyone currently in an outage, oldest first. Muted reps are excluded —
+  // mute means "stop telling me about this one", in the digest too.
+  const { data: down } = await svc
+    .from('whatsapp_accounts')
+    .select('user_id, state, disconnected_since')
+    .neq('instance_id', '')
+    .eq('is_active', true)
+    .eq('was_authorized', true)
+    .eq('alerts_muted', false)
+    .not('disconnected_since', 'is', null)
+    .order('disconnected_since', { ascending: true });
+
+  const rows = down || [];
+  // Silence is the good state. A daily "everything is fine" would train the
+  // group to scroll past the day it isn't.
+  if (rows.length === 0) return { sent: false, reason: 'all_connected', count: 0 };
+
+  // One query for the names rather than one per row.
+  const ids = rows.map((r: any) => r.user_id).filter(Boolean);
+  const { data: users } = await svc.from('users').select('id, full_name, email').in('id', ids);
+  const nameOf = new Map((users || []).map((u: any) => [u.id, u.full_name || u.email]));
+
+  const entries: DigestEntry[] = rows.map((r: any) => ({
+    name: nameOf.get(r.user_id) || 'נציג לא מזוהה',
+    state: r.state,
+    since: r.disconnected_since,
+  }));
+
+  const message = buildDigestMessage(entries);
+  const out = await sendGroupAlert(svc, settings, message);
+  await logAlert(svc, {
+    account_id: null,
+    user_id: null,
+    rep_name: entries.map((e) => e.name).join(', '),
+    kind: 'digest',
+    state: null,
+    source: force ? 'ui' : 'sweep',
+    chat_id: out.chatId || settings.group_chat_id,
+    message,
+    green_message_id: out.idMessage || null,
+    ok: out.ok,
+    error: out.error || null,
+  });
+
+  return out.ok
+    ? { sent: true, count: entries.length }
+    : { sent: false, reason: 'send_failed', count: entries.length, error: out.error };
 }
 
 /**

@@ -29,16 +29,19 @@
 // raised by greenApiWebhook (live) and greenApiStateMonitor (sweep):
 //   'alerts_get'                                    → config + per-rep state + recent log
 //   'alerts_save'  { enabled, notifier_user_id, group_chat_id, cooldown_minutes,
-//                    notify_on_recovery }           → update the config
+//                    notify_on_recovery, daily_digest, digest_hour }
+//                                                   → update the config
 //   'alerts_test'                                   → send a test message to the group
 //   'alerts_mute'  { user_id, muted }               → silence one rep's alerts
 //   'alerts_sweep'                                  → run the state sweep now
+//   'alerts_digest_now'                             → send the daily digest now,
+//                    without consuming today's scheduled slot
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
 import { getStateInstance, getGreenSettings, setWebhookSettings, buildWebhookUrlWithToken, callGreenApi } from '../_shared/greenApi.ts';
 import {
   handleAccountState, loadAlertSettings, sweepAccounts, sendTestAlert,
-  describeGroup, normalizeChatId, stateLabelHe,
+  describeGroup, normalizeChatId, stateLabelHe, maybeSendDailyDigest,
 } from '../_shared/whatsappAlerts.ts';
 
 function maskToken(t: string) {
@@ -452,6 +455,9 @@ Deno.serve(async (req) => {
             group_chat_id: settings.group_chat_id,
             cooldown_minutes: settings.cooldown_minutes,
             notify_on_recovery: settings.notify_on_recovery,
+            daily_digest: settings.daily_digest,
+            digest_hour: settings.digest_hour,
+            digest_last_sent_on: settings.digest_last_sent_on,
             monitor_token_hint: tok ? `••••${tok.slice(-4)}` : '',
           } : null,
           reps,
@@ -466,6 +472,14 @@ Deno.serve(async (req) => {
         };
         if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
         if (typeof body.notify_on_recovery === 'boolean') patch.notify_on_recovery = body.notify_on_recovery;
+        if (typeof body.daily_digest === 'boolean') patch.daily_digest = body.daily_digest;
+        if ('digest_hour' in body) {
+          const h = Number(body.digest_hour);
+          if (!Number.isInteger(h) || h < 0 || h > 23) {
+            return Response.json({ ok: false, error: 'digest_hour_invalid' }, { status: 400, headers: cors });
+          }
+          patch.digest_hour = h;
+        }
         if ('notifier_user_id' in body) patch.notifier_user_id = body.notifier_user_id || null;
         if ('group_chat_id' in body) {
           const chatId = normalizeChatId(body.group_chat_id);
@@ -532,6 +546,14 @@ Deno.serve(async (req) => {
       if (action === 'alerts_sweep') {
         const summary = await sweepAccounts(svc, 'ui');
         return Response.json({ ok: true, ...summary }, { headers: cors });
+      }
+
+      if (action === 'alerts_digest_now') {
+        // force = true: send regardless of the hour, and DON'T stamp
+        // digest_last_sent_on — pressing this at 08:00 must not swallow the
+        // 09:00 digest.
+        const res = await maybeSendDailyDigest(svc, undefined, true);
+        return Response.json({ ok: true, ...res }, { headers: cors });
       }
     }
 

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import {
   Loader2, Save, Send, RefreshCw, CheckCircle2, AlertTriangle, BellOff, Bell, Users, Zap,
+  ListChecks,
 } from 'lucide-react';
 
 // Admin settings for the "a rep's WhatsApp disconnected" alert.
@@ -41,6 +42,7 @@ const LOG_KIND_LABELS = {
   disconnected: 'ניתוק',
   recovered: 'חזרה לפעול',
   test: 'בדיקה',
+  digest: 'סיכום יומי',
 };
 
 // The server returns machine-readable reasons; a manager needs the "so what".
@@ -76,6 +78,8 @@ export default function WhatsAppAlertsTab() {
     group_chat_id: '',
     cooldown_minutes: 60,
     notify_on_recovery: true,
+    daily_digest: true,
+    digest_hour: 9,
   });
 
   useEffect(() => {
@@ -86,6 +90,8 @@ export default function WhatsAppAlertsTab() {
         group_chat_id: data.settings.group_chat_id || '',
         cooldown_minutes: data.settings.cooldown_minutes ?? 60,
         notify_on_recovery: data.settings.notify_on_recovery !== false,
+        daily_digest: data.settings.daily_digest !== false,
+        digest_hour: data.settings.digest_hour ?? 9,
       });
     }
   }, [data?.settings]);
@@ -98,6 +104,8 @@ export default function WhatsAppAlertsTab() {
       group_chat_id: draft.group_chat_id,
       cooldown_minutes: Number(draft.cooldown_minutes),
       notify_on_recovery: draft.notify_on_recovery,
+      daily_digest: draft.daily_digest,
+      digest_hour: Number(draft.digest_hour),
     }),
     onSuccess: (res) => {
       if (res?.group?.ok) {
@@ -134,6 +142,17 @@ export default function WhatsAppAlertsTab() {
       queryClient.invalidateQueries({ queryKey: ['wa-alerts'] });
     },
     onError: (err) => toast.error(`הבדיקה נכשלה: ${err?.message || 'שגיאה'}`),
+  });
+
+  const digestMutation = useMutation({
+    mutationFn: () => base44.functions.invoke('greenApiSettings', { action: 'alerts_digest_now' }),
+    onSuccess: (res) => {
+      if (res?.sent) toast.success(`הסיכום נשלח לקבוצה (${res.count} מנותקים) ✅`);
+      else if (res?.reason === 'all_connected') toast.success('אין נציגים מנותקים כרגע — לא נשלח סיכום');
+      else toast.error(`שליחת הסיכום נכשלה: ${errorLabel(res?.error) || res?.reason || 'שגיאה'}`);
+      queryClient.invalidateQueries({ queryKey: ['wa-alerts'] });
+    },
+    onError: (err) => toast.error(`שליחת הסיכום נכשלה: ${err?.message || 'שגיאה'}`),
   });
 
   const muteMutation = useMutation({
@@ -203,7 +222,8 @@ export default function WhatsAppAlertsTab() {
           <p className="text-xs text-muted-foreground leading-relaxed">
             ברגע שהוואטסאפ של נציג מתנתק, Green API מודיע למערכת מיידית (webhook) והמערכת שולחת
             הודעה אחת לקבוצה שנבחרה — <b>מהוואטסאפ של הנציג השולח</b>, ולכן המספר שלו חייב להיות
-            חבר בקבוצה. בנוסף רצה סריקה מתוזמנת כל 10 דקות כגיבוי, למקרה שההודעה מ-Green לא הגיעה.
+            חבר בקבוצה. בנוסף רצה סריקה מתוזמנת כל 10 דקות כגיבוי, למקרה שההודעה מ-Green לא הגיעה,
+            ופעם ביום נשלח סיכום של מי שעדיין מנותק.
           </p>
         </div>
 
@@ -303,6 +323,50 @@ export default function WhatsAppAlertsTab() {
           </div>
         </div>
 
+        {/* ── Daily digest ─────────────────────────────────────────────── */}
+        <div className="rounded-lg border p-3 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">סיכום יומי — מי עדיין מנותק</p>
+              <p className="text-xs text-muted-foreground">
+                ההתראה על ניתוק נשלחת פעם אחת בלבד. הסיכום היומי הוא מה שמונע מנציג
+                להישאר מנותק ימים בלי שאיש ישים לב, בלי להציף את הקבוצה.
+              </p>
+            </div>
+            <Switch
+              checked={draft.daily_digest}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, daily_digest: v }))}
+            />
+          </div>
+
+          {draft.daily_digest && (
+            <>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="wa-alerts-hour" className="text-xs shrink-0">שעת שליחה</Label>
+                <Input
+                  id="wa-alerts-hour"
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={draft.digest_hour}
+                  onChange={(e) => setDraft((d) => ({ ...d, digest_hour: e.target.value }))}
+                  dir="ltr"
+                  className="h-8 w-20"
+                />
+                <span className="text-xs text-muted-foreground">שעון ישראל</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                הודעה אחת ביום עם רשימת כל מי שמנותק כרגע וכמה זמן — לא משנה כמה נציגים
+                מנותקים או כמה זמן. <b>כשכולם מחוברים לא נשלח כלום.</b> הסריקה המתוזמנת
+                מביאה אותה, ולכן היא עשויה לנחות כמה דקות אחרי השעה העגולה.
+                {data.settings.digest_last_sent_on
+                  ? ` סיכום אחרון: ${data.settings.digest_last_sent_on}.`
+                  : ' עדיין לא נשלח סיכום.'}
+              </p>
+            </>
+          )}
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="gap-2">
             {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -320,6 +384,16 @@ export default function WhatsAppAlertsTab() {
           <Button variant="ghost" onClick={() => sweepMutation.mutate()} disabled={sweepMutation.isPending} className="gap-2">
             {sweepMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             בדוק עכשיו
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => digestMutation.mutate()}
+            disabled={digestMutation.isPending || !draft.notifier_user_id || !draft.group_chat_id}
+            className="gap-2"
+            title="שולח את הסיכום עכשיו בלי לבטל את הסיכום המתוזמן של היום"
+          >
+            {digestMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListChecks className="h-4 w-4" />}
+            שלח סיכום עכשיו
           </Button>
         </div>
 
