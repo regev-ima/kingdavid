@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2 } from "lucide-react";
+import { ArrowRight, Save, Loader2, UserCheck } from "lucide-react";
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
@@ -47,25 +47,50 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
     status: 'new',
   });
 
+  // A hand-typed lead belongs to whoever typed it — rep and manager alike.
+  // Whoever fills this form is already the one talking to the customer, so the
+  // lead goes straight into their book instead of landing in the admins'
+  // "יש לשייך את הליד לנציג" queue just to be handed back to them. Matches what
+  // /NewQuote already does when it creates a lead on the fly.
+  const assignedRepEmail = effectiveUser?.email || null;
+  const assignedRepName = effectiveUser?.full_name || assignedRepEmail;
+
   const createLeadMutation = useMutation({
     mutationFn: async (data) => {
-      // Create lead with owner set to admin (current user if admin, otherwise null)
+      // `owner` is unchanged: the admin's email when an admin created it.
       const leadData = {
         ...data,
+        rep1: assignedRepEmail,
         owner: isAdminUser(effectiveUser) ? effectiveUser.email : null,
         budget: data.budget ? parseFloat(data.budget) : null,
         effective_sort_date: new Date().toISOString(),
       };
-      
+
       const lead = await base44.entities.Lead.create(leadData);
 
-      // Audit log - lead created (task will be created by cloud function only if rep1 is set)
+      // Audit log - lead created. The rep's follow-up call task is created by
+      // the trackLeadAssignment automation, which fires on INSERT and sees rep1.
       await createAuditLog({
         leadId: lead.id,
         actionType: 'created',
         description: `ליד חדש נוצר: ${data.full_name}`,
         user: user || effectiveUser,
       });
+
+      // Second entry, on purpose: the timeline should show the assignment the
+      // same way it shows a manual one, so "מי הנציג ומאיפה הגיע" reads off the
+      // lead's history without anyone having to know the lead was self-created.
+      if (assignedRepEmail) {
+        await createAuditLog({
+          leadId: lead.id,
+          actionType: 'rep_assigned',
+          description: `הליד שויך אוטומטית ל${assignedRepName} — יוצר הליד`,
+          user: user || effectiveUser,
+          fieldName: 'rep1',
+          oldValue: 'לא משויך',
+          newValue: assignedRepEmail,
+        });
+      }
 
       return lead;
     },
@@ -253,26 +278,34 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-3 mt-6">
-          {asDialog ? (
-            <Button type="button" variant="outline" onClick={() => onDialogClose?.(null)}>ביטול</Button>
-          ) : (
-            <Link to={createPageUrl('Leads')}>
-              <Button type="button" variant="outline">ביטול</Button>
-            </Link>
-          )}
-          <Button
-            type="submit" 
-            className=""
-            disabled={createLeadMutation.isPending}
-          >
-            {createLeadMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
+          {assignedRepName ? (
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+              <UserCheck className="h-4 w-4" />
+              הליד ישויך אוטומטית ל<span className="font-medium text-foreground">{assignedRepName}</span>
+            </p>
+          ) : <span />}
+          <div className="flex gap-3 ms-auto">
+            {asDialog ? (
+              <Button type="button" variant="outline" onClick={() => onDialogClose?.(null)}>ביטול</Button>
             ) : (
-              <Save className="h-4 w-4 me-2" />
+              <Link to={createPageUrl('Leads')}>
+                <Button type="button" variant="outline">ביטול</Button>
+              </Link>
             )}
-            שמור ליד
-          </Button>
+            <Button
+              type="submit"
+              className=""
+              disabled={createLeadMutation.isPending}
+            >
+              {createLeadMutation.isPending ? (
+                <Loader2 className="h-4 w-4 me-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 me-2" />
+              )}
+              שמור ליד
+            </Button>
+          </div>
         </div>
       </form>
     </div>
