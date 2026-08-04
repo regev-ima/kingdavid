@@ -9,12 +9,17 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Plus, Edit, Trash2, AlertTriangle } from 'lucide-react';
-import { getSizeDimensions, parseDimensionsText } from '@/lib/productSizes';
+import { getSizeDimensions, getSizeSurcharge, parseDimensionsText, SIZED_PRODUCT_CATEGORIES } from '@/lib/productSizes';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function GlobalSizesList() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSize, setEditingSize] = useState(null);
+  // Which category's upcharges the table is showing. Same sizes throughout —
+  // only the amount differs, because a bed in 160/200 doesn't add what a
+  // mattress in 160/200 adds.
+  const [category, setCategory] = useState('mattress');
   const [formData, setFormData] = useState({
     label: '',
     dimensions: '',
@@ -127,8 +132,21 @@ export default function GlobalSizesList() {
 
   return (
     <Card dir="rtl">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>מידות גלובליות</CardTitle>
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <CardTitle>מידות גלובליות</CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">תוספות עבור:</span>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="h-8 w-36 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SIZED_PRODUCT_CATEGORIES.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm} className="">
@@ -244,7 +262,12 @@ export default function GlobalSizesList() {
               <TableHead className="text-right">סטטוס</TableHead>
               <TableHead className="text-right">סדר</TableHead>
               <TableHead className="text-right">מחיר</TableHead>
-              <TableHead className="text-right">תוספת מעל הבסיס</TableHead>
+              <TableHead className="text-right">
+                תוספת מעל הבסיס
+                <span className="text-[11px] font-normal text-muted-foreground ms-1">
+                  ({SIZED_PRODUCT_CATEGORIES.find((c) => c.value === category)?.label})
+                </span>
+              </TableHead>
               <TableHead className="text-right">מימדים</TableHead>
               <TableHead className="text-right">מידה</TableHead>
             </TableRow>
@@ -280,15 +303,24 @@ export default function GlobalSizesList() {
                       type="number"
                       dir="ltr"
                       className="h-8 w-24 text-sm text-start"
-                      defaultValue={size.size_surcharge ?? 0}
-                      // Re-key on the saved value so a failed save or an edit
-                      // from elsewhere doesn't leave a stale number on screen.
-                      key={`surcharge-${size.id}-${size.size_surcharge ?? 0}`}
+                      defaultValue={getSizeSurcharge(size, category)}
+                      // Re-key on the saved value and the category so switching
+                      // categories redraws the field instead of leaving the
+                      // previous one's number sitting in an uncontrolled input.
+                      key={`surcharge-${size.id}-${category}-${getSizeSurcharge(size, category)}`}
                       onBlur={(e) => {
                         const next = Number(e.target.value);
-                        const current = Number(size.size_surcharge ?? 0);
+                        const current = getSizeSurcharge(size, category);
                         if (!Number.isFinite(next) || next === current) return;
-                        inlineUpdateMutation.mutate({ id: size.id, data: { size_surcharge: next } });
+                        // Merge into the map — writing the whole object would
+                        // wipe every other category's amount.
+                        const surcharges = { ...(size.surcharges || {}), [category]: next };
+                        const data = { surcharges };
+                        // Keep the legacy single column in step while mattress
+                        // is the category being edited: it is still the fallback
+                        // for anything that hasn't been split yet.
+                        if (category === 'mattress') data.size_surcharge = next;
+                        inlineUpdateMutation.mutate({ id: size.id, data });
                       }}
                     />
                   </div>

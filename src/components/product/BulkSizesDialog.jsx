@@ -13,6 +13,7 @@ import {
   filterSizesForBedTypes,
   formatDimensions,
   getSizeDimensions,
+  getSizeSurcharge,
   resolveSizePrice,
   suggestBaseSize,
   suggestSkuPrefix,
@@ -138,18 +139,22 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
       basePrice,
       size,
       productSizePrice: productSizePrices.find((psp) => psp.global_size_id === size.id),
+      // The upcharge is per category: a bed and a mattress in the same size
+      // don't add the same amount.
+      category: product?.category,
     });
     return {
       size,
       dims,
       existing,
       isBase: !!baseSize && size.id === baseSize.id,
+      surcharge: getSizeSurcharge(size, product?.category),
       sku: buildVariationSku(prefix, dims),
       price: priceEdits[size.id] !== undefined
         ? priceEdits[size.id]
         : (suggestedPrice != null ? String(suggestedPrice) : ''),
     };
-  }), [relevantSizes, existingByDims, baseSize, prefix, basePrice, priceEdits, productSizePrices]);
+  }), [relevantSizes, existingByDims, baseSize, prefix, basePrice, priceEdits, productSizePrices, product?.category]);
 
   const selectableRows = rows.filter((r) => r.dims && !r.existing);
   const selectedRows = selectableRows.filter((r) => selected[r.size.id]);
@@ -333,9 +338,9 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                               כבר קיימת
                             </span>
                           )}
-                          {!row.isBase && Number(row.size.size_surcharge) > 0 && (
+                          {!row.isBase && row.surcharge > 0 && (
                             <span className="text-[11px] text-muted-foreground">
-                              תוספת +₪{Number(row.size.size_surcharge).toLocaleString()}
+                              תוספת +₪{row.surcharge.toLocaleString()}
                             </span>
                           )}
                         </div>
