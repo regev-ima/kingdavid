@@ -1,5 +1,6 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 import { applyBulkFilter } from '../_shared/bulkFilter.ts';
+import { reconcileRepSlots, repSlotFieldsForTable } from '../_shared/repSlots.ts';
 
 const BATCH_SIZE = 20;
 const UPDATE_DELAY = 200;
@@ -141,10 +142,17 @@ Deno.serve(async (req) => {
 
     for (const item of items) {
       try {
+        // One value across many rows meets a different primary rep on each of
+        // them, so the rep-slot rule is resolved per row rather than once for
+        // the run: a rep2 that would duplicate that row's rep1 is skipped, and
+        // a rep1 that lands on the row's rep2 frees the secondary slot.
+        const slots = repSlotFieldsForTable(tableName);
+        const rowUpdates = slots ? reconcileRepSlots(item, updates, slots).patch : updates;
+
         await fetchWithRetry(async () => {
           const { error: updateError } = await supabase
             .from(tableName)
-            .update(updates)
+            .update(rowUpdates)
             .eq('id', item.id);
           if (updateError) throw updateError;
         });

@@ -81,6 +81,7 @@ import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
+import { isSameRep, reconcileRepSlots, repsExcludingPrimary } from '@/lib/repSlots';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
@@ -359,7 +360,12 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   }), [tasks]);
 
   const handleSave = async () => {
-    const { id, created_date, updated_date, created_by, ...updateData } = formData;
+    const { id, created_date, updated_date, created_by, ...editedFields } = formData;
+
+    // The two rep slots belong to two different people. The pickers already
+    // enforce it, so this catches the ways in that don't go through them — a
+    // stale form, a value carried over from before the rule existed.
+    const { patch: updateData, clearedSecondary } = reconcileRepSlots(lead, editedFields);
 
     // Audit log for each changed field
     const fieldLabels = {
@@ -379,18 +385,28 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     const fieldsToCheck = Object.keys(fieldLabels);
 
     for (const field of fieldsToCheck) {
-      if (formData[field] !== lead[field] && (formData[field] || lead[field])) {
+      // Read the value we're actually about to save, not the raw form — so a
+      // rep2 the reconcile just cleared is logged as cleared.
+      const nextValue = field in updateData ? updateData[field] : lead[field];
+      if (nextValue !== lead[field] && (nextValue || lead[field])) {
         const isRep = field === 'rep1' || field === 'rep2';
         await createAuditLog({
           leadId,
           actionType: isRep ? 'rep_changed' : field === 'status' ? 'status_changed' : 'field_updated',
-          description: `${user.full_name} שינה ${fieldLabels[field]}: "${lead[field] || '(ריק)'}" → "${formData[field] || '(ריק)'}"`,
+          description: `${user.full_name} שינה ${fieldLabels[field]}: "${lead[field] || '(ריק)'}" → "${nextValue || '(ריק)'}"`,
           user,
           fieldName: field,
           oldValue: lead[field],
-          newValue: formData[field],
+          newValue: nextValue,
         });
       }
+    }
+
+    if (clearedSecondary) {
+      toast({
+        title: 'הנציג המשני נוקה',
+        description: 'אותו נציג לא יכול להיות גם ראשי וגם משני — אפשר לשייך נציג משני אחר.',
+      });
     }
 
     queryClient.invalidateQueries(['leadActivityLogs', leadId]);
@@ -520,8 +536,21 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         newValue: email,
       });
 
-      // 5. Update lead
-      updateLeadMutation.mutate({ rep1: email });
+      // 5. Update lead. Assigning the lead to whoever was its secondary rep
+      //    frees the secondary slot — they own it now.
+      const { patch, clearedSecondary } = reconcileRepSlots(lead, { rep1: email });
+      if (clearedSecondary) {
+        await createAuditLog({
+          leadId,
+          actionType: 'rep_changed',
+          description: `הנציג המשני נוקה — ${repName} הפך/ה לנציג הראשי`,
+          user,
+          fieldName: 'rep2',
+          oldValue: lead.rep2,
+          newValue: '',
+        });
+      }
+      updateLeadMutation.mutate(patch);
       queryClient.invalidateQueries(['tasks', leadId]);
       queryClient.invalidateQueries(['leadActivityLogs', leadId]);
     } catch (error) {
@@ -583,6 +612,17 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
   const handleQuickAssignRep2 = async (email) => {
     const repName = salesReps.find(r => r.email === email)?.full_name || email;
+
+    // The picker doesn't offer the primary rep, but this handler is also the
+    // one the RepCard shortcut calls — so refuse the duplicate here too.
+    if (isSameRep(email, lead.rep1)) {
+      toast({
+        title: 'אי אפשר לשייך את אותו נציג פעמיים',
+        description: `${repName} כבר הנציג הראשי של הליד. נציג משני נועד לנציג אחר.`,
+        variant: 'destructive',
+      });
+      return;
+    }
 
     const openAssignmentTasks = tasks.filter(t =>
       t.task_status === 'not_completed' && (!t.rep1 || t.task_type === 'assignment')
@@ -872,7 +912,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
                   <Select
                     value={formData.rep1 || ''}
-                    onValueChange={(value) => setFormData({ ...formData, rep1: value, status: value ? 'assigned' : formData.status })}>
+                    /* Promoting whoever sits in the secondary slot empties it —
+                       one person never holds both (see lib/repSlots). */
+                    onValueChange={(value) => setFormData({
+                      ...formData,
+                      rep1: value,
+                      ...(isSameRep(value, formData.rep2) ? { rep2: '' } : {}),
+                      status: value ? 'assigned' : formData.status,
+                    })}>
                     <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={null}>ללא שיוך</SelectItem>
@@ -931,10 +978,12 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                               oldValue: 'לא משויך',
                               newValue: lead.pending_rep_email,
                             });
-                            updateLeadMutation.mutate({
-                              rep1: lead.pending_rep_email,
-                              pending_rep_email: null
-                            });
+                            updateLeadMutation.mutate(
+                              reconcileRepSlots(lead, {
+                                rep1: lead.pending_rep_email,
+                                pending_rep_email: null,
+                              }).patch,
+                            );
                             queryClient.invalidateQueries(['tasks', leadId]);
                             queryClient.invalidateQueries(['leadActivityLogs', leadId]);
                           }}
@@ -962,7 +1011,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                     <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value={null}>ללא</SelectItem>
-                      {salesReps.map((rep) =>
+                      {repsExcludingPrimary(salesReps, formData.rep1 || lead.rep1).map((rep) =>
                         <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
                       )}
                     </SelectContent>

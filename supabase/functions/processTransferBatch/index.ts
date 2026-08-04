@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
+import { reconcileRepSlots, repSlotFieldsForTable } from '../_shared/repSlots.ts';
 
 const BATCH_SIZE = 20; // Process 20 items per run
 
@@ -99,9 +100,19 @@ Deno.serve(async (req) => {
       if (filterError) throw filterError;
 
       for (const item of items ?? []) {
+        // Moving A's book to B must not put B in both of a record's rep slots.
+        // A record with rep1=A, rep2=B is the ordinary case here — the two reps
+        // shared it — and rewriting rep1 to B would leave B twice over, locking
+        // the record to one person. reconcileRepSlots frees the secondary slot
+        // instead (and drops a secondary write that would duplicate the primary).
+        const slots = repSlotFieldsForTable(tableName);
+        const { patch } = slots
+          ? reconcileRepSlots(item, { [field]: newEmail }, slots)
+          : { patch: { [field]: newEmail } };
+
         const { error: updateError } = await supabase
           .from(tableName)
-          .update({ [field]: newEmail })
+          .update(patch)
           .eq('id', item.id);
         if (updateError) throw updateError;
         processed++;
