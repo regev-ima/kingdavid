@@ -37,7 +37,14 @@
 ALTER TABLE public.global_sizes
   ADD COLUMN IF NOT EXISTS width_cm integer,
   ADD COLUMN IF NOT EXISTS length_cm integer,
-  ADD COLUMN IF NOT EXISTS size_surcharge numeric NOT NULL DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS size_surcharge numeric NOT NULL DEFAULT 0,
+  -- `dimensions` too: the sizes screen has had a "מימדים" field for as long as
+  -- anyone remembers, but the column was never created, so every value typed
+  -- into it was dropped on the way to the database (entities.js strips a column
+  -- PostgREST rejects rather than failing the whole save — see
+  -- writeWithSchemaResilience). Adding it makes the existing field honest; the
+  -- numbers above are what this feature actually reads.
+  ADD COLUMN IF NOT EXISTS dimensions text;
 
 ALTER TABLE public.products
   ADD COLUMN IF NOT EXISTS sku_prefix text,
