@@ -1,0 +1,154 @@
+/**
+ * Sizes, SKUs and size pricing — the rules a product's variations are built from.
+ *
+ * The showroom card is the source of truth for how this business prices a
+ * mattress: one base price for the product's base size, and a fixed surcharge
+ * per larger size ("תוספת") that is the same across every double mattress —
+ * 140/200 and 150/190 add ₪390, 160/200 adds ₪490, 200/200 adds ₪1,290. So a
+ * product isn't a list of independently-priced sizes; it's one price plus a
+ * shared table, with the occasional per-product exception.
+ *
+ * Dimensions are read from the catalog's own columns when they're there and
+ * parsed out of the free-text `dimensions` field when they aren't — the field
+ * held "140/190"-style text long before there were columns to put it in, and
+ * the parse keeps every existing size usable instead of hiding it.
+ */
+
+/** Israeli mattress dimensions are whole centimetres in a sane range. */
+const MIN_CM = 30;
+const MAX_CM = 400;
+
+const toCm = (value) => {
+  const n = Number(String(value ?? '').trim());
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  return rounded >= MIN_CM && rounded <= MAX_CM ? rounded : null;
+};
+
+/**
+ * Pull width/length out of a free-text size. Handles every separator the
+ * catalog has collected — "140/190", "140x190", "140X190", "140*190",
+ * "140 על 190" — and ignores anything trailing (e.g. a height).
+ */
+export function parseDimensionsText(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return null;
+  const match = raw.match(/(\d{2,3})\s*(?:[xX×*\/]|על)\s*(\d{2,3})/);
+  if (!match) return null;
+  const a = toCm(match[1]);
+  const b = toCm(match[2]);
+  if (a == null || b == null) return null;
+  // A mattress is never wider than it is long — the same rule migration
+  // 20260702000002 enforced on existing variations — so the smaller number is
+  // the width whichever order it was typed in.
+  return { width_cm: Math.min(a, b), length_cm: Math.max(a, b) };
+}
+
+/**
+ * Width/length for a catalog size: the stored columns first, the text as a
+ * fallback. Returns null when neither yields a usable pair, which is what makes
+ * a size un-tickable in the bulk dialog rather than silently wrong.
+ */
+export function getSizeDimensions(size) {
+  const width = toCm(size?.width_cm);
+  const length = toCm(size?.length_cm);
+  if (width != null && length != null) {
+    return { width_cm: Math.min(width, length), length_cm: Math.max(width, length) };
+  }
+  return parseDimensionsText(size?.dimensions) || parseDimensionsText(size?.label);
+}
+
+/** "140/190" — how this business writes a size, everywhere. */
+export function formatDimensions(dims) {
+  if (!dims) return '';
+  return `${dims.width_cm}/${dims.length_cm}`;
+}
+
+// ── Base size ────────────────────────────────────────────────────────────────
+
+/**
+ * The size a product's price is quoted for before any surcharge: 140/190 on a
+ * double, 80/190 on a single. Only a default — a product can point at any size
+ * in the catalog — but it's the right answer for almost every product, so the
+ * form arrives with it already chosen.
+ */
+export const DEFAULT_BASE_DIMENSIONS = {
+  double: { width_cm: 140, length_cm: 190 },
+  single: { width_cm: 80, length_cm: 190 },
+};
+
+/** The catalog size that should be a product's base, by its bed type. */
+export function suggestBaseSize(bedTypes, sizes = []) {
+  const types = Array.isArray(bedTypes) ? bedTypes : [bedTypes].filter(Boolean);
+  // Double wins when a product is sold as both: it's the price on the card.
+  const key = types.includes('double') ? 'double' : types.includes('single') ? 'single' : null;
+  if (!key) return null;
+
+  const target = DEFAULT_BASE_DIMENSIONS[key];
+  return sizes.find((size) => {
+    const dims = getSizeDimensions(size);
+    return dims && dims.width_cm === target.width_cm && dims.length_cm === target.length_cm;
+  }) || null;
+}
+
+// ── SKU ──────────────────────────────────────────────────────────────────────
+
+// Hebrew letters to the Latin ones the existing SKUs use (עדן → EDN). Only the
+// consonants matter: the catalog spells "EDN", not "EDEN".
+const HEBREW_TO_LATIN = {
+  א: '', ב: 'B', ג: 'G', ד: 'D', ה: 'H', ו: 'V', ז: 'Z', ח: 'H', ט: 'T',
+  י: 'Y', כ: 'K', ך: 'K', ל: 'L', מ: 'M', ם: 'M', נ: 'N', ן: 'N', ס: 'S',
+  ע: '', פ: 'P', ף: 'P', צ: 'TZ', ץ: 'TZ', ק: 'K', ר: 'R', ש: 'SH', ת: 'T',
+};
+
+/**
+ * A starting point for the product's SKU prefix, never the last word on it —
+ * transliteration guesses, and the person naming the product knows better. The
+ * product form shows this filled in and lets it be typed over.
+ */
+export function suggestSkuPrefix(productName) {
+  const name = String(productName ?? '').trim();
+  if (!name) return '';
+
+  const firstWord = name.split(/\s+/)[0] || '';
+  let out = '';
+  for (const char of firstWord) {
+    if (out.length >= 3) break;
+    if (/[a-zA-Z]/.test(char)) out += char.toUpperCase();
+    else if (HEBREW_TO_LATIN[char] !== undefined) out += HEBREW_TO_LATIN[char];
+  }
+  return out.slice(0, 3);
+}
+
+/** `EDN` + `120` + `200` — the shape every SKU in the catalog already has. */
+export function buildVariationSku(prefix, dims) {
+  const letters = String(prefix ?? '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (!letters || !dims) return '';
+  return `${letters}${dims.width_cm}${dims.length_cm}`;
+}
+
+// ── Price ────────────────────────────────────────────────────────────────────
+
+/**
+ * What a given size costs for a given product.
+ *
+ * Order of precedence, most specific first:
+ *   1. a per-product price for that exact size (product_size_prices) — the
+ *      exception a manager set by hand;
+ *   2. the product's base price plus the catalog's surcharge for the size;
+ *   3. the base price alone, for the base size (surcharge 0) and for any size
+ *      the catalog has no surcharge for.
+ *
+ * Returns null when there's no base price to work from, so the caller can show
+ * an empty field instead of a confident ₪0.
+ */
+export function resolveSizePrice({ basePrice, size, productSizePrice }) {
+  const override = Number(productSizePrice?.price);
+  if (Number.isFinite(override) && override > 0) return override;
+
+  const base = Number(basePrice);
+  if (!Number.isFinite(base) || base <= 0) return null;
+
+  const surcharge = Number(size?.size_surcharge);
+  return base + (Number.isFinite(surcharge) ? surcharge : 0);
+}

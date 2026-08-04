@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
+import BulkSizesDialog from '@/components/product/BulkSizesDialog';
+import { suggestSkuPrefix } from '@/lib/productSizes';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +37,7 @@ import {
   TabsTrigger } from
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2, Ruler } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import BedConfigManager from "../components/product/BedConfigManager";
@@ -101,6 +103,9 @@ export default function ProductsNew() {
   const [expandedProducts, setExpandedProducts] = useState({});
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
   const [isVariationDialogOpen, setIsVariationDialogOpen] = useState(false);
+  // Bulk "tick the sizes this product comes in" — the fast path. The
+  // single-variation dialog above stays for one-offs and for editing.
+  const [bulkSizesProduct, setBulkSizesProduct] = useState(null);
   const [editingProduct, setEditingProduct] = useState(null);
   const [editingVariation, setEditingVariation] = useState(null);
   const [selectedProductId, setSelectedProductId] = useState(null);
@@ -113,6 +118,10 @@ export default function ProductsNew() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [productForm, setProductForm] = useState({
     name: '',
+    // The 2-3 letters every SKU of this product starts with (EDN140190).
+    // Suggested from the name while it's untouched; typed over when the
+    // suggestion isn't what the catalog calls it.
+    sku_prefix: '',
     category: 'mattress',
     bed_type: [],
     description: '',
@@ -251,6 +260,7 @@ export default function ProductsNew() {
   const resetProductForm = () => {
     setProductForm({
       name: '',
+      sku_prefix: '',
       category: 'mattress',
       bed_type: [],
       description: '',
@@ -407,6 +417,7 @@ export default function ProductsNew() {
       : [];
     setProductForm({
       name: product.name || '',
+      sku_prefix: product.sku_prefix || suggestSkuPrefix(product.name),
       category: product.category || 'mattress',
       bed_type: Array.isArray(product.bed_type)
         ? product.bed_type
@@ -518,10 +529,34 @@ export default function ProductsNew() {
                 <Label>שם המוצר *</Label>
                 <Input
                       value={productForm.name}
-                      onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
+                      onChange={(e) => {
+                        const name = e.target.value;
+                        setProductForm((prev) => ({
+                          ...prev,
+                          name,
+                          // Follow the name only while the prefix is still the
+                          // suggestion — once it's been typed over by hand, it
+                          // is the answer and renaming must not undo it.
+                          sku_prefix: (!prev.sku_prefix || prev.sku_prefix === suggestSkuPrefix(prev.name))
+                            ? suggestSkuPrefix(name)
+                            : prev.sku_prefix,
+                        }));
+                      }}
                       placeholder="מזרון פרסטיז'"
                       required />
 
+              </div>
+              <div>
+                <Label>קידומת מק״ט</Label>
+                <Input
+                  value={productForm.sku_prefix}
+                  dir="ltr"
+                  maxLength={4}
+                  onChange={(e) => setProductForm({ ...productForm, sku_prefix: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() })}
+                  placeholder="EDN" />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  המק״ט של כל מידה: קידומת + רוחב + אורך (EDN140190)
+                </p>
               </div>
               <div>
                 <Label>קטגוריה *</Label>
@@ -1069,6 +1104,17 @@ export default function ProductsNew() {
       </Dialog>
 
       {/* Variation Dialog */}
+      <BulkSizesDialog
+        open={!!bulkSizesProduct}
+        onOpenChange={(next) => { if (!next) setBulkSizesProduct(null); }}
+        product={bulkSizesProduct}
+        existingVariations={bulkSizesProduct ? variations.filter((v) => v.product_id === bulkSizesProduct.id) : []}
+        onCreated={() => {
+          queryClient.invalidateQueries({ queryKey: ['product-variations'] });
+          setBulkSizesProduct(null);
+        }}
+      />
+
       <Dialog open={isVariationDialogOpen} onOpenChange={setIsVariationDialogOpen}>
         <DialogContent className="max-w-2xl" dir="rtl">
           <DialogHeader>
@@ -1332,8 +1378,11 @@ export default function ProductsNew() {
                         </TableCell>
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
-                            <Button variant="outline" size="sm" className="whitespace-nowrap h-7 text-xs" onClick={() => handleAddVariation(product.id)}>
-                              <Plus className="h-3 w-3 me-1" /> מידה
+                            <Button variant="outline" size="sm" className="whitespace-nowrap h-7 text-xs" onClick={() => setBulkSizesProduct(product)}>
+                              <Ruler className="h-3 w-3 me-1" /> מידות
+                            </Button>
+                            <Button variant="ghost" size="sm" className="whitespace-nowrap h-7 text-xs" onClick={() => handleAddVariation(product.id)}>
+                              <Plus className="h-3 w-3 me-1" /> מידה בודדת
                             </Button>
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditProduct(product)}>
                               <Pencil className="h-3.5 w-3.5" />
