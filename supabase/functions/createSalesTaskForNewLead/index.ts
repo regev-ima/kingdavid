@@ -50,26 +50,42 @@ Deno.serve(async (req) => {
       }, { headers: corsHeaders });
     }
 
-    // Always create ONE assignment task for admins (no rep1 so only admins see it)
-    const dueDate = new Date();
-    dueDate.setHours(dueDate.getHours() + 3);
+    // A lead that arrives with rep1 already on it was typed in by hand
+    // (/NewLead, /NewQuote), and the form assigns it to whoever typed it — so
+    // there is nobody to assign it TO, and "יש לשייך את הליד לנציג" would just
+    // be busywork an admin has to close. trackLeadAssignment creates that rep's
+    // follow-up call task off the same INSERT; here we only drop the admin
+    // prompt and keep the FYI notification below.
+    //
+    // Gated on rep1 ALONE, deliberately. A lead that comes in through the API
+    // lands unassigned by design (see the note in upsertLead) and carries
+    // `pending_rep_email` only as a hint of who the integration meant it for —
+    // it still needs a manager to triage it, so it still gets this task.
+    const assignedRep = String(leadData.rep1 || '').trim();
 
-    const taskData = {
-      lead_id: leadData.id,
-      task_type: 'assignment',
-      task_status: 'not_completed',
-      summary: `יש לשייך את הליד ${leadData.full_name || 'החדש'} לנציג`,
-      due_date: dueDate.toISOString(),
-      work_start_date: new Date().toISOString(),
-    };
+    let salesTask = null;
+    if (!assignedRep) {
+      const dueDate = new Date();
+      dueDate.setHours(dueDate.getHours() + 3);
 
-    const { data: salesTask, error } = await supabase
-      .from('sales_tasks')
-      .insert(taskData)
-      .select()
-      .single();
+      const taskData = {
+        lead_id: leadData.id,
+        task_type: 'assignment',
+        task_status: 'not_completed',
+        summary: `יש לשייך את הליד ${leadData.full_name || 'החדש'} לנציג`,
+        due_date: dueDate.toISOString(),
+        work_start_date: new Date().toISOString(),
+      };
 
-    if (error) throw error;
+      const { data: inserted, error } = await supabase
+        .from('sales_tasks')
+        .insert(taskData)
+        .select()
+        .single();
+
+      if (error) throw error;
+      salesTask = inserted;
+    }
 
     // Notify all admins about the new lead (in-app bell + mobile push)
     try {
@@ -92,9 +108,25 @@ Deno.serve(async (req) => {
         const leadName = leadData.full_name || 'ליד חדש';
         const leadSource = leadData.source || leadData.utm_source || '';
         const title = `ליד חדש: ${leadName}`;
-        const message = leadSource
-          ? `התקבל ליד חדש ממקור ${leadSource} וממתין לשיוך לנציג`
-          : `התקבל ליד חדש וממתין לשיוך לנציג`;
+
+        // Admins still hear about every new lead — that's what new_lead_alerts
+        // is for — but a self-assigned one is an FYI, not a call to action, so
+        // it must not say "ממתין לשיוך".
+        let assignedRepName = assignedRep;
+        if (assignedRep) {
+          const { data: repRow } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('email', assignedRep)
+            .maybeSingle();
+          assignedRepName = repRow?.full_name || assignedRep;
+        }
+
+        const message = assignedRep
+          ? `נוצר ליד חדש ידנית ושויך ל${assignedRepName}`
+          : leadSource
+            ? `התקבל ליד חדש ממקור ${leadSource} וממתין לשיוך לנציג`
+            : `התקבל ליד חדש וממתין לשיוך לנציג`;
         const link = `/LeadDetails?id=${leadData.id}`;
 
         // Admins who haven't explicitly disabled new_lead_alerts
@@ -144,7 +176,9 @@ Deno.serve(async (req) => {
     }
 
     return Response.json({
-      message: 'Assignment task created successfully',
+      message: assignedRep
+        ? `Lead already assigned to ${assignedRep} on creation — no assignment task needed`
+        : 'Assignment task created successfully',
       task: salesTask,
     }, { headers: corsHeaders });
 

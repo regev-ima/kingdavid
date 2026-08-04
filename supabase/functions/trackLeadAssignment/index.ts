@@ -39,6 +39,25 @@ Deno.serve(async (req) => {
     if (event.type === 'create') {
       // On create, if rep1 is already set, create an initial task for the rep
       if (leadData.rep1) {
+        // "Track Lead Assignment Changes" is registered twice in the Supabase
+        // console (see automation-optimization-guide.md), so this runs twice per
+        // INSERT. Every hand-typed lead now arrives with rep1 set, which would
+        // put two identical "יש להתקשר ללקוח" rows in the rep's queue each time
+        // — so check first, the way createSalesTaskForNewLead guards its own
+        // task. Two truly simultaneous runs can still slip through; this closes
+        // the ordinary case, and the duplicate automation is the real fix.
+        const { data: existingTasks } = await supabase
+          .from('sales_tasks')
+          .select('id, task_type, task_status')
+          .eq('lead_id', leadData.id);
+
+        const hasOpenCallTask = existingTasks?.some(
+          (t: any) => t.task_type === 'call' && t.task_status === 'not_completed'
+        );
+        if (hasOpenCallTask) {
+          return Response.json({ message: 'Initial call task already exists for this lead' }, { headers: corsHeaders });
+        }
+
         const dueDate = new Date();
         dueDate.setHours(dueDate.getHours() + 3);
         await supabase
