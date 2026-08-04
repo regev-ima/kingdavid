@@ -76,7 +76,7 @@ function getRepDisplay(row, users) {
   return rep || { email: row.rep1, full_name: row.rep1 };
 }
 
-function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall, isLastOpened }) {
+function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall, isLastOpened, className = '' }) {
   const isSelected = selectedIds.includes(row.id);
   const isSelectionMode = selectedIds.length > 0;
   const sla = getSlaData(row);
@@ -94,7 +94,7 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
   return (
     <div
       onClick={handleCardClick}
-      className={`rounded-2xl border bg-card p-4 shadow-card active:scale-[0.99] transition-all ${isSelected ? 'border-primary bg-primary/5' : isLastOpened ? 'border-primary/40 bg-primary/[0.06] ring-1 ring-primary/30' : 'border-border'}`}
+      className={`rounded-2xl border p-4 shadow-card active:scale-[0.99] transition-all ${className || 'bg-card'} ${isSelected ? 'border-primary bg-primary/5' : isLastOpened ? 'border-primary/40 bg-primary/[0.06] ring-1 ring-primary/30' : 'border-border'}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -228,6 +228,8 @@ export default function ResponsiveLeadsTable({
   onOpenLead,
   onClickToCall,
   highlightId,
+  rowClassName,
+  cardClassName,
 }) {
   return (
     <>
@@ -240,7 +242,13 @@ export default function ResponsiveLeadsTable({
           selectionMode={selectedIds.length > 0}
           onRowClick={onOpenLead}
           onRowSelect={(row) => onToggleSelect(row, !selectedIds.includes(row.id))}
-          rowClassName={(row) => (row.id === highlightId ? LAST_OPENED_ROW_CLASS : '')}
+          // Two independent row styles, composed rather than one overriding
+          // the other: the caller's tint (a lead that needs handling now) and
+          // the last-opened marker, which must stay visible on top of it.
+          rowClassName={(row, rowIdx) => [
+            rowClassName ? rowClassName(row, rowIdx) : '',
+            row.id === highlightId ? LAST_OPENED_ROW_CLASS : '',
+          ].filter(Boolean).join(' ')}
           tableClassName="table-fixed min-w-[1120px]"
         />
       </div>
@@ -256,6 +264,7 @@ export default function ResponsiveLeadsTable({
           data.map((row) => (
             <MobileLeadCard
               key={row.id}
+              className={cardClassName ? cardClassName(row) : ''}
               row={row}
               users={users}
               selectedIds={selectedIds}

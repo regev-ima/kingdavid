@@ -219,6 +219,24 @@ export default function CustomerDetails() {
     updateCustomerMutation.mutate(patch);
   };
 
+  // Clearing a slot — a rep assigned by mistake was permanent from this card.
+  const handleRemoveRep = async (field) => {
+    const label = field === 'account_manager' ? 'נציג ראשי' : 'נציג משני';
+    const previous = customer[field];
+    if (!previous) return;
+
+    await createCustomerAuditLog({
+      customerId: customer.id,
+      actionType: 'rep_changed',
+      description: `${effectiveUser?.full_name || effectiveUser?.email || 'משתמש'} הסיר ${label}: ${getRepDisplayName(previous, salesReps)}`,
+      user: effectiveUser,
+      fieldName: field,
+      oldValue: previous,
+      newValue: '',
+    });
+    updateCustomerMutation.mutate({ [field]: '' });
+  };
+
   const handleQuickAssignRep2 = async (email) => {
     if (isSameRep(email, customer.account_manager)) {
       toast.error('אי אפשר לשייך את אותו נציג פעמיים', {
@@ -591,6 +609,7 @@ export default function CustomerDetails() {
                     canEdit={canEditRep1}
                     salesReps={salesReps}
                     onAssign={handleQuickAssignRep1}
+                    onRemove={customer.account_manager ? () => handleRemoveRep('account_manager') : undefined}
                     isPending={updateCustomerMutation.isPending}
                   />
                   <RepCard
@@ -599,7 +618,9 @@ export default function CustomerDetails() {
                     isEmpty={!customer.rep2}
                     canEdit={canEditRep2}
                     salesReps={salesReps}
+                    excludeEmails={[customer.account_manager]}
                     onAssign={handleQuickAssignRep2}
+                    onRemove={customer.rep2 ? () => handleRemoveRep('rep2') : undefined}
                     isPending={updateCustomerMutation.isPending}
                   />
                 </div>

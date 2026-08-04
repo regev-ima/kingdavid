@@ -55,9 +55,18 @@ export const TASK_COMPLETION_FLOWS = {
     },
     {
       id: 'answered_not_interested',
+      // Deliberately changes NO status. It used to close the lead as
+      // 'heard_price_not_interested' ("שמע מחיר ולא מעוניין"), which on a first
+      // call is usually a fact that never happened — no price was quoted — and
+      // it's a terminal status, so the lead silently left the work queue and
+      // landed in the "dropped after hearing the price" numbers.
+      //
+      // "Not interested" on a call says what the customer said, not why, and
+      // the rep is the one who knows which closing status fits. They set it
+      // from the lead card; this button just closes the task.
       label: 'ענה — לא מעוניין',
       tone: 'danger',
-      newLeadStatus: 'heard_price_not_interested',
+      newLeadStatus: null,
     },
     {
       id: 'no_answer',

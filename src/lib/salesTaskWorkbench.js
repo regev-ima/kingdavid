@@ -123,6 +123,24 @@ export function getScopedTaskCounterValue(taskCounters, key, isAdmin, userEmail,
   return repCounter?.count ?? fallback;
 }
 
+// "Due now" window — a task whose due_date is within ±60min of the current
+// clock is the one to act on right now (the brief's "מהבהב").
+export const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
+
+// A task scheduled for a specific time is "due now" once the clock lands
+// inside that window. Shared on purpose: the amber row tint, the "לטפל עכשיו"
+// chip and the sort that floats these rows to the top all have to agree, on
+// the tasks page and on the leads page alike. An inline copy is how they drift
+// — one comparing task_status raw while another normalizes it, and then a row
+// gets tinted that the sort never floated.
+export function isTaskDueNow(task, now = new Date()) {
+  if (!task) return false;
+  if (normalizeTaskStatus(task.task_status) !== 'not_completed') return false;
+  const due = parseSalesTaskDate(task.due_date);
+  if (!due) return false;
+  return Math.abs(due.getTime() - now.getTime()) <= DUE_NOW_WINDOW_MS;
+}
+
 export function getSalesTaskQueueBucket(task, now = new Date()) {
   if (normalizeTaskStatus(task.task_status) !== 'not_completed') return null;
 

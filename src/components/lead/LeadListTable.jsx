@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -7,12 +7,13 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
 import QuickActions from '@/components/shared/QuickActions';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
-import { Phone, Users, FileText, ShoppingCart, MessageCircle, UserPlus } from 'lucide-react';
+import { Phone, Users, FileText, ShoppingCart, MessageCircle, UserPlus, Clock } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
 import { ALL_TASK_TYPE_LABELS, SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { formatIsraeliPhone as formatPhone } from '@/utils/phoneUtils';
+import { isTaskDueNow } from '@/lib/salesTaskWorkbench';
 
 // Lead table for the lead-management page. Desktop renders a DataTable (via
 // ResponsiveLeadsTable); on a phone the same component swaps to stacked cards
@@ -30,6 +31,15 @@ export default function LeadListTable({
   highlightId,
 }) {
   const queryClient = useQueryClient();
+  // Ticks every 30s so a lead whose task comes due rises to the top and gets
+  // its tag without anyone reloading the page — same cadence as the sales
+  // tasks screen, which this mirrors.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
   const handleClickToCall = async (phone) => {
     if (!phone) return;
     try { await base44.functions.invoke('clickToCall', { customerPhone: phone }); } catch {}
@@ -69,6 +79,18 @@ export default function LeadListTable({
     return map;
   }, [leadActiveTasks, isAdmin]);
   const [completingTask, setCompletingTask] = useState(null);
+
+  // The list arrives sorted by activity date, which says nothing about what
+  // needs doing. A lead whose next task is due right now (±60 min) belongs at
+  // the top of the screen — that's the call the rep should be making. Stable
+  // sort, so everything else keeps the incoming order; it re-runs on the `now`
+  // tick, so the lead rises by itself when its time comes.
+  //
+  // Scoped to the loaded page, like the equivalent sort on the tasks screen.
+  const orderedLeads = useMemo(() => {
+    const dueNow = (lead) => isTaskDueNow(nextActiveTaskByLead.get(lead.id), now);
+    return [...leads].sort((a, b) => (dueNow(a) ? 0 : 1) - (dueNow(b) ? 0 : 1));
+  }, [leads, nextActiveTaskByLead, now]);
 
   const toggleAll = (checked) => {
     onSelectionChange?.(checked ? leads.map((l) => l.id) : []);
@@ -211,7 +233,7 @@ export default function LeadListTable({
         };
         return (
           <div onClick={(e) => e.stopPropagation()} className="flex flex-col justify-center gap-1 min-w-0 min-h-[44px]">
-            <div className="flex items-center gap-1.5 text-sm min-w-0">
+            <div className="flex items-center gap-1.5 text-sm min-w-0 flex-wrap">
               <meta.Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.color}`} />
               <span className="font-medium flex-shrink-0">{meta.label}</span>
               <span className={`text-xs font-medium whitespace-nowrap truncate ${
@@ -219,6 +241,14 @@ export default function LeadListTable({
               }`}>
                 {timeLabel}
               </span>
+              {/* Names the amber row tint, so it reads as a rule and not as a
+                  colour: this lead's task is inside the due-now window. */}
+              {isTaskDueNow(task, now) && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 ring-1 ring-amber-300 text-[10px] font-semibold px-1.5 py-0.5 whitespace-nowrap">
+                  <Clock className="h-2.5 w-2.5" />
+                  לטפל עכשיו
+                </span>
+              )}
             </div>
             <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] w-fit" onClick={handleQuickComplete}>
               סיים משימה
@@ -260,7 +290,7 @@ export default function LeadListTable({
         1400px-wide horizontal scroll. */}
     <ResponsiveLeadsTable
       columns={columns}
-      data={leads}
+      data={orderedLeads}
       isLoading={isLoading}
       selectedIds={selectedLeads}
       users={users}
@@ -268,6 +298,12 @@ export default function LeadListTable({
       onOpenLead={(row) => onRowClick(row)}
       highlightId={highlightId}
       onClickToCall={(phone) => handleClickToCall(phone)}
+      rowClassName={(row) => (
+        isTaskDueNow(nextActiveTaskByLead.get(row.id), now) ? 'bg-amber-50 hover:bg-amber-100/70' : ''
+      )}
+      cardClassName={(row) => (
+        isTaskDueNow(nextActiveTaskByLead.get(row.id), now) ? 'bg-amber-50' : ''
+      )}
     />
     {/* Complete-task dialog opened by the "סיים משימה" button in the
         "משימה הבאה" column */}

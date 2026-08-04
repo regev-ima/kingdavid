@@ -1,21 +1,42 @@
 import React from 'react';
 import { Button } from "@/components/ui/button";
-import { MessageCircle, Phone, RefreshCw } from "lucide-react";
+import { MessageCircle, Phone, RefreshCw, UserMinus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import UserAvatar from "@/components/shared/UserAvatar";
+import { isSameRep } from '@/lib/repSlots';
 
-export default function RepCard({ rep, label, isEmpty, onAssign, salesReps, canEdit, isPending }) {
+// Radix needs a non-empty string per item, so "remove the assignment" travels
+// as a sentinel value rather than as an empty option.
+const REMOVE_VALUE = '__remove__';
+
+/**
+ * One rep slot: who holds it, how to reach them, and how to change it.
+ *
+ * `excludeEmails` keeps a person out of the picker — the secondary slot passes
+ * the primary rep, so the pairing that locks a lead to one person (see
+ * lib/repSlots) simply isn't offered. `onRemove` adds "הסר שיוך" to the same
+ * menu: a slot filled by mistake used to be unclearable from here, which left
+ * an admin with a wrong secondary rep and no way out.
+ */
+export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, excludeEmails = [], salesReps, canEdit, isPending }) {
+  const assignableReps = (salesReps || []).filter(
+    (r) => !excludeEmails.some((email) => isSameRep(r?.email, email)),
+  );
+  const handleSelect = (value) => {
+    if (value === REMOVE_VALUE) onRemove?.();
+    else onAssign?.(value);
+  };
   if (isEmpty || !rep) {
     return (
       <div className="p-3 rounded-lg border border-dashed border-border bg-muted/50">
         <p className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wide mb-2">{label}</p>
-        {canEdit && onAssign && salesReps?.length > 0 ? (
-          <Select onValueChange={onAssign} disabled={isPending}>
+        {canEdit && onAssign && assignableReps.length > 0 ? (
+          <Select onValueChange={handleSelect} disabled={isPending}>
             <SelectTrigger className="h-9 text-sm border-dashed border-border bg-white hover:bg-muted/50">
               <SelectValue placeholder={isPending ? "משייך..." : "בחר נציג לשיוך"} />
             </SelectTrigger>
             <SelectContent>
-              {salesReps.map((r) => (
+              {assignableReps.map((r) => (
                 <SelectItem key={r.id} value={r.email}>
                   {r.full_name}
                 </SelectItem>
@@ -84,17 +105,25 @@ export default function RepCard({ rep, label, isEmpty, onAssign, salesReps, canE
               <Phone className="h-4 w-4" />
             </Button>
           )}
-          {canEdit && onAssign && salesReps?.length > 0 && (
-            <Select onValueChange={onAssign} disabled={isPending}>
+          {canEdit && (onAssign || onRemove) && (
+            <Select onValueChange={handleSelect} disabled={isPending}>
               <SelectTrigger className="h-8 w-8 p-0 border-0 bg-transparent hover:bg-muted rounded-full [&>svg:last-child]:hidden">
                 <RefreshCw className="h-3.5 w-3.5 text-muted-foreground/70" />
               </SelectTrigger>
               <SelectContent>
-                {salesReps.filter(r => r.email !== rep?.email).map((r) => (
+                {assignableReps.filter((r) => !isSameRep(r.email, rep?.email)).map((r) => (
                   <SelectItem key={r.id} value={r.email}>
                     {r.full_name}
                   </SelectItem>
                 ))}
+                {onRemove && (
+                  <SelectItem value={REMOVE_VALUE} className="text-destructive focus:text-destructive">
+                    <span className="inline-flex items-center gap-2">
+                      <UserMinus className="h-3.5 w-3.5" />
+                      הסר שיוך
+                    </span>
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           )}
