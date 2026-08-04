@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
+import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy, Clock } from "lucide-react";
 import StatCube from "@/components/shared/StatCube";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -959,10 +959,22 @@ export default function SalesTasks() {
               <span className="font-medium">{meta.label}</span>
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusStyle}`}>{statusLabel}</span>
             </div>
-            <div className={`text-xs font-medium whitespace-nowrap ${
-              overdueDays > 0 ? 'text-red-600' : isTodayDue ? 'text-amber-600' : 'text-muted-foreground'
-            }`}>
-              {timeLabel}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-xs font-medium whitespace-nowrap ${
+                overdueDays > 0 ? 'text-red-600' : isTodayDue ? 'text-amber-600' : 'text-muted-foreground'
+              }`}>
+                {timeLabel}
+              </span>
+              {/* Names the amber row tint. The tint on its own said "this row
+                  is special" without saying why — reps read it as a colour
+                  with no meaning. The chip spells out the actual rule: the
+                  due time is inside the ±60-min due-now window. */}
+              {isTaskDueNow(row, now) && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 ring-1 ring-amber-300 text-[10px] font-semibold px-1.5 py-0.5 whitespace-nowrap">
+                  <Clock className="h-2.5 w-2.5" />
+                  לטפל עכשיו
+                </span>
+              )}
             </div>
             {row.summary && (
               <p className="text-xs text-muted-foreground/80 line-clamp-2">{row.summary}</p>
@@ -1050,7 +1062,9 @@ export default function SalesTasks() {
         </div>
       ),
     },
-  ], [allUsers]);
+    // `now` ticks every 30s — the "לטפל עכשיו" chip has to re-evaluate with
+    // it, the same way the row tint and the today-queue sort do.
+  ], [allUsers, now]);
 
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
@@ -1447,17 +1461,24 @@ export default function SalesTasks() {
             onRowClick={handleOpenTaskDetails}
             dense
             tableClassName="table-fixed min-w-[1280px]"
-            // "Due now" — task is open, has a due_date, and that time
-            // falls in a ±60 min window of the current clock. Wrap the
-            // row in a soft amber pulse so the rep eyeballs which call
-            // is up *right now* without scanning timestamps.
-            rowClassName={(row) => {
-              if (row.task_status !== 'not_completed' || !row.due_date) return '';
-              const due = parseDbTimestamp(row.due_date)?.getTime();
-              if (!due) return '';
-              const diff = Math.abs(due - Date.now());
-              return diff <= DUE_NOW_WINDOW_MS ? 'animate-pulse bg-amber-50 hover:bg-amber-100/70' : '';
-            }}
+            // "Due now" — an open task whose due time falls inside the
+            // ±60-min window around the current clock: the call that is up
+            // *right now*. A static amber tint marks it and the "לטפל עכשיו"
+            // chip in the משימה column says why.
+            //
+            // This used to also carry `animate-pulse`, which animates the
+            // opacity of the whole <tr> — every name, phone and badge in the
+            // row faded in and out with it, which is tiring to read and
+            // ignores prefers-reduced-motion. Marking the row is enough.
+            //
+            // Shares isTaskDueNow with the chip and the today-queue sort, so
+            // all three can't drift apart: the inline copy this replaced
+            // compared task_status raw (no alias normalization) and parsed
+            // the date differently, so it could tint a row the sort had not
+            // floated — or leave one untinted.
+            rowClassName={(row) => (
+              isTaskDueNow(row, now) ? 'bg-amber-50 hover:bg-amber-100/70' : ''
+            )}
           />
         )}
 
