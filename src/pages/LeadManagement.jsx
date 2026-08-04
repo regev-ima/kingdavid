@@ -201,6 +201,13 @@ const DATE_PRESETS = [
   { id: 'all',     label: 'כל הזמנים' },
 ];
 
+// Where the page opens, for managers and reps alike. Today's intake is the
+// shift people actually work; opening on 'all' meant six-figure tile counts
+// and a rep-workload panel measuring years, neither of which describes the
+// floor right now. Also the clean-URL case in `updateUrl`, so a link that
+// pins any OTHER range — including 'all' — survives back-nav.
+const DEFAULT_DATE_PRESET = 'today';
+
 function resolveDatePreset(id, customRange) {
   const now = new Date();
   switch (id) {
@@ -265,7 +272,7 @@ export default function LeadManagement() {
     [isAdmin, seesAllLeads, userEmail],
   );
 
-  const [datePresetId, setDatePresetId] = useState(urlParams.get('preset') || 'all');
+  const [datePresetId, setDatePresetId] = useState(urlParams.get('preset') || DEFAULT_DATE_PRESET);
   const [customRange, setCustomRange] = useState(() => {
     const from = urlParams.get('startDate');
     const to = urlParams.get('endDate');
@@ -310,7 +317,12 @@ export default function LeadManagement() {
   // history entry per keystroke in search.
   const updateUrl = useCallback((next) => {
     const params = new URLSearchParams();
-    if (next.preset && next.preset !== 'all') params.set('preset', next.preset);
+    // Written whenever it DEVIATES from the default, not whenever it isn't
+    // 'all' — the same rule `rep` uses below. With 'today' as the default the
+    // old `!== 'all'` test would have dropped ?preset=all from the URL, so
+    // picking "כל הזמנים" and then coming back from a lead would silently
+    // snap the range back to today.
+    if (next.preset && next.preset !== DEFAULT_DATE_PRESET) params.set('preset', next.preset);
     if (next.range?.from) params.set('startDate', next.range.from.toISOString());
     if (next.range?.to)   params.set('endDate',   next.range.to.toISOString());
     if (next.scope && next.scope !== 'all') params.set('scope', next.scope);
