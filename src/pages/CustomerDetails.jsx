@@ -614,7 +614,9 @@ export default function CustomerDetails() {
                   />
                   <RepCard
                     label="נציג משני"
-                    rep={customer.rep2 ? salesReps.find((r) => r.email === customer.rep2) : null}
+                    rep={customer.rep2
+                      ? (salesReps.find((r) => r.email === customer.rep2) || { email: customer.rep2, full_name: getRepDisplayName(customer.rep2, salesReps) })
+                      : null}
                     isEmpty={!customer.rep2}
                     canEdit={canEditRep2}
                     salesReps={salesReps}

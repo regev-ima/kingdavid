@@ -1044,7 +1044,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               ) : (
                 <RepCard
                   label="נציג משני"
-                  rep={lead.rep2 ? salesReps.find((r) => r.email === lead.rep2) : null}
+                  // Same fallback the primary card has: a rep2 whose email
+                  // isn't in `salesReps` — a rep who left, or one whose role
+                  // isn't sales — used to resolve to null, which dropped the
+                  // card into its empty state. The slot looked unassigned
+                  // while the lead very much had a rep2, so there was nothing
+                  // to remove and no way to clear it.
+                  rep={lead.rep2
+                    ? (salesReps.find((r) => r.email === lead.rep2) || { email: lead.rep2, full_name: getRepDisplayName(lead.rep2, salesReps) })
+                    : null}
                   isEmpty={!lead.rep2}
                   canEdit={canEditLeadRep2}
                   salesReps={salesReps}
