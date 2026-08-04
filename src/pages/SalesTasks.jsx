@@ -60,7 +60,7 @@ import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
-import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
+import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, isTaskDueNow, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { SOURCE_LABELS, SLA_THRESHOLDS, CLOSED_STATUSES } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
@@ -83,20 +83,6 @@ const CATEGORY_BY_LEAD_STATUS = (() => {
   }
   return map;
 })();
-
-// "Due now" window — a task whose due_date is within ±60min of the
-// current clock is highlighted as actionable-now (the brief's "מהבהב").
-const DUE_NOW_WINDOW_MS = 60 * 60 * 1000;
-
-// A task scheduled for a specific time is "due now" once the clock lands
-// within that ±60-min window. The today queue floats these to the very top
-// so the rep sees a 16:00 callback the moment 16:00 arrives.
-const isTaskDueNow = (task, now) => {
-  if (normalizeTaskStatus(task.task_status) !== 'not_completed') return false;
-  const due = parseSalesTaskDate(task.due_date);
-  if (!due) return false;
-  return Math.abs(due.getTime() - now.getTime()) <= DUE_NOW_WINDOW_MS;
-};
 
 // The three header lead-cubes. Both the cube COUNTS and the table FILTER run
 // `matchesLeadCube` over the SAME open-task set, so a cube's number always

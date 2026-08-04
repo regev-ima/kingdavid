@@ -610,6 +610,29 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     }
   };
 
+  // Clearing a slot. A rep picked by mistake used to be permanent from this
+  // card — there was no "none" to choose — so an admin was stuck with a wrong
+  // assignment. Both slots are clearable; the permission gates are unchanged
+  // (primary is admin-only, secondary follows canEditSecondaryRep).
+  const handleRemoveRep = async (field) => {
+    const label = field === 'rep1' ? 'נציג ראשי' : 'נציג משני';
+    const previous = lead[field];
+    if (!previous) return;
+
+    await createAuditLog({
+      leadId,
+      actionType: 'rep_changed',
+      description: `${user?.full_name || 'משתמש'} הסיר ${label}: ${getRepDisplayName(previous, salesReps)}`,
+      user,
+      fieldName: field,
+      oldValue: previous,
+      newValue: '',
+    });
+
+    updateLeadMutation.mutate({ [field]: '' });
+    queryClient.invalidateQueries(['leadActivityLogs', leadId]);
+  };
+
   const handleQuickAssignRep2 = async (email) => {
     const repName = salesReps.find(r => r.email === email)?.full_name || email;
 
@@ -938,6 +961,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                     canEdit={canEditLeadRep1}
                     salesReps={salesReps}
                     onAssign={handleQuickAssignRep1}
+                    onRemove={lead.rep1 ? () => handleRemoveRep('rep1') : undefined}
                     isPending={updateLeadMutation.isPending}
                   />
                   {!lead.rep1 && lead.pending_rep_email && (
@@ -1024,7 +1048,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   isEmpty={!lead.rep2}
                   canEdit={canEditLeadRep2}
                   salesReps={salesReps}
+                  excludeEmails={[lead.rep1]}
                   onAssign={handleQuickAssignRep2}
+                  onRemove={lead.rep2 ? () => handleRemoveRep('rep2') : undefined}
                   isPending={updateLeadMutation.isPending}
                 />
               )}
