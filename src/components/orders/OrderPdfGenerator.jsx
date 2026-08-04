@@ -262,14 +262,18 @@ const OrderPdfGenerator = async (orderData) => {
           <div class="card">
             <div class="cardTitle">
               <span>פרטי לקוח</span>
-              ${
-                orderData.customer_phone
-                  ? `<span class="muted">${esc(orderData.customer_phone)}</span>`
-                  : ""
-              }
             </div>
             <div class="kv">
               <div class="k">שם</div><div class="v">${esc(orderData.customer_name)}</div>
+              ${
+                /* The main number used to sit greyed-out in the card header,
+                   which read as a caption rather than as one of the customer's
+                   details — and left "טלפון נוסף" looking like the only phone
+                   on the order. It's a row like every other field now. */
+                orderData.customer_phone
+                  ? `<div class="k">טלפון</div><div class="v" dir="ltr" style="text-align:right;">${esc(orderData.customer_phone)}</div>`
+                  : ""
+              }
               ${
                 orderData.customer_phone_2
                   ? `<div class="k">טלפון נוסף</div><div class="v" dir="ltr" style="text-align:right;">${esc(orderData.customer_phone_2)}</div>`

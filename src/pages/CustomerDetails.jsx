@@ -36,8 +36,10 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import { toast } from 'sonner';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canEditCustomer, canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
+import { isSameRep, reconcileRepSlots, repsExcludingPrimary } from '@/lib/repSlots';
 import { createCustomerAuditLog } from '@/utils/auditLog';
 
 export default function CustomerDetails() {
@@ -118,8 +120,20 @@ export default function CustomerDetails() {
   };
 
   const handleSave = async () => {
-    await logRepChanges(formData);
-    updateCustomerMutation.mutate(formData);
+    // Catches the ways in that don't go through the pickers — a stale form, or
+    // a pairing saved before the rule existed.
+    const { patch, clearedSecondary } = reconcileRepSlots(
+      customer,
+      formData,
+      { primaryField: 'account_manager' },
+    );
+    await logRepChanges(patch);
+    if (clearedSecondary) {
+      toast('הנציג המשני נוקה', {
+        description: 'אותו נציג לא יכול להיות גם ראשי וגם משני — אפשר לשייך נציג משני אחר.',
+      });
+    }
+    updateCustomerMutation.mutate(patch);
   };
 
   const handleCall = () => {
@@ -184,10 +198,34 @@ export default function CustomerDetails() {
       oldValue: before,
       newValue: email,
     });
-    updateCustomerMutation.mutate({ account_manager: email });
+    // Promoting the secondary rep to account manager empties the secondary
+    // slot — one person never holds both (see lib/repSlots).
+    const { patch, clearedSecondary } = reconcileRepSlots(
+      customer,
+      { account_manager: email },
+      { primaryField: 'account_manager' },
+    );
+    if (clearedSecondary) {
+      await createCustomerAuditLog({
+        customerId: customer.id,
+        actionType: 'rep_changed',
+        description: `הנציג המשני נוקה — אותו נציג לא יכול להיות גם ראשי וגם משני`,
+        user: effectiveUser,
+        fieldName: 'rep2',
+        oldValue: customer.rep2,
+        newValue: '',
+      });
+    }
+    updateCustomerMutation.mutate(patch);
   };
 
   const handleQuickAssignRep2 = async (email) => {
+    if (isSameRep(email, customer.account_manager)) {
+      toast.error('אי אפשר לשייך את אותו נציג פעמיים', {
+        description: 'הנציג כבר משויך כנציג ראשי של הלקוח. נציג משני נועד לנציג אחר.',
+      });
+      return;
+    }
     const before = customer.rep2 || null;
     await createCustomerAuditLog({
       customerId: customer.id,
@@ -510,7 +548,11 @@ export default function CustomerDetails() {
                       <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
                       <Select
                         value={formData.account_manager || ''}
-                        onValueChange={(value) => setFormData({ ...formData, account_manager: value })}>
+                        onValueChange={(value) => setFormData({
+                          ...formData,
+                          account_manager: value,
+                          ...(isSameRep(value, formData.rep2) ? { rep2: '' } : {}),
+                        })}>
                         <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value={null}>ללא שיוך</SelectItem>
@@ -530,7 +572,7 @@ export default function CustomerDetails() {
                         <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
                         <SelectContent>
                           <SelectItem value={null}>ללא</SelectItem>
-                          {salesReps.map((rep) =>
+                          {repsExcludingPrimary(salesReps, formData.account_manager || customer.account_manager).map((rep) =>
                             <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
                           )}
                         </SelectContent>

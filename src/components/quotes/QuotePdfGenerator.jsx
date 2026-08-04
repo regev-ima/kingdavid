@@ -12,6 +12,20 @@ const QuotePdfGenerator = async (quoteData) => {
 
   const safe = (v) => (v === null || v === undefined ? "" : String(v));
 
+  // Who gave the quote. The quote stores the rep's email (`created_by_rep`);
+  // the customer's copy should carry their name, so resolve it and fall back to
+  // the email — a document that names the rep by address still beats one that
+  // doesn't say who to call back.
+  let repName = safe(quoteData.created_by_rep);
+  if (quoteData.created_by_rep) {
+    try {
+      const repRows = await base44.entities.User.filter({ email: quoteData.created_by_rep }, null, 1);
+      if (repRows?.[0]?.full_name) repName = repRows[0].full_name;
+    } catch {
+      // keep the email
+    }
+  }
+
   // HTML-escape a value before interpolating it into the document so the
   // user-written notes / terms can't accidentally break out of the surrounding
   // markup (e.g. a literal "<" in a note).
@@ -390,6 +404,7 @@ const QuotePdfGenerator = async (quoteData) => {
               <div class="k">מס׳ הצעה</div><div class="v">${safe(quoteData.quote_number)}</div>
               <div class="k">תאריך</div><div class="v">${createdDate}</div>
               ${validUntil ? `<div class="k">תוקף</div><div class="v">${validUntil}</div>` : ""}
+              ${repName ? `<div class="k">נציג מטפל</div><div class="v">${esc(repName)}</div>` : ""}
               <div class="k">סטטוס</div><div class="v">טיוטה / להצגה</div>
             </div>
           </div>
