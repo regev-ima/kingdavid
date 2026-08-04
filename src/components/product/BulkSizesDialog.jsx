@@ -33,9 +33,12 @@ import {
 export default function BulkSizesDialog({ open, onOpenChange, product, existingVariations = [], onCreated }) {
   const queryClient = useQueryClient();
 
-  const { data: sizes = [], isLoading: sizesLoading } = useQuery({
+  const { data: sizes = [], isLoading: sizesLoading, error: sizesError } = useQuery({
+    // No server-side sort: ordering by a column the table may not have fails the
+    // whole request and leaves this dialog silently empty (exactly how the
+    // missing `dimensions` column behaved). Sorted below instead.
     queryKey: ['globalSizes'],
-    queryFn: () => base44.entities.GlobalSize.list('sort_order'),
+    queryFn: () => base44.entities.GlobalSize.list(),
     enabled: open,
   });
 
@@ -46,7 +49,21 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     enabled: open && !!product?.id,
   });
 
-  const activeSizes = useMemo(() => sizes.filter((s) => s.is_active !== false), [sizes]);
+  const activeSizes = useMemo(() => (
+    sizes
+      .filter((s) => s.is_active !== false)
+      .slice()
+      .sort((a, b) => {
+        const order = (Number(a?.sort_order) || 0) - (Number(b?.sort_order) || 0);
+        if (order !== 0) return order;
+        const da = getSizeDimensions(a);
+        const db = getSizeDimensions(b);
+        if (da && db) return (da.width_cm - db.width_cm) || (da.length_cm - db.length_cm);
+        return String(a?.label || '').localeCompare(String(b?.label || ''), 'he');
+      })
+  ), [sizes]);
+
+  const inactiveCount = sizes.length - activeSizes.length;
 
   const baseSize = useMemo(() => {
     if (!activeSizes.length) return null;
@@ -217,6 +234,23 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
               </div>
 
               <div className="divide-y divide-border/60">
+                {rows.length === 0 && (
+                  <div className="px-3 py-6 text-center text-sm text-muted-foreground space-y-1">
+                    {sizesError ? (
+                      <p className="text-destructive">טעינת קטלוג המידות נכשלה: {sizesError.message}</p>
+                    ) : sizes.length === 0 ? (
+                      <>
+                        <p className="font-medium text-foreground">קטלוג המידות ריק</p>
+                        <p>יש להוסיף את המידות הקבועות במסך "מידות גלובליות", ואז הן יופיעו כאן לכל מוצר.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium text-foreground">כל המידות בקטלוג מסומנות כלא פעילות</p>
+                        <p>{inactiveCount} מידות קיימות אך כבויות. יש להפעיל אותן במסך "מידות גלובליות".</p>
+                      </>
+                    )}
+                  </div>
+                )}
                 {rows.map((row) => {
                   const disabled = !row.dims || !!row.existing;
                   return (

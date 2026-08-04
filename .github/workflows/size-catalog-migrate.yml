@@ -1,10 +1,13 @@
 name: Size catalog + SKU prefix — apply migration
 
-# Adds width_cm / length_cm / size_surcharge to global_sizes and
+# Adds width_cm / length_cm / size_surcharge / dimensions to global_sizes and
 # sku_prefix / base_size_id to products, then backfills the dimensions from the
 # free-text `dimensions` field. Additive only — nothing reads the new columns
 # until the product screens do, and the app falls back to parsing the text
-# wherever a width/length is still missing. Idempotent.
+# wherever a width/length is still missing, then seeds the standard size list
+# (the one printed on the showroom card) for catalogs that don't have it — only
+# for dimensions that don't already exist, so an existing catalog is untouched.
+# Both files are idempotent.
 
 on:
   push:
@@ -13,6 +16,7 @@ on:
       - claude/auto-assign-lead-rep-manager-opskej
     paths:
       - 'supabase/migrations/20260804000005_size_catalog_and_sku_prefix.sql'
+      - 'supabase/migrations/20260804000006_seed_standard_sizes.sql'
       - '.github/workflows/size-catalog-migrate.yml'
   workflow_dispatch:
 
@@ -31,14 +35,20 @@ jobs:
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
             echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
           fi
-          f=supabase/migrations/20260804000005_size_catalog_and_sku_prefix.sql
-          payload=$(jq -Rs '{query: .}' "$f")
-          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
-            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "$payload")
-          echo "Management API HTTP $code"
-          cat /tmp/resp.json || true
-          echo
-          test "$code" -lt 400
+          # Columns first, then the seed that fills them — order matters.
+          for f in \
+            supabase/migrations/20260804000005_size_catalog_and_sku_prefix.sql \
+            supabase/migrations/20260804000006_seed_standard_sizes.sql
+          do
+            echo "Applying $f"
+            payload=$(jq -Rs '{query: .}' "$f")
+            code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+              "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data "$payload")
+            echo "Management API HTTP $code"
+            cat /tmp/resp.json || true
+            echo
+            test "$code" -lt 400
+          done
