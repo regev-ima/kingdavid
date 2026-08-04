@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, MapPin, Image as ImageIcon, Video, Mic, Download, Loader2 } from 'lucide-react';
+import { FileText, MapPin, Image as ImageIcon, Video, Mic, Download, Loader2, Sticker, Ban, MessageSquareDashed } from 'lucide-react';
 import { bubbleTime } from './whatsappHelpers';
 
 // A single WhatsApp message. Outgoing (our side) → green, aligned to the start
@@ -20,7 +20,10 @@ export default function MessageBubble({ message }) {
         }`}
       >
         <MediaPart message={message} />
-        {message.body ? <p className="whitespace-pre-wrap break-words leading-relaxed">{message.body}</p> : null}
+        {/* A reaction's body IS the emoji — show it big, not as body text. */}
+        {message.message_type !== 'reaction' && message.body
+          ? <p className="whitespace-pre-wrap break-words leading-relaxed">{message.body}</p>
+          : null}
         <div className="mt-0.5 flex items-center justify-end gap-1">
           {pending ? (
             <>
@@ -38,6 +41,45 @@ export default function MessageBubble({ message }) {
 
 function MediaPart({ message }) {
   const { message_type: type, media_url: url, file_name: fileName } = message;
+
+  // A reaction to one of our messages (👍, ❤️ …). The emoji is the whole
+  // content, so it gets the room — an empty body means the customer took the
+  // reaction back, which is a real event and not a blank message.
+  if (type === 'reaction') {
+    const emoji = (message.body || '').trim();
+    return emoji ? (
+      <div className="flex items-center gap-2">
+        <span className="text-2xl leading-none">{emoji}</span>
+        <span className="text-xs text-slate-500">הגיב/ה להודעה</span>
+      </div>
+    ) : (
+      <div className="flex items-center gap-1.5 text-slate-500">
+        <Ban className="h-4 w-4" />
+        <span className="text-xs">הסיר/ה את התגובה</span>
+      </div>
+    );
+  }
+
+  if (type === 'sticker') {
+    return url ? (
+      <img src={url} alt="מדבקה" className="h-28 w-28 object-contain" loading="lazy" />
+    ) : (
+      <div className="flex items-center gap-1.5 text-slate-500">
+        <Sticker className="h-4 w-4" />
+        <span className="text-xs">מדבקה</span>
+      </div>
+    );
+  }
+
+  if (type === 'deleted') {
+    return (
+      <div className="flex items-center gap-1.5 text-slate-400 italic">
+        <Ban className="h-4 w-4" />
+        <span className="text-xs">ההודעה נמחקה</span>
+      </div>
+    );
+  }
+
   if (type === 'image' && url) {
     return (
       <a href={url} target="_blank" rel="noreferrer" className="block mb-1">
@@ -74,6 +116,18 @@ function MediaPart({ message }) {
       <div className="flex items-center gap-1.5 text-slate-500">
         <Icon className="h-4 w-4" />
         <span className="text-xs">{placeholder.label}</span>
+      </div>
+    );
+  }
+  // Last resort: nothing to draw and nothing to read. WhatsApp keeps adding
+  // message types, and every one we don't know used to render as a blank
+  // bubble — which reads as "the system lost a message". Say what happened
+  // instead, so the rep knows to check their phone.
+  if (!message.body) {
+    return (
+      <div className="flex items-center gap-1.5 text-slate-400">
+        <MessageSquareDashed className="h-4 w-4" />
+        <span className="text-xs">הודעה שלא ניתן להציג כאן</span>
       </div>
     );
   }

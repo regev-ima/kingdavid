@@ -72,6 +72,16 @@ Deno.serve(async (req) => {
     const widPhone = wid ? wid.replace(/@c\.us$/, '') : '';
     const accUpdate: Record<string, unknown> = { last_webhook_at: new Date().toISOString() };
     if (widPhone && account.phone !== widPhone) accUpdate.phone = widPhone;
+    // Learn OUR OWN WhatsApp profile name. Only an outgoing webhook reveals it,
+    // and remembering it is what lets every later webhook — incoming included —
+    // recognise it and refuse to file it as a customer's name. Deriving it fresh
+    // from each payload was not enough: app-sent messages are deduped before
+    // that code runs, so on an account whose rep only sends from the CRM the
+    // name never got learned at all.
+    const norm2 = norm as { ownName?: string };
+    if (norm2.ownName && account.profile_name !== norm2.ownName) {
+      accUpdate.profile_name = norm2.ownName;
+    }
     await svc.from('whatsapp_accounts').update(accUpdate).eq('id', account.id);
     // Keep the in-memory row in step — the disconnect alert quotes the number.
     Object.assign(account, accUpdate);
@@ -112,6 +122,13 @@ Deno.serve(async (req) => {
       return Response.json({ ok: true, ignored: norm.kind }, { status: 200 });
     }
 
+    // The one name that can never be the customer's: our own. Green has been
+    // seen putting it in senderContactName / chatName on INCOMING payloads too,
+    // so this is checked against every candidate regardless of direction rather
+    // than only on the outgoing path.
+    const ownName: string = String(accUpdate.profile_name ?? account.profile_name ?? '');
+    const contactName = (norm.contactName && norm.contactName !== ownName) ? norm.contactName : '';
+
     // ── Upsert the conversation row ──────────────────────────────────────────
     let { data: chat } = await svc
       .from('whatsapp_chats')
@@ -130,7 +147,7 @@ Deno.serve(async (req) => {
           // The CONTACT, never the sender: on an outgoing webhook senderData
           // is the rep's own profile, and seeding the row from it is what put
           // the rep's own name and number on every conversation in the list.
-          contact_name: norm.contactName || null,
+          contact_name: contactName || null,
           contact_phone: norm.contactPhone || null,
           is_group: norm.isGroup,
         })
@@ -153,6 +170,29 @@ Deno.serve(async (req) => {
       return Response.json({ ok: false, error: 'chat_resolve_failed' }, { status: 500 });
     }
 
+    // ── Keep the contact identity pointing at the customer ───────────────────
+    // Runs BEFORE the dedupe return on purpose. A message the CRM sent is
+    // already in the table, so its Green echo is a no-op for the message row —
+    // but that echo is often the only webhook that ever names the account's own
+    // profile, and skipping it early is why rows kept their wrong name.
+    const identityFix: Record<string, unknown> = {};
+    if (norm.isGroup) {
+      // A group has no single contact number — the chat id IS the group.
+      if (chat.contact_phone) identityFix.contact_phone = null;
+    } else if (norm.contactPhone && chat.contact_phone !== norm.contactPhone) {
+      identityFix.contact_phone = norm.contactPhone;
+    }
+    const storedNameIsOurs = !!ownName && chat.contact_name === ownName;
+    if (contactName && (!chat.contact_name || storedNameIsOurs)) {
+      identityFix.contact_name = contactName;
+    } else if (storedNameIsOurs) {
+      identityFix.contact_name = null;
+    }
+    if (Object.keys(identityFix).length > 0) {
+      await svc.from('whatsapp_chats').update(identityFix).eq('id', chat.id);
+      Object.assign(chat, identityFix);
+    }
+
     // ── Insert the message (dedupe on green_message_id) ──────────────────────
     if (norm.idMessage) {
       const { data: dupe } = await svc
@@ -162,7 +202,7 @@ Deno.serve(async (req) => {
         .eq('green_message_id', norm.idMessage)
         .maybeSingle();
       if (dupe) {
-        return Response.json({ ok: true, deduped: true }, { status: 200 });
+        return Response.json({ ok: true, deduped: true, identity: Object.keys(identityFix) }, { status: 200 });
       }
     }
 
@@ -193,9 +233,14 @@ Deno.serve(async (req) => {
     const thisTs = new Date(msgTs).getTime();
     const isNewest = thisTs >= prevTs;
 
-    const preview = norm.body
+    // A reaction is an emoji, so norm.body already IS the preview — except when
+    // it's empty, which means the reaction was removed.
+    const preview = (norm.messageType === 'reaction' && norm.body)
+      ? `הגיב/ה ${norm.body}`
+      : norm.body
       || ({ image: '📷 תמונה', video: '🎬 וידאו', audio: '🎤 הודעה קולית', document: '📄 קובץ',
-            sticker: 'מדבקה', location: '📍 מיקום', contact: '👤 איש קשר', poll: '📊 סקר' }[norm.messageType] || '');
+            sticker: 'מדבקה', location: '📍 מיקום', contact: '👤 איש קשר', poll: '📊 סקר',
+            reaction: 'הסיר/ה תגובה', deleted: 'הודעה נמחקה' }[norm.messageType] || '');
 
     const chatUpdate: Record<string, unknown> = {};
     if (isNewest) {
@@ -210,29 +255,6 @@ Deno.serve(async (req) => {
     } else if (isNewest) {
       // We replied — clear the waiting backlog.
       chatUpdate.unread_count = 0;
-    }
-
-    // ── Keep the contact identity pointing at the customer ───────────────────
-    // Rows created before the sender/contact split carry the REP's name and
-    // number, because whichever webhook created them seeded from senderData.
-    // Repair them here so a chat fixes itself the next time it sees traffic —
-    // the migration handles the quiet ones that may never get another message.
-    if (norm.isGroup) {
-      // A group has no single contact number — the chat id IS the group, and a
-      // rep's number left here shows up under the group's name in the header.
-      if (chat.contact_phone) chatUpdate.contact_phone = null;
-    } else if (norm.contactPhone && chat.contact_phone !== norm.contactPhone) {
-      chatUpdate.contact_phone = norm.contactPhone;
-    }
-    // An outgoing webhook is the one place Green tells us our OWN profile
-    // name. If that string is sitting in contact_name, it came from the wrong
-    // side of the conversation.
-    const nameIsOurs = norm.direction === 'outgoing'
-      && !!norm.senderName && chat.contact_name === norm.senderName;
-    if (norm.contactName && (!chat.contact_name || nameIsOurs)) {
-      chatUpdate.contact_name = norm.contactName;
-    } else if (nameIsOurs) {
-      chatUpdate.contact_name = null;
     }
 
     if (Object.keys(chatUpdate).length > 0) {

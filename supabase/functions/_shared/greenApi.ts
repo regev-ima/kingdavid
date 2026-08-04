@@ -137,6 +137,13 @@ export interface NormalizedMessage {
   contactName: string;
   /** The other side's number, from the chat id. '' for groups. */
   contactPhone: string;
+  /**
+   * OUR OWN WhatsApp profile name, when this webhook reveals it. Only an
+   * outgoing message does: there senderData describes the instance owner. We
+   * persist it on the account so that every later webhook — incoming ones
+   * included — can recognise and reject it as a contact name.
+   */
+  ownName: string;
   messageType: string;
   body: string;
   mediaUrl: string | null;
@@ -196,6 +203,23 @@ function extractContent(md: any): { type: string; body: string; mediaUrl: string
       return { type: 'contact', body: md?.contactMessageData?.displayName || 'איש קשר', mediaUrl: null, fileName: null };
     case 'pollMessage':
       return { type: 'poll', body: md?.pollMessageData?.name || 'סקר', mediaUrl: null, fileName: null };
+    case 'reactionMessage': {
+      // A 👍 on one of our messages. Green puts the emoji in
+      // extendedTextMessageData.text; older builds use reactionMessageData.
+      // An EMPTY text is not a missing reaction — it is the customer removing
+      // one, so keep it distinguishable instead of collapsing both to ''.
+      const rd = md?.reactionMessageData || md?.extendedTextMessageData || {};
+      return { type: 'reaction', body: (rd.text ?? '').trim(), mediaUrl: null, fileName: null };
+    }
+    case 'editedMessage':
+      return {
+        type: 'text',
+        body: md?.editedMessageData?.textMessage || md?.editedMessageData?.text || '',
+        mediaUrl: null,
+        fileName: null,
+      };
+    case 'deletedMessage':
+      return { type: 'deleted', body: '', mediaUrl: null, fileName: null };
     default:
       return { type, body: '', mediaUrl: null, fileName: null };
   }
@@ -275,6 +299,7 @@ export function normalizeWebhook(payload: any): NormalizedWebhook | null {
     senderPhone: phoneFromChatId(sd.sender || chatId),
     contactName,
     contactPhone: isGroup ? '' : phoneFromChatId(chatId),
+    ownName: isIncoming ? '' : (contactLabel(sd.senderName) || contactLabel(sd.senderContactName)),
     messageType: type,
     body,
     mediaUrl,
