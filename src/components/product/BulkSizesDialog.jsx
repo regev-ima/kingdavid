@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -95,18 +95,40 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
   const [selected, setSelected] = useState({});   // sizeId → true
   const [priceEdits, setPriceEdits] = useState({}); // sizeId → typed price
 
+  // Reset ONLY when the dialog opens on a product — never because data arrived.
+  // This used to depend on the derived variation map, which is rebuilt whenever
+  // the products page re-renders (a background refetch is enough), so the reset
+  // fired mid-editing and wiped the base price and the ticked boxes. That is
+  // why sizes were created with no price after one had been typed.
+  const initialisedFor = useRef(null);
+  const basePriceTouched = useRef(false);
+
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initialisedFor.current = null;
+      return;
+    }
+    if (initialisedFor.current === product?.id) return;
+    initialisedFor.current = product?.id;
+    basePriceTouched.current = false;
     setPrefix(product?.sku_prefix || suggestSkuPrefix(product?.name));
+    setBasePrice('');
     setSelected({});
     setPriceEdits({});
     setShowAllSizes(false);
-    // Seed the base price from the variation the product already sells at its
-    // base size — that IS the base price, so nobody should retype it.
+  }, [open, product?.id, product?.name, product?.sku_prefix]);
+
+  // Seed the base price from the variation the product already sells at its base
+  // size — that IS the base price, so nobody should retype it. Runs when the
+  // data lands, and stops the moment the field has been typed in, so seeding can
+  // never overwrite what the user entered.
+  useEffect(() => {
+    if (!open || basePriceTouched.current) return;
     const baseDims = getSizeDimensions(baseSize);
-    const baseVariation = baseDims ? existingByDims.get(`${baseDims.width_cm}x${baseDims.length_cm}`) : null;
-    setBasePrice(baseVariation?.base_price != null ? String(baseVariation.base_price) : '');
-  }, [open, product?.id, product?.name, product?.sku_prefix, baseSize, existingByDims]);
+    if (!baseDims) return;
+    const baseVariation = existingByDims.get(`${baseDims.width_cm}x${baseDims.length_cm}`);
+    if (baseVariation?.base_price != null) setBasePrice(String(baseVariation.base_price));
+  }, [open, baseSize, existingByDims]);
 
   const rows = useMemo(() => relevantSizes.map((size) => {
     const dims = getSizeDimensions(size);
@@ -214,7 +236,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
               <Input
                 type="number"
                 value={basePrice}
-                onChange={(e) => setBasePrice(e.target.value)}
+                onChange={(e) => { basePriceTouched.current = true; setBasePrice(e.target.value); }}
                 placeholder="5900"
               />
               <p className="text-[11px] text-muted-foreground">
@@ -330,6 +352,13 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                 })}
               </div>
             </div>
+          )}
+
+          {selectedRows.some((r) => !(Number(r.price) > 0)) && (
+            <p className="text-xs text-amber-700">
+              {selectedRows.filter((r) => !(Number(r.price) > 0)).length} מהמידות שסומנו ייווצרו ללא מחיר.
+              אפשר למלא מחיר בסיס למעלה, או מחיר בשורה עצמה.
+            </p>
           )}
 
           {missingDims.length > 0 && (

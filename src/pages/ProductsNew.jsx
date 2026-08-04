@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import BulkSizesDialog from '@/components/product/BulkSizesDialog';
 import GlobalSizesList from '@/components/product/GlobalSizesList';
@@ -170,6 +170,13 @@ export default function ProductsNew() {
     queryKey: ['product-variations'],
     queryFn: () => base44.entities.ProductVariation.list()
   });
+
+  // Stable identity: a fresh array each render re-triggered the dialog's setup
+  // effect and cleared what the user had typed into it.
+  const bulkSizesVariations = useMemo(
+    () => (bulkSizesProduct ? variations.filter((v) => v.product_id === bulkSizesProduct.id) : []),
+    [variations, bulkSizesProduct],
+  );
 
   const createProductMutation = useMutation({
     mutationFn: (data) => base44.entities.Product.create(data),
@@ -1110,7 +1117,7 @@ export default function ProductsNew() {
         open={!!bulkSizesProduct}
         onOpenChange={(next) => { if (!next) setBulkSizesProduct(null); }}
         product={bulkSizesProduct}
-        existingVariations={bulkSizesProduct ? variations.filter((v) => v.product_id === bulkSizesProduct.id) : []}
+        existingVariations={bulkSizesVariations}
         onCreated={() => {
           queryClient.invalidateQueries({ queryKey: ['product-variations'] });
           setBulkSizesProduct(null);
