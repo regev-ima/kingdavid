@@ -65,6 +65,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     lead_id: leadId || '',
     customer_name: '',
     customer_phone: '',
+    // Not typed here: it rides in from the lead and rides on to the order.
+    customer_phone_2: '',
     customer_email: '',
     delivery_address: '',
     delivery_city: '',
@@ -126,12 +128,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
           .from('customers')
-          .select('id, full_name, phone, email, address, city')
+          .select('id, full_name, phone, phone_2, email, address, city')
           .ilike('phone', pattern)
           .limit(5),
         base44.supabase
           .from('leads')
-          .select('id, full_name, phone, email, address, city, status')
+          .select('id, full_name, phone, phone_2, email, address, city, status')
           .ilike('phone', pattern)
           .limit(5),
       ]);
@@ -164,6 +166,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       ...prev,
       customer_name: match.full_name || prev.customer_name,
       customer_phone: match.phone || prev.customer_phone,
+      customer_phone_2: match.phone_2 || prev.customer_phone_2,
       customer_email: match.email || prev.customer_email,
       delivery_address: match.address || prev.delivery_address,
       delivery_city: match.city || prev.delivery_city,
@@ -260,6 +263,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
         ...prev,
         customer_name: lead.full_name,
         customer_phone: lead.phone,
+        customer_phone_2: lead.phone_2 || '',
         customer_email: lead.email || '',
         delivery_address: lead.address || '',
         delivery_city: lead.city || '',
@@ -289,6 +293,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           const newLead = await base44.entities.Lead.create({
             full_name: data.customer_name,
             phone: data.customer_phone,
+            phone_2: data.customer_phone_2,
             email: data.customer_email,
             address: data.delivery_address,
             city: data.delivery_city,

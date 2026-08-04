@@ -316,6 +316,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       const customer = await base44.entities.Customer.create({
         full_name: lead.full_name,
         phone: lead.phone,
+        // Carried over with the rest of the contact details — the second number
+        // is worth as much on the customer card as it was on the lead.
+        phone_2: lead.phone_2,
         email: lead.email,
         address: lead.address,
         city: lead.city,
@@ -362,6 +365,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     const fieldLabels = {
       full_name: 'שם',
       phone: 'טלפון',
+      phone_2: 'טלפון נוסף',
       email: 'אימייל',
       city: 'עיר',
       address: 'כתובת',
@@ -1044,6 +1048,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                       <Input value={formData.phone || ''} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} className="h-9" />
                     </div>
                     <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">טלפון נוסף</Label>
+                      <Input value={formData.phone_2 || ''} onChange={(e) => setFormData({ ...formData, phone_2: e.target.value })} className="h-9" dir="ltr" />
+                    </div>
+                    <div className="space-y-1.5">
                       <Label className="text-xs text-muted-foreground">אימייל</Label>
                       <Input type="email" value={formData.email || ''} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="h-9" />
                     </div>
@@ -1116,6 +1124,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                   {[
                     { label: 'שם מלא',     value: lead.full_name,                                       icon: User },
                     { label: 'טלפון',      value: lead.phone,                                           icon: Phone },
+                    { label: 'טלפון נוסף', value: lead.phone_2,                                         icon: Phone },
                     { label: 'אימייל',     value: lead.email,                                           icon: Mail },
                     { label: 'עיר',        value: lead.city,                                            icon: MapPin },
                     { label: 'כתובת',      value: lead.address,                                         icon: Home },

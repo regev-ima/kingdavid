@@ -1,4 +1,5 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
+import { readIdNumber, readPaymentsCount, updateOrderWithSchemaFallback } from '../_shared/hyp.ts';
 
 // Client-triggered companion to hyp-notify. After the iframe returns to
 // HypReturn with a Hyp transaction Id, the dialog calls this function to
@@ -143,6 +144,10 @@ Deno.serve(async (req) => {
     let acode: string;
     let brand: string;
     let l4digit: string;
+    // Read off the same trusted source as the amount: how many installments the
+    // charge was split into, and the payer's ת.ז. — both printed on the order.
+    let paymentsCount: number | null;
+    let idNumber: string;
 
     const externalAmount = hypReply ? Number(getCi(hypReply, 'Amount') ?? '0') : NaN;
     if (externalCCode === '0' && Number.isFinite(externalAmount) && externalAmount > 0) {
@@ -152,6 +157,8 @@ Deno.serve(async (req) => {
       acode = getCi(hypReply!, 'ACode') ?? '';
       brand = getCi(hypReply!, 'Brand') ?? '';
       l4digit = getCi(hypReply!, 'L4digit', 'L4Digit', 'last4') ?? '';
+      paymentsCount = readPaymentsCount(hypReply!);
+      idNumber = readIdNumber(hypReply!);
     } else {
       // Fall back to the params the iframe captured directly from Hyp,
       // reading them case-insensitively the same way HypReturn does.
@@ -192,6 +199,8 @@ Deno.serve(async (req) => {
       acode = String(getObjCi(hypParams, 'ACode') ?? '');
       brand = String(getObjCi(hypParams, 'Brand') ?? '');
       l4digit = String(getObjCi(hypParams, 'L4digit', 'L4Digit', 'last4') ?? '');
+      paymentsCount = readPaymentsCount(hypParams);
+      idNumber = readIdNumber(hypParams);
     }
 
     const supabase = createServiceClient();
@@ -241,6 +250,8 @@ Deno.serve(async (req) => {
       hyp_acode: acode,
       hyp_brand: brand,
       hyp_l4digit: l4digit,
+      hyp_payments_count: paymentsCount,
+      hyp_user_id: idNumber,
     };
 
     const updatedPayments = [...existingPayments, paymentEntry];
@@ -249,13 +260,19 @@ Deno.serve(async (req) => {
     // amount_paid is not a real column on this schema — it's derived from
     // the payments JSONB by the UI's calcPaymentStatus. Writing to it
     // PostgREST-errors with "Could not find the 'amount_paid' column".
-    const { error: updateErr } = await supabase
-      .from('orders')
-      .update({
-        payments: updatedPayments,
-        payment_status: newStatus,
-      })
-      .eq('id', order.id);
+    const orderUpdate: Record<string, unknown> = {
+      payments: updatedPayments,
+      payment_status: newStatus,
+    };
+    // Hyp is the only place the payer's ת.ז. is collected, so the first charge
+    // that returns one fills the order's field. Later charges never overwrite
+    // it: paying off a balance with someone else's card must not silently
+    // rewrite whose ID the order was issued against.
+    if (idNumber && !String(order.customer_id_number || '').trim()) {
+      orderUpdate.customer_id_number = idNumber;
+    }
+
+    const updateErr = await updateOrderWithSchemaFallback(supabase, order.id, orderUpdate);
 
     if (updateErr) {
       console.error('hyp-verify: failed to update order', updateErr);
