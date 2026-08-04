@@ -127,8 +127,11 @@ Deno.serve(async (req) => {
           account_id: account.id,
           user_id: account.user_id,
           chat_id: norm.chatId,
+          // The CONTACT, never the sender: on an outgoing webhook senderData
+          // is the rep's own profile, and seeding the row from it is what put
+          // the rep's own name and number on every conversation in the list.
           contact_name: norm.contactName || null,
-          contact_phone: norm.senderPhone || null,
+          contact_phone: norm.contactPhone || null,
           is_group: norm.isGroup,
         })
         .select()
@@ -204,10 +207,32 @@ Deno.serve(async (req) => {
     }
     if (norm.direction === 'incoming') {
       chatUpdate.unread_count = (chat.unread_count || 0) + 1;
-      if (norm.contactName && !chat.contact_name) chatUpdate.contact_name = norm.contactName;
     } else if (isNewest) {
       // We replied — clear the waiting backlog.
       chatUpdate.unread_count = 0;
+    }
+
+    // ── Keep the contact identity pointing at the customer ───────────────────
+    // Rows created before the sender/contact split carry the REP's name and
+    // number, because whichever webhook created them seeded from senderData.
+    // Repair them here so a chat fixes itself the next time it sees traffic —
+    // the migration handles the quiet ones that may never get another message.
+    if (norm.isGroup) {
+      // A group has no single contact number — the chat id IS the group, and a
+      // rep's number left here shows up under the group's name in the header.
+      if (chat.contact_phone) chatUpdate.contact_phone = null;
+    } else if (norm.contactPhone && chat.contact_phone !== norm.contactPhone) {
+      chatUpdate.contact_phone = norm.contactPhone;
+    }
+    // An outgoing webhook is the one place Green tells us our OWN profile
+    // name. If that string is sitting in contact_name, it came from the wrong
+    // side of the conversation.
+    const nameIsOurs = norm.direction === 'outgoing'
+      && !!norm.senderName && chat.contact_name === norm.senderName;
+    if (norm.contactName && (!chat.contact_name || nameIsOurs)) {
+      chatUpdate.contact_name = norm.contactName;
+    } else if (nameIsOurs) {
+      chatUpdate.contact_name = null;
     }
 
     if (Object.keys(chatUpdate).length > 0) {
