@@ -77,6 +77,41 @@ export const DEFAULT_BASE_DIMENSIONS = {
   single: { width_cm: 80, length_cm: 190 },
 };
 
+/**
+ * Where single ends and double begins. 120/200 is still a single here — a wide
+ * one ("יחיד רחב") — which matches the size list the business works with: the
+ * singles run 80…120 and the doubles start at 140.
+ */
+export const DOUBLE_MIN_WIDTH_CM = 140;
+
+/** 'single' | 'double' for a catalog size, or null when it has no dimensions. */
+export function sizeBedType(size) {
+  const dims = getSizeDimensions(size);
+  if (!dims) return null;
+  return dims.width_cm >= DOUBLE_MIN_WIDTH_CM ? 'double' : 'single';
+}
+
+/**
+ * Only the sizes a product can actually come in. A single mattress has no
+ * business offering 200/200, and a list that mixes them makes the rep read
+ * sixteen rows to find the eight that apply.
+ *
+ * A product with no bed type — or one that is sold as both — gets everything,
+ * because narrowing on a guess would hide sizes someone needs.
+ */
+export function filterSizesForBedTypes(sizes = [], bedTypes) {
+  const types = (Array.isArray(bedTypes) ? bedTypes : [bedTypes]).filter(Boolean);
+  const wantsSingle = types.includes('single');
+  const wantsDouble = types.includes('double');
+  if (wantsSingle === wantsDouble) return sizes; // both, or neither
+  return sizes.filter((size) => {
+    const type = sizeBedType(size);
+    // A size we can't classify stays visible — it's flagged as missing
+    // dimensions anyway, and hiding it would bury the reason it's unusable.
+    return type === null || type === (wantsSingle ? 'single' : 'double');
+  });
+}
+
 /** The catalog size that should be a product's base, by its bed type. */
 export function suggestBaseSize(bedTypes, sizes = []) {
   const types = Array.isArray(bedTypes) ? bedTypes : [bedTypes].filter(Boolean);
