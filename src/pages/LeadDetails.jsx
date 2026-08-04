@@ -658,7 +658,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               </div>
             )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <StatusBadge status={lead.status} />
+              {/* "סטטוס:" prefix — the bare badge read as just another tag in
+                  the header; naming the field makes it unambiguous. Kept in
+                  one flex group with the badge so the label never wraps away
+                  from the value it describes. */}
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">סטטוס:</span>
+                <StatusBadge status={lead.status} />
+              </span>
               <SLABadge lead={lead} />
             </div>
           </div>

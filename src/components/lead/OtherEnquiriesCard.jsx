@@ -55,7 +55,7 @@ export default function OtherEnquiriesCard({ lead }) {
       <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-amber-50/60 py-3">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <History className="h-4 w-4 text-amber-600" />
-          פניות נוספות מאותו אדם
+          לידים נוספים מאותו אדם
         </CardTitle>
         <Badge variant="outline" className="bg-white">
           {siblings.length.toLocaleString('he-IL')}
