@@ -165,6 +165,41 @@ export function buildVariationSku(prefix, dims) {
 // ── Price ────────────────────────────────────────────────────────────────────
 
 /**
+ * The categories that are priced by size. A bed frame in 160/200 doesn't carry
+ * the mattress's ₪490 just because the size matches, so the amount lives per
+ * (size, category) — but only these two are sold that way. Toppers and
+ * accessories aren't sized off this table and are deliberately absent.
+ */
+export const SIZED_PRODUCT_CATEGORIES = [
+  { value: 'mattress', label: 'מזרון' },
+  { value: 'bed', label: 'מיטה' },
+];
+
+/**
+ * The surcharge for a size in a given category.
+ *
+ * Falls back to the size's single `size_surcharge` for a category nobody has
+ * filled in yet — that column held the mattress numbers before the split, so
+ * an unfilled category prices exactly as it did before rather than dropping to
+ * zero behind everyone's back.
+ */
+export function getSizeSurcharge(size, category) {
+  const perCategory = size?.surcharges?.[category];
+  if (perCategory !== undefined && perCategory !== null && perCategory !== '') {
+    const n = Number(perCategory);
+    if (Number.isFinite(n)) return n;
+  }
+  // The legacy single column holds the MATTRESS numbers — that is what those
+  // amounts have always meant — so it stands in for mattresses (and for a
+  // product with no category at all, which is how the app behaved before the
+  // split). A bed with no amount of its own adds nothing rather than silently
+  // inheriting a mattress's upcharge.
+  if (category && category !== 'mattress') return 0;
+  const fallback = Number(size?.size_surcharge);
+  return Number.isFinite(fallback) ? fallback : 0;
+}
+
+/**
  * What a given size costs for a given product.
  *
  * Order of precedence, most specific first:
@@ -177,13 +212,12 @@ export function buildVariationSku(prefix, dims) {
  * Returns null when there's no base price to work from, so the caller can show
  * an empty field instead of a confident ₪0.
  */
-export function resolveSizePrice({ basePrice, size, productSizePrice }) {
+export function resolveSizePrice({ basePrice, size, productSizePrice, category }) {
   const override = Number(productSizePrice?.price);
   if (Number.isFinite(override) && override > 0) return override;
 
   const base = Number(basePrice);
   if (!Number.isFinite(base) || base <= 0) return null;
 
-  const surcharge = Number(size?.size_surcharge);
-  return base + (Number.isFinite(surcharge) ? surcharge : 0);
+  return base + getSizeSurcharge(size, category);
 }
