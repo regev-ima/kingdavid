@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, AlertTriangle } from 'lucide-react';
+import { getSizeDimensions, parseDimensionsText } from '@/lib/productSizes';
 
 export default function GlobalSizesList() {
   const queryClient = useQueryClient();
@@ -17,6 +18,9 @@ export default function GlobalSizesList() {
   const [formData, setFormData] = useState({
     label: '',
     dimensions: '',
+    width_cm: '',
+    length_cm: '',
+    size_surcharge: 0,
     price: 0,
     is_active: true,
     sort_order: 0
@@ -56,6 +60,9 @@ export default function GlobalSizesList() {
     setFormData({
       label: '',
       dimensions: '',
+      width_cm: '',
+      length_cm: '',
+      size_surcharge: 0,
       price: 0,
       is_active: true,
       sort_order: 0
@@ -65,9 +72,15 @@ export default function GlobalSizesList() {
 
   const handleEdit = (size) => {
     setEditingSize(size);
+    // Seed width/length from the stored columns, or from the text when the
+    // row predates them — so opening an old size and saving it fills them in.
+    const dims = getSizeDimensions(size);
     setFormData({
       label: size.label,
       dimensions: size.dimensions || '',
+      width_cm: size.width_cm ?? dims?.width_cm ?? '',
+      length_cm: size.length_cm ?? dims?.length_cm ?? '',
+      size_surcharge: size.size_surcharge ?? 0,
       price: size.price !== undefined ? size.price : 0,
       is_active: size.is_active,
       sort_order: size.sort_order || 0
@@ -77,10 +90,24 @@ export default function GlobalSizesList() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // The numeric fields come off the inputs as strings; an empty one means
+    // "unknown", which the catalog stores as NULL rather than 0 — 0 would read
+    // as a real (and impossible) measurement.
+    const toNumberOrNull = (value) => {
+      const n = Number(value);
+      return value === '' || value === null || !Number.isFinite(n) ? null : n;
+    };
+    const data = {
+      ...formData,
+      width_cm: toNumberOrNull(formData.width_cm),
+      length_cm: toNumberOrNull(formData.length_cm),
+      size_surcharge: Number(formData.size_surcharge) || 0,
+    };
+
     if (editingSize) {
-      updateMutation.mutate({ id: editingSize.id, data: formData });
+      updateMutation.mutate({ id: editingSize.id, data });
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(data);
     }
   };
 
@@ -115,9 +142,51 @@ export default function GlobalSizesList() {
                 <Label>מימדים</Label>
                 <Input
                   value={formData.dimensions}
-                  onChange={(e) => setFormData({ ...formData, dimensions: e.target.value })}
+                  // Typing "140/190" fills the two numeric fields below, so the
+                  // catalog gets real numbers without anyone typing them twice.
+                  onChange={(e) => {
+                    const dimensions = e.target.value;
+                    const parsed = parseDimensionsText(dimensions);
+                    setFormData((prev) => ({
+                      ...prev,
+                      dimensions,
+                      ...(parsed ? { width_cm: parsed.width_cm, length_cm: parsed.length_cm } : {}),
+                    }));
+                  }}
                   placeholder='90x200 ס"מ'
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>רוחב (ס"מ)</Label>
+                  <Input
+                    type="number"
+                    value={formData.width_cm}
+                    onChange={(e) => setFormData({ ...formData, width_cm: e.target.value })}
+                    placeholder="140"
+                  />
+                </div>
+                <div>
+                  <Label>אורך (ס"מ)</Label>
+                  <Input
+                    type="number"
+                    value={formData.length_cm}
+                    onChange={(e) => setFormData({ ...formData, length_cm: e.target.value })}
+                    placeholder="190"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>תוספת למידה (₪)</Label>
+                <Input
+                  type="number"
+                  value={formData.size_surcharge}
+                  onChange={(e) => setFormData({ ...formData, size_surcharge: Number(e.target.value) })}
+                  placeholder="0"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  התוספת מעל מחיר הבסיס של המוצר. מידת הבסיס (140/190 בזוגי, 80/190 ביחיד) נשארת 0.
+                </p>
               </div>
               <div>
                 <Label>מחיר</Label>
@@ -163,6 +232,7 @@ export default function GlobalSizesList() {
               <TableHead className="text-right">סטטוס</TableHead>
               <TableHead className="text-right">סדר</TableHead>
               <TableHead className="text-right">מחיר</TableHead>
+              <TableHead className="text-right">תוספת</TableHead>
               <TableHead className="text-right">מימדים</TableHead>
               <TableHead className="text-right">מידה</TableHead>
             </TableRow>
@@ -187,7 +257,26 @@ export default function GlobalSizesList() {
                 </TableCell>
                 <TableCell className="text-right">{size.sort_order}</TableCell>
                 <TableCell className="text-right">₪{size.price?.toLocaleString() || '0'}</TableCell>
-                <TableCell className="text-right">{size.dimensions || '-'}</TableCell>
+                <TableCell className="text-right">
+                  {size.size_surcharge ? `+₪${Number(size.size_surcharge).toLocaleString()}` : '—'}
+                </TableCell>
+                <TableCell className="text-right">
+                  {(() => {
+                    const dims = getSizeDimensions(size);
+                    if (!dims) {
+                      // Without numbers this size can't build a variation or a
+                      // SKU, so say so here instead of letting it quietly go
+                      // missing from the product screen.
+                      return (
+                        <span className="inline-flex items-center gap-1 text-xs text-amber-700" title="יש למלא רוחב ואורך כדי שהמידה תהיה זמינה בהקמת מוצר">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          {size.dimensions || 'חסרות מידות'}
+                        </span>
+                      );
+                    }
+                    return <span dir="ltr">{dims.width_cm}/{dims.length_cm}</span>;
+                  })()}
+                </TableCell>
                 <TableCell className="font-medium text-right">{size.label}</TableCell>
               </TableRow>
             ))}
