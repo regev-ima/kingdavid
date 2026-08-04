@@ -19,7 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import StatusBadge from '@/components/shared/StatusBadge';
 import ProfileAvatarPicker from "@/components/shared/ProfileAvatarPicker";
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
-import { canAccessAdminOnly, canUseBulkUpdate } from '@/lib/rbac';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // Each settings section is code-split and loaded only when its card is opened,
 // so the cards "home" (and the whole screen) loads fast instead of bundling
@@ -35,6 +35,7 @@ const WhatsAppTemplatesTab = lazy(() => import('@/components/settings/WhatsAppTe
 const WhatsAppAlertsTab = lazy(() => import('@/components/settings/WhatsAppAlertsTab'));
 const AiSettingsTab = lazy(() => import('@/components/settings/AiSettingsTab'));
 const ImportLeadsTab = lazy(() => import('@/components/settings/ImportLeadsTab'));
+const PermissionsTab = lazy(() => import('@/components/settings/PermissionsTab'));
 
 // Centered spinner shown while a section's chunk downloads.
 function SectionFallback() {
@@ -47,6 +48,7 @@ function SectionFallback() {
 
 export default function Settings() {
   const { getEffectiveUser, isImpersonating } = useImpersonation();
+  const { can, canManagePermissions } = usePermissions();
   const [user, setUser] = useState(null);
   const [profileData, setProfileData] = useState({ full_name: '' });
   const [showImportOrders, setShowImportOrders] = useState(false);
@@ -65,8 +67,7 @@ export default function Settings() {
   }, []);
 
   const effectiveUser = getEffectiveUser(user);
-  const isAdmin = canAccessAdminOnly(effectiveUser);
-  const canBulkUpdate = canUseBulkUpdate(effectiveUser);
+  const canBulkUpdate = can('settings.bulk');
 
   const updateProfileMutation = useMutation({
     mutationFn: (data) => base44.auth.updateMe(data),
@@ -82,24 +83,32 @@ export default function Settings() {
     factory_user: 'נציג מפעל (FACTORY_USER)'
   };
 
-  // The settings sections, shown as cards on the "home" and gated by role.
+  // The settings sections, shown as cards on the "home".
+  //
+  // `perm` is the permission that gates the card — the same key an admin sees
+  // in הגדרות ← הרשאות ותפקידים under "הגדרות המערכת". Because every one of
+  // those keys carries a baseline of "admin only" (the rule that gated these
+  // cards before), the default behaviour is byte-for-byte what it was; opening
+  // a section to a מנהל חנות is now a switch instead of a deploy.
+  //
   // `icon` is a Google Material Symbols ligature name.
   const SETTINGS_SECTIONS = [
-    { value: 'profile',        label: 'פרופיל',            desc: 'פרטי החשבון והתראות',       icon: 'account_circle', show: true },
-    { value: 'users',          label: 'נציגים',            desc: 'ניהול צוות המכירות, הזמנות והרשאות', icon: 'group',     show: isAdmin },
-    { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      show: isAdmin },
-    { value: 'lead-import',    label: 'ייבוא לידים',        desc: 'ייבוא מכוורת / CSV עם איתור אנשי קשר', icon: 'group_add', show: isAdmin },
-    { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    show: isAdmin },
-    { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   show: isAdmin },
-    { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     show: isAdmin },
-    { value: 'sms',            label: 'שליחת SMS',         desc: 'חיבור חשבון 019',           icon: 'sms',            show: isAdmin },
-    { value: 'wa-templates',   label: 'תבניות וואטסאפ',    desc: 'תבניות הודעה וקיצורים לקומפוזר', icon: 'forum', show: isAdmin },
-    { value: 'wa-alerts',      label: 'התראות ניתוק וואטסאפ', desc: 'הודעה לקבוצה כשנציג מתנתק', icon: 'notification_important', show: isAdmin },
-    { value: 'ai',             label: 'בינה מלאכותית',     desc: 'בחירת מודל AI לניסוח תוכן',  icon: 'smart_toy',      show: isAdmin },
-    { value: 'bulk',           label: 'עדכון המוני',        desc: 'עדכון נתונים בכמות',         icon: 'sync',           show: canBulkUpdate },
-    { value: 'lead-visibility', label: 'הרשאות צפייה',      desc: 'מי רואה אילו לידים',          icon: 'visibility',     show: isAdmin },
-    { value: 'menu',           label: 'תפריט',             desc: 'הסתרה וסידור התפריט',        icon: 'menu',           show: isAdmin },
-  ].filter((s) => s.show);
+    { value: 'profile',        label: 'פרופיל',            desc: 'פרטי החשבון והתראות',       icon: 'account_circle', perm: 'settings.profile' },
+    { value: 'users',          label: 'נציגים',            desc: 'ניהול צוות המכירות, הזמנות והרשאות', icon: 'group',     perm: 'settings.users' },
+    { value: 'permissions',    label: 'הרשאות ותפקידים',   desc: 'רמות הרשאה ומה כל רמה יכולה', icon: 'admin_panel_settings', show: canManagePermissions },
+    { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      perm: 'settings.statuses' },
+    { value: 'lead-import',    label: 'ייבוא לידים',        desc: 'ייבוא מכוורת / CSV עם איתור אנשי קשר', icon: 'group_add', perm: 'settings.lead_import' },
+    { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    perm: 'settings.data_import' },
+    { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   perm: 'settings.quote_defaults' },
+    { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     perm: 'settings.closures' },
+    { value: 'sms',            label: 'שליחת SMS',         desc: 'חיבור חשבון 019',           icon: 'sms',            perm: 'settings.sms' },
+    { value: 'wa-templates',   label: 'תבניות וואטסאפ',    desc: 'תבניות הודעה וקיצורים לקומפוזר', icon: 'forum',    perm: 'settings.wa_templates' },
+    { value: 'wa-alerts',      label: 'התראות ניתוק וואטסאפ', desc: 'הודעה לקבוצה כשנציג מתנתק', icon: 'notification_important', perm: 'settings.wa_alerts' },
+    { value: 'ai',             label: 'בינה מלאכותית',     desc: 'בחירת מודל AI לניסוח תוכן',  icon: 'smart_toy',      perm: 'settings.ai' },
+    { value: 'bulk',           label: 'עדכון המוני',        desc: 'עדכון נתונים בכמות',         icon: 'sync',           perm: 'settings.bulk' },
+    { value: 'lead-visibility', label: 'הרשאות צפייה',      desc: 'מי רואה אילו לידים',          icon: 'visibility',     perm: 'settings.lead_visibility' },
+    { value: 'menu',           label: 'תפריט',             desc: 'הסתרה וסידור התפריט',        icon: 'menu',           perm: 'settings.menu' },
+  ].filter((s) => (s.perm ? can(s.perm) : s.show));
   const activeSection = SETTINGS_SECTIONS.find((s) => s.value === section);
 
   return (
@@ -299,7 +308,7 @@ export default function Settings() {
           </Card>
         </TabsContent>
 
-        {isAdmin && (
+        {can('settings.users') && (
           <TabsContent value="users">
             {/* The full Representatives screen, embedded — single source of truth
                 for managing the sales team (was duplicated as a weaker tab). */}
@@ -309,19 +318,27 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {canManagePermissions && (
+          <TabsContent value="permissions" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <PermissionsTab />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {can('settings.lead_visibility') && (
           <TabsContent value="lead-visibility" className="space-y-6">
             <LeadVisibilityTab />
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.statuses') && (
           <TabsContent value="statuses">
             <StatusManagement />
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.lead_import') && (
           <TabsContent value="lead-import" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <ImportLeadsTab />
@@ -329,7 +346,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.data_import') && (
           <TabsContent value="import" className="space-y-6">
             <Card>
               <CardHeader>
@@ -352,7 +369,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.quote_defaults') && (
           <TabsContent value="quote-defaults" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <QuoteDefaultsTab />
@@ -360,7 +377,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.closures') && (
           <TabsContent value="closures" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <CompanyClosuresTab />
@@ -368,7 +385,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.sms') && (
           <TabsContent value="sms" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <Sms019SettingsTab />
@@ -376,7 +393,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.wa_templates') && (
           <TabsContent value="wa-templates" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <WhatsAppTemplatesTab />
@@ -384,7 +401,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.wa_alerts') && (
           <TabsContent value="wa-alerts" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <WhatsAppAlertsTab />
@@ -392,7 +409,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.ai') && (
           <TabsContent value="ai" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <AiSettingsTab />
@@ -408,7 +425,7 @@ export default function Settings() {
           </TabsContent>
         )}
 
-        {isAdmin && (
+        {can('settings.menu') && (
           <TabsContent value="menu" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <MenuManagementTab />
@@ -417,7 +434,7 @@ export default function Settings() {
         )}
       </Tabs>
 
-      {isAdmin && showImportOrders && (
+      {can('settings.data_import') && showImportOrders && (
         <Suspense fallback={null}>
           <ImportOrders open={showImportOrders} onOpenChange={setShowImportOrders} />
         </Suspense>

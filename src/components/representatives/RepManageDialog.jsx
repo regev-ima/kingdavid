@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import UserAvatar from '@/components/shared/UserAvatar';
 import WhatsAppSettingsTab from '@/components/representatives/WhatsAppSettingsTab';
-import { GRANTABLE_PERMISSIONS, getUserScope, USER_SCOPES } from '@/lib/rbac';
+import RepPermissionsTab from '@/components/representatives/RepPermissionsTab';
+import { ACCESS_LEVEL_META, getAccessLevel } from '@/lib/permissions';
 
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'מנהל' },
@@ -107,7 +108,6 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
   const [schedule, setSchedule] = useState(() => initSchedule(rep));
   const [annualDays, setAnnualDays] = useState(rep?.annual_vacation_days ?? '');
   const [vacations, setVacations] = useState(() => rep?.vacation_days || []);
-  const [permissions, setPermissions] = useState(() => rep?.extra_permissions || {});
   const [documents, setDocuments] = useState(() => rep?.documents || []);
 
   const [resetting, setResetting] = useState(false);
@@ -243,13 +243,6 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
       successMsg: 'ימי החופשה נשמרו',
     });
 
-  // ── Permissions ──
-  const togglePermission = (key, value) =>
-    setPermissions((prev) => ({ ...prev, [key]: value }));
-
-  const handleSavePermissions = () =>
-    saveMutation.mutate({ data: { extra_permissions: permissions }, successMsg: 'ההרשאות נשמרו' });
-
   // ── Documents (auto-persist on upload / delete) ──
   const persistDocuments = async (nextDocs, successMsg) => {
     try {
@@ -288,13 +281,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
   const handleDeleteDoc = (id) =>
     persistDocuments(documents.filter((d) => d.id !== id), 'הקובץ נמחק');
 
-  const scope = getUserScope({ ...rep, role });
-  const scopeLabel = {
-    [USER_SCOPES.ADMIN]: 'מנהל — גישה מלאה',
-    [USER_SCOPES.SALES]: 'נציג מכירות — לידים, הצעות והזמנות שלו',
-    [USER_SCOPES.FACTORY]: 'נציג מפעל — אזור המפעל והייצור',
-    [USER_SCOPES.BOOKKEEPER]: 'מנהלת חשבונות — אזור חשבוניות ופיננסים',
-  }[scope] || '';
+  const accessLevelLabel = ACCESS_LEVEL_META[getAccessLevel(rep)]?.label;
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -314,6 +301,11 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                 >
                   {isActive ? 'פעיל' : 'לא פעיל'}
                 </Badge>
+                {accessLevelLabel ? (
+                  <Badge variant="outline" className="shrink-0 font-normal">
+                    {accessLevelLabel}
+                  </Badge>
+                ) : null}
               </div>
               <DialogDescription className="truncate">{rep?.email}</DialogDescription>
             </div>
@@ -652,41 +644,13 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
             </TabsContent>
 
             {/* ── Permissions ── */}
-            <TabsContent value="permissions" className="mt-0 space-y-4">
-              <div className="rounded-lg bg-muted/40 p-3 text-sm">
-                <p className="font-medium">הרשאות לפי תפקיד</p>
-                <p className="text-muted-foreground text-xs mt-0.5">{scopeLabel}</p>
-                <p className="text-muted-foreground text-xs mt-1">
-                  ההרשאות שלמטה מתווספות מעל מה שהתפקיד כבר מאפשר.
-                </p>
-              </div>
-              <div className="space-y-2">
-                {GRANTABLE_PERMISSIONS.map((p) => {
-                  const checked = role === 'admin' ? true : permissions[p.key] === true;
-                  return (
-                    <div key={p.key} className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{p.label}</p>
-                        <p className="text-xs text-muted-foreground">{p.description}</p>
-                      </div>
-                      <Switch
-                        checked={checked}
-                        disabled={role === 'admin'}
-                        onCheckedChange={(v) => togglePermission(p.key, v)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              {role === 'admin' && (
-                <p className="text-[11px] text-muted-foreground">מנהל מקבל את כל ההרשאות באופן אוטומטי.</p>
-              )}
-              <div className="flex justify-end">
-                <Button onClick={handleSavePermissions} disabled={saving || role === 'admin'} className="gap-2">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  שמור הרשאות
-                </Button>
-              </div>
+            <TabsContent value="permissions" className="mt-0">
+              <RepPermissionsTab
+                rep={rep}
+                role={role}
+                saving={saving}
+                onSave={(data, successMsg) => saveMutation.mutate({ data, successMsg })}
+              />
             </TabsContent>
 
             {/* ── WhatsApp (Green API) ── */}

@@ -1,15 +1,28 @@
 import { canSeeAllLeads } from '@/lib/leadVisibility';
+import { can, isExplicitlyBlocked } from '@/lib/permissions';
 
-export const USER_SCOPES = {
-  ADMIN: 'admin',
-  SALES: 'sales_user',
-  FACTORY: 'factory_user',
-  // מנהלת חשבונות: narrow scope that only sees the invoicing area
-  // (orders waiting for / with an issued invoice). Detected via
-  // `role === 'bookkeeper'` OR `department === 'bookkeeping'` so
-  // existing user records can be flagged either way.
-  BOOKKEEPER: 'bookkeeper',
-  ANON: 'anonymous',
+// The scope primitives live in lib/userScope so that lib/permissions can use
+// them to compute its baselines without importing this file back — see the
+// header of that file. Re-exported here so every existing
+// `import { isAdmin, USER_SCOPES } from '@/lib/rbac'` keeps working untouched.
+import {
+  USER_SCOPES,
+  getUserScope,
+  isAdmin,
+  isSalesUser,
+  isFactoryUser,
+  isBookkeeperUser,
+  hasExtraPermission,
+} from '@/lib/userScope';
+
+export {
+  USER_SCOPES,
+  getUserScope,
+  isAdmin,
+  isSalesUser,
+  isFactoryUser,
+  isBookkeeperUser,
+  hasExtraPermission,
 };
 
 // ── Grantable per-rep permissions ───────────────────────────────────────
@@ -46,75 +59,75 @@ export const GRANTABLE_PERMISSIONS = [
   },
 ];
 
-// True when `key` is switched on in the rep's extra_permissions blob.
-// Admins implicitly have every grantable permission.
-export function hasExtraPermission(user, key) {
-  if (!user) return false;
-  if (isAdmin(user)) return true;
-  return user.extra_permissions?.[key] === true;
-}
+// ── Workspace gates ─────────────────────────────────────────────────────
+// Every gate below is the OLD rule run through gate(), which layers the new
+// permissions system on top in the only two directions that are safe:
+//
+//   widen   — `|| can(user, key)`. Granting a capability from
+//             הגדרות ← הרשאות ותפקידים actually opens the workspace, instead
+//             of flipping a switch that no gate reads.
+//   narrow  — but only on an EXPLICIT block. isExplicitlyBlocked() answers
+//             "did somebody deliberately turn this off for this person or for
+//             their access level?", not "would the new system have allowed
+//             it?". A default or a baseline that merely disagrees with the
+//             legacy rule can never close a door that is open today.
+//
+// The legacy expression is passed in whole — role checks AND per-rep grants —
+// so it stays the floor. That matters at the edges: canManageService's legacy
+// rule admits a bookkeeper holding `can_manage_service`, while the catalog's
+// service.view baseline does not, and only keeping the original expression
+// preserves that person's access.
 
-export function getUserScope(user) {
-  if (!user) return USER_SCOPES.ANON;
-  if (user.role === 'admin') return USER_SCOPES.ADMIN;
-  if (user.department === 'factory' || user.role === 'factory_user') return USER_SCOPES.FACTORY;
-  if (user.department === 'bookkeeping' || user.role === 'bookkeeper') return USER_SCOPES.BOOKKEEPER;
-  return USER_SCOPES.SALES;
-}
-
-export function isAdmin(user) {
-  return getUserScope(user) === USER_SCOPES.ADMIN;
-}
-
-export function isSalesUser(user) {
-  return getUserScope(user) === USER_SCOPES.SALES;
-}
-
-export function isFactoryUser(user) {
-  return getUserScope(user) === USER_SCOPES.FACTORY;
-}
-
-export function isBookkeeperUser(user) {
-  return getUserScope(user) === USER_SCOPES.BOOKKEEPER;
+function gate(user, key, legacyAllows) {
+  if (isExplicitlyBlocked(user, key)) return false;
+  return legacyAllows || can(user, key);
 }
 
 export function canAccessSalesWorkspace(user) {
-  return isAdmin(user) || isSalesUser(user);
+  return gate(user, 'leads.view', isAdmin(user) || isSalesUser(user));
 }
 
 export function canAccessFactoryWorkspace(user) {
-  return isAdmin(user) || isFactoryUser(user);
+  return gate(user, 'factory.view', isAdmin(user) || isFactoryUser(user));
 }
 
 export function canAccessBookkeepingWorkspace(user) {
-  return isAdmin(user) || isBookkeeperUser(user);
+  return gate(user, 'finance.bookkeeping', isAdmin(user) || isBookkeeperUser(user));
 }
 
 // Pages the bookkeeper needs read-access to so she can chase invoices —
 // orders, quotes, and the finance dashboard. Sales reps + admin keep
 // their existing access; bookkeeper is added on top.
 export function canViewOrdersWorkspace(user) {
-  return canAccessSalesWorkspace(user) || isBookkeeperUser(user);
+  return gate(user, 'orders.view', canAccessSalesWorkspace(user) || isBookkeeperUser(user));
 }
 
 export function canViewFinanceWorkspace(user) {
-  return isAdmin(user) || isBookkeeperUser(user) || hasExtraPermission(user, 'view_finance');
+  return gate(
+    user,
+    'finance.view',
+    isAdmin(user) || isBookkeeperUser(user) || hasExtraPermission(user, 'view_finance'),
+  );
 }
 
 // Grantable access to the Bulk Update tool. Admins always; otherwise the
 // `bulk_update` extra permission opens it for a specific rep.
 export function canUseBulkUpdate(user) {
-  return isAdmin(user) || hasExtraPermission(user, 'bulk_update');
+  return gate(user, 'settings.bulk', isAdmin(user) || hasExtraPermission(user, 'bulk_update'));
 }
 
 // Shift schedule ("שיבוץ משמרות"). Everyone authenticated can VIEW the weekly
 // board; admins — or a rep granted `edit_schedule` — may assign reps to shifts.
 export function canEditSchedule(user) {
-  return isAdmin(user) || hasExtraPermission(user, 'edit_schedule');
+  return gate(
+    user,
+    'team.shift_schedule_edit',
+    isAdmin(user) || hasExtraPermission(user, 'edit_schedule'),
+  );
 }
 
 export function canAccessSupportWorkspace(user) {
-  return isAdmin(user) || isFactoryUser(user) || isSalesUser(user);
+  return gate(user, 'service.view', isAdmin(user) || isFactoryUser(user) || isSalesUser(user));
 }
 
 export function canAccessReturnsWorkspace(user) {
@@ -139,7 +152,11 @@ export function canOpenServiceTicket(user) {
 // imports. Admins always have it.
 export function canManageService(user) {
   if (!user) return false;
-  return isAdmin(user) || user.can_manage_service === true || hasExtraPermission(user, 'manage_service');
+  return gate(
+    user,
+    'service.manage',
+    isAdmin(user) || user.can_manage_service === true || hasExtraPermission(user, 'manage_service'),
+  );
 }
 
 // Assigning a service follow-up task to a rep is a manager action.
@@ -147,8 +164,25 @@ export function canAssignServiceTask(user) {
   return canManageService(user);
 }
 
+// Deliberately still the plain `role === 'admin'` identity check.
+//
+// A dozen screens call this to mean a dozen different things — "show the
+// manager columns on Orders", "let Marketing load at all", "reveal the team
+// tab on the dashboard". OR-ing one permission into it would open all of them
+// together, which is the opposite of the fine-grained control this system is
+// for. Screens that want to admit a מנהל חנות or a מנהל ראשי ask for the
+// specific capability instead: can(user, 'marketing.view'), can(user,
+// 'settings.statuses'), and so on.
 export function canAccessAdminOnly(user) {
   return isAdmin(user);
+}
+
+// The named gates the sidebar and the settings grid use. They exist so that
+// the nav table stays a list of `can(...)` keys rather than a pile of ad-hoc
+// predicates, and so a permission that gates a screen is greppable from the
+// screen's entry.
+export function canReach(user, permissionKey) {
+  return can(user, permissionKey);
 }
 
 function normalized(value) {

@@ -9,6 +9,7 @@
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
+    "check:permissions": "node scripts/check-permissions.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

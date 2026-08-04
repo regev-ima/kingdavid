@@ -5,6 +5,9 @@ import { supabase } from './supabaseClient';
  */
 const TABLE_MAP = {
   AppPolicy: 'app_policies',
+  // id = the access level ('rep' | 'store_manager' | 'chief_manager'), so the
+  // generic .update(id, …) below addresses a row directly.
+  RolePermission: 'role_permissions',
   Lead: 'leads',
   User: 'users',
   Customer: 'customers',
