@@ -23,9 +23,23 @@
 //   'disconnect' { user_id? } (admin only)          → detach the Green API instance
 //              (clear creds, stop webhooks) but KEEP the recorded chat history
 //   'diagnose' { user_id? }                         → compare our webhook config vs Green's
+//
+// Disconnect alerts (admin only) — the "tell the group when a rep's WhatsApp
+// drops" feature. Config lives in whatsapp_alert_settings; the alert itself is
+// raised by greenApiWebhook (live) and greenApiStateMonitor (sweep):
+//   'alerts_get'                                    → config + per-rep state + recent log
+//   'alerts_save'  { enabled, notifier_user_id, group_chat_id, cooldown_minutes,
+//                    notify_on_recovery }           → update the config
+//   'alerts_test'                                   → send a test message to the group
+//   'alerts_mute'  { user_id, muted }               → silence one rep's alerts
+//   'alerts_sweep'                                  → run the state sweep now
 
 import { getCorsHeaders, getUser, createServiceClient } from '../_shared/supabase.ts';
 import { getStateInstance, getGreenSettings, setWebhookSettings, buildWebhookUrlWithToken, callGreenApi } from '../_shared/greenApi.ts';
+import {
+  handleAccountState, loadAlertSettings, sweepAccounts, sendTestAlert,
+  describeGroup, normalizeChatId, stateLabelHe,
+} from '../_shared/whatsappAlerts.ts';
 
 function maskToken(t: string) {
   return t ? `••••${t.slice(-4)}` : '';
@@ -177,6 +191,15 @@ Deno.serve(async (req) => {
         .update({ state: stateInstance, last_state_at: new Date().toISOString() })
         .eq('id', acc.id);
 
+      // Someone opened the connection screen — a third chance (after the live
+      // webhook and the scheduled sweep) to notice this rep has dropped, or to
+      // close out an outage that just ended. Never fatal to the request.
+      try {
+        await handleAccountState(svc, acc, stateInstance, 'check');
+      } catch (e) {
+        console.error('[greenApiSettings] disconnect alert failed', e);
+      }
+
       return Response.json({
         ok: true,
         state: stateInstance,
@@ -205,6 +228,14 @@ Deno.serve(async (req) => {
       await svc.from('whatsapp_accounts')
         .update({ state: stateInstance, last_state_at: new Date().toISOString() })
         .eq('id', acc.id);
+      // The QR dialog polls until the phone links, so this is where a recovery
+      // is seen first — the group gets the "back online" message the second the
+      // rep finishes scanning, rather than on the next sweep.
+      try {
+        await handleAccountState(svc, acc, stateInstance, 'check');
+      } catch (e) {
+        console.error('[greenApiSettings] disconnect alert failed', e);
+      }
       const type = qr.data?.type || (qr.ok ? 'unknown' : 'error');
       return Response.json({
         ok: true,
@@ -359,6 +390,149 @@ Deno.serve(async (req) => {
         settings_ok: settings.ok,
         last_webhook_at: acc.last_webhook_at || null,
       }, { headers: cors });
+    }
+
+    // ── Disconnect alerts ───────────────────────────────────────────────────
+    // Everything below is admin-only: it configures a message that goes out to
+    // a WhatsApp group on the whole team's behalf, and it reads monitor_token.
+    if (action.startsWith('alerts_')) {
+      if (!isAdmin) {
+        return Response.json({ ok: false, error: 'Forbidden' }, { status: 403, headers: cors });
+      }
+
+      if (action === 'alerts_get') {
+        const settings = await loadAlertSettings(svc);
+
+        // Every rep with a Green API account, plus their live-ish state, so the
+        // screen can show who would be alerted about and who can do the
+        // alerting. Two queries + a join in JS rather than a PostgREST embed —
+        // the FK name isn't something this function should depend on.
+        // api_token is read only to derive `configured` and is never returned,
+        // same as the 'list' action above.
+        const { data: accounts } = await svc
+          .from('whatsapp_accounts')
+          .select('id, user_id, instance_id, api_token, state, phone, is_active, alerts_muted, was_authorized, disconnected_since, alerted_since, alert_sent_at, alert_state, alert_error, last_state_at')
+          .order('updated_date', { ascending: false });
+        const { data: users } = await svc
+          .from('users')
+          .select('id, full_name, email, role, is_active');
+
+        const nameOf = new Map((users || []).map((u: any) => [u.id, u.full_name || u.email]));
+        const reps = (accounts || []).map((a: any) => ({
+          user_id: a.user_id,
+          name: nameOf.get(a.user_id) || 'לא ידוע',
+          configured: !!(a.instance_id && a.api_token),
+          state: a.state,
+          state_label: stateLabelHe(a.state),
+          connected: a.state === 'authorized',
+          phone: a.phone,
+          is_active: a.is_active !== false,
+          was_authorized: !!a.was_authorized,
+          alerts_muted: !!a.alerts_muted,
+          disconnected_since: a.disconnected_since,
+          alerted: !!a.alerted_since,
+          alert_sent_at: a.alert_sent_at,
+          alert_error: a.alert_error,
+          last_state_at: a.last_state_at,
+        }));
+
+        const { data: log } = await svc
+          .from('whatsapp_alert_log')
+          .select('id, rep_name, kind, state, source, chat_id, ok, error, created_date')
+          .order('created_date', { ascending: false })
+          .limit(20);
+
+        // Only ever a hint of monitor_token — it authenticates the sweep.
+        const tok = settings?.monitor_token || '';
+        return Response.json({
+          ok: true,
+          settings: settings ? {
+            enabled: settings.enabled,
+            notifier_user_id: settings.notifier_user_id,
+            group_chat_id: settings.group_chat_id,
+            cooldown_minutes: settings.cooldown_minutes,
+            notify_on_recovery: settings.notify_on_recovery,
+            monitor_token_hint: tok ? `••••${tok.slice(-4)}` : '',
+          } : null,
+          reps,
+          log: log || [],
+        }, { headers: cors });
+      }
+
+      if (action === 'alerts_save') {
+        const patch: Record<string, unknown> = {
+          updated_by: user.email || null,
+          updated_date: new Date().toISOString(),
+        };
+        if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
+        if (typeof body.notify_on_recovery === 'boolean') patch.notify_on_recovery = body.notify_on_recovery;
+        if ('notifier_user_id' in body) patch.notifier_user_id = body.notifier_user_id || null;
+        if ('group_chat_id' in body) {
+          const chatId = normalizeChatId(body.group_chat_id);
+          if (!chatId) {
+            return Response.json({ ok: false, error: 'group_chat_id_invalid' }, { status: 400, headers: cors });
+          }
+          patch.group_chat_id = chatId;
+        }
+        if ('cooldown_minutes' in body) {
+          const n = Number(body.cooldown_minutes);
+          if (!Number.isFinite(n) || n < 0) {
+            return Response.json({ ok: false, error: 'cooldown_invalid' }, { status: 400, headers: cors });
+          }
+          patch.cooldown_minutes = Math.round(n);
+        }
+
+        // The notifier sends through their own instance, so an unconfigured
+        // one would make every alert fail silently. Refuse it up front.
+        if (patch.notifier_user_id) {
+          const { data: acc } = await svc
+            .from('whatsapp_accounts').select('instance_id, api_token')
+            .eq('user_id', patch.notifier_user_id).maybeSingle();
+          if (!acc?.instance_id || !acc?.api_token) {
+            return Response.json({ ok: false, error: 'notifier_not_configured' }, { status: 400, headers: cors });
+          }
+        }
+
+        const { error } = await svc.from('whatsapp_alert_settings').update(patch).eq('id', 1);
+        if (error) {
+          console.error('[greenApiSettings] alerts_save failed', error);
+          return Response.json({ ok: false, error: error.message }, { status: 500, headers: cors });
+        }
+
+        // Report back whether the group is real and reachable from the
+        // notifier's instance — a wrong id is otherwise invisible until the
+        // first real outage goes unannounced.
+        const saved = await loadAlertSettings(svc);
+        const group = saved ? await describeGroup(svc, saved) : null;
+        return Response.json({ ok: true, saved: true, group }, { headers: cors });
+      }
+
+      if (action === 'alerts_test') {
+        const res = await sendTestAlert(svc, user.email);
+        return Response.json(
+          { ok: !!res.ok, error: res.ok ? undefined : res.error, chat_id: res.chatId },
+          { headers: cors },
+        );
+      }
+
+      if (action === 'alerts_mute') {
+        const target = String(body.user_id || '').trim();
+        if (!target) {
+          return Response.json({ ok: false, error: 'user_id_required' }, { status: 400, headers: cors });
+        }
+        const { error } = await svc.from('whatsapp_accounts')
+          .update({ alerts_muted: !!body.muted })
+          .eq('user_id', target);
+        if (error) {
+          return Response.json({ ok: false, error: error.message }, { status: 500, headers: cors });
+        }
+        return Response.json({ ok: true, muted: !!body.muted }, { headers: cors });
+      }
+
+      if (action === 'alerts_sweep') {
+        const summary = await sweepAccounts(svc, 'ui');
+        return Response.json({ ok: true, ...summary }, { headers: cors });
+      }
     }
 
     return Response.json({ ok: false, error: 'unknown_action' }, { status: 400, headers: cors });
