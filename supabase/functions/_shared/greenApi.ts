@@ -110,6 +110,19 @@ export async function setWebhookSettings(acc: GreenAccount, webhookUrl: string) 
 
 // ── Webhook normalisation ───────────────────────────────────────────────────
 
+/**
+ * Two identities live in every webhook and they are NOT the same one:
+ *
+ *   sender*  — who wrote THIS message. On an outgoing webhook that is the rep
+ *              themselves; Green fills senderData with the instance owner.
+ *   contact* — who the conversation is WITH. Always the other side, whichever
+ *              direction the message went.
+ *
+ * Collapsing the two is what made every conversation in the list show the
+ * rep's own WhatsApp name and phone number instead of the customer's: a chat
+ * row first seen through an outgoing message (the rep answering from their
+ * phone) was seeded from senderData, i.e. from the rep.
+ */
 export interface NormalizedMessage {
   kind: 'message';
   idInstance: string;
@@ -117,9 +130,13 @@ export interface NormalizedMessage {
   chatId: string;
   isGroup: boolean;
   direction: 'incoming' | 'outgoing';
+  /** Author of this message — the rep on an outgoing one. Message-level only. */
   senderName: string;
   senderPhone: string;
+  /** The other side of the conversation. '' when Green doesn't name them. */
   contactName: string;
+  /** The other side's number, from the chat id. '' for groups. */
+  contactPhone: string;
   messageType: string;
   body: string;
   mediaUrl: string | null;
@@ -189,6 +206,18 @@ function phoneFromChatId(chatId: string): string {
   return chatId.replace(/@c\.us$/, '').replace(/@g\.us$/, '');
 }
 
+// Green happily reports a bare number as a "name" when the contact isn't saved
+// in the phone book. Storing that as contact_name freezes raw digits into the
+// chat title and beats the UI's own phone formatting, so treat it as no name
+// and let the phone fallback do its job.
+const PHONE_LIKE = /^\+?[\d][\d\s()\-.]*$/;
+
+function contactLabel(raw: unknown): string {
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  if (!name || PHONE_LIKE.test(name)) return '';
+  return name;
+}
+
 export function normalizeWebhook(payload: any): NormalizedWebhook | null {
   if (!payload || typeof payload !== 'object') return null;
   const typeWebhook: string = payload.typeWebhook || '';
@@ -206,20 +235,46 @@ export function normalizeWebhook(payload: any): NormalizedWebhook | null {
 
   const sd = payload.senderData || {};
   const chatId: string = sd.chatId || '';
+  const isGroup = /@g\.us$/.test(chatId);
   const { type, body, mediaUrl, fileName } = extractContent(payload.messageData || {});
   const tsSec = Number(payload.timestamp);
   const timestamp = Number.isFinite(tsSec) && tsSec > 0 ? new Date(tsSec * 1000).toISOString() : null;
+
+  // Who wrote this message. Fine to take from senderData — that is exactly
+  // what senderData describes.
+  const senderName = sd.senderContactName || sd.senderName || sd.chatName || '';
+
+  // Who the conversation is with. Deliberately NOT senderData on an outgoing
+  // message, where every sender-* field is the rep's own WhatsApp profile.
+  let contactName: string;
+  if (isGroup) {
+    // The conversation IS the group. senderContactName is whichever member
+    // happened to speak, which never identifies the chat.
+    contactName = contactLabel(sd.chatName);
+  } else if (isIncoming) {
+    contactName = contactLabel(sd.senderContactName) || contactLabel(sd.chatName)
+      || contactLabel(sd.senderName);
+  } else {
+    // chatName is the only field naming the other side here — and when it
+    // merely echoes our own profile name, it isn't naming them either.
+    const ours = [contactLabel(sd.senderName), contactLabel(sd.senderContactName)].filter(Boolean);
+    const named = contactLabel(sd.chatName);
+    contactName = ours.includes(named) ? '' : named;
+  }
 
   return {
     kind: 'message',
     idInstance,
     idMessage: payload.idMessage ? String(payload.idMessage) : null,
     chatId,
-    isGroup: /@g\.us$/.test(chatId),
+    isGroup,
     direction: isIncoming ? 'incoming' : 'outgoing',
-    senderName: sd.senderContactName || sd.senderName || sd.chatName || '',
+    senderName,
+    // sd.sender is the rep on an outgoing message and an individual member
+    // inside a group, so it can only ever be the message's author.
     senderPhone: phoneFromChatId(sd.sender || chatId),
-    contactName: sd.senderContactName || sd.chatName || sd.senderName || '',
+    contactName,
+    contactPhone: isGroup ? '' : phoneFromChatId(chatId),
     messageType: type,
     body,
     mediaUrl,
