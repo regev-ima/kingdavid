@@ -372,6 +372,18 @@ export default function CustomerDetails() {
                   )}
                 </div>
                 <div className="space-y-2">
+                  <Label>טלפון נוסף</Label>
+                  {isEditing ? (
+                    <Input
+                      dir="ltr"
+                      value={formData.phone_2 || ''}
+                      onChange={(e) => setFormData({...formData, phone_2: e.target.value})}
+                    />
+                  ) : (
+                    <p className="text-sm">{customer.phone_2 || '-'}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
                   <Label>אימייל</Label>
                   {isEditing ? (
                     <Input

@@ -1,4 +1,5 @@
 import { createServiceClient } from '../_shared/supabase.ts';
+import { readIdNumber, readPaymentsCount, updateOrderWithSchemaFallback } from '../_shared/hyp.ts';
 
 // Server-to-server callback from Hyp. The notify URL configured in the Hyp
 // dashboard points to this function. Hyp POSTs (or in some configurations
@@ -91,6 +92,9 @@ Deno.serve(async (req) => {
     const l4digit = params.get('L4digit') || '';
     const brand = params.get('Brand') || '';
     const acode = params.get('ACode') || '';
+    // Installments and the payer's ת.ז., both printed on the order PDF.
+    const paymentsCount = readPaymentsCount(params);
+    const idNumber = readIdNumber(params);
 
     console.log('hyp-notify received', {
       Order: orderParam,
@@ -122,9 +126,12 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+    // `*` rather than a column list: naming customer_id_number explicitly would
+    // make the whole lookup — and with it the payment — fail on a database that
+    // hasn't run the migration yet.
     const { data: order, error: orderErr } = await supabase
       .from('orders')
-      .select('id, total, payments')
+      .select('*')
       .eq('id', orderId)
       .single();
 
@@ -154,6 +161,8 @@ Deno.serve(async (req) => {
       hyp_acode: acode,
       hyp_brand: brand,
       hyp_l4digit: l4digit,
+      hyp_payments_count: paymentsCount,
+      hyp_user_id: idNumber,
     };
 
     const updatedPayments = [...existingPayments, paymentEntry];
@@ -161,13 +170,17 @@ Deno.serve(async (req) => {
 
     // amount_paid is not a real column on this schema (derived from the
     // payments JSONB by the UI). Writing it PostgREST-errors out.
-    const { error: updateErr } = await supabase
-      .from('orders')
-      .update({
-        payments: updatedPayments,
-        payment_status: newStatus,
-      })
-      .eq('id', order.id);
+    const orderUpdate: Record<string, unknown> = {
+      payments: updatedPayments,
+      payment_status: newStatus,
+    };
+    // Same rule as hyp-verify: the first charge that carries a ת.ז. fills the
+    // order's field, and a later one never overwrites it.
+    if (idNumber && !String(order.customer_id_number || '').trim()) {
+      orderUpdate.customer_id_number = idNumber;
+    }
+
+    const updateErr = await updateOrderWithSchemaFallback(supabase, order.id, orderUpdate);
 
     if (updateErr) {
       console.error('hyp-notify: failed to update order', updateErr);

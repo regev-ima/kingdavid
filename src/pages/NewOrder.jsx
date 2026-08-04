@@ -74,7 +74,15 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     source: 'store',
     customer_name: '',
     customer_phone: '',
+    // Second number for the delivery — the spouse, the office, whoever the
+    // driver reaches when the first one doesn't answer. Printed on the order.
+    customer_phone_2: '',
     customer_email: '',
+    // Optional. Hyp returns the payer's ת.ז. with a card charge, but a cash sale
+    // never touches Hyp — so the rep can type it here and keep the order
+    // complete either way. hyp-verify / hyp-notify only fill it when empty, so
+    // what's typed here is never overwritten.
+    customer_id_number: '',
     delivery_address: '',
     delivery_city: '',
     property_type: 'apartment',
@@ -196,12 +204,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
         base44.supabase
           .from('customers')
-          .select('id, full_name, phone, email, address, city')
+          .select('id, full_name, phone, phone_2, email, address, city')
           .ilike('phone', pattern)
           .limit(5),
         base44.supabase
           .from('leads')
-          .select('id, full_name, phone, email, address, city, status')
+          .select('id, full_name, phone, phone_2, email, address, city, status')
           .ilike('phone', pattern)
           .limit(5),
       ]);
@@ -234,6 +242,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       ...prev,
       customer_name: match.full_name || prev.customer_name,
       customer_phone: match.phone || prev.customer_phone,
+      customer_phone_2: match.phone_2 || prev.customer_phone_2,
       customer_email: match.email || prev.customer_email,
       delivery_address: match.address || prev.delivery_address,
       delivery_city: match.city || prev.delivery_city,
@@ -258,6 +267,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         lead_id: quote.lead_id,
         customer_name: quote.customer_name,
         customer_phone: quote.customer_phone,
+        customer_phone_2: quote.customer_phone_2 || prev.customer_phone_2,
         customer_email: quote.customer_email || '',
         delivery_address: quote.delivery_address || prev.delivery_address,
         delivery_city: quote.delivery_city || prev.delivery_city,
@@ -286,6 +296,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         lead_id: lead.id,
         customer_name: lead.full_name,
         customer_phone: lead.phone,
+        customer_phone_2: lead.phone_2 || '',
         customer_email: lead.email || '',
         delivery_address: lead.address || '',
         delivery_city: lead.city || '',
@@ -304,6 +315,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         customer_id: customer.id,
         customer_name: customer.full_name || '',
         customer_phone: customer.phone || '',
+        customer_phone_2: customer.phone_2 || '',
         customer_email: customer.email || '',
         delivery_address: customer.address || '',
         delivery_city: customer.city || '',
@@ -381,12 +393,19 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
           last_order_date: new Date().toISOString(),
           total_orders: (existingCustomers[0].total_orders || 0) + 1,
           lifetime_value: (existingCustomers[0].lifetime_value || 0) + data.total,
+          // Fill a second number the customer card doesn't have yet, never
+          // replace one it does: this order's form may have been prefilled
+          // from a lead, and that's no reason to overwrite the card.
+          ...(data.customer_phone_2 && !existingCustomers[0].phone_2
+            ? { phone_2: data.customer_phone_2 }
+            : {}),
         });
       } else {
         // Create new customer
         const customer = await base44.entities.Customer.create({
           full_name: data.customer_name,
           phone: data.customer_phone,
+          phone_2: data.customer_phone_2,
           email: data.customer_email,
           city: data.delivery_city,
           address: data.delivery_address,
@@ -841,11 +860,32 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 />
               </div>
               <div className="space-y-2">
+                <Label>טלפון נוסף</Label>
+                <IsraeliPhoneInput
+                  value={formData.customer_phone_2}
+                  onChange={(value) => setFormData({...formData, customer_phone_2: value})}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>אימייל</Label>
                 <Input
                   type="email"
                   value={formData.customer_email}
                   onChange={(e) => setFormData({...formData, customer_email: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>ת.ז.</Label>
+                <Input
+                  dir="ltr"
+                  inputMode="numeric"
+                  maxLength={9}
+                  placeholder="לא חובה"
+                  value={formData.customer_id_number}
+                  // Digits only — Hyp returns it that way, and an order that
+                  // gets its ת.ז. from a card charge should look identical to
+                  // one where the rep typed it.
+                  onChange={(e) => setFormData({...formData, customer_id_number: e.target.value.replace(/\D/g, '')})}
                 />
               </div>
             </div>

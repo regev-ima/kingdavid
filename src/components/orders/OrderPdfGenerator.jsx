@@ -49,6 +49,29 @@ const OrderPdfGenerator = async (orderData) => {
     orderData.delivery_city ? `, ${safe(orderData.delivery_city)}` : ""
   }`.trim();
 
+  // Floor and apartment ride with the address — they're what the delivery crew
+  // needs, and floor 0 is a real answer (קומת קרקע), not a missing one.
+  const hasFloor = orderData.floor !== null && orderData.floor !== undefined && String(orderData.floor) !== "";
+  const floorApartment = [
+    hasFloor ? `קומה ${safe(orderData.floor)}` : "",
+    orderData.apartment_number ? `דירה ${safe(orderData.apartment_number)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  // The order stores the rep's email; the printed order should show their name.
+  // A failed lookup falls back to the email — the customer's copy naming the
+  // rep by address beats leaving "נציג מטפל" blank.
+  let repName = safe(orderData.rep1);
+  if (orderData.rep1) {
+    try {
+      const repRows = await base44.entities.User.filter({ email: orderData.rep1 }, null, 1);
+      if (repRows?.[0]?.full_name) repName = repRows[0].full_name;
+    } catch {
+      // keep the email
+    }
+  }
+
   const items = Array.isArray(orderData.items) ? orderData.items : [];
   const rows = items.map((item, idx) => {
     const addonsTotal = (item?.selected_addons || []).reduce(
@@ -134,12 +157,18 @@ const OrderPdfGenerator = async (orderData) => {
       }
       if (!refParts.length && p?.notes) refParts.push(esc(p.notes));
       const ref = refParts.length ? refParts.join(" · ") : "—";
+      // How many instalments the charge was split into. Hyp reports it per
+      // transaction (hyp-verify / hyp-notify store it), so it's a column on the
+      // payment rather than one number for the whole order — two cards can be
+      // split differently. Anything not cleared through Hyp has no count.
+      const installments = normalizeNumber(p?.hyp_payments_count);
       return `
         <tr>
           <td class="center">${i + 1}</td>
           <td class="center">${date}</td>
           <td>${method}</td>
           <td class="muted">${ref}</td>
+          <td class="center">${installments > 0 ? installments : "—"}</td>
           <td class="center">${money(p?.amount)}</td>
         </tr>`;
     })
@@ -242,11 +271,26 @@ const OrderPdfGenerator = async (orderData) => {
             <div class="kv">
               <div class="k">שם</div><div class="v">${esc(orderData.customer_name)}</div>
               ${
+                orderData.customer_phone_2
+                  ? `<div class="k">טלפון נוסף</div><div class="v" dir="ltr" style="text-align:right;">${esc(orderData.customer_phone_2)}</div>`
+                  : ""
+              }
+              ${
+                orderData.customer_id_number
+                  ? `<div class="k">ת.ז.</div><div class="v" dir="ltr" style="text-align:right;">${esc(orderData.customer_id_number)}</div>`
+                  : ""
+              }
+              ${
                 orderData.customer_email
                   ? `<div class="k">אימייל</div><div class="v">${esc(orderData.customer_email)}</div>`
                   : ""
               }
               <div class="k">כתובת</div><div class="v">${esc(customerAddress) || "—"}</div>
+              ${
+                floorApartment
+                  ? `<div class="k">קומה / דירה</div><div class="v">${esc(floorApartment)}</div>`
+                  : ""
+              }
             </div>
           </div>
 
@@ -259,6 +303,11 @@ const OrderPdfGenerator = async (orderData) => {
               <div class="k">מס׳ הזמנה</div><div class="v">${esc(orderData.order_number)}</div>
               <div class="k">תאריך</div><div class="v">${createdDate}</div>
               <div class="k">סטטוס תשלום</div><div class="v">${statusMeta.label}</div>
+              ${
+                repName
+                  ? `<div class="k">נציג מטפל</div><div class="v">${esc(repName)}</div>`
+                  : ""
+              }
             </div>
           </div>
         </div>
@@ -388,6 +437,7 @@ const OrderPdfGenerator = async (orderData) => {
                     <th class="center" style="width:90px;">תאריך</th>
                     <th>אמצעי תשלום</th>
                     <th>אסמכתא</th>
+                    <th class="center" style="width:74px;">תשלומים</th>
                     <th class="center" style="width:90px;">סכום</th>
                   </tr>
                 </thead>

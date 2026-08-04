@@ -34,6 +34,9 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
   const [formData, setFormData] = useState({
     full_name: '',
     phone: initialPhone,
+    // Second number, optional. Follows the lead into the quote, the order and
+    // the customer record — it's usually the number that matters at delivery.
+    phone_2: '',
     email: '',
     city: '',
     address: '',
@@ -177,6 +180,14 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
                   value={formData.phone}
                   onChange={(value) => handleChange('phone', value)}
                   required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone_2">טלפון נוסף</Label>
+                <IsraeliPhoneInput
+                  id="phone_2"
+                  value={formData.phone_2}
+                  onChange={(value) => handleChange('phone_2', value)}
                 />
               </div>
               <div className="space-y-2">

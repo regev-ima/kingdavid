@@ -9,6 +9,7 @@ import { getRepDisplayName } from '@/lib/repDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -355,6 +356,14 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 {[
                   { label: 'שם', value: order.customer_name, icon: User },
                   { label: 'טלפון', value: order.customer_phone, icon: Phone },
+                  // Editable here as well as in the order form: a second number
+                  // usually surfaces after the sale ("תתקשרו לאשתי לגבי
+                  // האספקה"), and this card is where the driver reads it off.
+                  { label: 'טלפון נוסף', value: order.customer_phone_2, icon: Phone, field: 'customer_phone_2', placeholder: 'הוסף מספר' },
+                  // Two ways in: Hyp returns it with a card charge (hyp-verify /
+                  // hyp-notify write it), and a cash sale never touches Hyp — so
+                  // it stays editable here too.
+                  { label: 'ת.ז.', value: order.customer_id_number, icon: CreditCard, field: 'customer_id_number', placeholder: 'הוסף ת.ז.', digitsOnly: true },
                   { label: 'אימייל', value: order.customer_email, icon: Mail },
                   { label: 'עיר', value: order.delivery_city, icon: MapPin },
                   { label: 'כתובת למשלוח', value: order.delivery_address, icon: Home },
@@ -363,7 +372,9 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                     { label: 'LTV', value: customer.lifetime_value != null ? `₪${customer.lifetime_value.toLocaleString()}` : null, icon: Wallet },
                   ] : []),
                 ]
-                  .filter((row) => row.value)
+                  // An editable row stays visible while empty — that's the only
+                  // way to fill it in; read-only rows still disappear.
+                  .filter((row) => row.value || (row.field && canEdit))
                   .map((row) => {
                     const Icon = row.icon;
                     return (
@@ -372,7 +383,30 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                           <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
                           <span>{row.label}</span>
                         </dt>
-                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate">{row.value}</dd>
+                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate">
+                          {row.field && canEdit ? (
+                            <Input
+                              // Re-key on the saved value so an external update
+                              // (or a failed save) doesn't leave a stale draft.
+                              key={row.value || ''}
+                              defaultValue={row.value || ''}
+                              dir="ltr"
+                              placeholder={row.placeholder}
+                              className="h-7 px-2 text-sm text-start"
+                              // On blur, not on every keystroke: a phone number
+                              // or an ID is only meaningful once it's finished.
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                const next = row.digitsOnly ? raw.replace(/\D/g, '') : raw;
+                                if (next !== (row.value || '')) {
+                                  updateOrderMutation.mutate({ [row.field]: next });
+                                }
+                              }}
+                            />
+                          ) : (
+                            row.value
+                          )}
+                        </dd>
                       </div>
                     );
                   })}
@@ -547,7 +581,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                             {payment.date ? format(new Date(payment.date), 'dd/MM/yyyy') : ''}
                             {payment.notes ? ` · ${payment.notes}` : ''}
                           </div>
-                          {(payment.hyp_transaction_id || payment.hyp_acode || payment.hyp_brand || payment.hyp_l4digit) && (
+                          {(payment.hyp_transaction_id || payment.hyp_acode || payment.hyp_brand || payment.hyp_l4digit || payment.hyp_payments_count) && (
                             <div className="text-[11px] text-muted-foreground/80 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5" dir="rtl">
                               {payment.hyp_transaction_id && (
                                 <span>מס׳ עסקה: <span dir="ltr">{payment.hyp_transaction_id}</span></span>
@@ -559,6 +593,9 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                                 <span>
                                   כרטיס: {payment.hyp_brand || ''}{payment.hyp_l4digit ? ` **** ${payment.hyp_l4digit}` : ''}
                                 </span>
+                              )}
+                              {payment.hyp_payments_count > 0 && (
+                                <span>תשלומים: {payment.hyp_payments_count}</span>
                               )}
                             </div>
                           )}
