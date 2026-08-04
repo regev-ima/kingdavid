@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, AlertTriangle, Ruler } from 'lucide-react';
 import {
   buildVariationSku,
+  filterSizesForBedTypes,
   formatDimensions,
   getSizeDimensions,
   resolveSizePrice,
@@ -81,6 +82,14 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     return map;
   }, [existingVariations]);
 
+  // A single product shows single sizes, a double shows doubles. The escape
+  // hatch exists because the catalog is one list and a product can be unusual.
+  const [showAllSizes, setShowAllSizes] = useState(false);
+  const relevantSizes = useMemo(() => (
+    showAllSizes ? activeSizes : filterSizesForBedTypes(activeSizes, product?.bed_type)
+  ), [activeSizes, product?.bed_type, showAllSizes]);
+  const hiddenCount = activeSizes.length - relevantSizes.length;
+
   const [prefix, setPrefix] = useState('');
   const [basePrice, setBasePrice] = useState('');
   const [selected, setSelected] = useState({});   // sizeId → true
@@ -91,6 +100,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     setPrefix(product?.sku_prefix || suggestSkuPrefix(product?.name));
     setSelected({});
     setPriceEdits({});
+    setShowAllSizes(false);
     // Seed the base price from the variation the product already sells at its
     // base size — that IS the base price, so nobody should retype it.
     const baseDims = getSizeDimensions(baseSize);
@@ -98,7 +108,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     setBasePrice(baseVariation?.base_price != null ? String(baseVariation.base_price) : '');
   }, [open, product?.id, product?.name, product?.sku_prefix, baseSize, existingByDims]);
 
-  const rows = useMemo(() => activeSizes.map((size) => {
+  const rows = useMemo(() => relevantSizes.map((size) => {
     const dims = getSizeDimensions(size);
     const key = dims ? `${dims.width_cm}x${dims.length_cm}` : null;
     const existing = key ? existingByDims.get(key) : null;
@@ -117,7 +127,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
         ? priceEdits[size.id]
         : (suggestedPrice != null ? String(suggestedPrice) : ''),
     };
-  }), [activeSizes, existingByDims, baseSize, prefix, basePrice, priceEdits, productSizePrices]);
+  }), [relevantSizes, existingByDims, baseSize, prefix, basePrice, priceEdits, productSizePrices]);
 
   const selectableRows = rows.filter((r) => r.dims && !r.existing);
   const selectedRows = selectableRows.filter((r) => selected[r.size.id]);
@@ -231,6 +241,17 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                 <span className="text-xs font-medium">
                   בחר הכל ({selectableRows.length} זמינות)
                 </span>
+                {(hiddenCount > 0 || showAllSizes) && (
+                  <button
+                    type="button"
+                    className="ms-auto text-[11px] text-primary hover:underline"
+                    onClick={() => setShowAllSizes((prev) => !prev)}
+                  >
+                    {showAllSizes
+                      ? 'הצג רק מידות שמתאימות למוצר'
+                      : `הצג גם ${hiddenCount} מידות אחרות`}
+                  </button>
+                )}
               </div>
 
               <div className="divide-y divide-border/60">

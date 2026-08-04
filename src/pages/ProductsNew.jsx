@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 import BulkSizesDialog from '@/components/product/BulkSizesDialog';
+import GlobalSizesList from '@/components/product/GlobalSizesList';
 import { suggestSkuPrefix } from '@/lib/productSizes';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -510,6 +511,7 @@ export default function ProductsNew() {
       <Tabs defaultValue="products" className="w-full" dir="rtl">
         <TabsList className="w-full h-auto flex flex-col sm:flex-row">
           <TabsTrigger value="products" className="w-full sm:w-auto">מוצרים ווריאציות</TabsTrigger>
+          <TabsTrigger value="sizes" className="w-full sm:w-auto">מידות</TabsTrigger>
           <TabsTrigger value="addons" className="w-full sm:w-auto">תוספות</TabsTrigger>
           <TabsTrigger value="bed-config" className="w-full sm:w-auto">תצורת מיטות</TabsTrigger>
         </TabsList>
@@ -1509,6 +1511,14 @@ export default function ProductsNew() {
           </div>
           </CardContent>
         </Card>
+        </TabsContent>
+
+        {/* The size catalog — the list every product ticks from, and where the
+            per-size surcharge lives. The screen existed as a component but was
+            never wired to a tab, which is why the catalog sat empty and sizes
+            were typed in per product. */}
+        <TabsContent value="sizes">
+          <GlobalSizesList />
         </TabsContent>
 
         <TabsContent value="addons">
