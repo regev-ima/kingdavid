@@ -73,7 +73,12 @@ const OrderPdfGenerator = async (orderData) => {
   }
 
   const items = Array.isArray(orderData.items) ? orderData.items : [];
-  const rows = items.map((item, idx) => {
+  // Delivery/assembly extras (הובלה והרכבה) live next to items on the order and
+  // their cost is already inside subtotal/total — without rows of their own the
+  // printed lines don't add up to the totals box and the customer never sees
+  // the delivery fee. Same merge the quote PDF does.
+  const extras = Array.isArray(orderData.extras) ? orderData.extras : [];
+  const itemRows = items.map((item, idx) => {
     const addonsTotal = (item?.selected_addons || []).reduce(
       (sum, addon) => sum + normalizeNumber(addon?.price),
       0,
@@ -125,6 +130,19 @@ const OrderPdfGenerator = async (orderData) => {
       extraInfoText: extraInfo.length ? esc(extraInfo.join(" | ")) : "",
     };
   });
+  const rows = [
+    ...itemRows,
+    ...extras.map((extra, j) => ({
+      idx: items.length + j + 1,
+      name: esc(extra?.name),
+      sku: "תוספת",
+      unitPrice: money(extra?.cost),
+      qty: "1",
+      qtyNum: 1,
+      lineTotal: money(extra?.cost),
+      extraInfoText: "",
+    })),
+  ];
 
   const subtotal = normalizeNumber(orderData.subtotal);
   const discount = normalizeNumber(orderData.discount_total);
@@ -160,7 +178,9 @@ const OrderPdfGenerator = async (orderData) => {
       // How many instalments the charge was split into. Hyp reports it per
       // transaction (hyp-verify / hyp-notify store it), so it's a column on the
       // payment rather than one number for the whole order — two cards can be
-      // split differently. Anything not cleared through Hyp has no count.
+      // split differently. When Hyp didn't report a count — or the payment
+      // wasn't a Hyp charge at all — the row is still one payment, so the
+      // column prints 1 rather than a dash.
       const installments = normalizeNumber(p?.hyp_payments_count);
       return `
         <tr>
@@ -168,7 +188,7 @@ const OrderPdfGenerator = async (orderData) => {
           <td class="center">${date}</td>
           <td>${method}</td>
           <td class="muted">${ref}</td>
-          <td class="center">${installments > 0 ? installments : "—"}</td>
+          <td class="center">${installments > 0 ? installments : "1"}</td>
           <td class="center">${money(p?.amount)}</td>
         </tr>`;
     })
