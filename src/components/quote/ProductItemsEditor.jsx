@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft, PencilLine } from 'lucide-react';
 import { productMatchesBedType } from '@/utils/bedType';
 import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
+import { lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 
 const VAT = 1.18;
 // Two decimals (agorot) so the displayed line totals sum exactly to the grand
@@ -39,11 +40,7 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
   const productById = (id) => products.find((p) => p.id === id);
 
   // Recompute a line's own pre-VAT total from qty / unit price / discount.
-  const withTotal = (it) => {
-    const addonsPrices = (it.selected_addons || []).reduce((s, a) => s + (a.price || 0), 0);
-    const gross = (it.quantity || 1) * ((it.unit_price || 0) + addonsPrices);
-    return { ...it, total: gross - gross * ((it.discount_percent || 0) / 100) };
-  };
+  const withTotal = (it) => ({ ...it, total: lineGrossPreVat(it) - lineDiscountPreVat(it) });
 
   const updateItem = (index, field, value) => {
     onChange(items.map((it, i) => (i === index ? withTotal({ ...it, [field]: value }) : it)));

@@ -63,6 +63,7 @@ import { buildLeadsById, canEditQuote } from '@/lib/rbac';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { toShareablePdfUrl } from '@/lib/pdfShareUrl';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+import { formatDiscountPercent } from '@/lib/discount';
 
 // Line prices are stored PRE-VAT; the whole app shows the customer incl-VAT with
 // two decimals, so the detail view must match (product AND add-on/config lines).
@@ -547,7 +548,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</TableCell>
+                        <TableCell>{item.discount_percent > 0 ? formatDiscountPercent(item.discount_percent) : '-'}</TableCell>
                         <TableCell className="font-semibold">{money2((item.total || 0) * VAT)}</TableCell>
                       </TableRow>
                     );
@@ -580,7 +581,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
 
               {/* Same shared summary component the create/edit forms use, so the
                   breakdown is identical everywhere. */}
-              <QuoteTotalsSummary items={quote.items} extras={quote.extras} discountTotal={quote.discount_total} />
+              <QuoteTotalsSummary items={quote.items} extras={quote.extras} total={quote.total} />
             </CardContent>
           </Card>
 

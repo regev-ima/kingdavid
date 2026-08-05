@@ -1,12 +1,13 @@
 import React from 'react';
+import { summaryRows } from '@/lib/quoteTotals';
 
 // Shared order/quote totals summary — used identically by NewQuote / NewOrder /
 // EditQuote so the breakdown is the same everywhere. Order (per owner request):
 //   סכום לפני מע״מ → מע״מ 18% → סה״כ כולל מע״מ → הנחה כולל מע״מ → סכום לתשלום
 // i.e. the LIST price (before discount), then the discount as a visible
 // subtraction down to the amount actually due. Two decimals (agorot) so the
-// lines add up. The final "סכום לתשלום" equals the stored quote/order total.
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+// lines add up. The arithmetic itself lives in lib/quoteTotals so this panel
+// and the stored quote/order total are the same calculation, not two.
 const money = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function Row({ label, value, className = '', strong = false }) {
@@ -18,22 +19,8 @@ function Row({ label, value, className = '', strong = false }) {
   );
 }
 
-export default function QuoteTotalsSummary({ items = [], extras = [], discountTotal = 0 }) {
-  // GROSS (list, before discount) items subtotal, pre-VAT.
-  const itemsGrossPreVat = round2(
-    (items || []).reduce((sum, it) => {
-      const addonsPrice = (it.selected_addons || []).reduce((a, x) => a + (x.price || 0), 0);
-      return sum + (it.quantity || 1) * ((it.unit_price || 0) + addonsPrice);
-    }, 0),
-  );
-  const discPreVat = round2(discountTotal);
-  const extrasIncl = round2((extras || []).reduce((s, e) => s + (e.cost || 0), 0));
-
-  const grossVat = round2(itemsGrossPreVat * 0.18);
-  const grossInclVat = round2(itemsGrossPreVat * 1.18 + extrasIncl); // total incl VAT, before discount
-  const discInclVat = round2(discPreVat * 1.18);
-  const toPay = round2(grossInclVat - discInclVat); // == stored total (items net *1.18 + extras)
-  const hasDiscount = discInclVat > 0;
+export default function QuoteTotalsSummary({ items = [], extras = [], total }) {
+  const { itemsGrossPreVat, grossVat, grossInclVat, discInclVat, toPay } = summaryRows(items, extras, total);
 
   return (
     <div className="mt-6 border border-border rounded-xl overflow-hidden">
@@ -41,7 +28,7 @@ export default function QuoteTotalsSummary({ items = [], extras = [], discountTo
         <Row label="סכום לפני מע״מ" value={money(itemsGrossPreVat)} />
         <Row label="מע״מ (18%)" value={money(grossVat)} />
         <Row label="סה״כ כולל מע״מ" value={money(grossInclVat)} strong />
-        {hasDiscount ? (
+        {discInclVat > 0 ? (
           <Row label="הנחה כולל מע״מ" value={`-${money(discInclVat)}`} className="text-red-600" />
         ) : null}
       </div>

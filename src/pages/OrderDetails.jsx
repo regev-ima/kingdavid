@@ -482,7 +482,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               
               {/* Same shared summary component as the create/edit forms + the
                   quote view, so the breakdown is identical everywhere. */}
-              <QuoteTotalsSummary items={order.items} extras={order.extras} discountTotal={order.discount_total} />
+              <QuoteTotalsSummary items={order.items} extras={order.extras} total={order.total} />
             </CardContent>
           </Card>
 
