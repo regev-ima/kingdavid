@@ -28,6 +28,7 @@ import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } f
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
+import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone, toLocalIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
@@ -489,34 +490,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     },
   });
 
-  // Mirrors NewQuote.calculateTotals so an order "speaks the same language" as
-  // the quote it may have come from: per-item percentage discounts feed both
-  // the (discounted) subtotal and a separate discount_total line, and VAT is
-  // charged on the discounted items subtotal only.
-  const calculateTotals = (items, extras = []) => {
-    const itemsSubtotal = items.reduce((sum, item) => {
-      const addonsTotal = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      const itemTotal = item.quantity * (item.unit_price + addonsTotal);
-      const discount = itemTotal * ((item.discount_percent || 0) / 100);
-      return sum + (itemTotal - discount);
-    }, 0);
-
-    const discount_total = items.reduce((sum, item) => {
-      const addonsTotal = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      const itemTotal = item.quantity * (item.unit_price + addonsTotal);
-      return sum + (itemTotal * ((item.discount_percent || 0) / 100));
-    }, 0);
-
-    // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
-    // VAT recomputed on top of them. VAT is only applied to the items subtotal.
-    const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-    // Round to agorot (2 decimals) so the total matches the sum of line totals.
-    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-    const subtotal = round2(itemsSubtotal + extrasTotal);
-    const vat_amount = round2(itemsSubtotal * 0.18);
-    const total = round2(subtotal + vat_amount);
-    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
-  };
+  // Shared with NewQuote / EditQuote so an order "speaks the same language" as
+  // the quote it may have come from — and so the totals panel and the stored
+  // total are the same calculation. See lib/quoteTotals.
+  const calculateTotals = calculateDocumentTotals;
 
   // ProductItemsEditor hands back a fresh items array; recompute grand totals.
   const handleItemsChange = (newItems) => {
@@ -528,10 +505,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       const newItems = prev.items.map((item, idx) => {
         if (idx !== index) return item;
         const updatedItem = { ...item, [field]: value };
-        const addonsTotal = (updatedItem.selected_addons || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = updatedItem.quantity * (updatedItem.unit_price + addonsTotal);
-        const discount = itemTotal * ((updatedItem.discount_percent || 0) / 100);
-        updatedItem.total = itemTotal - discount;
+        updatedItem.total = lineGrossPreVat(updatedItem) - lineDiscountPreVat(updatedItem);
         return updatedItem;
       });
       const totals = calculateTotals(newItems, prev.extras);
@@ -742,10 +716,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       unit_price: variation.final_price || 0,
       selected_addons: []
     };
-    {
-      const base = newItems[index].quantity * newItems[index].unit_price;
-      newItems[index].total = base - base * ((newItems[index].discount_percent || 0) / 100);
-    }
+    newItems[index].total = lineGrossPreVat(newItems[index]) - lineDiscountPreVat(newItems[index]);
 
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
@@ -754,13 +725,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   const handleAddonsSelect = (index, addons) => {
     const newItems = [...formData.items];
     newItems[index].selected_addons = addons;
-    
-    const basePrice = newItems[index].unit_price;
-    const addonsTotal = addons.reduce((sum, addon) => sum + (addon.price || 0), 0);
-    {
-      const base = newItems[index].quantity * (basePrice + addonsTotal);
-      newItems[index].total = base - base * ((newItems[index].discount_percent || 0) / 100);
-    }
+    newItems[index].total = lineGrossPreVat(newItems[index]) - lineDiscountPreVat(newItems[index]);
 
     const totals = calculateTotals(newItems, formData.extras);
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
@@ -1113,7 +1078,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
               addonPrices={addonPrices}
             />
 
-            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} total={formData.total} />
           </CardContent>
         </Card>
         )}

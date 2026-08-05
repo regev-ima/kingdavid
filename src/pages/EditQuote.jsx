@@ -29,6 +29,7 @@ import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import { genBedConfigToken, legacyFabricToFields } from '@/lib/bedConfig';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canAccessSalesWorkspace, canViewQuote } from '@/lib/rbac';
+import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import { toast } from 'sonner';
@@ -232,32 +233,9 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     },
   });
 
-  const calculateTotals = (items, extras = []) => {
-    const itemsSubtotal = items.reduce((sum, item) => {
-      const addonsPrices = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      const itemTotal = item.quantity * (item.unit_price + addonsPrices);
-      const discount = itemTotal * (item.discount_percent / 100);
-      return sum + (itemTotal - discount);
-    }, 0);
-    
-    const discount_total = items.reduce((sum, item) => {
-      const addonsPrices = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      const itemTotal = item.quantity * (item.unit_price + addonsPrices);
-      return sum + (itemTotal * (item.discount_percent / 100));
-    }, 0);
-
-    // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
-    // VAT recomputed on top of them. VAT is only applied to the items subtotal.
-    const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-
-    // Round to agorot (2 decimals) so the total matches the sum of line totals.
-    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-    const subtotal = round2(itemsSubtotal + extrasTotal);
-    const vat_amount = round2(itemsSubtotal * 0.18);
-    const total = round2(subtotal + vat_amount);
-
-    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
-  };
+  // Shared with NewQuote / NewOrder so editing a quote can't produce different
+  // money than creating one did. See lib/quoteTotals.
+  const calculateTotals = calculateDocumentTotals;
 
   // ProductItemsEditor hands back a fresh items array; recompute grand totals.
   const handleItemsChange = (newItems) => {
@@ -270,11 +248,8 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
         if (idx !== index) return item;
         
         const updatedItem = { ...item, [field]: value };
-        const addonsPrices = (updatedItem.selected_addons || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = updatedItem.quantity * (updatedItem.unit_price + addonsPrices);
-        const discount = itemTotal * (updatedItem.discount_percent / 100);
-        updatedItem.total = itemTotal - discount;
-        
+        updatedItem.total = lineGrossPreVat(updatedItem) - lineDiscountPreVat(updatedItem);
+
         return updatedItem;
       });
       
@@ -444,10 +419,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
       let newItems = prev.items.map((item, idx) => {
         if (idx !== index) return item;
 
-        const itemTotal = item.quantity * (variation.final_price || 0);
-        const discount = itemTotal * (item.discount_percent / 100);
-
-        return {
+        const resized = {
           ...item,
           variation_id: variation.id,
           sku: variation.sku,
@@ -457,8 +429,8 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
           unit_price: variation.final_price || 0,
           selected_addons: [],
           ...(token ? { bed_config_token: token } : {}),
-          total: itemTotal - discount
         };
+        return { ...resized, total: lineGrossPreVat(resized) - lineDiscountPreVat(resized) };
       });
       // Drop this bed's now-stale config lines (old-size prices); the auto-opened
       // wizard re-adds them at the new size on confirm. If the rep dismisses the
@@ -479,15 +451,8 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
       const newItems = prev.items.map((item, idx) => {
         if (idx !== index) return item;
         
-        const addonsTotal = addons.reduce((sum, addon) => sum + (addon.price || 0), 0);
-        const itemTotal = item.quantity * (item.unit_price + addonsTotal);
-        const discount = itemTotal * (item.discount_percent / 100);
-        
-        return {
-          ...item,
-          selected_addons: addons,
-          total: itemTotal - discount
-        };
+        const withAddons = { ...item, selected_addons: addons };
+        return { ...withAddons, total: lineGrossPreVat(withAddons) - lineDiscountPreVat(withAddons) };
       });
       
       const totals = calculateTotals(newItems, prev.extras);
@@ -759,7 +724,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                 />
 
             {/* Totals */}
-            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} total={formData.total} />
           </CardContent>
         </Card>
 

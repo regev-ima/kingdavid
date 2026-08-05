@@ -4,8 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Percent, Check } from "lucide-react";
+import {
+  discountAmountOf,
+  discountPercentFromAmount,
+  formatDiscountPercent,
+  isTypedPercent,
+  roundDiscountPercent,
+} from "@/lib/discount";
+import { lineGrossPreVat, round2, VAT_MULTIPLIER } from "@/lib/quoteTotals";
 
-const VAT_RATE = 1.18;
+const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const discountTypes = [
   { value: 'percent', label: 'אחוז הנחה' },
@@ -18,15 +26,26 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
   const [type, setType] = useState('percent');
   const [inputValue, setInputValue] = useState('');
 
-  // Price with VAT for calculation base
-  const addonsTotal = (item.selected_addons || []).reduce((s, a) => s + (a.price || 0), 0);
-  const basePrice = (item.unit_price + addonsTotal) * item.quantity;
-  const priceWithVat = basePrice * VAT_RATE;
+  // The line's list price including VAT — the base every discount type is
+  // stated against, and the same figure the totals panel bills off.
+  const priceWithVat = lineGrossPreVat(item) * VAT_MULTIPLIER;
 
+  // Reopen on the tab the discount was actually set in. A percent the rep
+  // typed comes back as a percent; one we derived from a shekel figure comes
+  // back as that shekel figure, so pressing "החל" again re-applies the same
+  // discount rather than a percent rounded off it.
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    const stored = Number(item.discount_percent) || 0;
+    if (stored <= 0) {
       setType('percent');
-      setInputValue(item.discount_percent > 0 ? String(item.discount_percent) : '');
+      setInputValue('');
+    } else if (isTypedPercent(stored)) {
+      setType('percent');
+      setInputValue(String(stored));
+    } else {
+      setType('amount');
+      setInputValue(String(discountAmountOf(stored, priceWithVat)));
     }
   }, [open]);
 
@@ -36,16 +55,12 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
 
     switch (type) {
       case 'percent':
-        return Math.min(val, 100);
-      case 'amount': {
-        const maxAmount = priceWithVat;
-        const clampedAmount = Math.min(val, maxAmount);
-        return (clampedAmount / priceWithVat) * 100;
-      }
+        return roundDiscountPercent(val);
+      case 'amount':
+        return discountPercentFromAmount(val, priceWithVat);
       case 'final': {
         const clampedFinal = Math.max(0, Math.min(val, priceWithVat));
-        const discountAmount = priceWithVat - clampedFinal;
-        return (discountAmount / priceWithVat) * 100;
+        return discountPercentFromAmount(priceWithVat - clampedFinal, priceWithVat);
       }
       default:
         return 0;
@@ -55,20 +70,24 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
   const getMaxValue = () => {
     switch (type) {
       case 'percent': return 100;
-      case 'amount': return Math.round(priceWithVat * 100) / 100;
-      case 'final': return Math.round(priceWithVat * 100) / 100;
+      case 'amount': return round2(priceWithVat);
+      case 'final': return round2(priceWithVat);
       default: return 100;
     }
   };
 
+  // Apply the percent at full precision — rounding it to two decimals here is
+  // what used to turn a ₪480 discount into ₪480.05.
   const handleApply = () => {
-    const percent = Math.round(getDiscountPercent() * 100) / 100;
-    onApplyDiscount(percent);
+    onApplyDiscount(getDiscountPercent());
     setOpen(false);
   };
 
   const previewPercent = getDiscountPercent();
-  const previewAmount = priceWithVat * (previewPercent / 100);
+  const previewAmount = discountAmountOf(previewPercent, priceWithVat);
+  // Off the rounded price the rep is reading above, so the three figures in
+  // the popover add up on screen.
+  const previewFinal = round2(round2(priceWithVat) - previewAmount);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -79,7 +98,7 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
           size="sm"
           className={`w-20 h-9 text-xs ${item.discount_percent > 0 ? 'bg-red-500 hover:bg-red-600 text-white' : 'border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700'}`}
         >
-          {item.discount_percent > 0 ? `${item.discount_percent}%` : (
+          {item.discount_percent > 0 ? formatDiscountPercent(item.discount_percent) : (
             <><Percent className="w-3 h-3 me-1" />הנחה</>
           )}
         </Button>
@@ -87,7 +106,7 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
       <PopoverContent className="w-72 p-4" align="start" side="top">
         <div className="space-y-3">
           <p className="text-sm font-semibold text-foreground">הנחה על פריט</p>
-          <p className="text-xs text-muted-foreground">מחיר כולל מע״מ: ₪{priceWithVat.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          <p className="text-xs text-muted-foreground">מחיר כולל מע״מ: {ils(priceWithVat)}</p>
 
           {/* Discount type tabs */}
           <div className="flex gap-1 bg-muted rounded-lg p-1">
@@ -129,7 +148,11 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
             <div className="bg-red-50 border border-red-200 rounded-lg p-2 text-xs space-y-1">
               <div className="flex justify-between">
                 <span className="text-red-700">הנחה:</span>
-                <span className="font-bold text-red-700">{previewPercent.toFixed(1)}% (₪{previewAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })})</span>
+                <span className="font-bold text-red-700">{formatDiscountPercent(previewPercent)} ({ils(previewAmount)})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-red-700">מחיר אחרי הנחה:</span>
+                <span className="font-bold text-red-700">{ils(previewFinal)}</span>
               </div>
             </div>
           )}

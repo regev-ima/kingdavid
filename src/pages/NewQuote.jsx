@@ -36,6 +36,7 @@ import { formatPhoneForWhatsApp, isValidIsraeliPhone, toLocalIsraeliPhone } from
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
+import { calculateDocumentTotals } from '@/lib/quoteTotals';
 
 function addBusinessDays(startDate, days) {
   const result = new Date(startDate);
@@ -411,33 +412,9 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     },
   });
 
-  const calculateTotals = (items, extras = []) => {
-    const itemsSubtotal = items.reduce((sum, item) => {
-      const addonsPrices = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      const itemTotal = item.quantity * (item.unit_price + addonsPrices);
-      const discount = itemTotal * (item.discount_percent / 100);
-      return sum + (itemTotal - discount);
-    }, 0);
-    
-    const discount_total = items.reduce((sum, item) => {
-      const addonsPrices = (item.selected_addons || []).reduce((addonSum, addon) => addonSum + (addon.price || 0), 0);
-      const itemTotal = item.quantity * (item.unit_price + addonsPrices);
-      return sum + (itemTotal * (item.discount_percent / 100));
-    }, 0);
-
-    // Extras (תוספות) costs are stored VAT-inclusive, so they should not have
-    // VAT recomputed on top of them. VAT is only applied to the items subtotal.
-    const extrasTotal = extras.reduce((sum, extra) => sum + (extra.cost || 0), 0);
-
-    // Round to agorot (2 decimals), not whole ₪, so the grand total matches the
-    // sum of the per-line totals shown to the customer.
-    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-    const subtotal = round2(itemsSubtotal + extrasTotal);
-    const vat_amount = round2(itemsSubtotal * 0.18);
-    const total = round2(subtotal + vat_amount);
-
-    return { subtotal, discount_total: round2(discount_total), vat_amount, total };
-  };
+  // Shared with NewOrder / EditQuote so the three forms — and the totals panel
+  // they all render — can't drift apart. See lib/quoteTotals.
+  const calculateTotals = calculateDocumentTotals;
 
   // ProductItemsEditor hands back a fresh items array; recompute grand totals.
   const handleItemsChange = (newItems) => {
@@ -945,7 +922,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             </Card>
 
             {/* Totals */}
-            <QuoteTotalsSummary items={formData.items} extras={formData.extras} discountTotal={formData.discount_total} />
+            <QuoteTotalsSummary items={formData.items} extras={formData.extras} total={formData.total} />
 
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (

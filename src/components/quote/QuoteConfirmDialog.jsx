@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, ArrowRight, Check } from 'lucide-react';
 import { FABRIC_SUPPLIER_OTHER } from '@/constants/fabricSuppliers';
 import { bedConfigFieldLines } from '@/lib/bedConfig';
+import { formatDiscountPercent } from '@/lib/discount';
 
 const fmt = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -100,7 +101,7 @@ export default function QuoteConfirmDialog({
                               </div>
                             )}
                             {item.discount_percent > 0 && (
-                              <div className="text-emerald-700">הנחה: -{item.discount_percent}%</div>
+                              <div className="text-emerald-700">הנחה: -{formatDiscountPercent(item.discount_percent)}</div>
                             )}
                           </div>
                         </div>
