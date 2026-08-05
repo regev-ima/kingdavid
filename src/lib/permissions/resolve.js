@@ -128,6 +128,7 @@ export const SOURCE = {
   USER_OVERRIDE: 'user_override',
   USER_GRANT: 'user_grant',
   ROLE_MATRIX: 'role_matrix',
+  ACCESS_LEVEL: 'access_level',
   LEGACY_ROLE: 'legacy_role',
   LEVEL_DEFAULT: 'level_default',
   UNKNOWN: 'unknown',
@@ -139,10 +140,47 @@ export const SOURCE_LABELS = {
   [SOURCE.USER_OVERRIDE]: 'הוגדר ידנית לנציג הזה',
   [SOURCE.USER_GRANT]: 'הרשאה אישית קיימת (נהל נציג ← הרשאות)',
   [SOURCE.ROLE_MATRIX]: 'לפי רמת ההרשאה',
+  [SOURCE.ACCESS_LEVEL]: 'הוסר כשרמת ההרשאה הורדה',
   [SOURCE.LEGACY_ROLE]: 'לפי התפקיד הקיים במערכת',
   [SOURCE.LEVEL_DEFAULT]: 'ברירת המחדל של רמת ההרשאה',
   [SOURCE.UNKNOWN]: 'הרשאה לא מוכרת',
 };
+
+/**
+ * Was this user deliberately moved DOWN from the level their legacy role
+ * implies?
+ *
+ * `access_level` is seeded to match the role for everybody (admin → מנהל ראשי,
+ * everyone else → נציג), so this is false for every account until a human
+ * opens נהל נציג ← הרשאות and picks something lower. That makes it a reliable
+ * signal of intent rather than an accident of the rollout.
+ */
+function wasDemoted(user) {
+  if (!user || !isStorableAccessLevel(user.access_level)) return false;
+  const implied = user.role === 'admin' ? ACCESS_LEVELS.CHIEF_MANAGER : ACCESS_LEVELS.REP;
+  return accessLevelRank(user.access_level) < accessLevelRank(implied);
+}
+
+/**
+ * True when the only reason the user holds this capability is that they are a
+ * legacy `role === 'admin'` — and they have been demoted.
+ *
+ * Without this, moving somebody from מנהל to מנהל חנות changes nothing at all:
+ * every admin-gated capability keeps resolving true through the ADMIN baseline
+ * no matter what tier they sit at, so the demotion is a label. Dropping the
+ * admin-derived grant is the whole point of demoting somebody.
+ *
+ * Scoped tightly, and in two ways. It only fires for a deliberate demotion,
+ * and it only removes what being an admin was granting: the baseline is
+ * re-evaluated as if they were an ordinary user, so workspace membership
+ * (sales, orders, support) survives untouched — a demoted admin is a manager
+ * with less power, not a person locked out of the sales floor. Per-user grants
+ * are decided earlier and are not affected at all.
+ */
+function deniedByDemotion(user, node) {
+  if (!wasDemoted(user)) return false;
+  return !roleBaseline({ ...user, role: 'user' }, node.baseline);
+}
 
 function levelDefault(node, level) {
   if (level === ACCESS_LEVELS.SUPER_ADMIN) return true;
@@ -184,7 +222,8 @@ export function resolveOwn(user, key, options = {}) {
     return { allowed: fromMatrix, source: SOURCE.ROLE_MATRIX };
   }
 
-  if (roleBaseline(user, node.baseline)) {
+  const demoted = deniedByDemotion(user, node);
+  if (roleBaseline(user, node.baseline) && !demoted) {
     return { allowed: true, source: SOURCE.LEGACY_ROLE };
   }
 
@@ -198,7 +237,15 @@ export function resolveOwn(user, key, options = {}) {
     return { allowed: false, source: SOURCE.LEGACY_ROLE };
   }
 
-  return { allowed: levelDefault(node, level), source: SOURCE.LEVEL_DEFAULT };
+  const allowed = levelDefault(node, level);
+  // A denial that follows from a demotion is not a default — somebody chose
+  // the lower level. Naming it separately is what lets isExplicitlyBlocked()
+  // treat it as deliberate, so the sidebar hides the entry AND the route
+  // guard refuses the page, instead of the two disagreeing.
+  if (!allowed && demoted) {
+    return { allowed: false, source: SOURCE.ACCESS_LEVEL };
+  }
+  return { allowed, source: SOURCE.LEVEL_DEFAULT };
 }
 
 /**
@@ -254,7 +301,9 @@ export function isExplicitlyBlocked(user, key, options = {}) {
   if (isSuperAdmin(user, options)) return false;
   if (!permissionExists(key)) return false;
 
-  const decisive = [SOURCE.USER_OVERRIDE, SOURCE.ROLE_MATRIX];
+  // A demotion counts: somebody chose to move this person down a level, which
+  // is every bit as deliberate as flipping a switch in the matrix.
+  const decisive = [SOURCE.USER_OVERRIDE, SOURCE.ROLE_MATRIX, SOURCE.ACCESS_LEVEL];
   for (const candidate of [...getAncestorKeys(key).reverse(), key]) {
     const { allowed, source } = resolveOwn(user, candidate, options);
     if (!allowed && decisive.includes(source)) return true;

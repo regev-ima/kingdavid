@@ -4,8 +4,9 @@ import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { canManageService, canViewFinanceWorkspace } from '@/lib/rbac';
-import { isExplicitlyBlocked } from '@/lib/permissions';
-import { useRolePermissions } from '@/hooks/useRolePermissions';
+import { isExplicitlyBlocked, permissionForPage, firstReachablePage } from '@/lib/permissions';
+import PageAccessGate from '@/components/permissions/PageAccessGate';
+import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from "@/components/ui/button";
 import { useImpersonation } from "@/components/shared/ImpersonationContext";
 import {
@@ -148,7 +149,7 @@ function LayoutContent({ children, currentPageName }) {
   // Subscribing here is what makes a permission change reach the sidebar: the
   // resolver reads the matrix from a module-level cache, and this query is
   // what fills it and re-renders when an admin saves.
-  const matrix = useRolePermissions();
+  const { matrix, isSuperAdmin } = usePermissions();
 
   // Cache user data - won't refetch on every page change
   const { data: user } = useQuery({
@@ -245,6 +246,12 @@ function LayoutContent({ children, currentPageName }) {
   
   // Get navigation based on role, reordered + filtered per the admin's
   // Settings → תפריט preferences (stored per-browser in useHiddenMenuItems).
+  // Asks "did somebody deliberately turn this off?", not "would the new system
+  // have allowed it?" — see the note on isExplicitlyBlocked. A super admin is
+  // never blocked by anything.
+  const blocked = (permissionKey) =>
+    isExplicitlyBlocked(effectiveUser, permissionKey, { matrix, isSuperAdmin });
+
   const filteredNav = user
     ? applyMenuOrder(navigationByRole[userRole] || navigationByRole.sales_user, menuOrder)
         .filter((item) => !hiddenMenuItems.includes(item.href))
@@ -258,8 +265,17 @@ function LayoutContent({ children, currentPageName }) {
         // disagrees with this hand-maintained table start hiding entries that
         // work fine today; `isExplicitlyBlocked` is a no-op until a switch is
         // actually thrown.
-        .filter((item) => !item.perm || !isExplicitlyBlocked(effectiveUser, item.perm, { matrix }))
+        .filter((item) => !item.perm || !blocked(item.perm))
     : [];
+
+  // The gate that actually decides. Hiding a nav entry is presentation: the
+  // route is still there, and the logo, a bookmark, a pasted URL or a link in
+  // a notification all reach it. A blocked page therefore refuses to render
+  // its content at all — this is the check a user cannot walk around, and it
+  // applies to every route in PAGE_PERMISSIONS, including the detail screens
+  // nobody thinks to link-check.
+  const currentPagePermission = permissionForPage(currentPageName);
+  const currentPageBlocked = Boolean(currentPagePermission) && blocked(currentPagePermission);
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
@@ -443,7 +459,14 @@ function LayoutContent({ children, currentPageName }) {
           </div>
         )}
         <div className="p-6 lg:p-8">
-          {children}
+          {currentPageBlocked ? (
+            <PageAccessGate
+              permissionKey={currentPagePermission}
+              fallbackPage={firstReachablePage((key) => !key || !blocked(key))}
+            />
+          ) : (
+            children
+          )}
         </div>
       </main>
 
