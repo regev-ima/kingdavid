@@ -65,13 +65,33 @@ const NO_ANSWER_STATUSES = {
   no_answer_4: 'ללא מענה 4',
 };
 
+/**
+ * The rep a task belongs to.
+ *
+ * A task follows the lead's owner — a lead that already has a rep must never be
+ * asked to be assigned a second time, which is what made opening a task on an
+ * assigned lead demand a rep it already had. When the lead carries two reps the
+ * acting rep takes it, since they're the one doing the work; anyone else (a
+ * manager opening someone else's lead) leaves it with the primary.
+ *
+ * `fallback` covers only a lead with no owner at all, and is deliberately empty
+ * for assignment tasks: routing an unowned lead is the decision that task
+ * exists to make, not something to default away.
+ */
+const resolveTaskRep = (lead, actingEmail, fallback = '') => {
+  const rep1 = lead?.rep1 || '';
+  const rep2 = lead?.rep2 || '';
+  if (rep1 && rep2 && actingEmail && (actingEmail === rep1 || actingEmail === rep2)) return actingEmail;
+  return rep1 || rep2 || fallback;
+};
+
 const blankTask = (preSelectedLead, repEmail) => ({
   task_type: 'call',
   task_status: 'not_completed',
   status: preSelectedLead?.status || '',
   lead_id: preSelectedLead?.id || '',
   lead: preSelectedLead || null,
-  rep1: preSelectedLead?.rep1 || repEmail || '',
+  rep1: resolveTaskRep(preSelectedLead, repEmail, repEmail),
   rep2: '',
   due_date: '',
   work_start_date: '',
@@ -195,12 +215,33 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, task?.id]);
 
-  // Non-admin reps create tasks assigned to themselves.
+  // The tasks list selects `sales_tasks` alone, so a task opened from it knows
+  // its lead_id and nothing else. The lead behind it — its owner, its status —
+  // is what this form runs on, so fetch it when the caller didn't hand one over.
+  const { data: fetchedLead } = useQuery({
+    queryKey: ['lead-for-task', currentLeadId],
+    queryFn: async () => (await base44.entities.Lead.filter({ id: currentLeadId }))[0] || null,
+    enabled: isOpen && !!currentLeadId && !currentLead,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
-    if (isCreate && isOpen && effectiveUser && !isAdmin && editingTask && !editingTask.rep1) {
-      setEditingTask(prev => ({ ...prev, rep1: effectiveUser.email }));
-    }
-  }, [isCreate, isOpen, effectiveUser, isAdmin, editingTask]);
+    if (!fetchedLead) return;
+    setEditingTask(prev =>
+      prev && !prev.lead && prev.lead_id === fetchedLead.id ? { ...prev, lead: fetchedLead } : prev,
+    );
+  }, [fetchedLead]);
+
+  // A task inherits its lead's rep. Assignment tasks inherit too, but never
+  // fall back to whoever opened the dialog — an unowned lead is precisely what
+  // they exist to route, so that one keeps asking.
+  useEffect(() => {
+    if (!isOpen || !editingTask || editingTask.rep1) return;
+    const fallback = !isAdmin && editingTask.task_type !== 'assignment' ? (effectiveUser?.email || '') : '';
+    const inherited = resolveTaskRep(editingTask.lead, effectiveUser?.email, fallback);
+    if (!inherited) return;
+    setEditingTask(prev => (prev && !prev.rep1 ? { ...prev, rep1: inherited } : prev));
+  }, [isOpen, effectiveUser, isAdmin, editingTask]);
 
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, data }) => base44.entities.SalesTask.update(id, data),
@@ -500,7 +541,8 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
       lead,
       lead_id: lead.id,
       status: lead.status || '',
-      rep1: lead.rep1 || prev.rep1,
+      // The picked lead's owner wins over whatever the blank form defaulted to.
+      rep1: resolveTaskRep(lead, effectiveUser?.email, prev.rep1),
     }));
     setOriginalLeadStatus(lead.status || '');
     setLeadSearch('');
