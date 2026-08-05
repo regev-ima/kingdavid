@@ -30,6 +30,8 @@ import { useLeadVisibilityPolicy } from '@/hooks/useLeadVisibilityPolicy';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import { leadPhoneFilter, probePhoneKey } from '@/lib/phoneLookup';
+import { applyAssignmentTaskHandover, fetchAssignmentContext } from '@/lib/leadAssignment';
+import { reconcileRepSlots } from '@/lib/repSlots';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import LeadQuickActions from '@/components/lead/LeadQuickActions';
 
@@ -660,7 +662,17 @@ export default function LeadManagement() {
   const assignLeadsMutation = useMutation({
     mutationFn: async ({ leadIds, repEmail }) => {
       const repName = salesReps.find((r) => r.email === repEmail)?.full_name || repEmail;
+      const assignerName = effectiveUser?.full_name || 'מנהל';
       setAssignProgress({ total: leadIds.length, done: 0, failed: 0, repName, finished: false });
+
+      // The leads and their open tasks, read once for the whole batch.
+      // Assigning a rep is not only a write to leads.rep1 — the lead's open
+      // assignment task has to close, and its open work has to reach the new
+      // owner (see lib/leadAssignment). Without this the batch left every
+      // lead's "יש לשייך את הליד לנציג" task open, so a lead that plainly
+      // showed as assigned asked to be assigned again the moment anyone
+      // opened it.
+      const { leadsById, openTasksByLead } = await fetchAssignmentContext(leadIds);
 
       // Reassign with bounded concurrency instead of one-at-a-time: the
       // browser caps ~6 connections to the Supabase host, so ~8 in-flight
@@ -677,11 +689,27 @@ export default function LeadManagement() {
       const worker = async () => {
         while (cursor < leadIds.length) {
           const id = leadIds[cursor++];
+          const lead = leadsById.get(id) || null;
           try {
-            await base44.entities.Lead.update(id, {
+            // reconcileRepSlots so promoting a lead's SECONDARY rep to owner
+            // frees the secondary slot instead of seating them twice — the
+            // rule every other assignment path already follows.
+            await base44.entities.Lead.update(id, reconcileRepSlots(lead || {}, {
               rep1: repEmail,
               pending_rep_email: null,
               first_action_at: stamp,
+            }).patch);
+            // Tasks second, and only once the lead itself is written: a
+            // closed assignment task on a lead that never got its rep would
+            // hide the lead from the assignment queue with nobody owning it.
+            await applyAssignmentTaskHandover({
+              leadId: id,
+              lead,
+              repEmail,
+              repName,
+              assignerName,
+              openTasks: openTasksByLead.get(id) || [],
+              stamp,
             });
           } catch {
             failed += 1;
@@ -707,6 +735,14 @@ export default function LeadManagement() {
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-count'] });
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-kpis'] });
       queryClient.invalidateQueries({ queryKey: ['leadMgmt-workload'] });
+      // The assignment also closed/created tasks, so every screen that counts
+      // them is stale now: the lead rows' next-task chip, the lead popup's
+      // work queue, /SalesTasks and its tab counters.
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['salesTasks-counts'] });
+      queryClient.invalidateQueries({ queryKey: ['salesTasks-tab'] });
+      queryClient.invalidateQueries({ queryKey: ['taskCounters'] });
       // Let the "הושלם" state show for a beat, then dismiss the modal.
       setTimeout(() => setAssignProgress(null), 1200);
     },
