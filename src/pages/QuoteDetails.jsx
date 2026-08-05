@@ -54,6 +54,7 @@ import {
   Hash,
   ArrowUpDown,
   Package,
+  PackageCheck,
   ExternalLink,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
@@ -455,19 +456,25 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
                   { label: 'שם לקוח', value: quote.customer_name, icon: User },
                   { label: 'טלפון', value: quote.customer_phone, icon: Phone, dir: 'ltr' },
                   { label: 'אימייל', value: quote.customer_email, icon: Mail },
-                  {
-                    label: 'כתובת למשלוח',
-                    value: [quote.delivery_address, quote.delivery_city].filter(Boolean).join(', ') || null,
-                    icon: Home,
-                  },
-                  { label: 'סוג נכס', value: quote.property_type === 'house' ? 'בית פרטי' : 'דירה', icon: Building2 },
-                  { label: 'קומה', value: quote.floor != null ? String(quote.floor) : null, icon: Layers },
-                  { label: 'מספר דירה', value: quote.apartment_number || null, icon: Hash },
-                  {
-                    label: 'מעלית',
-                    value: quote.elevator_type === 'regular' ? 'רגילה' : quote.elevator_type === 'freight' ? 'משא' : 'אין',
-                    icon: ArrowUpDown,
-                  },
+                  // Self pickup replaces the whole delivery block: no address,
+                  // and none of the access details a delivery crew would need.
+                  ...(quote.is_self_pickup
+                    ? [{ label: 'אופן אספקה', value: 'איסוף עצמי - בתיאום', icon: PackageCheck }]
+                    : [
+                        {
+                          label: 'כתובת למשלוח',
+                          value: [quote.delivery_address, quote.delivery_city].filter(Boolean).join(', ') || null,
+                          icon: Home,
+                        },
+                        { label: 'סוג נכס', value: quote.property_type === 'house' ? 'בית פרטי' : 'דירה', icon: Building2 },
+                        { label: 'קומה', value: quote.floor != null ? String(quote.floor) : null, icon: Layers },
+                        { label: 'מספר דירה', value: quote.apartment_number || null, icon: Hash },
+                        {
+                          label: 'מעלית',
+                          value: quote.elevator_type === 'regular' ? 'רגילה' : quote.elevator_type === 'freight' ? 'משא' : 'אין',
+                          icon: ArrowUpDown,
+                        },
+                      ]),
                 ]
                   .filter((row) => row.value)
                   .map((row) => {

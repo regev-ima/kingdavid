@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, Sparkles, Info, CreditCard } from "lucide-react";
+import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, Sparkles, Info, CreditCard, Truck, PackageCheck } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
@@ -26,7 +26,7 @@ import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
-import { recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
+import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone, toLocalIsraeliPhone } from '@/utils/phoneUtils';
@@ -89,6 +89,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
+    // The customer collects from the factory: no address to deliver to, no
+    // delivery/assembly extras, and the order says "איסוף עצמי - בתיאום".
+    is_self_pickup: false,
     items: [],
     extras: [],
     subtotal: 0,
@@ -275,6 +278,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         floor: quote.floor ?? prev.floor,
         apartment_number: quote.apartment_number || prev.apartment_number,
         elevator_type: quote.elevator_type || prev.elevator_type,
+        // Delivery was already priced (or waived) on the quote — carry the
+        // decision over so the order doesn't silently re-add a delivery charge.
+        is_self_pickup: quote.is_self_pickup ?? prev.is_self_pickup,
         items: quote.items || prev.items,
         extras: quote.extras || prev.extras,
         subtotal: quote.subtotal || 0,
@@ -336,6 +342,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         buildPayload: (newNumber) => ({
           ...data,
           order_number: newNumber,
+          // A self-pickup order is never "waiting to be scheduled" — it waits
+          // for the customer at the factory, and the logistics queue must not
+          // treat it as an unscheduled delivery.
+          delivery_status: data.is_self_pickup ? 'awaiting_pickup' : data.delivery_status,
           // Credit the rep who closes the sale: a quote carries its creator;
           // otherwise the acting rep (non-admin) gets it, so serving someone
           // else's walk-in credits the server — admins keep the owner.
@@ -347,15 +357,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       // not from the pre-collision candidate, so retries stay aligned.
       const shipmentSuffix = String(order.order_number || '').replace('ORD', '');
 
-      // Create shipment
+      // Create shipment. Self pickup still gets one — the factory needs to know
+      // there are goods waiting to be collected — but in its own status, with
+      // no address to route or geocode.
       await base44.entities.DeliveryShipment.create({
         shipment_number: `SHP${shipmentSuffix}`,
         order_id: order.id,
         customer_name: data.customer_name,
         customer_phone: data.customer_phone,
-        address: data.delivery_address,
-        city: data.delivery_city,
-        status: 'need_scheduling',
+        address: data.is_self_pickup ? '' : data.delivery_address,
+        city: data.is_self_pickup ? '' : data.delivery_city,
+        status: data.is_self_pickup ? 'awaiting_pickup' : 'need_scheduling',
       });
 
       // Create commission. An order that arrives already paid must not leave a
@@ -533,8 +545,13 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   // keystroke otherwise.
   const itemProfile = useMemo(() => summarizeItems(formData.items, products), [formData.items, products]);
   const recommendation = useMemo(
-    () => recommendDeliveryExtras(extraCharges, itemProfile),
-    [extraCharges, itemProfile],
+    () => recommendDeliveryExtras(extraCharges, itemProfile, { selfPickup: formData.is_self_pickup }),
+    [extraCharges, itemProfile, formData.is_self_pickup],
+  );
+  // Delivery rows aren't offered at all once the customer collects the order.
+  const selectableExtraCharges = useMemo(
+    () => (formData.is_self_pickup ? extraCharges.filter((ec) => !isDeliveryRelatedExtra(ec.name)) : extraCharges),
+    [extraCharges, formData.is_self_pickup],
   );
   const recommendedIds = useMemo(() => recommendation.extras.map((ec) => ec.id), [recommendation]);
   const recommendedKey = recommendedIds.join('|');
@@ -543,6 +560,41 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
   // their back. Recommend, never auto-add.
   const fromQuote = Boolean(quoteId);
   const needsDelivery = itemProfile.bedCount > 0 || itemProfile.mattressCount > 0;
+
+  // Switching to self pickup drops every delivery/assembly row — the ones we
+  // recommended and the ones the rep picked by hand alike. Leaving one behind
+  // would bill a delivery on an order nobody delivers, which is exactly the
+  // mistake this flag exists to prevent, so it's removed rather than flagged.
+  const setSelfPickup = (value) => {
+    if (!value) {
+      setFormData((prev) => ({ ...prev, is_self_pickup: false }));
+      return;
+    }
+    const dropped = formData.extras.filter((ex) => isDeliveryRelatedExtra(ex.name));
+    if (dropped.length) {
+      toast.info(
+        dropped.length === 1
+          ? `הוסרה שורת "${dropped[0].name}" — באיסוף עצמי אין דמי הובלה`
+          : `הוסרו ${dropped.length} שורות הובלה/הרכבה — באיסוף עצמי אין דמי הובלה`,
+      );
+    }
+    setFormData((prev) => {
+      const kept = prev.extras.filter((ex) => !isDeliveryRelatedExtra(ex.name));
+      return {
+        ...prev,
+        is_self_pickup: true,
+        extras: kept,
+        ...calculateTotals(prev.items, kept),
+      };
+    });
+  };
+
+  // Step 1 is done when we can identify the customer and — unless he's
+  // collecting it himself — know where to deliver. The stepper, the "המשך"
+  // button and the submit handler all read this one rule so they can't drift.
+  const step1Valid = !!formData.customer_name?.trim()
+    && isValidIsraeliPhone(formData.customer_phone)
+    && (formData.is_self_pickup || (!!formData.delivery_city?.trim() && !!formData.delivery_address?.trim()));
 
   useEffect(() => {
     if (fromQuote) return;
@@ -725,9 +777,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     // The required customer fields live on step 1; since steps are unmounted
     // (not CSS-hidden), the browser can't enforce `required` from step 3 — so
     // validate here and jump back so the rep sees exactly what's missing.
-    if (!formData.customer_name?.trim() || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) {
+    // Self pickup has nowhere to deliver to, so only the name is required.
+    const addressMissing = !formData.is_self_pickup
+      && (!formData.delivery_city?.trim() || !formData.delivery_address?.trim());
+    if (!formData.customer_name?.trim() || addressMissing) {
       setCurrentStep(1);
-      toast.error('יש למלא שם לקוח, עיר וכתובת למשלוח');
+      toast.error(formData.is_self_pickup ? 'יש למלא שם לקוח' : 'יש למלא שם לקוח, עיר וכתובת למשלוח');
       return;
     }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
@@ -782,7 +837,6 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         <div className="flex items-center justify-center">
           {steps.map((step, idx) => {
             // Can't jump forward past an incomplete step (same rules as "המשך").
-            const step1Valid = !!formData.customer_name?.trim() && isValidIsraeliPhone(formData.customer_phone) && !!formData.delivery_city?.trim() && !!formData.delivery_address?.trim();
             const step2Valid = hasSellableItem(formData.items);
             const locked = step.id > currentStep && !(
               (step.id === 2 && step1Valid) || (step.id === 3 && step1Valid && step2Valid)
@@ -940,6 +994,43 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 מחפש רשומות עם טלפון תואם…
               </div>
             ) : null}
+            {/* Delivery or self pickup. The choice governs everything below it —
+                a collected order has no address, no floor and no delivery
+                charge — so it's asked before the fields it switches off. */}
+            <div className="space-y-2">
+              <Label>אופן אספקה</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={formData.is_self_pickup ? 'outline' : 'default'}
+                  className="flex-1 gap-2"
+                  onClick={() => setSelfPickup(false)}
+                >
+                  <Truck className="h-4 w-4" />
+                  משלוח
+                </Button>
+                <Button
+                  type="button"
+                  variant={formData.is_self_pickup ? 'default' : 'outline'}
+                  className="flex-1 gap-2"
+                  onClick={() => setSelfPickup(true)}
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  איסוף עצמי
+                </Button>
+              </div>
+            </div>
+
+            {formData.is_self_pickup ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-medium">איסוף עצמי - בתיאום</p>
+                <p className="text-xs mt-1 leading-relaxed">
+                  הלקוח אוסף מהמפעל ברח׳ העמל 6 קרית מלאכי, בימים א׳-ה׳ בין 9:00 ל-16:00, בתיאום מראש.
+                  לא נגבים דמי הובלה והרכבה, וההזמנה לא נכנסת לתכנון מסלולי החלוקה.
+                </p>
+              </div>
+            ) : (
+            <>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>כתובת למשלוח *</Label>
@@ -1004,6 +1095,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 </Select>
               </div>
             </div>
+            </>
+            )}
           </CardContent>
         </Card>
         )}
@@ -1035,7 +1128,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 <SelectValue placeholder="הוסף תוספת" />
               </SelectTrigger>
               <SelectContent>
-                {extraCharges.map(ec => (
+                {selectableExtraCharges.map(ec => (
                   <SelectItem key={ec.id} value={ec.id}>
                     {ec.name} - ₪{ec.cost.toLocaleString()}
                   </SelectItem>
@@ -1046,7 +1139,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
           <CardContent className="space-y-4">
             {/* Delivery & assembly, matched to what's on the order. One click
                 each; the row we picked ourselves says so on its badge. */}
-            {recommendation.extras.length > 0 ? (
+            {formData.is_self_pickup ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
+                <PackageCheck className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                איסוף עצמי — תוספות הובלה והרכבה אינן רלוונטיות ואינן מוצעות להזמנה זו.
+              </div>
+            ) : recommendation.extras.length > 0 ? (
               <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
                 <p className="text-xs font-medium text-primary flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -1279,15 +1377,19 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                   size="lg"
                   className="h-11 px-8 text-base font-semibold"
                   disabled={
-                    (currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()))
+                    (currentStep === 1 && !step1Valid)
                     || (currentStep === 2 && !hasSellableItem(formData.items))
                   }
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCurrentStep(prev => Math.min(prev + 1, 3)); }}
                 >
                   המשך
                 </Button>
-                {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone) || !formData.delivery_city?.trim() || !formData.delivery_address?.trim()) ? (
-                  <span className="text-[11px] text-muted-foreground">יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך</span>
+                {currentStep === 1 && !step1Valid ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    {formData.is_self_pickup
+                      ? 'יש למלא שם וטלפון תקין כדי להמשיך'
+                      : 'יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך'}
+                  </span>
                 ) : currentStep === 2 && !hasSellableItem(formData.items) ? (
                   <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
                 ) : null}

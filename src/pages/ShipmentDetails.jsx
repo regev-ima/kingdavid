@@ -405,6 +405,7 @@ export default function ShipmentDetails() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="need_scheduling">לתאום</SelectItem>
+                  <SelectItem value="awaiting_pickup">ממתין לאיסוף</SelectItem>
                   <SelectItem value="scheduled">מתואם</SelectItem>
                   <SelectItem value="dispatched">יצא לדרך</SelectItem>
                   <SelectItem value="in_transit">בדרך</SelectItem>

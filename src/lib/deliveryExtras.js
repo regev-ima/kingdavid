@@ -32,6 +32,17 @@ export function isManualOnlyExtra(name) {
   return RE_CRANE.test(name || '') || RE_FLOOR.test(name || '');
 }
 
+/**
+ * Anything that only makes sense when WE bring the goods — the delivery and
+ * assembly rows plus the crane/per-floor surcharges that hang off them.
+ * A self-pickup order may carry other extras (a protector, a warranty), just
+ * none of these.
+ */
+export function isDeliveryRelatedExtra(name) {
+  const value = name || '';
+  return RE_DELIVERY.test(value) || RE_CRANE.test(value) || RE_FLOOR.test(value);
+}
+
 /** First number appearing in an extra's name ("ל-2 מיטות" → 2), or null. */
 function numberInName(name) {
   const m = /(\d+)/.exec(name || '');
@@ -80,9 +91,14 @@ export function summarizeItems(items = [], products = []) {
  * Hidden: crane services, the "charged separately" notes, bed rows whose count
  * doesn't match, and mattress rows for a mattress count the order doesn't have.
  */
-export function filterDeliveryExtras(extraCharges = [], { bedCount = 0, mattressCount = 0 } = {}) {
+export function filterDeliveryExtras(
+  extraCharges = [],
+  { bedCount = 0, mattressCount = 0, selfPickup = false } = {},
+) {
   return extraCharges.filter((ec) => {
     const name = ec?.name || '';
+    // Nothing delivery-shaped is offered once the customer collects it himself.
+    if (selfPickup && isDeliveryRelatedExtra(name)) return false;
     if (name === 'שירותי מנוף') return false;
     if (name.includes('מחויב במנוף') || name.includes('כל מיטה החל מקומה')) return false;
 
@@ -146,8 +162,10 @@ function pickForFamily(candidates, { count, singles = 0, doubles = 0 }) {
  * only if it IS single. Two candidates means we don't know, so we don't guess
  * (the caller shows "בחר ידנית" instead).
  */
-export function recommendDeliveryExtras(extraCharges = [], profile = {}) {
+export function recommendDeliveryExtras(extraCharges = [], profile = {}, { selfPickup = false } = {}) {
   const { bedCount = 0, mattressCount = 0, singleBeds = 0, doubleBeds = 0 } = profile;
+  // Self pickup: there is no delivery to recommend, whatever the order holds.
+  if (selfPickup) return { extras: [], fallbackUsed: false };
   if (bedCount <= 0 && mattressCount <= 0) return { extras: [], fallbackUsed: false };
 
   const visible = filterDeliveryExtras(extraCharges, { bedCount, mattressCount })

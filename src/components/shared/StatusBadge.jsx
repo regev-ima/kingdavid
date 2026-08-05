@@ -84,6 +84,9 @@ const statusConfig = {
   
   // Delivery Status
   need_scheduling: { label: 'לתאום', color: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' },
+  // Self pickup: the goods wait at the factory for the customer, so this never
+  // enters the scheduling queue or a delivery route.
+  awaiting_pickup: { label: 'ממתין לאיסוף', color: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200' },
   scheduled: { label: 'מתואם', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
   dispatched: { label: 'יצא לדרך', color: 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200' },
   in_transit: { label: 'בדרך', color: 'bg-purple-100 text-purple-700 ring-1 ring-purple-200' },

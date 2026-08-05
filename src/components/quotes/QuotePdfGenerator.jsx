@@ -82,6 +82,10 @@ const QuotePdfGenerator = async (quoteData) => {
     quoteData.delivery_city ? `, ${safe(quoteData.delivery_city)}` : ""
   }`.trim();
 
+  // A self-pickup quote carries no delivery charge, so it must not imply a
+  // delivery either: the address line becomes the pickup statement.
+  const selfPickup = Boolean(quoteData.is_self_pickup);
+
   const items = Array.isArray(quoteData.items) ? quoteData.items : [];
   const extras = Array.isArray(quoteData.extras) ? quoteData.extras : [];
 
@@ -390,8 +394,13 @@ const QuotePdfGenerator = async (quoteData) => {
             </div>
             <div class="kv">
               <div class="k">לכבוד</div><div class="v">${safe(quoteData.customer_name)}</div>
-              <div class="k">כתובת</div><div class="v">${safe(customerAddress)}</div>
-              ${safe(quoteData.floor) ? `<div class="k">קומה</div><div class="v">${safe(quoteData.floor)}</div>` : ""}
+              ${
+                selfPickup
+                  ? `<div class="k">אופן אספקה</div><div class="v" style="font-weight:700;">איסוף עצמי - בתיאום</div>
+                     <div class="k">מקום האיסוף</div><div class="v">רחוב העמל 6, קרית מלאכי · א׳-ה׳ 9:00-16:00</div>`
+                  : `<div class="k">כתובת</div><div class="v">${safe(customerAddress)}</div>
+              ${safe(quoteData.floor) ? `<div class="k">קומה</div><div class="v">${safe(quoteData.floor)}</div>` : ""}`
+              }
             </div>
           </div>
 

@@ -49,6 +49,7 @@ import {
   Clock,
   Info,
   Ban,
+  PackageCheck,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -365,8 +366,14 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   // it stays editable here too.
                   { label: 'ת.ז.', value: order.customer_id_number, icon: CreditCard, field: 'customer_id_number', placeholder: 'הוסף ת.ז.', digitsOnly: true },
                   { label: 'אימייל', value: order.customer_email, icon: Mail },
-                  { label: 'עיר', value: order.delivery_city, icon: MapPin },
-                  { label: 'כתובת למשלוח', value: order.delivery_address, icon: Home },
+                  // A self-pickup order has no delivery address — printing the
+                  // pickup terms here keeps whoever hands over the goods from
+                  // looking for one.
+                  ...(order.is_self_pickup
+                    ? [{ label: 'אופן אספקה', value: 'איסוף עצמי - בתיאום', icon: PackageCheck },
+                       { label: 'מקום האיסוף', value: 'רחוב העמל 6, קרית מלאכי · א׳-ה׳ 9:00-16:00', icon: MapPin }]
+                    : [{ label: 'עיר', value: order.delivery_city, icon: MapPin },
+                       { label: 'כתובת למשלוח', value: order.delivery_address, icon: Home }]),
                   ...(customer ? [
                     { label: 'סה"כ הזמנות', value: customer.total_orders != null ? String(customer.total_orders) : null, icon: Package },
                     { label: 'LTV', value: customer.lifetime_value != null ? `₪${customer.lifetime_value.toLocaleString()}` : null, icon: Wallet },
@@ -704,8 +711,11 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Truck className="h-4 w-4 text-muted-foreground" />
-                סטטוס משלוח
+                {order.is_self_pickup ? (
+                  <><PackageCheck className="h-4 w-4 text-muted-foreground" />סטטוס איסוף</>
+                ) : (
+                  <><Truck className="h-4 w-4 text-muted-foreground" />סטטוס משלוח</>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -719,6 +729,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="need_scheduling">לתאום</SelectItem>
+                  <SelectItem value="awaiting_pickup">ממתין לאיסוף</SelectItem>
                   <SelectItem value="scheduled">מתואם</SelectItem>
                   <SelectItem value="dispatched">יצא לדרך</SelectItem>
                   <SelectItem value="in_transit">בדרך</SelectItem>

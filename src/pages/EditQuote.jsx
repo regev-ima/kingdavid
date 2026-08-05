@@ -19,7 +19,8 @@ import {
 } from "@/components/ui/select";
 
 
-import { ArrowRight, Save, Loader2, Check } from "lucide-react";
+import { ArrowRight, Save, Loader2, Check, Truck, PackageCheck } from "lucide-react";
+import { isDeliveryRelatedExtra } from '@/lib/deliveryExtras';
 import { hasBedType } from '@/utils/bedType';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
@@ -59,6 +60,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
+    is_self_pickup: false,
     items: [],
     extras: [],
     subtotal: 0,
@@ -154,6 +156,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
         floor: quote.floor || 0,
         apartment_number: quote.apartment_number || '',
         elevator_type: quote.elevator_type || 'none',
+        is_self_pickup: Boolean(quote.is_self_pickup),
         items: enrichedItems,
         extras: quote.extras || [],
         subtotal: quote.subtotal || 0,
@@ -299,6 +302,28 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     const newExtras = formData.extras.filter((_, i) => i !== index);
     const totals = calculateTotals(formData.items, newExtras);
     setFormData(prev => ({ ...prev, extras: newExtras, ...totals }));
+  };
+
+  // Switching an existing quote to self pickup drops the delivery rows it was
+  // priced with, so the total the customer sees stops including a delivery
+  // nobody is going to make.
+  const setSelfPickup = (value) => {
+    if (!value) {
+      setFormData(prev => ({ ...prev, is_self_pickup: false }));
+      return;
+    }
+    const dropped = formData.extras.filter(ex => isDeliveryRelatedExtra(ex.name));
+    if (dropped.length) {
+      toast.info(
+        dropped.length === 1
+          ? `הוסרה שורת "${dropped[0].name}" — באיסוף עצמי אין דמי הובלה`
+          : `הוסרו ${dropped.length} שורות הובלה/הרכבה — באיסוף עצמי אין דמי הובלה`,
+      );
+    }
+    setFormData(prev => {
+      const kept = prev.extras.filter(ex => !isDeliveryRelatedExtra(ex.name));
+      return { ...prev, is_self_pickup: true, extras: kept, ...calculateTotals(prev.items, kept) };
+    });
   };
 
   const addItem = () => {
@@ -511,6 +536,8 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
   }, 0);
 
   const filteredExtraCharges = extraCharges.filter(ec => {
+    // Self pickup: nothing delivery-shaped is on offer.
+    if (formData.is_self_pickup && isDeliveryRelatedExtra(ec.name)) return false;
     if (ec.name === 'שירותי מנוף') return false;
     if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
 
@@ -614,6 +641,41 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                 />
               </div>
             </div>
+            {/* Delivery or self pickup — governs the address block below. */}
+            <div className="space-y-2">
+              <Label>אופן אספקה</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={formData.is_self_pickup ? 'outline' : 'default'}
+                  className="flex-1 gap-2"
+                  onClick={() => setSelfPickup(false)}
+                >
+                  <Truck className="h-4 w-4" />
+                  משלוח
+                </Button>
+                <Button
+                  type="button"
+                  variant={formData.is_self_pickup ? 'default' : 'outline'}
+                  className="flex-1 gap-2"
+                  onClick={() => setSelfPickup(true)}
+                >
+                  <PackageCheck className="h-4 w-4" />
+                  איסוף עצמי
+                </Button>
+              </div>
+            </div>
+
+            {formData.is_self_pickup ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-medium">איסוף עצמי - בתיאום</p>
+                <p className="text-xs mt-1 leading-relaxed">
+                  הלקוח אוסף מהמפעל ברח׳ העמל 6 קרית מלאכי, בימים א׳-ה׳ בין 9:00 ל-16:00, בתיאום מראש.
+                  לא נגבים דמי הובלה והרכבה.
+                </p>
+              </div>
+            ) : (
+            <>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>כתובת למשלוח</Label>
@@ -677,6 +739,8 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                 </Select>
               </div>
             </div>
+            </>
+            )}
           </CardContent>
         </Card>
         )}
