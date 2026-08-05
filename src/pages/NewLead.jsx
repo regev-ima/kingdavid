@@ -165,7 +165,7 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
           <CardContent className="space-y-6">
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="full_name">שם מלא *</Label>
+                <Label htmlFor="full_name">שם ושם משפחה *</Label>
                 <Input
                   id="full_name"
                   value={formData.full_name}

@@ -521,7 +521,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // it round-trips through Supabase and surfaces as a cryptic NOT NULL
     // violation. Anything more nuanced will land in onError as a toast.
     const missing = [];
-    if (!formData.customer_name?.trim()) missing.push('שם לקוח');
+    if (!formData.customer_name?.trim()) missing.push('שם ושם משפחה');
     if (!formData.customer_phone?.trim()) missing.push('טלפון');
     if (!formData.items.some((item) => item.product_id)) missing.push('לפחות מוצר אחד');
     if (missing.length > 0) {
@@ -647,7 +647,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">שם בעל הכרטיס</Label>
-                <Input placeholder="שם מלא" />
+                <Input placeholder="שם ושם משפחה" />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">ת.ז. בעל הכרטיס</Label>
@@ -847,7 +847,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           <CardContent className="space-y-4">
             <div className="grid sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>שם לקוח *</Label>
+                <Label>שם ושם משפחה *</Label>
                 <Input
                   value={formData.customer_name}
                   onChange={(e) => setFormData({...formData, customer_name: e.target.value})}
@@ -1143,7 +1143,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                     המשך
                   </Button>
                   {currentStep === 1 && (!formData.customer_name?.trim() || !isValidIsraeliPhone(formData.customer_phone)) ? (
-                    <span className="text-[11px] text-muted-foreground">יש למלא שם וטלפון תקין כדי להמשיך</span>
+                    <span className="text-[11px] text-muted-foreground">יש למלא שם ושם משפחה וטלפון תקין כדי להמשיך</span>
                   ) : currentStep === 2 && !formData.items.some(item => item.product_id) ? (
                     <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>
                   ) : null}

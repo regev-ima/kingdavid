@@ -186,7 +186,7 @@ export default function Settings() {
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>שם מלא</Label>
+                  <Label>שם ושם משפחה</Label>
                   <Input
                     value={profileData.full_name}
                     onChange={(e) => setProfileData({...profileData, full_name: e.target.value})}

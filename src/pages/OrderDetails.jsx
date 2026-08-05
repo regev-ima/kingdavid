@@ -355,7 +355,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
             <CardContent>
               <dl className="divide-y divide-border/30">
                 {[
-                  { label: 'שם', value: order.customer_name, icon: User },
+                  { label: 'שם ושם משפחה', value: order.customer_name, icon: User },
                   { label: 'טלפון', value: order.customer_phone, icon: Phone },
                   // Editable here as well as in the order form: a second number
                   // usually surfaces after the sale ("תתקשרו לאשתי לגבי

@@ -62,7 +62,7 @@ export default function EditServiceTicketDialog({ open, onOpenChange, ticket, cu
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!form.customer_name?.trim()) return setError('יש למלא שם לקוח');
+    if (!form.customer_name?.trim()) return setError('יש למלא שם ושם משפחה');
     if (!form.customer_phone?.trim()) return setError('יש למלא טלפון');
     if (!form.subject?.trim()) return setError('יש למלא נושא');
     setError('');
@@ -102,7 +102,7 @@ export default function EditServiceTicketDialog({ open, onOpenChange, ticket, cu
           {/* Customer */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>שם לקוח *</Label>
+              <Label>שם ושם משפחה *</Label>
               <Input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} required />
             </div>
             <div className="space-y-1.5">

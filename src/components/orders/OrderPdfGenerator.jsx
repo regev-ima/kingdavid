@@ -289,7 +289,7 @@ const OrderPdfGenerator = async (orderData) => {
               <span>פרטי לקוח</span>
             </div>
             <div class="kv">
-              <div class="k">שם</div><div class="v">${esc(orderData.customer_name)}</div>
+              <div class="k">שם ושם משפחה</div><div class="v">${esc(orderData.customer_name)}</div>
               ${
                 /* The main number used to sit greyed-out in the card header,
                    which read as a caption rather than as one of the customer's

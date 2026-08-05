@@ -617,7 +617,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
           <CardContent className="space-y-4">
             <div className="grid sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>שם לקוח *</Label>
+                <Label>שם ושם משפחה *</Label>
                 <Input
                   value={formData.customer_name}
                   onChange={(e) => setFormData({...formData, customer_name: e.target.value})}

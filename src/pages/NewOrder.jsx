@@ -782,7 +782,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       && (!formData.delivery_city?.trim() || !formData.delivery_address?.trim());
     if (!formData.customer_name?.trim() || addressMissing) {
       setCurrentStep(1);
-      toast.error(formData.is_self_pickup ? 'יש למלא שם לקוח' : 'יש למלא שם לקוח, עיר וכתובת למשלוח');
+      toast.error(formData.is_self_pickup ? 'יש למלא שם ושם משפחה' : 'יש למלא שם ושם משפחה, עיר וכתובת למשלוח');
       return;
     }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
@@ -898,7 +898,7 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
             </div>
             <div className="grid sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>שם לקוח *</Label>
+                <Label>שם ושם משפחה *</Label>
                 <Input
                   value={formData.customer_name}
                   onChange={(e) => setFormData({...formData, customer_name: e.target.value})}
@@ -1387,8 +1387,8 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                 {currentStep === 1 && !step1Valid ? (
                   <span className="text-[11px] text-muted-foreground">
                     {formData.is_self_pickup
-                      ? 'יש למלא שם וטלפון תקין כדי להמשיך'
-                      : 'יש למלא שם, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך'}
+                      ? 'יש למלא שם ושם משפחה וטלפון תקין כדי להמשיך'
+                      : 'יש למלא שם ושם משפחה, טלפון תקין, עיר וכתובת למשלוח כדי להמשיך'}
                   </span>
                 ) : currentStep === 2 && !hasSellableItem(formData.items) ? (
                   <span className="text-[11px] text-muted-foreground">יש להוסיף לפחות מוצר אחד כדי להמשיך</span>

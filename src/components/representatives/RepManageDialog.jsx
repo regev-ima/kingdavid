@@ -335,7 +335,7 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
             <TabsContent value="details" className="mt-0 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label>שם מלא</Label>
+                  <Label>שם ושם משפחה</Label>
                   <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="שם הנציג" />
                 </div>
                 <div className="space-y-1.5">

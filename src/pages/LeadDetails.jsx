@@ -1123,7 +1123,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                 <div className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">שם מלא</Label>
+                      <Label className="text-xs text-muted-foreground">שם ושם משפחה</Label>
                       <Input value={formData.full_name || ''} onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} className="h-9" />
                     </div>
                     <div className="space-y-1.5">
@@ -1205,7 +1205,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                    cell to switch sides. */
                 <dl className="divide-y divide-border/30">
                   {[
-                    { label: 'שם מלא',     value: lead.full_name,                                       icon: User },
+                    { label: 'שם ושם משפחה',     value: lead.full_name,                                       icon: User },
                     { label: 'טלפון',      value: lead.phone,                                           icon: Phone },
                     { label: 'טלפון נוסף', value: lead.phone_2,                                         icon: Phone },
                     { label: 'אימייל',     value: lead.email,                                           icon: Mail },
