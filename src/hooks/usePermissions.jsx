@@ -15,13 +15,34 @@ import {
 
 export const SUPER_ADMIN_EXISTS_QUERY_KEY = ['super-admin-exists'];
 
+// Postgres/PostgREST for "that column isn't there" — 42703 is
+// undefined_column, PGRST204 is PostgREST's own schema-cache miss.
+function isMissingColumnError(err) {
+  if (!err) return false;
+  if (err.code === '42703' || err.code === 'PGRST204') return true;
+  return /access_level/.test(err.message || '') && /does not exist|could not find/i.test(err.message || '');
+}
+
 /**
  * Whether anybody at all is marked `access_level = 'super_admin'`.
  *
  * Feeds the bootstrap escape hatch in canManagePermissions(): until somebody
  * is appointed, a legacy admin may open the permissions screen, otherwise a
- * fresh environment has nobody who can reach it. Defaults to `true` on error —
- * the safer direction, since the fallback is what loosens the gate.
+ * fresh environment has nobody who can reach it.
+ *
+ * Two failure modes, two answers:
+ *
+ *   • the column does not exist — the migration has not run, so there
+ *     provably is no super admin and the bootstrap window is exactly the
+ *     situation it was written for. Answering `true` here would hide the
+ *     screen from everyone until a deploy, including on a preview build,
+ *     where reviewing it is the entire point.
+ *   • anything else — answer `true` and keep the gate shut, because we do not
+ *     know, and this is the fallback that loosens it.
+ *
+ * Either way the database is the real gate: role_permissions writes are
+ * checked by can_manage_permissions() in RLS, so an over-eager `false` here
+ * opens a screen whose saves would still be refused.
  */
 export function useSuperAdminExists() {
   const { data } = useQuery({
@@ -32,8 +53,8 @@ export function useSuperAdminExists() {
       try {
         const rows = await base44.entities.User.filter({ access_level: 'super_admin' });
         return Array.isArray(rows) ? rows.length > 0 : Boolean(rows);
-      } catch {
-        return true;
+      } catch (err) {
+        return !isMissingColumnError(err);
       }
     },
   });
