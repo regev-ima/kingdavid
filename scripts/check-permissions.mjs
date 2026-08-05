@@ -28,6 +28,7 @@ import {
   ACCESS_LEVELS, EDITABLE_ACCESS_LEVELS, PERMISSION_KEYS, getPermission,
   getAncestorKeys, getDescendantKeys, normalizeMatrix, normalizeOverrides,
   hydrateSuperAdmin, clearSuperAdmin, isSuperAdmin, isStorableAccessLevel,
+  permissionForPage, firstReachablePage, PAGE_PERMISSIONS,
 } from '@/lib/permissions';
 import {
   canAccessSalesWorkspace, canAccessFactoryWorkspace, canAccessBookkeepingWorkspace,
@@ -209,6 +210,58 @@ check('an explicit option overrides the cache', can(rep, 'system.danger_zone', {
 clearSuperAdmin();
 check('clearing the cache demotes the session', isSuperAdmin(superAdmin), false);
 hydrateSuperAdmin(superAdmin, true);
+
+section('── 9a. A blocked page is blocked, not just hidden from the menu ──');
+// The bug this pins: hiding a sidebar entry decides nothing, because the route
+// is still reachable by URL, by the logo link, or by any shared deep link.
+hydrateRolePermissions({ store_manager: { 'dashboards.control_center': false } });
+// Still role=admin in the database — only the access level was lowered. This
+// is exactly the case that was reported: the menu hid מרכז שליטה and the page
+// loaded anyway.
+const demotedAdmin = { id: '20', email: 'da@x.co', role: 'admin', access_level: 'store_manager' };
+check('the permission is denied', can(demotedAdmin, 'dashboards.control_center'), false);
+check('  … the menu hides it', isExplicitlyBlocked(demotedAdmin, 'dashboards.control_center'), true);
+check('  … and the page maps to that permission',
+      permissionForPage('Dashboard2'), 'dashboards.control_center');
+check('  … so the route guard blocks it too',
+      isExplicitlyBlocked(demotedAdmin, permissionForPage('Dashboard2')), true);
+check('a permitted page is untouched', isExplicitlyBlocked(demotedAdmin, permissionForPage('Orders')), false);
+check('detail pages inherit their area, so shared links do not leak',
+      permissionForPage('OrderDetails'), 'orders.view');
+check('  … and quote details too', permissionForPage('QuoteDetails'), 'quotes.view');
+check('every mapped page names a real permission',
+      Object.values(PAGE_PERMISSIONS).every((k) => getPermission(k) !== null), true);
+check('the fallback lands somewhere reachable',
+      isExplicitlyBlocked(demotedAdmin, permissionForPage(
+        firstReachablePage((k) => !k || !isExplicitlyBlocked(demotedAdmin, k)))), false);
+
+section('── 9d. Demoting an admin actually narrows them ──');
+hydrateRolePermissions({});
+// Nothing configured in the matrix at all — the demotion alone has to bite,
+// or moving somebody from מנהל to מנהל חנות is a label and nothing more.
+check('loses the finance area (chief-only tier)', can(demotedAdmin, 'finance.view'), false);
+check('  … and the reason names the demotion', explain(demotedAdmin, 'finance.view').source, 'access_level');
+check('  … so the gate treats it as deliberate', isExplicitlyBlocked(demotedAdmin, 'finance.view'), true);
+check('  … everything under it goes too', can(demotedAdmin, 'finance.profit'), false);
+check('  … reported as an ancestor block, which is what it is',
+      explain(demotedAdmin, 'finance.profit').source, 'ancestor');
+check('  … and the legacy rbac gate agrees', canViewFinanceWorkspace(demotedAdmin), false);
+check('keeps what the store manager tier grants', can(demotedAdmin, 'tasks.view_all'), true);
+// A demotion removes admin POWER, not workspace membership. Locking a demoted
+// manager out of the sales floor would be a different and much worse bug.
+check('still in the sales workspace', canAccessSalesWorkspace(demotedAdmin), true);
+check('still sees orders', canViewOrdersWorkspace(demotedAdmin), true);
+check('still opens service tickets', can(demotedAdmin, 'service.open_ticket'), true);
+// A per-user grant is the more specific decision and survives the demotion.
+const demotedWithGrant = { ...demotedAdmin, extra_permissions: { view_finance: true } };
+check('a personal grant survives', can(demotedWithGrant, 'finance.view'), true);
+
+check('an UNdemoted admin is untouched', can(admin, 'finance.profit'), true);
+check('  … nothing is explicitly blocked for them',
+      PERMISSION_KEYS.filter((k) => isExplicitlyBlocked(admin, k)).length, 0);
+// chiefMgr/storeMgr are sales_user rows promoted UP — never demoted.
+check('promotion is not demotion', PERMISSION_KEYS.filter((k) => isExplicitlyBlocked(chiefMgr, k)).length, 0);
+check('  … same for a store manager', PERMISSION_KEYS.filter((k) => isExplicitlyBlocked(storeMgr, k)).length, 0);
 
 section('── 9c. "Schema missing" vs "permission denied" ──');
 // These two must never be confused: the first opens the super-admin bootstrap

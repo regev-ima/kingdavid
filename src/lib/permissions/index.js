@@ -15,3 +15,4 @@ export * from './roles';
 export * from './catalog';
 export * from './baselines';
 export * from './resolve';
+export * from './pages';

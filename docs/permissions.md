@@ -125,7 +125,8 @@ src/lib/permissions/
   resolve.js                      מנוע ההכרעה — can(), explain()
 src/hooks/useRolePermissions.js   קריאת המטריצה + הזנת המטמון הסינכרוני
 src/hooks/usePermissions.jsx      ההוק שמסכים משתמשים בו
-src/components/permissions/       עץ ההרשאות המשותף
+  pages.js                        מיפוי עמוד → הרשאה (השער ברמת ה-route)
+src/components/permissions/       עץ ההרשאות המשותף + מסך "אין גישה"
 src/components/settings/PermissionsTab.jsx
 src/components/representatives/RepPermissionsTab.jsx
 supabase/migrations/20260806000001_permission_roles.sql
@@ -142,6 +143,35 @@ supabase/migrations/20260806000001_permission_roles.sql
 const { can } = usePermissions();
 {can('finance.view') && <FinanceCard />}
 ```
+
+### אכיפה ברמת הדף — לא רק בתפריט
+
+הסתרת פריט מהתפריט היא **קוסמטיקה**. כל מסך באפליקציה הוא route, ו-route נגיש
+דרך URL ישיר, דרך הלוגו בכותרת, דרך סימנייה ודרך כל לינק בהתראה. לכן יש שער
+אמיתי:
+
+`lib/permissions/pages.js` ממפה כל שם עמוד להרשאה שלו, ו-`Layout` מסרב **לרנדר**
+עמוד חסום — מציג במקומו מסך "אין לך גישה" עם קישור חזרה למקום שהמשתמש כן יכול
+להגיע אליו. אותה פונקציית `blocked()` משרתת גם את התפריט וגם את השער, כדי
+שהשניים לא יוכלו לחלוק.
+
+מסכי פירוט יורשים את ההרשאה של האזור שלהם (`OrderDetails` → `orders.view`), אחרת
+חסימה דולפת דרך הלינק המשותף הראשון.
+
+### הורדת רמה באמת מורידה
+
+`role = 'admin'` מעניק הכול דרך ה-baseline, ולכן העברת מישהו ממנהל למנהל חנות
+לא הייתה משנה כלום — התווית משתנה וההרשאות נשארות. `wasDemoted()` מזהה שרמה
+נקבעה **במפורש מתחת** למה שהתפקיד מרמז (העמודה נזרעה כך שהיא תואמת לתפקיד אצל
+כולם, אז זה קורה רק כשאדם בוחר), ואז ה-baseline נבחן מחדש כאילו המשתמש אינו
+אדמין.
+
+מה יורד: כל מה שהוא החזיק *רק* בזכות היותו אדמין. מה נשאר: שייכות לסביבה (מכירות,
+הזמנות, שירות) והרשאות אישיות שניתנו לו במפורש. מנהל שהורד הוא מנהל עם פחות כוח,
+לא אדם שננעל מחוץ לרצפת המכירות.
+
+התוצאה מסומנת כ-`SOURCE.ACCESS_LEVEL` ולא כברירת מחדל, כדי ש-`isExplicitlyBlocked`
+יתייחס אליה כהחלטה מכוונת — אחרת התפריט היה מסתיר והדף היה נטען.
 
 ### שני שערים, שתי משמעויות
 
@@ -165,6 +195,7 @@ const { can } = usePermissions();
 | מי סופר אדמין — סוד | RLS על `super_admins`: קריאה לחברים בלבד |
 | רק סופר אדמין ממנה סופר אדמין | RLS על `super_admins` (INSERT/DELETE) |
 | רק סופר אדמין כותב ל-`role_permissions` | RLS + `can_manage_permissions()` |
+| עמוד חסום לא נטען, גם ב-URL ישיר | שער ב-`Layout` לפי `PAGE_PERMISSIONS` |
 | אי אפשר להעניק הרשאה שאין לך | `canDelegatePermission` |
 | אי אפשר להעניק רמה ששווה לשלך או גבוהה ממנה | `canGrantAccessLevel` |
 
@@ -180,7 +211,7 @@ const { can } = usePermissions();
 npm run check:permissions
 ```
 
-98 בדיקות שמוודאות שהמערכת לא שינתה כלום כשאין הגדרות, ושהיא כן עושה מה
+129 בדיקות שמוודאות שהמערכת לא שינתה כלום כשאין הגדרות, ושהיא כן עושה מה
 שמובטח כשיש. מריצים אחרי כל שינוי ב-`catalog.js`, ב-`baselines.js` או בשערים
 ב-`rbac.js`.
 
