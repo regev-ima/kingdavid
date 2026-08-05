@@ -97,6 +97,11 @@ Deno.serve(async (req) => {
       Order: attemptId,
       UTF8: 'True',
       UTF8out: 'True',
+      // Without MoreData Hyp's redirect/notify carry only Id/CCode/ACode/Amount —
+      // hyp-verify and hyp-notify then store empty hyp_brand/hyp_l4digit and the
+      // order shows no card digits. MoreData=True makes Hyp echo Brand, L4digit,
+      // Payments and UserId, which the whole chain downstream already reads.
+      MoreData: 'True',
       UserId: '000000000',
       Succesful: `${returnUrl}?status=success&order=${encodeURIComponent(order.id)}`,
       Failed: `${returnUrl}?status=failed&order=${encodeURIComponent(order.id)}`,
