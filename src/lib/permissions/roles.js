@@ -16,6 +16,19 @@
  * mapped from their legacy `role` by inferAccessLevel(). That mapping is what
  * makes the rollout invisible: an admin is a מנהל ראשי, everyone else is a
  * נציג, and both keep exactly the access they had yesterday.
+ *
+ * ── Super admin is not in the column ────────────────────────────────────────
+ *
+ * Only the three ordinary levels are ever stored in `users.access_level`.
+ * Super admin is confidential — who holds it is not something the rest of the
+ * company may find out — and `users` cannot keep a secret: its SELECT policy
+ * is `USING (true)` and the client fetches `select('*')`, so anything in that
+ * row is readable by every signed-in user regardless of what the UI renders.
+ *
+ * Membership therefore lives in `public.super_admins`, whose own RLS answers
+ * "only if you are already a member". Nothing in this module can tell you
+ * whether somebody is a super admin, on purpose — ask ./resolve, which knows
+ * the answer for the signed-in user alone.
  */
 
 export const ACCESS_LEVELS = {
@@ -80,20 +93,27 @@ export function accessLevelRank(level) {
   return idx === -1 ? 0 : idx;
 }
 
+/** Only these three are ever stored in `users.access_level`. */
+export function isStorableAccessLevel(value) {
+  return EDITABLE_ACCESS_LEVELS.includes(value);
+}
+
 /**
- * The level a user has when `access_level` was never set — derived from the
- * legacy `role` so that nothing changes on the day this ships.
+ * The VISIBLE level of a user — the one anybody may read off their row.
  *
- * `admin` maps to מנהל ראשי rather than סופר אדמין on purpose: the brief says
- * super admin is Netanel and Regev only. Nothing is taken from the other
- * admins by that mapping — every legacy-admin capability is granted by the
- * `role === 'admin'` baselines in ./baselines.js, which run regardless of
- * access level. The only thing reserved for super admin is editing the
- * permission system itself, which is new and which nobody could do before.
+ * Derived from the legacy `role` when `access_level` was never set, so that
+ * nothing changes on the day this ships: `admin` maps to מנהל ראשי, everyone
+ * else to נציג.
+ *
+ * This never returns סופר אדמין, even for a super admin, and that is not an
+ * oversight. A super admin's row says מנהל ראשי like any other admin's,
+ * because the row is world-readable. Use isSuperAdmin() from ./resolve for the
+ * signed-in user; there is no way to ask it about anybody else, which is the
+ * whole point.
  */
 export function inferAccessLevel(user) {
   if (!user) return ACCESS_LEVELS.REP;
-  if (isValidAccessLevel(user.access_level)) return user.access_level;
+  if (isStorableAccessLevel(user.access_level)) return user.access_level;
   if (user.role === 'admin') return ACCESS_LEVELS.CHIEF_MANAGER;
   return ACCESS_LEVELS.REP;
 }
@@ -102,22 +122,6 @@ export function getAccessLevel(user) {
   return inferAccessLevel(user);
 }
 
-export function isSuperAdmin(user) {
-  return inferAccessLevel(user) === ACCESS_LEVELS.SUPER_ADMIN;
-}
-
-export function isAtLeast(user, level) {
-  return accessLevelRank(inferAccessLevel(user)) >= accessLevelRank(level);
-}
-
 export function accessLevelLabel(level) {
   return ACCESS_LEVEL_META[level]?.label || level || '';
 }
-
-/**
- * Names/e-mail fragments that identify the two people the brief names as super
- * admins. Used only to seed the column (see the migration) and to explain the
- * bootstrap state in the UI — never as a live authorisation check, because an
- * authorisation rule keyed on a person's name is a rule nobody can audit.
- */
-export const SEED_SUPER_ADMIN_HINTS = ['נתנאל', 'רגב', 'netanel', 'natanel', 'regev'];

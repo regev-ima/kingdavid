@@ -25,8 +25,9 @@ const SUITE = String.raw`
 import {
   can, explain, isExplicitlyBlocked, hydrateRolePermissions, resolveForLevel,
   getAccessLevel, canGrantAccessLevel, canDelegatePermission, canManagePermissions,
-  ACCESS_LEVELS, PERMISSION_KEYS, getPermission, getAncestorKeys, getDescendantKeys,
-  normalizeMatrix, normalizeOverrides,
+  ACCESS_LEVELS, EDITABLE_ACCESS_LEVELS, PERMISSION_KEYS, getPermission,
+  getAncestorKeys, getDescendantKeys, normalizeMatrix, normalizeOverrides,
+  hydrateSuperAdmin, clearSuperAdmin, isSuperAdmin, isStorableAccessLevel,
 } from '@/lib/permissions';
 import {
   canAccessSalesWorkspace, canAccessFactoryWorkspace, canAccessBookkeepingWorkspace,
@@ -54,7 +55,11 @@ const factoryDept  = { id: '9',  email: 'fd@x.co', role: 'user', department: 'fa
 const bookkeeper   = { id: '10', email: 'bk@x.co', role: 'bookkeeper' };
 const storeMgr     = { id: '11', email: 'st@x.co', role: 'sales_user', access_level: 'store_manager' };
 const chiefMgr     = { id: '12', email: 'ch@x.co', role: 'sales_user', access_level: 'chief_manager' };
-const superAdmin   = { id: '13', email: 'su@x.co', role: 'admin',      access_level: 'super_admin' };
+// A super admin's row is indistinguishable from any other admin's — the
+// membership lives in public.super_admins. hydrateSuperAdmin() below is what
+// the app does once the confidential lookup resolves for the session.
+const superAdmin   = { id: '13', email: 'su@x.co', role: 'admin' };
+hydrateSuperAdmin(superAdmin, true);
 
 // Every archetype whose role/department puts them on the sales floor.
 // The per-rep grants (finance, bulk, schedule, all-leads, service) are all
@@ -159,8 +164,9 @@ check('… but an explicit grant still opens it', can(open(factory, 'leads.view'
 section('── 8. Delegation guards ──');
 check('chief may not appoint a peer', canGrantAccessLevel(chiefMgr, ACCESS_LEVELS.CHIEF_MANAGER), false);
 check('chief may appoint a store manager', canGrantAccessLevel(chiefMgr, ACCESS_LEVELS.STORE_MANAGER), true);
-check('chief may not appoint a super admin', canGrantAccessLevel(chiefMgr, ACCESS_LEVELS.SUPER_ADMIN), false);
-check('super admin may', canGrantAccessLevel(superAdmin, ACCESS_LEVELS.SUPER_ADMIN), true);
+check('nobody can grant super admin from the level picker',
+      canGrantAccessLevel(chiefMgr, ACCESS_LEVELS.SUPER_ADMIN)
+        || canGrantAccessLevel(superAdmin, ACCESS_LEVELS.SUPER_ADMIN), false);
 check('store manager may not appoint at all', canGrantAccessLevel(storeMgr, ACCESS_LEVELS.REP), false);
 check('cannot grant what you lack', canDelegatePermission(rep, 'finance.profit'), false);
 check('can grant what you hold', canDelegatePermission(admin, 'leads.delete'), true);
@@ -176,6 +182,32 @@ check('non-boolean dropped', JSON.stringify(normalizeMatrix({ rep: { 'leads.view
 check('valid entry kept', JSON.stringify(normalizeMatrix({ rep: { 'leads.view': false } })), '{"rep":{"leads.view":false}}');
 check('overrides sanitised too', JSON.stringify(normalizeOverrides({ 'nope': true, 'leads.view': true })), '{"leads.view":true}');
 check('unknown key is never allowed', can(admin, 'made.up.key'), false);
+
+section('── 9b. Super-admin status is confidential and identity-bound ──');
+check('the session holder is recognised', isSuperAdmin(superAdmin), true);
+// The cache holds one answer, about one person. Asking it about anybody else
+// must not inherit that answer — otherwise previewing a rep in
+// נהל נציג ← הרשאות would render every switch as granted.
+check('another admin is not', isSuperAdmin(admin), false);
+check('a rep is not', isSuperAdmin(rep), false);
+check('a chief manager is not', isSuperAdmin(chiefMgr), false);
+// A user row can claim anything — it is world-readable and not the source of
+// truth. Only the confidential lookup counts.
+const impostor = { id: '99', email: 'imp@x.co', role: 'sales_user', access_level: 'super_admin' };
+check('a row claiming the tier grants nothing', isSuperAdmin(impostor), false);
+check('  … and cannot reach the permissions screen', canManagePermissions(impostor), false);
+check('  … and is not even a valid stored level', isStorableAccessLevel('super_admin'), false);
+check('  … so their visible level falls back', getAccessLevel(impostor), ACCESS_LEVELS.REP);
+check('no real user ever reads back as super admin',
+      EVERYONE.every((u) => getAccessLevel(u) !== ACCESS_LEVELS.SUPER_ADMIN), true);
+check('the level picker only offers the three storable levels',
+      EDITABLE_ACCESS_LEVELS.includes(ACCESS_LEVELS.SUPER_ADMIN), false);
+// An explicit option still wins, which is how the hook supplies the answer
+// before the module cache is warm.
+check('an explicit option overrides the cache', can(rep, 'system.danger_zone', { isSuperAdmin: true }), true);
+clearSuperAdmin();
+check('clearing the cache demotes the session', isSuperAdmin(superAdmin), false);
+hydrateSuperAdmin(superAdmin, true);
 
 section('── 10. Catalog integrity ──');
 check('every key resolves', PERMISSION_KEYS.every((k) => getPermission(k) !== null), true);

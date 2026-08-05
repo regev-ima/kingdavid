@@ -1,5 +1,6 @@
 -- ============================================================================
--- Access levels (רמות הרשאה) + the per-role permission matrix
+-- Access levels (רמות הרשאה), the per-role permission matrix, and the
+-- confidential super-admin set
 -- ============================================================================
 -- Adds the four-tier access model on top of the existing `users.role`:
 --
@@ -7,23 +8,39 @@
 --
 -- Everything here is ADDITIVE and nothing revokes an existing capability:
 --
---   • users.access_level        — the new tier. NULL means "not set", and the
+--   • users.access_level        — the visible tier: rep | store_manager |
+--                                 chief_manager. NULL means "not set", and the
 --                                 app infers it from `role` (admin → מנהל
---                                 ראשי, everyone else → נציג). Seeded below
---                                 to match, so the two agree from day one.
+--                                 ראשי, everyone else → נציג). Seeded below to
+--                                 match, so the two agree from day one.
 --   • users.permission_overrides — per-user exceptions, { key: true|false }.
 --                                 Empty for everyone at first, which is why
 --                                 nobody's access changes when this lands.
---   • role_permissions           — one row per editable tier holding the
---                                 matrix an admin edits in
---                                 הגדרות ← הרשאות ותפקידים. Seeded EMPTY on
---                                 purpose: an empty matrix means "nothing was
---                                 configured", and the client falls through to
---                                 the legacy gate for every single check.
+--   • role_permissions           — one row per editable tier holding the matrix
+--                                 edited in הגדרות ← הרשאות ותפקידים. Seeded
+--                                 EMPTY on purpose: an empty matrix means
+--                                 "nothing was configured", and the client
+--                                 falls through to the legacy gate for every
+--                                 single check.
+--   • super_admins               — WHO the super admins are. See below.
 --
 -- `role` itself is untouched. It still drives the sidebar, every canAccess*
 -- gate and three other RLS policies; re-pointing all of that at a new column
 -- in one migration is how you take the sales floor down on a Sunday morning.
+--
+-- ── Why super admin is a separate table, and not a fourth access_level ──────
+--
+-- Because it has to be a secret, and `users` is not a place secrets can live.
+-- The table-wide SELECT policy on public.users is `USING (true)`: every signed
+-- in user may read every user row, and the client does `select('*')`. Storing
+-- 'super_admin' in users.access_level would therefore publish the answer to
+-- "who are the super admins?" to every rep with a browser devtools panel, no
+-- matter what the UI chooses to render.
+--
+-- So the tier column keeps only the three ordinary levels, and membership of
+-- the confidential set lives in its own table whose SELECT policy answers
+-- "only if you are already in it". A non-member gets zero rows and cannot
+-- distinguish "the set is empty" from "I am not in it".
 -- ============================================================================
 
 BEGIN;
@@ -34,34 +51,123 @@ ALTER TABLE public.users
   ADD COLUMN IF NOT EXISTS access_level         text,
   ADD COLUMN IF NOT EXISTS permission_overrides jsonb;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'users_access_level_check'
-  ) THEN
-    ALTER TABLE public.users
-      ADD CONSTRAINT users_access_level_check
-      CHECK (access_level IS NULL OR access_level IN
-             ('rep', 'store_manager', 'chief_manager', 'super_admin'));
-  END IF;
-END $$;
+-- Drop any earlier version of the constraint before re-adding it: an install
+-- that ran a previous draft of this file may still allow 'super_admin' here.
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_access_level_check;
+ALTER TABLE public.users
+  ADD CONSTRAINT users_access_level_check
+  CHECK (access_level IS NULL OR access_level IN
+         ('rep', 'store_manager', 'chief_manager'));
 
 COMMENT ON COLUMN public.users.access_level IS
-  'רמת הרשאה: rep | store_manager | chief_manager | super_admin. NULL = infer from role.';
+  'רמת הרשאה גלויה: rep | store_manager | chief_manager. NULL = infer from role. Super admin is NOT stored here — see public.super_admins.';
 COMMENT ON COLUMN public.users.permission_overrides IS
   'Per-user exceptions to the role matrix: { "finance.view": true, "leads.delete": false }.';
 
--- ── Seed the tier from the legacy role ──────────────────────────────────────
+-- ── super_admins: the confidential set ──────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.super_admins (
+  user_id    uuid        PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  created_by text
+);
+
+COMMENT ON TABLE public.super_admins IS
+  'Confidential. Membership is readable only by members — see the RLS policies below. Never expose this through a view or a join that a non-member can reach.';
+
+ALTER TABLE public.super_admins ENABLE ROW LEVEL SECURITY;
+
+-- ── The predicates ──────────────────────────────────────────────────────────
+-- All SECURITY DEFINER. Two reasons: the RLS policy on super_admins has to ask
+-- "is the caller a super admin?", which reads super_admins — that would recurse
+-- forever under RLS, and SECURITY DEFINER bypasses it. And a non-member must be
+-- able to call them without being able to read the table behind them.
+
+CREATE OR REPLACE FUNCTION public.is_super_admin()
+RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.super_admins sa
+      JOIN public.users u ON u.id = sa.user_id
+     WHERE u.auth_id = auth.uid()
+        OR lower(btrim(u.email)) = lower(btrim(auth.jwt() ->> 'email'))
+  );
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+COMMENT ON FUNCTION public.is_super_admin() IS
+  'True when the CALLER is a super admin. Returns only a boolean about yourself — it never reveals anything about anybody else.';
+
+-- Existence only, never identity. This is what keeps the bootstrap window
+-- possible without publishing the membership: an admin can learn that the set
+-- is empty (and therefore that they may appoint the first member), but never
+-- who is in it once it is not.
+CREATE OR REPLACE FUNCTION public.any_super_admin_exists()
+RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM public.super_admins);
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION public.can_manage_permissions()
+RETURNS boolean AS $$
+  SELECT public.is_super_admin()
+      OR (NOT public.any_super_admin_exists() AND EXISTS (
+            SELECT 1 FROM public.users u
+             WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
+               AND u.role = 'admin'
+          ));
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION public.is_super_admin()          TO authenticated;
+GRANT EXECUTE ON FUNCTION public.any_super_admin_exists()  TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_manage_permissions()  TO authenticated;
+
+-- ── super_admins policies ───────────────────────────────────────────────────
+-- Read: members only. A non-member's SELECT returns zero rows rather than an
+-- error, so the failure is indistinguishable from an empty table — which is
+-- the point. There is deliberately no view, no join and no RPC that returns
+-- the membership to anyone else.
+
+DROP POLICY IF EXISTS "super_admins_select" ON public.super_admins;
+CREATE POLICY "super_admins_select"
+  ON public.super_admins FOR SELECT
+  TO authenticated
+  USING (public.is_super_admin());
+
+-- Write: members only, plus the bootstrap window while the set is empty.
+DROP POLICY IF EXISTS "super_admins_insert" ON public.super_admins;
+CREATE POLICY "super_admins_insert"
+  ON public.super_admins FOR INSERT
+  TO authenticated
+  WITH CHECK (public.can_manage_permissions());
+
+DROP POLICY IF EXISTS "super_admins_delete" ON public.super_admins;
+CREATE POLICY "super_admins_delete"
+  ON public.super_admins FOR DELETE
+  TO authenticated
+  USING (public.is_super_admin());
+
+-- No UPDATE policy: a membership row has nothing to update. Add or remove.
+
+-- ── Seed ────────────────────────────────────────────────────────────────────
+-- The two people named as super admins, matched on their exact addresses.
+-- Not a name pattern: an authorisation rule keyed on "%רגב%" is one new hire
+-- away from promoting the wrong person, and nobody would notice.
+
+INSERT INTO public.super_admins (user_id, created_by)
+SELECT u.id, 'migration:20260806000001'
+  FROM public.users u
+ WHERE lower(btrim(u.email)) IN ('nate@imagick.ai', 'regev@imagick.ai')
+ON CONFLICT (user_id) DO NOTHING;
+
+-- ── Seed the visible tier from the legacy role ──────────────────────────────
 -- Only fills rows where it is still NULL, so re-running never overwrites a
--- level somebody set by hand.
+-- level somebody set by hand. Super admins get 'chief_manager' here like any
+-- other admin: their real level is the table above, and a tier column that
+-- said otherwise would leak exactly what this migration is hiding.
 --
 -- The privilege-escalation trigger is switched off around the seed. It is
 -- SECURITY INVOKER and raises whenever auth.uid() resolves to no admin — which
 -- is exactly the case inside a migration, where there is no authenticated
--- caller at all. Disabling it explicitly beats relying on the fact that the
--- currently-installed version of the function has not heard of access_level
--- yet: that happens to be true today and would stop being true the moment
--- anyone re-orders this file.
+-- caller at all.
 
 DO $$
 BEGIN
@@ -78,22 +184,11 @@ UPDATE public.users
    SET access_level = CASE WHEN role = 'admin' THEN 'chief_manager' ELSE 'rep' END
  WHERE access_level IS NULL;
 
--- Netanel and Regev are the super admins (per the brief). Matched on name or
--- e-mail because there is no stable id to key on, and scoped to existing
--- admins so a same-named rep is never promoted. If this matches nobody the
--- app falls back to "any legacy admin may manage permissions" until somebody
--- is appointed — see canManagePermissions() in lib/permissions/resolve.js.
+-- An install that ran a previous draft of this file may have written
+-- 'super_admin' into the column before the CHECK above was tightened.
 UPDATE public.users
-   SET access_level = 'super_admin'
- WHERE role = 'admin'
-   AND access_level IS DISTINCT FROM 'super_admin'
-   AND (
-        full_name ILIKE '%נתנאל%'
-     OR full_name ILIKE '%רגב%'
-     OR email     ILIKE 'netanel%'
-     OR email     ILIKE 'natanel%'
-     OR email     ILIKE 'regev%'
-   );
+   SET access_level = 'chief_manager'
+ WHERE access_level NOT IN ('rep', 'store_manager', 'chief_manager');
 
 DO $$
 BEGIN
@@ -105,40 +200,6 @@ BEGIN
     ALTER TABLE public.users ENABLE TRIGGER prevent_users_privilege_escalation_trigger;
   END IF;
 END $$;
-
--- ── is_super_admin(): used by the policies below ────────────────────────────
--- Matches on auth_id OR e-mail, the same way the app_policies and
--- shift_assignments policies do, so a profile whose auth_id was never linked
--- still resolves.
-
-CREATE OR REPLACE FUNCTION public.is_super_admin()
-RETURNS boolean AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.users u
-     WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
-       AND u.access_level = 'super_admin'
-  );
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
--- True while nobody has been appointed super admin yet. The bootstrap window:
--- without it a fresh environment has no one who can open the permissions
--- screen, and the feature is unreachable by construction.
-CREATE OR REPLACE FUNCTION public.no_super_admin_exists()
-RETURNS boolean AS $$
-  SELECT NOT EXISTS (
-    SELECT 1 FROM public.users WHERE access_level = 'super_admin'
-  );
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
-
-CREATE OR REPLACE FUNCTION public.can_manage_permissions()
-RETURNS boolean AS $$
-  SELECT public.is_super_admin()
-      OR (public.no_super_admin_exists() AND EXISTS (
-            SELECT 1 FROM public.users u
-             WHERE (u.auth_id = auth.uid() OR u.email = (auth.jwt() ->> 'email'))
-               AND u.role = 'admin'
-          ));
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- ── role_permissions: the matrix ────────────────────────────────────────────
 
@@ -166,7 +227,8 @@ ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 
 -- Read: everyone signed in. The client cannot decide what a user may see
 -- without knowing the matrix, so it has to be readable by the users it
--- constrains. It holds no secret — only which switches are on.
+-- constrains. It holds no secret — only which switches are on, for tiers
+-- everyone already knows exist.
 DROP POLICY IF EXISTS "role_permissions_select" ON public.role_permissions;
 CREATE POLICY "role_permissions_select"
   ON public.role_permissions FOR SELECT
@@ -183,7 +245,7 @@ CREATE POLICY "role_permissions_update"
   USING (public.can_manage_permissions())
   WITH CHECK (public.can_manage_permissions());
 
--- No INSERT/DELETE policy: the three rows are created here and the set of
+-- No INSERT or DELETE policy: the three rows are created here and the set of
 -- access levels is not the app's to extend at runtime.
 
 COMMENT ON TABLE public.role_permissions IS
@@ -192,17 +254,18 @@ COMMENT ON TABLE public.role_permissions IS
 -- ── Privilege-escalation guard ──────────────────────────────────────────────
 -- The self_update_users policy lets a non-admin UPDATE their own row, so every
 -- new authorisation column has to be named here or it is self-service. Extends
--- the existing function (20260708000001) with the two new columns, and adds
--- the rule that only a super admin may mint another super admin — otherwise a
--- plain admin could promote themselves past the tier that guards this system.
+-- the existing function (20260708000001) with the two new columns.
+--
+-- No super-admin branch is needed any more: the tier column cannot hold that
+-- value (the CHECK above), and membership is guarded by the super_admins
+-- policies instead.
 
 CREATE OR REPLACE FUNCTION public.prevent_users_privilege_escalation()
 RETURNS TRIGGER AS $$
 DECLARE
   caller_role text;
-  caller_level text;
 BEGIN
-  SELECT role, access_level INTO caller_role, caller_level
+  SELECT role INTO caller_role
   FROM public.users
   WHERE auth_id = auth.uid();
 
@@ -237,16 +300,6 @@ BEGIN
     IF NEW.permission_overrides IS DISTINCT FROM OLD.permission_overrides THEN
       RAISE EXCEPTION 'אסור לשנות permission_overrides — רק admin רשאי להעניק הרשאות';
     END IF;
-  END IF;
-
-  -- Applies to admins too: סופר אדמין is granted by a סופר אדמין, or during
-  -- the bootstrap window when there is not one yet.
-  IF NEW.access_level IS DISTINCT FROM OLD.access_level
-     AND (NEW.access_level = 'super_admin' OR OLD.access_level = 'super_admin')
-     AND caller_level IS DISTINCT FROM 'super_admin'
-     AND NOT public.no_super_admin_exists()
-  THEN
-    RAISE EXCEPTION 'רק סופר אדמין רשאי להעניק או להסיר רמת סופר אדמין';
   END IF;
 
   RETURN NEW;

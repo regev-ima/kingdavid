@@ -33,10 +33,52 @@ import {
   ACCESS_LEVELS,
   EDITABLE_ACCESS_LEVELS,
   getAccessLevel,
-  isSuperAdmin,
   accessLevelRank,
-  isValidAccessLevel,
+  isStorableAccessLevel,
 } from './roles';
+
+// ── Super-admin status ──────────────────────────────────────────────────────
+// Deliberately NOT derived from the user object. Membership lives in
+// `public.super_admins`, which only members may read, so the only person whose
+// status this process can know is the one holding the session.
+//
+// The cache is bound to that identity. Without the binding, a `can()` call
+// about somebody else — the rep being previewed in נהל נציג ← הרשאות — would
+// silently inherit the signed-in super admin's answer and show every switch as
+// granted.
+let superAdminIdentity = null;
+let superAdminFlag = false;
+
+function identityOf(user) {
+  const email = typeof user?.email === 'string' ? user.email.trim().toLowerCase() : '';
+  return email || (user?.id != null ? `id:${user.id}` : '');
+}
+
+/** Called by hooks/usePermissions once the confidential lookup resolves. */
+export function hydrateSuperAdmin(user, value) {
+  superAdminIdentity = identityOf(user);
+  superAdminFlag = Boolean(value) && Boolean(superAdminIdentity);
+  return superAdminFlag;
+}
+
+export function clearSuperAdmin() {
+  superAdminIdentity = null;
+  superAdminFlag = false;
+}
+
+/**
+ * True when `user` is the signed-in user AND they are a super admin.
+ *
+ * Returns false for everybody else — including an actual super admin who
+ * happens to be the subject of the question rather than the asker. That is
+ * correct: this process has no way to know, and guessing would leak.
+ */
+export function isSuperAdmin(user, options = {}) {
+  if (typeof options.isSuperAdmin === 'boolean') return options.isSuperAdmin;
+  if (!user || !superAdminFlag) return false;
+  const identity = identityOf(user);
+  return Boolean(identity) && identity === superAdminIdentity;
+}
 
 // ── Role matrix cache ──────────────────────────────────────────────────────
 // Shape: { [accessLevel]: { [permissionKey]: true | false } }. Absent key =
@@ -122,7 +164,7 @@ export function resolveOwn(user, key, options = {}) {
   const node = getPermission(key);
   if (!node) return { allowed: false, source: SOURCE.UNKNOWN };
   if (!user) return { allowed: false, source: SOURCE.UNKNOWN };
-  if (isSuperAdmin(user)) return { allowed: true, source: SOURCE.SUPER_ADMIN };
+  if (isSuperAdmin(user, options)) return { allowed: true, source: SOURCE.SUPER_ADMIN };
 
   const level = options.level || getAccessLevel(user);
   const matrix = options.matrix || cachedMatrix;
@@ -167,7 +209,7 @@ export function resolveOwn(user, key, options = {}) {
  */
 export function can(user, key, options = {}) {
   if (!user) return false;
-  if (isSuperAdmin(user)) return true;
+  if (isSuperAdmin(user, options)) return true;
   if (!permissionExists(key)) return false;
 
   for (const ancestorKey of getAncestorKeys(key)) {
@@ -179,7 +221,7 @@ export function can(user, key, options = {}) {
 /** Same as can(), plus why — used by the permissions UI. */
 export function explain(user, key, options = {}) {
   if (!user) return { allowed: false, source: SOURCE.UNKNOWN, blockedBy: null };
-  if (isSuperAdmin(user)) return { allowed: true, source: SOURCE.SUPER_ADMIN, blockedBy: null };
+  if (isSuperAdmin(user, options)) return { allowed: true, source: SOURCE.SUPER_ADMIN, blockedBy: null };
 
   for (const ancestorKey of getAncestorKeys(key)) {
     if (!resolveOwn(user, ancestorKey, options).allowed) {
@@ -209,7 +251,7 @@ export function canAny(user, keys = [], options = {}) {
  */
 export function isExplicitlyBlocked(user, key, options = {}) {
   if (!user) return false;
-  if (isSuperAdmin(user)) return false;
+  if (isSuperAdmin(user, options)) return false;
   if (!permissionExists(key)) return false;
 
   const decisive = [SOURCE.USER_OVERRIDE, SOURCE.ROLE_MATRIX];
@@ -251,37 +293,45 @@ export function resolveForLevel(level, key, matrix = cachedMatrix) {
  * permissions can grant themselves every other permission, so the two are the
  * same power.
  *
- * `superAdminExists` is the bootstrap escape hatch. Until somebody is actually
- * marked `access_level = 'super_admin'` — a migration that has not run, a
- * fresh environment, a seed that matched nobody — the system would otherwise
- * have no one who can open the screen at all. While no super admin exists, any
- * legacy admin may manage permissions, and the screen says so out loud.
+ * `superAdminExists` is the bootstrap escape hatch, and the only thing about
+ * the confidential set a non-member is ever told. Until somebody is appointed
+ * — a migration that has not run, a fresh environment, a seed that matched
+ * nobody — the system would have no one who can open the screen at all. While
+ * the set is empty any legacy admin may manage permissions, and the screen
+ * says so out loud. Once it is not empty, an ordinary admin learns nothing:
+ * the card simply is not there.
  */
-export function canManagePermissions(user, { superAdminExists = true } = {}) {
+export function canManagePermissions(user, options = {}) {
+  const { superAdminExists = true } = options;
   if (!user) return false;
-  if (isSuperAdmin(user)) return true;
+  if (isSuperAdmin(user, options)) return true;
   if (!superAdminExists && user.role === 'admin') return true;
-  return can(user, 'settings.permissions.roles');
+  return can(user, 'settings.permissions.roles', options);
 }
 
 /** Editing another user's per-user overrides and access level. */
-export function canManageUserPermissions(user, { superAdminExists = true } = {}) {
+export function canManageUserPermissions(user, options = {}) {
+  const { superAdminExists = true } = options;
   if (!user) return false;
-  if (isSuperAdmin(user)) return true;
+  if (isSuperAdmin(user, options)) return true;
   if (!superAdminExists && user.role === 'admin') return true;
-  return can(user, 'team.permissions');
+  return can(user, 'team.permissions', options);
 }
 
 /**
  * Nobody may hand out a level at or above their own — that is how a chief
- * manager would mint themselves a peer, or a super admin. Super admins are the
- * exception; granting super admin is theirs alone.
+ * manager would mint themselves a peer.
+ *
+ * סופר אדמין is never grantable here at all, for anyone. It is not a value of
+ * the tier column; appointing one is an insert into `public.super_admins`,
+ * gated by that table's own policy. Keeping it out of the level picker means
+ * the picker cannot leak the concept to somebody who should not know it
+ * exists.
  */
-export function canGrantAccessLevel(actor, level) {
-  if (!actor || !isValidAccessLevel(level)) return false;
-  if (isSuperAdmin(actor)) return true;
-  if (level === ACCESS_LEVELS.SUPER_ADMIN) return false;
-  if (!can(actor, 'team.access_level')) return false;
+export function canGrantAccessLevel(actor, level, options = {}) {
+  if (!actor || !isStorableAccessLevel(level)) return false;
+  if (isSuperAdmin(actor, options)) return true;
+  if (!can(actor, 'team.access_level', options)) return false;
   return accessLevelRank(level) < accessLevelRank(getAccessLevel(actor));
 }
 
@@ -290,8 +340,8 @@ export function canGrantAccessLevel(actor, level) {
  * manager could open כספים for a rep and then impersonate them, or simply
  * grant a capability they were deliberately denied.
  */
-export function canDelegatePermission(actor, key) {
+export function canDelegatePermission(actor, key, options = {}) {
   if (!actor) return false;
-  if (isSuperAdmin(actor)) return true;
-  return can(actor, key);
+  if (isSuperAdmin(actor, options)) return true;
+  return can(actor, key, options);
 }

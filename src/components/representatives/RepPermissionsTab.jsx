@@ -7,9 +7,8 @@ import { Loader2, Save, ShieldCheck } from 'lucide-react';
 import PermissionTree from '@/components/permissions/PermissionTree';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
-  ACCESS_LEVELS,
   ACCESS_LEVEL_META,
-  ACCESS_LEVEL_ORDER,
+  EDITABLE_ACCESS_LEVELS,
   SOURCE,
   SOURCE_LABELS,
   canDelegatePermission,
@@ -105,7 +104,10 @@ export default function RepPermissionsTab({ rep, role, onSave, saving }) {
     [actor],
   );
 
-  const grantableLevels = ACCESS_LEVEL_ORDER.filter(
+  // Only the three storable levels. סופר אדמין is not a value of this column
+  // and is not appointed from here — putting it in the picker would announce
+  // the tier to every manager who opens a rep's card.
+  const grantableLevels = EDITABLE_ACCESS_LEVELS.filter(
     (lvl) => lvl === accessLevel || canGrantAccessLevel(actor, lvl),
   );
 
@@ -143,7 +145,7 @@ export default function RepPermissionsTab({ rep, role, onSave, saving }) {
           קובעת את ברירות המחדל של הנציג. חריגים אישיים בהמשך העמוד גוברים עליה.
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {ACCESS_LEVEL_ORDER.map((lvl) => {
+          {EDITABLE_ACCESS_LEVELS.map((lvl) => {
             const meta = ACCESS_LEVEL_META[lvl];
             const active = accessLevel === lvl;
             const allowed = grantableLevels.includes(lvl);
@@ -167,9 +169,9 @@ export default function RepPermissionsTab({ rep, role, onSave, saving }) {
                     {meta.icon}
                   </span>
                   <p className="text-sm font-medium">{meta.label}</p>
-                  {lvl === ACCESS_LEVELS.SUPER_ADMIN && !allowed ? (
+                  {!allowed ? (
                     <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">
-                      סופר אדמין בלבד
+                      מעל הרמה שלך
                     </Badge>
                   ) : null}
                 </div>

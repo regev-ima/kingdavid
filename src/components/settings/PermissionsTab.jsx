@@ -9,7 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, ShieldCheck, TriangleAlert, Users } from 'lucide-react';
 import PermissionTree, { groupKeys } from '@/components/permissions/PermissionTree';
 import UserAvatar from '@/components/shared/UserAvatar';
-import { usePermissions, SUPER_ADMIN_EXISTS_QUERY_KEY } from '@/hooks/usePermissions';
+import {
+  usePermissions,
+  SUPER_ADMIN_EXISTS_QUERY_KEY,
+  SUPER_ADMIN_QUERY_KEY,
+  isMissingSchemaError,
+} from '@/hooks/usePermissions';
 import { ROLE_PERMISSIONS_QUERY_KEY } from '@/hooks/useRolePermissions';
 import {
   ACCESS_LEVELS,
@@ -18,12 +23,26 @@ import {
   PERMISSION_GROUPS,
   SOURCE,
   SOURCE_LABELS,
-  getAccessLevel,
   hydrateRolePermissions,
   resolveForLevel,
 } from '@/lib/permissions';
 
 const REPS_QUERY_KEY = ['permissions-users'];
+const SUPER_ADMIN_MEMBERS_QUERY_KEY = ['super-admin', 'members'];
+
+/**
+ * Every write on this screen needs the tables the migration creates. Before it
+ * runs — a preview build, a fresh environment — PostgREST answers with things
+ * like "Cannot coerce the result to a single JSON object", which tells the
+ * reader nothing. Name the actual problem instead.
+ */
+function describeWriteFailure(err) {
+  const message = err?.message || '';
+  if (isMissingSchemaError(err) || /coerce the result to a single JSON object/i.test(message)) {
+    return 'ההגדרות עוד לא הוקמו במסד הנתונים — ההגירה של מערכת ההרשאות תרוץ במיזוג לענף הראשי. עד אז אפשר לעיין במסך אבל לא לשמור.';
+  }
+  return `הפעולה נכשלה: ${message || 'שגיאה לא ידועה'}`;
+}
 
 /** Deep-ish clone of the matrix so edits never mutate the query cache. */
 function cloneMatrix(matrix) {
@@ -131,7 +150,7 @@ export default function PermissionsTab() {
       toast.success('ההרשאות נשמרו');
     },
     onError: (err) => {
-      toast.error(`שמירת ההרשאות נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+      toast.error(describeWriteFailure(err));
     },
   });
 
@@ -281,22 +300,48 @@ export default function PermissionsTab() {
 
         {/* ── Super admins ── */}
         <TabsContent value="super">
-          <SuperAdminPanel canEdit={isSuperAdmin || !superAdminExists} currentEmail={effectiveUser?.email} />
+          <SuperAdminPanel
+            canEdit={isSuperAdmin || !superAdminExists}
+            isMember={isSuperAdmin}
+            currentEmail={effectiveUser?.email}
+          />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
+
 /**
- * Appointing and removing super admins. Deliberately its own panel rather than
- * a row in the matrix: super admin is not a set of switches, it is the level
- * that owns the switches.
+ * Appointing and removing super admins.
+ *
+ * The membership itself is confidential: `public.super_admins` returns rows
+ * only to members, so this panel is the one place in the app that can name
+ * them, and it only ever renders for somebody who is already one (or during
+ * the bootstrap window, when the set is provably empty and there is nothing to
+ * disclose).
+ *
+ * `candidates` deliberately does NOT try to mark which of the listed admins
+ * are already super admins — for a non-member that information is unavailable,
+ * and building the list as "everyone minus the members" would have leaked it
+ * by omission.
  */
-function SuperAdminPanel({ canEdit, currentEmail }) {
+function SuperAdminPanel({ canEdit, isMember, currentEmail }) {
   const queryClient = useQueryClient();
 
-  const { data: users = [], isLoading } = useQuery({
+  // Members only. For anyone else this resolves to an empty list, which is
+  // indistinguishable from "nobody has been appointed".
+  const { data: memberIds = [], isLoading: loadingMembers, error: membersError } = useQuery({
+    queryKey: SUPER_ADMIN_MEMBERS_QUERY_KEY,
+    staleTime: 60_000,
+    retry: 1,
+    queryFn: async () => {
+      const rows = await base44.entities.SuperAdmin.list();
+      return (Array.isArray(rows) ? rows : []).map((r) => r.user_id);
+    },
+  });
+
+  const { data: users = [], isLoading: loadingUsers } = useQuery({
     queryKey: REPS_QUERY_KEY,
     staleTime: 60_000,
     queryFn: async () => {
@@ -306,22 +351,29 @@ function SuperAdminPanel({ canEdit, currentEmail }) {
   });
 
   const mutation = useMutation({
-    mutationFn: ({ user, makeSuper }) =>
-      base44.entities.User.update(user.id, {
-        access_level: makeSuper ? ACCESS_LEVELS.SUPER_ADMIN : ACCESS_LEVELS.CHIEF_MANAGER,
-      }),
+    mutationFn: async ({ user, makeSuper }) => {
+      if (makeSuper) {
+        return base44.entities.SuperAdmin.create({
+          user_id: user.id,
+          created_by: currentEmail || '',
+        });
+      }
+      return base44.entities.SuperAdmin.delete(user.id);
+    },
     onSuccess: (_r, vars) => {
-      queryClient.invalidateQueries({ queryKey: REPS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_MEMBERS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_EXISTS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: ['reps'] });
+      queryClient.invalidateQueries({ queryKey: SUPER_ADMIN_QUERY_KEY });
       toast.success(vars.makeSuper ? 'הוגדר כסופר אדמין' : 'הוסרה רמת סופר אדמין');
     },
-    onError: (err) => toast.error(`הפעולה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`),
+    onError: (err) => toast.error(describeWriteFailure(err)),
   });
 
-  const supers = users.filter((u) => getAccessLevel(u) === ACCESS_LEVELS.SUPER_ADMIN);
+  const isLoading = loadingMembers || loadingUsers;
+  const memberSet = new Set(memberIds);
+  const supers = users.filter((u) => memberSet.has(u.id));
   const candidates = users.filter(
-    (u) => u.role === 'admin' && getAccessLevel(u) !== ACCESS_LEVELS.SUPER_ADMIN && u.is_active !== false,
+    (u) => u.role === 'admin' && !memberSet.has(u.id) && u.is_active !== false,
   );
 
   return (
@@ -330,11 +382,17 @@ function SuperAdminPanel({ canEdit, currentEmail }) {
         <CardTitle>סופר אדמין</CardTitle>
         <CardDescription>
           הרמה שמחזיקה את מערכת ההרשאות עצמה — עריכת המטריצה, חריגים לנציג בודד ומינוי
-          סופר אדמין נוסף. לפי ההגדרה הנוכחית: נתנאל ורגב. שאר המנהלים ממשיכים לעבוד
-          בדיוק כמו קודם, פשוט בלי המפתח למסך הזה.
+          סופר אדמין נוסף. מי נמצא ברשימה הזו גלוי אך ורק לסופר אדמין: הרשימה שמורה
+          בטבלה נפרדת שרק חברים בה רשאים לקרוא, כך שגם פנייה ישירה ל-API לא תחשוף אותה.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        {membersError && !isMissingSchemaError(membersError) ? (
+          <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            לא ניתן לטעון את רשימת הסופר אדמינים.
+          </p>
+        ) : null}
+
         {isLoading ? (
           <div className="flex justify-center py-8">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -345,7 +403,7 @@ function SuperAdminPanel({ canEdit, currentEmail }) {
               <p className="text-sm font-medium">סופר אדמינים פעילים</p>
               {supers.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-                  עדיין לא הוגדר אף סופר אדמין.
+                  {isMember ? 'עדיין לא הוגדר אף סופר אדמין.' : 'הרשימה גלויה לסופר אדמין בלבד.'}
                 </p>
               ) : (
                 supers.map((user) => (

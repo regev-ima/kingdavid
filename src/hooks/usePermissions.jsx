@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -10,39 +10,84 @@ import {
   canManagePermissions,
   canManageUserPermissions,
   getAccessLevel,
-  isSuperAdmin,
+  hydrateSuperAdmin,
 } from '@/lib/permissions';
 
-export const SUPER_ADMIN_EXISTS_QUERY_KEY = ['super-admin-exists'];
+export const SUPER_ADMIN_QUERY_KEY = ['super-admin', 'self'];
+export const SUPER_ADMIN_EXISTS_QUERY_KEY = ['super-admin', 'any'];
 
-// Postgres/PostgREST for "that column isn't there" — 42703 is
-// undefined_column, PGRST204 is PostgREST's own schema-cache miss.
-function isMissingColumnError(err) {
+// Postgres/PostgREST for "that relation or column isn't there" — 42P01 is
+// undefined_table, 42703 undefined_column, PGRST20x PostgREST's own schema
+// cache misses.
+export function isMissingSchemaError(err) {
   if (!err) return false;
-  if (err.code === '42703' || err.code === 'PGRST204') return true;
-  return /access_level/.test(err.message || '') && /does not exist|could not find/i.test(err.message || '');
+  if (['42P01', '42703', 'PGRST204', 'PGRST205'].includes(err.code)) return true;
+  const message = err.message || '';
+  return /super_admins|access_level|permission_overrides|role_permissions/.test(message)
+    && /does not exist|could not find|schema cache/i.test(message);
 }
 
 /**
- * Whether anybody at all is marked `access_level = 'super_admin'`.
+ * Is the SIGNED-IN user a super admin?
  *
- * Feeds the bootstrap escape hatch in canManagePermissions(): until somebody
- * is appointed, a legacy admin may open the permissions screen, otherwise a
- * fresh environment has nobody who can reach it.
+ * Answered by selecting from `public.super_admins`, whose RLS returns rows
+ * only to members. A non-member gets an empty list — indistinguishable from an
+ * empty table, which is exactly the property that keeps the membership secret.
+ * There is no query, here or anywhere, that answers this about anybody else.
+ *
+ * The result is pushed into the resolver's cache (bound to this user's
+ * identity) so the synchronous `can()` helpers in lib/rbac can see it without
+ * awaiting.
+ */
+export function useIsSuperAdmin(user) {
+  const identity = user?.email || user?.id || null;
+
+  const { data } = useQuery({
+    queryKey: [...SUPER_ADMIN_QUERY_KEY, identity],
+    enabled: Boolean(identity),
+    staleTime: 5 * 60_000,
+    retry: 1,
+    queryFn: async () => {
+      try {
+        const rows = await base44.entities.SuperAdmin.list();
+        return Array.isArray(rows) && rows.length > 0;
+      } catch {
+        // Unreadable for any reason — not a member, table missing, network.
+        // "No" is the only safe answer to a question about your own privilege.
+        return false;
+      }
+    },
+  });
+
+  const isSuperAdmin = data === true;
+
+  useEffect(() => {
+    hydrateSuperAdmin(user, isSuperAdmin);
+  }, [user, isSuperAdmin]);
+
+  return isSuperAdmin;
+}
+
+/**
+ * Does ANY super admin exist? Existence only — never identity.
+ *
+ * A plain SELECT cannot answer this for a non-member (they see zero rows
+ * either way), so it goes through the `any_super_admin_exists()` SECURITY
+ * DEFINER function, which returns a bare boolean.
  *
  * Two failure modes, two answers:
  *
- *   • the column does not exist — the migration has not run, so there
- *     provably is no super admin and the bootstrap window is exactly the
+ *   • the function or table does not exist — the migration has not run, so
+ *     there provably is no super admin and the bootstrap window is exactly the
  *     situation it was written for. Answering `true` here would hide the
- *     screen from everyone until a deploy, including on a preview build,
- *     where reviewing it is the entire point.
+ *     screen from everyone until a deploy, including on a preview build, where
+ *     reviewing it is the entire point.
  *   • anything else — answer `true` and keep the gate shut, because we do not
  *     know, and this is the fallback that loosens it.
  *
- * Either way the database is the real gate: role_permissions writes are
- * checked by can_manage_permissions() in RLS, so an over-eager `false` here
- * opens a screen whose saves would still be refused.
+ * Either way the database is the real gate: writes are checked by
+ * can_manage_permissions() in RLS, so an over-eager `false` here opens a
+ * screen whose saves are still refused.
  */
 export function useSuperAdminExists() {
   const { data } = useQuery({
@@ -50,12 +95,14 @@ export function useSuperAdminExists() {
     staleTime: 5 * 60_000,
     retry: 1,
     queryFn: async () => {
-      try {
-        const rows = await base44.entities.User.filter({ access_level: 'super_admin' });
-        return Array.isArray(rows) ? rows.length > 0 : Boolean(rows);
-      } catch (err) {
-        return !isMissingColumnError(err);
+      const { data: exists, error } = await base44.supabase.rpc('any_super_admin_exists');
+      if (error) {
+        if (isMissingSchemaError(error) || /function .* does not exist/i.test(error.message || '')) {
+          return false;
+        }
+        return true;
       }
+      return exists === true;
     },
   });
   return data !== false;
@@ -74,22 +121,19 @@ export function useSuperAdminExists() {
 export function usePermissions() {
   const { user, effectiveUser, isLoading, isImpersonating } = useEffectiveCurrentUser();
   const matrix = useRolePermissions();
+  const isSuperAdmin = useIsSuperAdmin(effectiveUser);
   const superAdminExists = useSuperAdminExists();
 
-  const can = useCallback(
-    (key) => canFn(effectiveUser, key, { matrix }),
-    [effectiveUser, matrix],
+  // Every call carries the confidential answer explicitly, so nothing depends
+  // on the module cache having been hydrated first.
+  const options = useMemo(
+    () => ({ matrix, isSuperAdmin, superAdminExists }),
+    [matrix, isSuperAdmin, superAdminExists],
   );
 
-  const canAny = useCallback(
-    (keys) => canAnyFn(effectiveUser, keys, { matrix }),
-    [effectiveUser, matrix],
-  );
-
-  const explain = useCallback(
-    (key) => explainFn(effectiveUser, key, { matrix }),
-    [effectiveUser, matrix],
-  );
+  const can = useCallback((key) => canFn(effectiveUser, key, options), [effectiveUser, options]);
+  const canAny = useCallback((keys) => canAnyFn(effectiveUser, keys, options), [effectiveUser, options]);
+  const explain = useCallback((key) => explainFn(effectiveUser, key, options), [effectiveUser, options]);
 
   return useMemo(
     () => ({
@@ -102,12 +146,13 @@ export function usePermissions() {
       canAny,
       explain,
       accessLevel: getAccessLevel(effectiveUser),
-      isSuperAdmin: isSuperAdmin(effectiveUser),
+      isSuperAdmin,
       superAdminExists,
-      canManagePermissions: canManagePermissions(effectiveUser, { superAdminExists }),
-      canManageUserPermissions: canManageUserPermissions(effectiveUser, { superAdminExists }),
+      canManagePermissions: canManagePermissions(effectiveUser, options),
+      canManageUserPermissions: canManageUserPermissions(effectiveUser, options),
     }),
-    [user, effectiveUser, isLoading, isImpersonating, matrix, can, canAny, explain, superAdminExists],
+    [user, effectiveUser, isLoading, isImpersonating, matrix, can, canAny, explain,
+     isSuperAdmin, superAdminExists, options],
   );
 }
 
