@@ -7,8 +7,7 @@ import {
   ShoppingCart,
   DollarSign,
   Headphones,
-  Factory,
-  AlertTriangle,
+  FileText,
 } from 'lucide-react';
 
 function formatCurrencyCompact(value) {
@@ -35,8 +34,10 @@ function calcDelta(current, previous) {
 // "לידים בטווח" reads as "לידים החודש" / "לידים השבוע" etc. and there's no
 // guessing which window the numbers cover. Keys mirror Dashboard2DateRange's
 // PRESETS; unknown keys fall back to the generic "בטווח". The snapshot tiles
-// below (open tickets / in production / overdue) are point-in-time, so they
-// keep their own fixed titles.
+// Every tile in this strip is a FLOW metric — things that happened inside the
+// window — so all five carry the suffix and all five move together when the
+// range changes. Point-in-time counts (in production, overdue tasks, open
+// tickets) live in the section cards below, where "now" is what they mean.
 const RANGE_SUFFIX = {
   today: 'היום',
   yesterday: 'אתמול',
@@ -92,35 +93,30 @@ export default function HeroStrip({ current = {}, previous = {}, dateRange, rang
       onClick: () => goTo('Orders', { tab: 'all' }),
     },
     {
-      title: 'כרטיסי שירות פתוחים',
-      value: formatNumber(current.openTickets ?? 0),
-      delta: calcDelta(current.openTickets, previous.openTickets),
+      // Tickets OPENED in the window. More of them is worse, hence the
+      // inverted polarity — a rise here is a growing support load.
+      title: `כרטיסי שירות ${rangeSuffix}`,
+      value: formatNumber(current.ticketsOpenedToday ?? 0),
+      delta: calcDelta(current.ticketsOpenedToday, previous.ticketsOpenedToday),
       deltaPolarity: 'negative',
       icon: Headphones,
       color: 'amber',
       onClick: () => goTo('ServiceCenter'),
     },
     {
-      title: 'מזרונים בייצור',
-      value: formatNumber(current.inProduction ?? 0),
-      delta: calcDelta(current.inProduction, previous.inProduction),
-      icon: Factory,
+      title: `הצעות מחיר ${rangeSuffix}`,
+      value: formatNumber(current.quotesCount ?? 0),
+      delta: calcDelta(current.quotesCount, previous.quotesCount),
+      icon: FileText,
       color: 'violet',
-      onClick: () => goTo('Factory'),
-    },
-    {
-      title: 'משימות באיחור',
-      value: formatNumber(current.tasksOverdue ?? 0),
-      delta: calcDelta(current.tasksOverdue, previous.tasksOverdue),
-      deltaPolarity: 'negative',
-      icon: AlertTriangle,
-      color: (current.tasksOverdue ?? 0) > 0 ? 'red' : 'emerald',
-      onClick: () => goTo('SalesTasks', { tab: 'overdue' }),
+      onClick: () => goTo('Quotes', { tab: 'all' }),
     },
   ];
 
   return (
-    <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+    // One tile per row on a phone: at two columns the value shares ~118px with
+    // the title and long numbers ("₪4,369.87") were being ellipsised away.
+    <section className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
       {cards.map((c) => (
         <HeroTile key={c.title} {...c} />
       ))}
