@@ -4,6 +4,8 @@ import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { canManageService, canViewFinanceWorkspace } from '@/lib/rbac';
+import { isExplicitlyBlocked } from '@/lib/permissions';
+import { useRolePermissions } from '@/hooks/useRolePermissions';
 import { Button } from "@/components/ui/button";
 import { useImpersonation } from "@/components/shared/ImpersonationContext";
 import {
@@ -60,66 +62,66 @@ import { useHiddenMenuItems, applyMenuOrder } from "@/hooks/useHiddenMenuItems";
 // Navigation organized by role priority
 export const navigationByRole = {
   admin: [
-    { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard },
-    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: UserCog },
-    { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לקוחות', href: 'Customers', icon: Contact },
-    { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare },
-    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
-    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
-    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
-    { name: 'מפעל', href: 'Factory', icon: Factory },
-    { name: 'משלוחים', href: 'Deliveries', icon: Truck },
-    { name: 'מלאי', href: 'Inventory', icon: Boxes },
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy },
-    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
-    { name: 'החזרות', href: 'Returns', icon: RotateCcw },
-    { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
-    { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone },
-    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
-    { name: 'כספים', href: 'Finance', icon: DollarSign },
-    { name: 'שיווק', href: 'Marketing', icon: Megaphone },
-    { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown },
-    { name: 'דפי נחיתה', href: 'LandingPages', icon: LayoutTemplate },
-    { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: PlusCircle },
-    { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
-    { name: 'הגדרות', href: 'Settings', icon: Settings },
+    { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard, perm: 'dashboards.control_center' },
+    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: UserCog, perm: 'leads.view' },
+    { name: 'איתור ליד', href: 'LeadLookup', icon: Search, perm: 'leads.lookup' },
+    { name: 'לקוחות', href: 'Customers', icon: Contact, perm: 'customers.view' },
+    { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare, perm: 'tasks.view' },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays, perm: 'team.shift_schedule' },
+    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart, perm: 'orders.view' },
+    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText, perm: 'quotes.view' },
+    { name: 'מפעל', href: 'Factory', icon: Factory, perm: 'factory.view' },
+    { name: 'משלוחים', href: 'Deliveries', icon: Truck, perm: 'logistics.view' },
+    { name: 'מלאי', href: 'Inventory', icon: Boxes, perm: 'inventory.view' },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, perm: 'service.manage' },
+    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle, perm: 'comms.whatsapp' },
+    { name: 'החזרות', href: 'Returns', icon: RotateCcw, perm: 'service.returns' },
+    { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package, perm: 'catalog.view' },
+    { name: 'ניתוח שיחות', href: 'CallAnalytics', icon: Phone, perm: 'comms.call_analytics' },
+    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList, perm: 'reports.operational' },
+    { name: 'כספים', href: 'Finance', icon: DollarSign, perm: 'finance.view' },
+    { name: 'שיווק', href: 'Marketing', icon: Megaphone, perm: 'marketing.view' },
+    { name: 'הצטרפויות למועדון', href: 'ClubSignups', icon: Crown, perm: 'marketing.club_signups' },
+    { name: 'דפי נחיתה', href: 'LandingPages', icon: LayoutTemplate, perm: 'marketing.landing_pages' },
+    { name: 'תוספות להזמנות', href: 'ExtraCharges', icon: PlusCircle, perm: 'orders.extra_charges' },
+    { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt, perm: 'finance.bookkeeping' },
+    { name: 'הגדרות', href: 'Settings', icon: Settings, perm: 'settings.access' },
   ],
   sales_user: [
-    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: CheckSquare },
-    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
-    { name: 'איתור ליד', href: 'LeadLookup', icon: Search },
-    { name: 'לקוחות', href: 'Customers', icon: Contact },
-    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
-    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
+    { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: CheckSquare, perm: 'leads.view' },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays, perm: 'team.shift_schedule' },
+    { name: 'איתור ליד', href: 'LeadLookup', icon: Search, perm: 'leads.lookup' },
+    { name: 'לקוחות', href: 'Customers', icon: Contact, perm: 'customers.view' },
+    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart, perm: 'orders.view' },
+    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText, perm: 'quotes.view' },
     // Finance is only for reps granted "צפייה באזור פיננסי" (or admins).
-    { name: 'כספים', href: 'Finance', icon: DollarSign, can: canViewFinanceWorkspace },
+    { name: 'כספים', href: 'Finance', icon: DollarSign, can: canViewFinanceWorkspace, perm: 'finance.view' },
     // Service Center is a management screen — only reps granted "ניהול מרכז
     // שירות" (or admins) see it. Reps still open tickets from an order.
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
-    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService, perm: 'service.manage' },
+    { name: "צ'אט וואטסאפ", href: 'WhatsAppChat', icon: MessageCircle, perm: 'comms.whatsapp' },
   ],
   factory_user: [
-    { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard },
-    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays },
-    { name: 'מפעל', href: 'Factory', icon: Factory },
-    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
-    { name: 'משלוחים', href: 'Deliveries', icon: Truck },
-    { name: 'מלאי', href: 'Inventory', icon: Boxes },
-    { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package },
-    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList },
-    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService },
-    { name: 'החזרות', href: 'Returns', icon: RotateCcw },
+    { name: 'דשבורד מפעל', href: 'FactoryDashboard', icon: LayoutDashboard, perm: 'dashboards.factory' },
+    { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays, perm: 'team.shift_schedule' },
+    { name: 'מפעל', href: 'Factory', icon: Factory, perm: 'factory.view' },
+    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart, perm: 'orders.view' },
+    { name: 'משלוחים', href: 'Deliveries', icon: Truck, perm: 'logistics.view' },
+    { name: 'מלאי', href: 'Inventory', icon: Boxes, perm: 'inventory.view' },
+    { name: 'קטלוג מוצרים', href: 'ProductsNew', icon: Package, perm: 'catalog.view' },
+    { name: 'דוחות תפעוליים', href: 'OperationalReports', icon: ClipboardList, perm: 'reports.operational' },
+    { name: 'מרכז שירות', href: 'ServiceCenter', icon: LifeBuoy, can: canManageService, perm: 'service.manage' },
+    { name: 'החזרות', href: 'Returns', icon: RotateCcw, perm: 'service.returns' },
   ],
   bookkeeper: [
     // מנהלת חשבונות sees the invoicing flow + the surrounding
     // financial context she needs to chase invoices: the finance
     // dashboard, all orders, and all quotes. Everything else
     // (leads, production, settings, marketing) is hidden.
-    { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt },
-    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart },
-    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText },
-    { name: 'כספים', href: 'Finance', icon: DollarSign },
+    { name: 'הנהלת חשבונות', href: 'Bookkeeping', icon: Receipt, perm: 'finance.bookkeeping' },
+    { name: 'הזמנות', href: 'Orders', icon: ShoppingCart, perm: 'orders.view' },
+    { name: 'הצעות מחיר', href: 'Quotes', icon: FileText, perm: 'quotes.view' },
+    { name: 'כספים', href: 'Finance', icon: DollarSign, perm: 'finance.view' },
   ],
 };
 
@@ -143,6 +145,10 @@ function LayoutContent({ children, currentPageName }) {
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
   const { hiddenMenuItems, menuOrder } = useHiddenMenuItems();
+  // Subscribing here is what makes a permission change reach the sidebar: the
+  // resolver reads the matrix from a module-level cache, and this query is
+  // what fills it and re-renders when an admin saves.
+  const matrix = useRolePermissions();
 
   // Cache user data - won't refetch on every page change
   const { data: user } = useQuery({
@@ -246,6 +252,13 @@ function LayoutContent({ children, currentPageName }) {
         // users who actually hold that grantable permission (admins always do).
         // Without this, a permission could be OFF yet its screen stayed reachable.
         .filter((item) => !item.can || item.can(effectiveUser))
+        // Permissions system: hide an entry only when somebody deliberately
+        // blocked it in הגדרות ← הרשאות ותפקידים — for the level or for this
+        // person. Asking `can()` here instead would let a baseline that merely
+        // disagrees with this hand-maintained table start hiding entries that
+        // work fine today; `isExplicitlyBlocked` is a no-op until a switch is
+        // actually thrown.
+        .filter((item) => !item.perm || !isExplicitlyBlocked(effectiveUser, item.perm, { matrix }))
     : [];
 
   return (

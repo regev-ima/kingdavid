@@ -5,6 +5,13 @@ import { supabase } from './supabaseClient';
  */
 const TABLE_MAP = {
   AppPolicy: 'app_policies',
+  // id = the access level ('rep' | 'store_manager' | 'chief_manager'), so the
+  // generic .update(id, …) below addresses a row directly.
+  RolePermission: 'role_permissions',
+  // Confidential: RLS returns rows only to members, so a non-member's list()
+  // comes back empty rather than erroring. Never join this into a query a
+  // non-member can reach.
+  SuperAdmin: 'super_admins',
   Lead: 'leads',
   User: 'users',
   Customer: 'customers',
