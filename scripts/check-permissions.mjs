@@ -34,6 +34,7 @@ import {
   canViewOrdersWorkspace, canViewFinanceWorkspace, canUseBulkUpdate, canEditSchedule,
   canManageService, canAccessSupportWorkspace, canAccessAdminOnly,
 } from '@/lib/rbac';
+import { isMissingSchemaError, isEmptyResultError } from '@/lib/schemaErrors';
 
 let failures = 0;
 const check = (name, actual, expected) => {
@@ -209,6 +210,34 @@ clearSuperAdmin();
 check('clearing the cache demotes the session', isSuperAdmin(superAdmin), false);
 hydrateSuperAdmin(superAdmin, true);
 
+section('── 9c. "Schema missing" vs "permission denied" ──');
+// These two must never be confused: the first opens the super-admin bootstrap
+// window, the second must leave it shut. Every shape below is what Postgres or
+// PostgREST actually sends.
+const missing = [
+  ['PGRST202 missing RPC', { code: 'PGRST202', message: 'Could not find the function public.any_super_admin_exists without parameters in the schema cache' }],
+  ['PGRST205 missing table', { code: 'PGRST205', message: "Could not find the table 'public.super_admins' in the schema cache" }],
+  ['PGRST204 missing column', { code: 'PGRST204', message: "Could not find the 'access_level' column of 'users' in the schema cache" }],
+  ['42P01 undefined_table', { code: '42P01', message: 'relation "public.super_admins" does not exist' }],
+  ['42883 undefined_function', { code: '42883', message: 'function any_super_admin_exists() does not exist' }],
+  ['42703 undefined_column', { code: '42703', message: 'column users.access_level does not exist' }],
+];
+for (const [name, err] of missing) check(name + ' → schema missing', isMissingSchemaError(err), true);
+
+const present = [
+  ['42501 permission denied', { code: '42501', message: 'permission denied for table super_admins' }],
+  ['PGRST301 bad JWT', { code: 'PGRST301', message: 'JWT expired' }],
+  ['PGRST116 zero rows', { code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object' }],
+  ['network failure', { message: 'Failed to fetch' }],
+  ['no error at all', null],
+];
+for (const [name, err] of present) check(name + ' → NOT schema missing', isMissingSchemaError(err), false);
+
+check('the empty-result shape is recognised separately',
+      isEmptyResultError({ code: 'PGRST116', message: 'Cannot coerce the result to a single JSON object' }), true);
+check('  … and a schema error is not mistaken for it',
+      isEmptyResultError({ code: 'PGRST205', message: 'Could not find the table' }), false);
+
 section('── 10. Catalog integrity ──');
 check('every key resolves', PERMISSION_KEYS.every((k) => getPermission(k) !== null), true);
 check('no duplicate keys', new Set(PERMISSION_KEYS).size, PERMISSION_KEYS.length);
@@ -233,6 +262,15 @@ try {
     format: 'esm',
     outfile: out,
     alias: { '@': resolve(root, 'src') },
+    // src/api/supabaseClient reads import.meta.env at module load and throws
+    // without it. The suite never makes a network call; it only needs the
+    // module graph to load.
+    define: {
+      'import.meta.env': JSON.stringify({
+        VITE_SUPABASE_URL: 'http://localhost',
+        VITE_SUPABASE_ANON_KEY: 'test',
+      }),
+    },
     logLevel: 'error',
   });
   await import(pathToFileURL(out).href);

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { useRolePermissions } from '@/hooks/useRolePermissions';
+import { isMissingSchemaError } from '@/lib/schemaErrors';
 import {
   can as canFn,
   canAny as canAnyFn,
@@ -15,17 +16,6 @@ import {
 
 export const SUPER_ADMIN_QUERY_KEY = ['super-admin', 'self'];
 export const SUPER_ADMIN_EXISTS_QUERY_KEY = ['super-admin', 'any'];
-
-// Postgres/PostgREST for "that relation or column isn't there" — 42P01 is
-// undefined_table, 42703 undefined_column, PGRST20x PostgREST's own schema
-// cache misses.
-export function isMissingSchemaError(err) {
-  if (!err) return false;
-  if (['42P01', '42703', 'PGRST204', 'PGRST205'].includes(err.code)) return true;
-  const message = err.message || '';
-  return /super_admins|access_level|permission_overrides|role_permissions/.test(message)
-    && /does not exist|could not find|schema cache/i.test(message);
-}
 
 /**
  * Is the SIGNED-IN user a super admin?
@@ -50,22 +40,25 @@ export function useIsSuperAdmin(user) {
     queryFn: async () => {
       try {
         const rows = await base44.entities.SuperAdmin.list();
-        return Array.isArray(rows) && rows.length > 0;
-      } catch {
-        // Unreadable for any reason — not a member, table missing, network.
-        // "No" is the only safe answer to a question about your own privilege.
-        return false;
+        return { isSuperAdmin: Array.isArray(rows) && rows.length > 0, schemaMissing: false };
+      } catch (err) {
+        // "No" is the only safe answer to a question about your own privilege,
+        // whatever went wrong. But WHY it went wrong is worth keeping: if the
+        // table is not there, the migration has not run, and that single fact
+        // settles the bootstrap question below without asking anything else.
+        return { isSuperAdmin: false, schemaMissing: isMissingSchemaError(err) };
       }
     },
   });
 
-  const isSuperAdmin = data === true;
+  const isSuperAdmin = data?.isSuperAdmin === true;
+  const schemaMissing = data?.schemaMissing === true;
 
   useEffect(() => {
     hydrateSuperAdmin(user, isSuperAdmin);
   }, [user, isSuperAdmin]);
 
-  return isSuperAdmin;
+  return { isSuperAdmin, schemaMissing };
 }
 
 /**
@@ -89,22 +82,22 @@ export function useIsSuperAdmin(user) {
  * can_manage_permissions() in RLS, so an over-eager `false` here opens a
  * screen whose saves are still refused.
  */
-export function useSuperAdminExists() {
+export function useSuperAdminExists({ schemaMissing = false } = {}) {
   const { data } = useQuery({
     queryKey: SUPER_ADMIN_EXISTS_QUERY_KEY,
+    // Nothing to ask when we already know the schema is not there. The probe in
+    // useIsSuperAdmin found that out for free, and trusting it beats inferring
+    // the same thing from however this particular RPC failure is spelled.
+    enabled: !schemaMissing,
     staleTime: 5 * 60_000,
     retry: 1,
     queryFn: async () => {
       const { data: exists, error } = await base44.supabase.rpc('any_super_admin_exists');
-      if (error) {
-        if (isMissingSchemaError(error) || /function .* does not exist/i.test(error.message || '')) {
-          return false;
-        }
-        return true;
-      }
+      if (error) return !isMissingSchemaError(error);
       return exists === true;
     },
   });
+  if (schemaMissing) return false;
   return data !== false;
 }
 
@@ -121,8 +114,8 @@ export function useSuperAdminExists() {
 export function usePermissions() {
   const { user, effectiveUser, isLoading, isImpersonating } = useEffectiveCurrentUser();
   const matrix = useRolePermissions();
-  const isSuperAdmin = useIsSuperAdmin(effectiveUser);
-  const superAdminExists = useSuperAdminExists();
+  const { isSuperAdmin, schemaMissing } = useIsSuperAdmin(effectiveUser);
+  const superAdminExists = useSuperAdminExists({ schemaMissing });
 
   // Every call carries the confidential answer explicitly, so nothing depends
   // on the module cache having been hydrated first.

@@ -13,8 +13,8 @@ import {
   usePermissions,
   SUPER_ADMIN_EXISTS_QUERY_KEY,
   SUPER_ADMIN_QUERY_KEY,
-  isMissingSchemaError,
 } from '@/hooks/usePermissions';
+import { isMissingSchemaError, isEmptyResultError } from '@/lib/schemaErrors';
 import { ROLE_PERMISSIONS_QUERY_KEY } from '@/hooks/useRolePermissions';
 import {
   ACCESS_LEVELS,
@@ -38,7 +38,7 @@ const SUPER_ADMIN_MEMBERS_QUERY_KEY = ['super-admin', 'members'];
  */
 function describeWriteFailure(err) {
   const message = err?.message || '';
-  if (isMissingSchemaError(err) || /coerce the result to a single JSON object/i.test(message)) {
+  if (isMissingSchemaError(err) || isEmptyResultError(err)) {
     return 'ההגדרות עוד לא הוקמו במסד הנתונים — ההגירה של מערכת ההרשאות תרוץ במיזוג לענף הראשי. עד אז אפשר לעיין במסך אבל לא לשמור.';
   }
   return `הפעולה נכשלה: ${message || 'שגיאה לא ידועה'}`;

@@ -117,6 +117,7 @@ devtools פתוח היה רואה מי סופר אדמין, בלי קשר למה
 
 ```
 src/lib/userScope.js              הפרימיטיבים (isAdmin, getUserScope, …)
+src/lib/schemaErrors.js           "הסכמה חסרה" מול "אין לך הרשאה" — שתי תשובות שונות
 src/lib/permissions/
   roles.js                        ארבע הרמות והמיפוי מ-role הישן
   catalog.js                      185 ההרשאות, מקובצות ומקוננות
@@ -179,7 +180,7 @@ const { can } = usePermissions();
 npm run check:permissions
 ```
 
-83 בדיקות שמוודאות שהמערכת לא שינתה כלום כשאין הגדרות, ושהיא כן עושה מה
+98 בדיקות שמוודאות שהמערכת לא שינתה כלום כשאין הגדרות, ושהיא כן עושה מה
 שמובטח כשיש. מריצים אחרי כל שינוי ב-`catalog.js`, ב-`baselines.js` או בשערים
 ב-`rbac.js`.
 
