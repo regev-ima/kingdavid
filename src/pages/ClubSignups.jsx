@@ -104,7 +104,7 @@ export default function ClubSignups() {
 
   const columns = [
     {
-      header: 'שם מלא',
+      header: 'שם ושם משפחה',
       render: (row) => <span className="font-medium text-foreground">{row.full_name}</span>,
     },
     {

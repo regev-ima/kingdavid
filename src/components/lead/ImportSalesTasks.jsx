@@ -22,7 +22,7 @@ import {
 
 const taskFields = [
   { value: 'unique_id', label: 'מזהה ייחודי (לעדכון)' },
-  { value: 'full_name', label: 'שם לקוח (לחיפוש הליד) *' },
+  { value: 'full_name', label: 'שם ושם משפחה (לחיפוש הליד) *' },
   { value: 'phone', label: 'טלפון (לחיפוש הליד) *' },
   { value: 'work_start_date', label: 'תאריך תחילת עבודה (YYYY-MM-DD)' },
   { value: 'manual_created_date', label: 'תאריך יצירה ידני (YYYY-MM-DD HH:MM או YYYY-MM-DD)' },
@@ -213,7 +213,7 @@ export default function ImportSalesTasks({ isOpen, onClose }) {
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 <strong>חשוב:</strong> השורה הראשונה בגיליון צריכה להכיל כותרות. הנתונים יתחילו מהשורה השנייה.
-                שדות מסומנים ב-* הם חובה (שם לקוח וטלפון לחיפוש הליד).
+                שדות מסומנים ב-* הם חובה (שם ושם משפחה וטלפון לחיפוש הליד).
                 המערכת תמצא את הליד המתאים לפי טלפון ושם, ותיצור עבורו משימת מכירה.
               </AlertDescription>
             </Alert>

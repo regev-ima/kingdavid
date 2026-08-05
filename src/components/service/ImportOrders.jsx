@@ -17,7 +17,7 @@ import { readFileToRows, parseImportDate } from '@/utils/importFile';
 // "הזמנה מיובאת" so service tickets can later be linked to them by order number.
 const FIELDS = [
   { key: 'order_number', label: 'מספר הזמנה *' },
-  { key: 'customer_name', label: 'שם לקוח *' },
+  { key: 'customer_name', label: 'שם ושם משפחה *' },
   { key: 'customer_phone', label: 'טלפון' },
   { key: 'customer_email', label: 'אימייל' },
   { key: 'total', label: 'סכום' },

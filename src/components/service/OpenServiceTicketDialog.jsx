@@ -174,7 +174,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.customer_name?.trim()) return setError('יש למלא שם לקוח');
+    if (!formData.customer_name?.trim()) return setError('יש למלא שם ושם משפחה');
     if (!formData.customer_phone?.trim()) return setError('יש למלא טלפון');
     if (!formData.subject?.trim()) return setError('יש למלא נושא');
     if (photosUploading) return setError('יש להמתין לסיום העלאת הקבצים');
@@ -239,7 +239,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>שם לקוח *</Label>
+                  <Label>שם ושם משפחה *</Label>
                   <Input value={formData.customer_name} onChange={(e) => set('customer_name', e.target.value)} required />
                 </div>
                 <div className="space-y-1.5">

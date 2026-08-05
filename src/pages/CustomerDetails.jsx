@@ -406,7 +406,7 @@ export default function CustomerDetails() {
             <CardContent className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>שם מלא</Label>
+                  <Label>שם ושם משפחה</Label>
                   {isEditing ? (
                     <Input
                       value={formData.full_name || ''}

@@ -732,7 +732,7 @@ export default function Representatives({ embedded = false }) {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>שם מלא (חובה)</Label>
+                      <Label>שם ושם משפחה (חובה)</Label>
                       <Select 
                         value={columnMapping.full_name} 
                         onValueChange={(value) => setColumnMapping({...columnMapping, full_name: value})}

@@ -22,7 +22,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const leadFields = [
   { value: 'unique_id', label: 'מזהה ייחודי (לעדכון)' },
-  { value: 'full_name', label: 'שם מלא *' },
+  { value: 'full_name', label: 'שם ושם משפחה *' },
   { value: 'phone', label: 'טלפון *' },
   { value: 'email', label: 'אימייל' },
   { value: 'city', label: 'עיר' },
@@ -278,7 +278,7 @@ export default function ImportFromSheets({ isOpen, onClose }) {
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 <strong>חשוב:</strong> השורה הראשונה בגיליון צריכה להכיל כותרות. הנתונים יתחילו מהשורה השנייה.
-                שדות מסומנים ב-* הם חובה (שם מלא וטלפון).
+                שדות מסומנים ב-* הם חובה (שם ושם משפחה וטלפון).
               </AlertDescription>
             </Alert>
 

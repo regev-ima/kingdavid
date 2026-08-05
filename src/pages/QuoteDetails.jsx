@@ -453,7 +453,7 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
             <CardContent>
               <dl className="divide-y divide-border/30">
                 {[
-                  { label: 'שם לקוח', value: quote.customer_name, icon: User },
+                  { label: 'שם ושם משפחה', value: quote.customer_name, icon: User },
                   { label: 'טלפון', value: quote.customer_phone, icon: Phone, dir: 'ltr' },
                   { label: 'אימייל', value: quote.customer_email, icon: Mail },
                   // Self pickup replaces the whole delivery block: no address,

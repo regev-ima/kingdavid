@@ -17,7 +17,7 @@ import { readFileToRows, parseImportDate } from '@/utils/importFile';
 const FIELDS = [
   { key: 'ticket_number', label: 'מספר פנייה' },
   { key: 'order_number', label: 'מספר הזמנה לקישור' },
-  { key: 'customer_name', label: 'שם לקוח *' },
+  { key: 'customer_name', label: 'שם ושם משפחה *' },
   { key: 'customer_phone', label: 'טלפון' },
   { key: 'customer_email', label: 'אימייל' },
   { key: 'subject', label: 'נושא *' },

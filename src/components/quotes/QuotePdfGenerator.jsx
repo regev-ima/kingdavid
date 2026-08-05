@@ -393,7 +393,7 @@ const QuotePdfGenerator = async (quoteData) => {
               ${safe(quoteData.customer_phone) ? `<span class="muted">${safe(quoteData.customer_phone)}</span>` : ""}
             </div>
             <div class="kv">
-              <div class="k">לכבוד</div><div class="v">${safe(quoteData.customer_name)}</div>
+              <div class="k">שם ושם משפחה</div><div class="v">${safe(quoteData.customer_name)}</div>
               ${
                 selfPickup
                   ? `<div class="k">אופן אספקה</div><div class="v" style="font-weight:700;">איסוף עצמי - בתיאום</div>

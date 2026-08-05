@@ -155,6 +155,7 @@ async function fetchRangeSnapshot({ start, end }) {
     paidOrders,
     deliveredOrders,
     ticketsOpenedToday,
+    quotesCount,
     deliveriesToday,
     deliveriesShipped,
   ] = await Promise.all([
@@ -164,6 +165,9 @@ async function fetchRangeSnapshot({ start, end }) {
     guard('orders.paid', base44.entities.Order.count({ payment_status: 'paid', created_date: { $gte: startIso, $lte: endIso } }), 0),
     guard('orders.delivered', base44.entities.Order.count({ delivery_status: 'delivered', created_date: { $gte: startIso, $lte: endIso } }), 0),
     guard('tickets.today', base44.entities.SupportTicket.count({ created_date: { $gte: startIso, $lte: endIso } }), 0),
+    // Quotes WRITTEN in the window — a flow metric like leads and orders, not
+    // the point-in-time `pendingQuotes` (status='sent') the alert panel uses.
+    guard('quotes.count', base44.entities.Quote.count({ created_date: { $gte: startIso, $lte: endIso } }), 0),
     guard('deliveries.today', base44.entities.DeliveryShipment.count({ scheduled_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
     guard('deliveries.shipped', base44.entities.DeliveryShipment.count({ status: 'delivered', scheduled_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
   ]);
@@ -270,6 +274,7 @@ async function fetchRangeSnapshot({ start, end }) {
     deliveredOrders,
     factoryOverdue: factoryOverdueAlert?.impact || 0,
     ticketsOpenedToday,
+    quotesCount,
     tasksOpen,
     tasksToday,
     tasksOverdue,
@@ -315,26 +320,30 @@ async function fetchRangeSnapshot({ start, end }) {
   };
 }
 
-// ── Previous period (light) — only the 3 range-dependent deltas HeroStrip
-// shows (leads / orders / revenue). No Edge Function call: the old version
-// invoked getDashboardStats a SECOND time just for revenue, doubling the
-// heaviest request for one number.
+// ── Previous period (light) — one counterpart per range-dependent tile
+// HeroStrip shows, so every tile can state a real change instead of "—".
+// No Edge Function call: the old version invoked getDashboardStats a SECOND
+// time just for revenue, doubling the heaviest request for one number.
 async function fetchPreviousSnapshot({ start, end }) {
   const startIso = start.toISOString();
   const endIso = end.toISOString();
   const errors = [];
   const guard = makeGuard(errors);
 
-  const [newLeadsCount, ordersCount, orderTotals] = await Promise.all([
+  const [newLeadsCount, ordersCount, orderTotals, ticketsOpenedToday, quotesCount] = await Promise.all([
     guard('prev.leads', base44.entities.Lead.count({ effective_sort_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
     guard('prev.orders', base44.entities.Order.count({ created_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
     guard('prev.revenue', fetchOrderTotalsInRange(startIso, endIso), [], { silent: true }),
+    guard('prev.tickets', base44.entities.SupportTicket.count({ created_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
+    guard('prev.quotes', base44.entities.Quote.count({ created_date: { $gte: startIso, $lte: endIso } }), 0, { silent: true }),
   ]);
 
   return {
     newLeadsCount,
     ordersCount,
     revenue: orderTotals.reduce((acc, o) => acc + Number(o?.total || 0), 0),
+    ticketsOpenedToday,
+    quotesCount,
     _errors: errors,
   };
 }
