@@ -38,6 +38,7 @@ const filterOptions = [
     label: 'סטטוס',
     options: [
       { value: 'need_scheduling', label: 'לתאום' },
+      { value: 'awaiting_pickup', label: 'ממתין לאיסוף' },
       { value: 'scheduled', label: 'מתואם' },
       { value: 'dispatched', label: 'יצא לדרך' },
       { value: 'in_transit', label: 'בדרך' },

@@ -43,7 +43,9 @@ export default function QuoteConfirmDialog({
               {formData?.customer_phone || '—'}
               {formData?.customer_email ? ` · ${formData.customer_email}` : ''}
             </div>
-            {(formData?.delivery_address || formData?.delivery_city) && (
+            {formData?.is_self_pickup ? (
+              <div className="text-amber-700 text-xs font-medium">איסוף עצמי - בתיאום</div>
+            ) : (formData?.delivery_address || formData?.delivery_city) && (
               <div className="text-muted-foreground text-xs">
                 {[formData?.delivery_address, formData?.delivery_city].filter(Boolean).join(', ')}
               </div>

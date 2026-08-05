@@ -24,7 +24,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock } from "lucide-react";
+import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock, Truck, PackageCheck } from "lucide-react";
+import { isDeliveryRelatedExtra } from '@/lib/deliveryExtras';
 import { hasBedType } from '@/utils/bedType';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
@@ -74,6 +75,9 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     floor: 0,
     apartment_number: '',
     elevator_type: 'none',
+    // Delivery is priced here, so the pickup decision belongs here too — it
+    // rides along to the order when the quote is accepted.
+    is_self_pickup: false,
     items: [],
     extras: [],
     subtotal: 0,
@@ -461,6 +465,28 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     setFormData(prev => ({ ...prev, extras: newExtras, ...totals }));
   };
 
+  // Choosing self pickup drops any delivery/assembly row already selected —
+  // quoting a delivery charge on an order the customer collects himself is the
+  // error this flag exists to prevent.
+  const setSelfPickup = (value) => {
+    if (!value) {
+      setFormData(prev => ({ ...prev, is_self_pickup: false }));
+      return;
+    }
+    const dropped = formData.extras.filter(ex => isDeliveryRelatedExtra(ex.name));
+    if (dropped.length) {
+      toast.info(
+        dropped.length === 1
+          ? `הוסרה שורת "${dropped[0].name}" — באיסוף עצמי אין דמי הובלה`
+          : `הוסרו ${dropped.length} שורות הובלה/הרכבה — באיסוף עצמי אין דמי הובלה`,
+      );
+    }
+    setFormData(prev => {
+      const kept = prev.extras.filter(ex => !isDeliveryRelatedExtra(ex.name));
+      return { ...prev, is_self_pickup: true, extras: kept, ...calculateTotals(prev.items, kept) };
+    });
+  };
+
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
   }
@@ -528,6 +554,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   }, 0);
 
   const filteredExtraCharges = extraCharges.filter(ec => {
+    // Self pickup: nothing delivery-shaped is on offer.
+    if (formData.is_self_pickup && isDeliveryRelatedExtra(ec.name)) return false;
     if (ec.name === 'שירותי מנוף') return false;
     if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
 
@@ -938,7 +966,40 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 <CardTitle>תוספות להובלה</CardTitle>
                 <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* Delivery or self pickup — the answer decides whether any of
+                    the rows below apply at all, so it's asked first. */}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={formData.is_self_pickup ? 'outline' : 'default'}
+                    className="flex-1 gap-2"
+                    onClick={() => setSelfPickup(false)}
+                  >
+                    <Truck className="h-4 w-4" />
+                    משלוח
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formData.is_self_pickup ? 'default' : 'outline'}
+                    className="flex-1 gap-2"
+                    onClick={() => setSelfPickup(true)}
+                  >
+                    <PackageCheck className="h-4 w-4" />
+                    איסוף עצמי
+                  </Button>
+                </div>
+
+                {formData.is_self_pickup && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <p className="font-medium">איסוף עצמי - בתיאום</p>
+                    <p className="text-xs mt-1 leading-relaxed">
+                      הלקוח אוסף מהמפעל ברח׳ העמל 6 קרית מלאכי, בימים א׳-ה׳ בין 9:00 ל-16:00, בתיאום מראש.
+                      תוספות הובלה והרכבה אינן רלוונטיות ואינן מוצעות.
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {filteredExtraCharges.map(ec => {
                     const isSelected = formData.extras.some(ex => ex.extra_charge_id === ec.id);

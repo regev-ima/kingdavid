@@ -49,6 +49,11 @@ const OrderPdfGenerator = async (orderData) => {
     orderData.delivery_city ? `, ${safe(orderData.delivery_city)}` : ""
   }`.trim();
 
+  // Self pickup: there is no delivery address to print, and the order has to
+  // say so in writing — the customer's copy is what the warehouse goes by when
+  // he shows up to collect.
+  const selfPickup = Boolean(orderData.is_self_pickup);
+
   // Floor and apartment ride with the address — they're what the delivery crew
   // needs, and floor 0 is a real answer (קומת קרקע), not a missing one.
   const hasFloor = orderData.floor !== null && orderData.floor !== undefined && String(orderData.floor) !== "";
@@ -309,11 +314,16 @@ const OrderPdfGenerator = async (orderData) => {
                   ? `<div class="k">אימייל</div><div class="v">${esc(orderData.customer_email)}</div>`
                   : ""
               }
-              <div class="k">כתובת</div><div class="v">${esc(customerAddress) || "—"}</div>
+              ${
+                selfPickup
+                  ? `<div class="k">אופן אספקה</div><div class="v" style="font-weight:700;">איסוף עצמי - בתיאום</div>
+                     <div class="k">מקום האיסוף</div><div class="v">רחוב העמל 6, קרית מלאכי · א׳-ה׳ 9:00-16:00</div>`
+                  : `<div class="k">כתובת</div><div class="v">${esc(customerAddress) || "—"}</div>
               ${
                 floorApartment
                   ? `<div class="k">קומה / דירה</div><div class="v">${esc(floorApartment)}</div>`
                   : ""
+              }`
               }
             </div>
           </div>
