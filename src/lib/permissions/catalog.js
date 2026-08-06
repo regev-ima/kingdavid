@@ -1429,9 +1429,16 @@ export const PERMISSION_GROUPS = [
           {
             key: 'settings.quote_defaults',
             label: 'ברירות-מחדל להצעת מחיר',
-            description: 'טקסטים ותנאים קבועים.',
+            description: 'אמצעי התשלום שנבחרים אוטומטית בהצעה חדשה.',
             baseline: BASELINE.ADMIN,
             tiers: t(false, true, true),
+          },
+          {
+            key: 'settings.document_terms',
+            label: 'טקסטים ותנאים',
+            description: 'הנוסח המשפטי על הצעות מחיר והזמנות.',
+            baseline: BASELINE.ADMIN,
+            tiers: t(false, false, true),
           },
           {
             key: 'settings.closures',

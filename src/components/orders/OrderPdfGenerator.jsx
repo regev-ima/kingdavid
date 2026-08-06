@@ -3,6 +3,8 @@ import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
+import { DOCUMENT_TERMS_LABELS, orderTermsFields, resolveDocumentTerms } from "@/constants/documentTerms";
+import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
 
 const PAYMENT_METHOD_LABELS = {
   cash: "מזומן",
@@ -33,6 +35,22 @@ const OrderPdfGenerator = async (orderData) => {
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+
+  // Short free text (terms, warranty) keeps its line breaks; the general terms
+  // block is a bullet list. Both mirror the quote PDF — one document, two
+  // stages of the same sale, so they have to read the same.
+  const escMultiline = (v) => esc(v).replace(/\r?\n/g, "<br/>");
+  const formatNotesAsList = (raw) => {
+    const lines = String(raw || "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return "";
+    return lines
+      .map((line) => esc(line.replace(/^\*\s*/, "")))
+      .map((line) => `<div class="notes-item"><span class="notes-bullet">•</span><span>${line}</span></div>`)
+      .join("");
+  };
 
   const normalizeNumber = (n) => {
     const x = Number(n);
@@ -76,6 +94,22 @@ const OrderPdfGenerator = async (orderData) => {
       // keep the email
     }
   }
+
+  // What the customer signs. Resolution order matches the order screen:
+  // the order's own stamped copy → the quote it was converted from (orders
+  // predating the copy have none of their own) → the company defaults →
+  // the text in code. Every lookup is best-effort: the printed order must
+  // never fail over a missing table or a deleted quote.
+  let termsFallback = (await fetchDocumentTermsSetting())?.value || null;
+  if (!orderData.terms && !orderData.legal_notes && orderData.quote_id) {
+    try {
+      const quoteRows = await base44.entities.Quote.filter({ id: orderData.quote_id }, null, 1);
+      if (quoteRows?.[0]) termsFallback = resolveDocumentTerms(quoteRows[0], termsFallback);
+    } catch {
+      // keep the company defaults
+    }
+  }
+  const printedTerms = resolveDocumentTerms(orderTermsFields(orderData), termsFallback);
 
   const items = Array.isArray(orderData.items) ? orderData.items : [];
   // Delivery/assembly extras (הובלה והרכבה) live next to items on the order and
@@ -251,6 +285,17 @@ const OrderPdfGenerator = async (orderData) => {
       .paymentTable { padding:0 14px 14px; }
       .paymentTable table { margin-top:8px; border-radius:10px; }
       .noPayments { padding:14px; font-size:11px; color:#667085; text-align:center; font-weight:900; }
+      .notes { margin-top:8px; border:1px solid #E8ECF4; background:#FFFFFF; border-radius:14px; padding:8px 12px; font-size:9px; color:#0B1220; font-weight:400; line-height:1.4; }
+      .notes p { margin:0 0 3px 0; font-weight:400; }
+      .notes p:last-child { margin:0; }
+      .notes-label { font-weight:700; margin:0 0 6px 0; color:#111827; }
+      .notes-item { display:flex; flex-direction:row; align-items:flex-start; gap:6px; margin:0 0 4px 0; font-weight:400; text-align:right; }
+      .notes-item:last-child { margin:0; }
+      .notes-bullet { flex:0 0 auto; color:#4B5563; line-height:1.6; }
+      .sig { margin-top:10px; border:1px solid #E8ECF4; border-radius:14px; padding:12px; background:#fff; }
+      .sig .label { font-size:11px; font-weight:900; color:#111827; margin:0; }
+      .sig .line { margin-top:38px; border-bottom:2px solid #111827; opacity:.18; }
+      .sig .hint { margin:8px 0 0; font-size:10px; color:#667085; font-weight:900; text-align:center; }
       .footer { padding:10px 22px 14px; color:#667085; font-size:10px; font-weight:900; text-align:center; }
       .footer .row { margin:2px 0; }
     </style>
@@ -480,6 +525,29 @@ const OrderPdfGenerator = async (orderData) => {
             </div>`
               : `<div class="noPayments">לא נרשמו תשלומים על ההזמנה</div>`
           }
+        </div>
+
+        <div class="notes">
+          <p class="notes-label">${DOCUMENT_TERMS_LABELS.terms}:</p>
+          <p>${escMultiline(printedTerms.terms)}</p>
+        </div>
+
+        <div class="notes">
+          <p class="notes-label">${DOCUMENT_TERMS_LABELS.warranty_terms}:</p>
+          <p>${escMultiline(printedTerms.warranty_terms)}</p>
+        </div>
+
+        <div class="notes">
+          <p class="notes-label">${DOCUMENT_TERMS_LABELS.legal_notes}:</p>
+          ${formatNotesAsList(printedTerms.legal_notes)}
+        </div>
+
+        <!-- The terms end with "הלקוח מאשר בחתימתו" — the printed order is the
+             only place that signature happens, so it needs a line to sign on. -->
+        <div class="sig">
+          <p class="label">חתימת לקוח</p>
+          <div class="line"></div>
+          <p class="hint">חתימה</p>
         </div>
       </div>
 

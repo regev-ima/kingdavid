@@ -50,6 +50,7 @@ import {
   Info,
   Ban,
   PackageCheck,
+  Compass,
 } from "lucide-react";
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
@@ -63,6 +64,10 @@ import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } f
 import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
 import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
+import DocumentTermsCard from '@/components/shared/DocumentTermsCard';
+import useDocumentTermsDefaults from '@/hooks/use-document-terms';
+import { orderTermsFields, resolveDocumentTerms } from '@/constants/documentTerms';
+import { SOURCE_LABELS } from '@/constants/leadOptions';
 
 // Line prices are stored pre-VAT; show the customer incl-VAT, two decimals.
 const VAT = 1.18;
@@ -98,6 +103,24 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     queryFn: () => base44.entities.Customer.filter({ id: order.customer_id }).then(res => res[0]),
     enabled: !!order?.customer_id,
   });
+
+  // The lead the order came from: it holds the campaign/UTM detail behind
+  // "מקור הגעה", and it's what the rep wants to jump back to.
+  const { data: lead = null } = useQuery({
+    queryKey: ['order-source-lead', order?.lead_id],
+    queryFn: () => base44.entities.Lead.filter({ id: order.lead_id }).then(res => res[0] || null),
+    enabled: !!order?.lead_id,
+  });
+
+  // Orders created before the legal-text columns existed have no wording of
+  // their own; the quote they were converted from is the next best copy.
+  const { data: sourceQuote = null } = useQuery({
+    queryKey: ['order-source-quote', order?.quote_id],
+    queryFn: () => base44.entities.Quote.filter({ id: order.quote_id }).then(res => res[0] || null),
+    enabled: !!order?.quote_id,
+  });
+
+  const { defaults: companyTermsDefaults } = useDocumentTermsDefaults();
 
   const { data: shipment } = useQuery({
     queryKey: ['shipment', orderId],
@@ -191,6 +214,20 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
   // everyone who could edit before still can; only a non-owning sales rep is
   // downgraded to read-only (a banner + disabled controls below).
   const canEdit = canEditOrder(effectiveUser, order);
+
+  // "מקור הגעה": the bucket is on the order, the marketing detail behind it is
+  // on the lead. A campaign name beats a bare "digital" for the rep reading it.
+  const sourceLabel = SOURCE_LABELS[order.source] || order.source || null;
+  const campaignDetail = [
+    lead?.utm_source,
+    lead?.utm_campaign || lead?.facebook_campaign_name,
+    lead?.utm_content,
+  ].filter(Boolean).join(' · ');
+
+  // Read-only on an order, resolved הזמנה → הצעה → הגדרות → קוד: the order's
+  // own stamped copy wins, then the quote it came from, then the company
+  // defaults, then the text in code.
+  const termsFallback = resolveDocumentTerms(sourceQuote, companyTermsDefaults);
 
   const handleCall = () => {
     if (order?.customer_phone) {
@@ -366,6 +403,31 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                   // it stays editable here too.
                   { label: 'ת.ז.', value: order.customer_id_number, icon: CreditCard, field: 'customer_id_number', placeholder: 'הוסף ת.ז.', digitsOnly: true },
                   { label: 'אימייל', value: order.customer_email, icon: Mail },
+                  // Where the sale actually came from. It's stamped on the
+                  // order at creation (from the lead), and the campaign/UTM
+                  // detail + the link back to the lead come from the lead
+                  // record itself — the order only stores the bucket.
+                  {
+                    label: 'מקור הגעה',
+                    icon: Compass,
+                    value: sourceLabel,
+                    node: sourceLabel ? (
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span>{sourceLabel}</span>
+                        {campaignDetail && (
+                          <span className="text-xs text-muted-foreground">{campaignDetail}</span>
+                        )}
+                        {order.lead_id && (
+                          <Link
+                            to={createPageUrl('LeadDetails') + `?id=${order.lead_id}`}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            לליד המקורי
+                          </Link>
+                        )}
+                      </div>
+                    ) : null,
+                  },
                   // A self-pickup order has no delivery address — printing the
                   // pickup terms here keeps whoever hands over the goods from
                   // looking for one.
@@ -381,7 +443,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 ]
                   // An editable row stays visible while empty — that's the only
                   // way to fill it in; read-only rows still disappear.
-                  .filter((row) => row.value || (row.field && canEdit))
+                  .filter((row) => row.value || row.node || (row.field && canEdit))
                   .map((row) => {
                     const Icon = row.icon;
                     return (
@@ -390,7 +452,9 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                           <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
                           <span>{row.label}</span>
                         </dt>
-                        <dd className="text-sm text-foreground min-w-0 flex-1 truncate">
+                        {/* A `node` row renders rich content (links, a second
+                            line) — truncating it would clip the link away. */}
+                        <dd className={`text-sm text-foreground min-w-0 flex-1 ${row.node ? '' : 'truncate'}`}>
                           {row.field && canEdit ? (
                             <Input
                               // Re-key on the saved value so an external update
@@ -411,7 +475,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                               }}
                             />
                           ) : (
-                            row.value
+                            row.node || row.value
                           )}
                         </dd>
                       </div>
@@ -485,6 +549,11 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
               <QuoteTotalsSummary items={order.items} extras={order.extras} total={order.total} />
             </CardContent>
           </Card>
+
+          {/* The wording the customer is signing. Read-only here: it was fixed
+              when the order was created, and Settings edits must not rewrite
+              an order that was already sold. */}
+          <DocumentTermsCard doc={orderTermsFields(order)} defaults={termsFallback} />
 
           {/* Notes */}
           <Card>

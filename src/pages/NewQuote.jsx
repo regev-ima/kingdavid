@@ -16,6 +16,7 @@ const normalizePhoneForLookup = toLocalIsraeliPhone;
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { QUOTE_DEFAULTS_FALLBACK } from '@/constants/quoteDefaultsFallback';
+import useDocumentTermsDefaults from '@/hooks/use-document-terms';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,10 +87,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     vat_amount: 0,
     total: 0,
     valid_until: format(addBusinessDays(new Date(), 7), 'yyyy-MM-dd'),
-    // terms / notes / payment_terms_selection are seeded from the
-    // QuoteDefaults singleton via an effect below — they start blank so
-    // we don't flash a stale hardcoded string before the row arrives.
+    // The legal texts (terms / warranty_terms / notes) are seeded from the
+    // company defaults via an effect below, and payment_terms_selection from
+    // the QuoteDefaults singleton — all start blank so we don't flash a stale
+    // hardcoded string before they arrive. `notes` is where a quote keeps the
+    // general terms block; see constants/documentTerms.js.
     terms: '',
+    warranty_terms: '',
     status: 'draft',
     notes: '',
     special_requests: '',
@@ -215,12 +219,14 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     enabled: canAccessSales,
   });
 
-  // Admin-editable defaults for terms / notes / payment methods. Seeded into
-  // formData via the effect below — only when the user hasn't typed anything
-  // into those fields yet, so we never stomp in-progress edits. If the
-  // query fails (table not migrated yet on this env, RLS blocked, network),
-  // the QUOTE_DEFAULTS_FALLBACK constant kicks in so reps never see a blank
-  // step-3.
+  // The company's legal texts (הגדרות ← טקסטים ותנאים, else the text in code).
+  // Never empty and never errors, so step-3 always has wording to seed.
+  const { defaults: termsDefaults, isLoading: termsDefaultsLoading } = useDocumentTermsDefaults();
+
+  // Admin-editable default payment methods. Seeded into formData via the
+  // effect below — only when the user hasn't touched them yet, so we never
+  // stomp in-progress edits. If the query fails (table not migrated yet on
+  // this env, RLS blocked, network), QUOTE_DEFAULTS_FALLBACK kicks in.
   const { data: quoteDefaults, isLoading: defaultsLoading, isError: defaultsErrored } = useQuery({
     queryKey: ['quote-defaults'],
     queryFn: async () => {
@@ -234,12 +240,15 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   const [defaultsSeeded, setDefaultsSeeded] = useState(false);
   useEffect(() => {
     if (defaultsSeeded) return;
-    if (defaultsLoading) return;
+    if (defaultsLoading || termsDefaultsLoading) return;
     const src = (quoteDefaults && !defaultsErrored) ? quoteDefaults : QUOTE_DEFAULTS_FALLBACK;
     setFormData((prev) => ({
       ...prev,
-      terms: prev.terms || src.terms || '',
-      notes: prev.notes || src.notes || '',
+      // Stamped onto the quote, not just displayed: the wording the customer
+      // was shown has to survive a later edit of the company defaults.
+      terms: prev.terms || termsDefaults.terms,
+      warranty_terms: prev.warranty_terms || termsDefaults.warranty_terms,
+      notes: prev.notes || termsDefaults.legal_notes,
       payment_terms_selection:
         prev.payment_terms_selection && prev.payment_terms_selection.length
           ? prev.payment_terms_selection
@@ -248,7 +257,7 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             : [],
     }));
     setDefaultsSeeded(true);
-  }, [quoteDefaults, defaultsLoading, defaultsErrored, defaultsSeeded]);
+  }, [quoteDefaults, defaultsLoading, defaultsErrored, defaultsSeeded, termsDefaults, termsDefaultsLoading]);
 
   const { data: addons = [] } = useQuery({
     queryKey: ['product-addons'],
@@ -1033,6 +1042,15 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               />
             </div>
             <div className="space-y-1.5">
+              <Label className="text-sm font-medium">אחריות</Label>
+              <Textarea
+                value={formData.warranty_terms}
+                onChange={(e) => setFormData({...formData, warranty_terms: e.target.value})}
+                rows={2}
+                className="resize-none"
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium">אמצעי תשלום</Label>
               <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.</p>
               <div className="flex flex-wrap gap-2">
@@ -1063,11 +1081,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">הערות</Label>
+              {/* A quote's general terms block lives in `notes` — same text an
+                  order keeps in `legal_notes`. See constants/documentTerms.js. */}
+              <Label className="text-sm font-medium">תנאים כלליים</Label>
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                rows={3}
+                rows={8}
                 className="resize-none"
               />
               </div>

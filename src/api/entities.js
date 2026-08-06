@@ -5,6 +5,9 @@ import { supabase } from './supabaseClient';
  */
 const TABLE_MAP = {
   AppPolicy: 'app_policies',
+  // Key/value config, one row per setting — `id` is the key itself, so
+  // .update('document_terms', …) addresses a row directly.
+  AppSettings: 'app_settings',
   // id = the access level ('rep' | 'store_manager' | 'chief_manager'), so the
   // generic .update(id, …) below addresses a row directly.
   RolePermission: 'role_permissions',
@@ -70,9 +73,14 @@ const TABLE_MAP = {
 // payment_terms_selection did exactly this) — and then NOTHING saves. Instead
 // of hard-failing, drop the named column, warn, and retry (bounded), so the
 // save succeeds minus the not-yet-migrated field.
+//
+// The bound is per missing column, and one payload can carry several: an order
+// insert alone ships special_requests + terms + warranty_terms + legal_notes,
+// so a budget of 4 was exactly the width of the cliff. Creating an order must
+// never fail because a migration hasn't been applied yet.
 async function writeWithSchemaResilience(data, run) {
   let payload = data;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const { data: result, error } = await run(payload);
     if (!error) return result;
     const missing = error.code === 'PGRST204' && /'([^']+)' column/.exec(error.message || '')?.[1];

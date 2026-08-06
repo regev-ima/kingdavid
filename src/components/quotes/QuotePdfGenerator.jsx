@@ -3,6 +3,8 @@ import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
+import { DOCUMENT_TERMS_LABELS, resolveDocumentTerms } from "@/constants/documentTerms";
+import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
 
 /**
  * KING DAVID - Premium PDF Quote Generator
@@ -59,6 +61,17 @@ const QuotePdfGenerator = async (quoteData) => {
       .map((line) => `<div class="notes-item"><span class="notes-bullet">•</span><span>${line}</span></div>`)
       .join("");
   };
+
+  // Terms / warranty are short free text rather than a bullet list — keep the
+  // author's line breaks instead of collapsing them into one run-on line.
+  const escMultiline = (v) => esc(v).replace(/\r?\n/g, "<br/>");
+
+  // The three legal texts, always printed: a quote saved before these fields
+  // existed falls back to the company defaults (הגדרות ← טקסטים ותנאים) and
+  // then to the text in code, so an old quote prints the same document a new
+  // one does instead of dropping the terms entirely.
+  const companyTermsDefaults = (await fetchDocumentTermsSetting())?.value || null;
+  const printedTerms = resolveDocumentTerms(quoteData, companyTermsDefaults);
 
   const normalizeNumber = (n) => {
     const x = Number(n);
@@ -504,16 +517,20 @@ const QuotePdfGenerator = async (quoteData) => {
             : ""
         }
 
-        ${
-          quoteData.terms || quoteData.notes
-            ? `
-          <div class="notes">
-            ${quoteData.notes ? `<p class="notes-label">הערות:</p>${formatNotesAsList(quoteData.notes)}` : ""}
-            ${quoteData.terms ? `<p>${esc(quoteData.terms)}</p>` : ""}
-          </div>
-        `
-            : ""
-        }
+        <div class="notes">
+          <p class="notes-label">${DOCUMENT_TERMS_LABELS.terms}:</p>
+          <p>${escMultiline(printedTerms.terms)}</p>
+        </div>
+
+        <div class="notes">
+          <p class="notes-label">${DOCUMENT_TERMS_LABELS.warranty_terms}:</p>
+          <p>${escMultiline(printedTerms.warranty_terms)}</p>
+        </div>
+
+        <div class="notes">
+          <p class="notes-label">${DOCUMENT_TERMS_LABELS.legal_notes}:</p>
+          ${formatNotesAsList(printedTerms.legal_notes)}
+        </div>
       </div>
 
       <div class="footer">

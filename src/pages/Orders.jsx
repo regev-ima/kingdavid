@@ -20,6 +20,7 @@ import OrdersSnapshotCards from '@/components/orders/OrdersSnapshotCards';
 import NewOrderDialog from '@/components/order/NewOrderDialog';
 import DeleteOrderDialog from '@/components/order/DeleteOrderDialog';
 import { excludeCancelled, isCancelledOrder } from '@/lib/cancelOrder';
+import { LEAD_SOURCE_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
 
 // The Orders page adds an "all time" option on top of the shared presets so
 // the operational list defaults to every order, not an empty "today".
@@ -71,6 +72,12 @@ const filterOptions = [
       { value: 'delivered', label: 'נמסר' },
     ]
   },
+  // Same buckets as the lead screens — an order's source is the lead's source.
+  {
+    key: 'source',
+    label: 'מקור הגעה',
+    options: LEAD_SOURCE_OPTIONS,
+  },
 ];
 
 // Reverse-map an incoming start/end back to a preset key. The control
@@ -96,7 +103,7 @@ export default function Orders() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
-  const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all' });
+  const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all', source: 'all' });
   const [showNewOrder, setShowNewOrder] = useState(false);
   // Order pending deletion (admin only) — null when the dialog is closed.
   const [orderToDelete, setOrderToDelete] = useState(null);
@@ -205,6 +212,9 @@ export default function Orders() {
   if (filters.delivery_status && filters.delivery_status !== 'all') {
     filteredOrders = filteredOrders.filter(o => o.delivery_status === filters.delivery_status);
   }
+  if (filters.source && filters.source !== 'all') {
+    filteredOrders = filteredOrders.filter(o => o.source === filters.source);
+  }
 
   const columns = [
     {
@@ -232,6 +242,15 @@ export default function Orders() {
           </p>
           <p className="text-sm text-muted-foreground">{row.customer_phone}</p>
         </div>
+      )
+    },
+    {
+      header: 'מקור הגעה',
+      accessor: 'source',
+      render: (row) => (
+        <span className="text-sm text-muted-foreground">
+          {SOURCE_LABELS[row.source] || row.source || '—'}
+        </span>
       )
     },
     {
@@ -403,7 +422,7 @@ export default function Orders() {
         filters={filterOptions}
         values={filters}
         onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all' }); setActiveTab('all'); }}
+        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all', source: 'all' }); setActiveTab('all'); }}
         searchPlaceholder="חפש לפי מספר הזמנה, שם או טלפון..."
       />
 
