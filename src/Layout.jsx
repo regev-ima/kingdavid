@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { canManageService, canViewFinanceWorkspace } from '@/lib/rbac';
-import { isExplicitlyBlocked, permissionForPage, firstReachablePage } from '@/lib/permissions';
+import { can, isExplicitlyBlocked, permissionForPage, firstReachablePage } from '@/lib/permissions';
+import { mainPage } from '@/lib/pageRoutes';
 import PageAccessGate from '@/components/permissions/PageAccessGate';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from "@/components/ui/button";
@@ -249,8 +250,9 @@ function LayoutContent({ children, currentPageName }) {
   // Asks "did somebody deliberately turn this off?", not "would the new system
   // have allowed it?" — see the note on isExplicitlyBlocked. A super admin is
   // never blocked by anything.
+  const permissionOptions = { matrix, isSuperAdmin };
   const blocked = (permissionKey) =>
-    isExplicitlyBlocked(effectiveUser, permissionKey, { matrix, isSuperAdmin });
+    isExplicitlyBlocked(effectiveUser, permissionKey, permissionOptions);
 
   const filteredNav = user
     ? applyMenuOrder(navigationByRole[userRole] || navigationByRole.sales_user, menuOrder)
@@ -276,6 +278,28 @@ function LayoutContent({ children, currentPageName }) {
   // nobody thinks to link-check.
   const currentPagePermission = permissionForPage(currentPageName);
   const currentPageBlocked = Boolean(currentPagePermission) && blocked(currentPagePermission);
+
+  // Where "home" is for THIS user. מרכז שליטה is the landing page for everyone
+  // who can open it; for everyone else — a rep, a factory user, a manager whose
+  // level was lowered — home is the first screen they can actually work in.
+  // Resolved with can(), not with blocked(): a factory user is not *blocked*
+  // from לידים, they just have nothing to do there, and a home page that
+  // renders empty is not a home page.
+  const homePage = firstReachablePage((key) => !key || can(effectiveUser, key, permissionOptions));
+  const homeUrl = createPageUrl(homePage);
+
+  // Landing on the app root when the main page is blocked should quietly put
+  // the user where they belong, not greet them with a refusal. A DELIBERATE
+  // navigation to a blocked page still gets the refusal below — that one is
+  // worth explaining rather than silently redirecting.
+  const redirectHomeFromRoot =
+    currentPageBlocked && currentPageName === mainPage && homePage !== currentPageName;
+
+  // Before any chrome renders — otherwise the sidebar and header paint, then
+  // vanish a frame later.
+  if (redirectHomeFromRoot) {
+    return <Navigate to={homeUrl} replace />;
+  }
 
   return (
     <div className="min-h-screen bg-background" dir="rtl">
@@ -338,7 +362,7 @@ function LayoutContent({ children, currentPageName }) {
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
           
-          <Link to={createPageUrl('Dashboard2')} className="flex items-center gap-2">
+          <Link to={homeUrl} className="flex items-center gap-2">
             <div className="h-9 w-9 rounded-lg gradient-brand shadow-primary-glow flex items-center justify-center">
               <Crown className="h-5 w-5 text-white" />
             </div>
@@ -462,7 +486,8 @@ function LayoutContent({ children, currentPageName }) {
           {currentPageBlocked ? (
             <PageAccessGate
               permissionKey={currentPagePermission}
-              fallbackPage={firstReachablePage((key) => !key || !blocked(key))}
+              fallbackPage={homePage}
+              currentPage={currentPageName}
             />
           ) : (
             children

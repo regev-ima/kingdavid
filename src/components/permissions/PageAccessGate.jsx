@@ -14,8 +14,11 @@ import { getPermission } from '@/lib/permissions';
  * support call. It leaks nothing: they already knew the area exists, since
  * they had a link to it.
  */
-export default function PageAccessGate({ permissionKey, fallbackPage = 'Settings' }) {
+export default function PageAccessGate({ permissionKey, fallbackPage = 'Settings', currentPage }) {
   const node = getPermission(permissionKey);
+  // When the only page we could offer is the one they are already refused,
+  // showing a button back to it is a loop with a friendly label on it.
+  const showWayOut = Boolean(fallbackPage) && fallbackPage !== currentPage;
 
   return (
     <div className="mx-auto flex max-w-lg flex-col items-center py-20 text-center">
@@ -33,9 +36,11 @@ export default function PageAccessGate({ permissionKey, fallbackPage = 'Settings
           <>ההרשאה לעמוד הזה חסומה עבורך. אם אתה צריך אותה, פנה למנהל המערכת.</>
         )}
       </p>
-      <Button asChild variant="outline" className="mt-6">
-        <Link to={createPageUrl(fallbackPage)}>חזרה למסך הראשי</Link>
-      </Button>
+      {showWayOut ? (
+        <Button asChild variant="outline" className="mt-6">
+          <Link to={createPageUrl(fallbackPage)}>חזרה למסך הראשי</Link>
+        </Button>
+      ) : null}
     </div>
   );
 }

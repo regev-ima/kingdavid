@@ -28,7 +28,7 @@ import {
   ACCESS_LEVELS, EDITABLE_ACCESS_LEVELS, PERMISSION_KEYS, getPermission,
   getAncestorKeys, getDescendantKeys, normalizeMatrix, normalizeOverrides,
   hydrateSuperAdmin, clearSuperAdmin, isSuperAdmin, isStorableAccessLevel,
-  permissionForPage, firstReachablePage, PAGE_PERMISSIONS,
+  permissionForPage, firstReachablePage, PAGE_PERMISSIONS, HOME_PAGE_ORDER,
 } from '@/lib/permissions';
 import {
   canAccessSalesWorkspace, canAccessFactoryWorkspace, canAccessBookkeepingWorkspace,
@@ -234,6 +234,31 @@ check('every mapped page names a real permission',
 check('the fallback lands somewhere reachable',
       isExplicitlyBlocked(demotedAdmin, permissionForPage(
         firstReachablePage((k) => !k || !isExplicitlyBlocked(demotedAdmin, k)))), false);
+
+section('── 9b2. Home is wherever the user can actually work ──');
+hydrateRolePermissions({});
+// מרכז שליטה is the landing page for everyone who can open it. For everyone
+// else the logo, the app root and the "way out" button all have to lead
+// somewhere usable — not to a refusal screen.
+const homeFor = (u) => firstReachablePage((k) => !k || can(u, k));
+check('admin lands on the control centre… (nav, not home fallback)',
+      can(admin, 'dashboards.control_center'), true);
+check('a rep goes to לידים', homeFor(rep), 'LeadManagement');
+check('a factory user goes to the factory dashboard', homeFor(factory), 'FactoryDashboard');
+check('  … not to לידים, which would render empty', can(factory, 'leads.view'), false);
+check('a bookkeeper goes to הנהלת חשבונות', homeFor(bookkeeper), 'Bookkeeping');
+check('  … even though she can also reach הזמנות', can(bookkeeper, 'orders.view'), true);
+check('a demoted admin still has לידים as home', homeFor(demotedAdmin), 'LeadManagement');
+// The control centre blocked for a store manager: the home has to move.
+hydrateRolePermissions({ store_manager: { 'dashboards.control_center': false } });
+check('control centre blocked → home is still לידים', homeFor(demotedAdmin), 'LeadManagement');
+check('  … and the blocked page is refused', can(demotedAdmin, 'dashboards.control_center'), false);
+// Last resort: everybody can open הגדרות, so the search can always terminate.
+hydrateRolePermissions({});
+check('every home candidate is a real page',
+      HOME_PAGE_ORDER.every((p) => Boolean(PAGE_PERMISSIONS[p])), true);
+check('the list ends somewhere everyone can reach', can(rep, 'settings.access'), true);
+check('  … so home is never empty', HOME_PAGE_ORDER.length > 0 && Boolean(homeFor(rep)), true);
 
 section('── 9d. Demoting an admin actually narrows them ──');
 hydrateRolePermissions({});
