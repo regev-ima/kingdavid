@@ -24,6 +24,9 @@ import { canAccessSalesWorkspace, isAdmin } from '@/lib/rbac';
 import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
+import { LEAD_SOURCE_OPTIONS } from '@/constants/leadOptions';
+import { resolveDocumentTerms } from '@/constants/documentTerms';
+import useDocumentTermsDefaults from '@/hooks/use-document-terms';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
@@ -70,6 +73,12 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     { id: 2, name: 'מוצרים' },
     { id: 3, name: 'תוספות להובלה ותנאים' },
   ];
+
+  // "מקור הגעה" defaults to חנות only until we know better: a lead (directly,
+  // or the one behind the quote) carries the real source, and every order
+  // created from one used to be filed as a walk-in. A rep who picks a source
+  // by hand outranks the lead — hence the touched flag.
+  const [sourceTouched, setSourceTouched] = useState(false);
 
   const [formData, setFormData] = useState({
     source: 'store',
@@ -307,9 +316,23 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         customer_email: lead.email || '',
         delivery_address: lead.address || '',
         delivery_city: lead.city || '',
+        source: sourceTouched ? prev.source : (lead.source || prev.source),
       }));
     }
+    // Deliberately keyed on `lead` alone: sourceTouched only ever guards a
+    // value the rep already set by hand, and re-running on it would re-apply
+    // the lead's source over that choice.
   }, [lead]);
+
+  // Converting a quote: the source lives on the lead behind it, not on the
+  // quote. `quoteLead` is only fetched when the URL had no leadId of its own,
+  // so the two effects can't fight over the field.
+  useEffect(() => {
+    if (!quoteLead || sourceTouched) return;
+    setFormData(prev => (
+      quoteLead.source ? { ...prev, source: quoteLead.source } : prev
+    ));
+  }, [quoteLead, sourceTouched]);
 
   // Pre-fill from the customer record when arriving from the customer card.
   // A `customerId` URL param is mutually exclusive with `leadId`/`quote_id`
@@ -330,8 +353,19 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     }
   }, [customer]);
 
+  // The legal wording an order is stamped with. Never blank and never errors,
+  // so a missing app_settings row can't hold up an order.
+  const { defaults: termsDefaults } = useDocumentTermsDefaults();
+
   const createOrderMutation = useMutation({
     mutationFn: async (data) => {
+      // The order keeps its own copy of the legal wording: the quote's text if
+      // it was converted from one, otherwise today's company defaults. Editing
+      // the texts in Settings later must not rewrite an order that was already
+      // sold. If the columns aren't migrated yet the entity layer drops them
+      // and the insert still goes through — an order is never lost over this.
+      const termsCopy = resolveDocumentTerms(quote, termsDefaults);
+
       // Atomically allocate a unique order_number — fetch + insert with
       // retry-on-unique-violation so two reps saving at the same moment can't
       // collide on the same ORD#### (which would throw 23505).
@@ -343,6 +377,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         buildPayload: (newNumber) => ({
           ...data,
           order_number: newNumber,
+          terms: termsCopy.terms,
+          warranty_terms: termsCopy.warranty_terms,
+          legal_notes: termsCopy.legal_notes,
           // A self-pickup order is never "waiting to be scheduled" — it waits
           // for the customer at the factory, and the logistics queue must not
           // treat it as an unscheduled delivery.
@@ -849,14 +886,18 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
           <CardContent className="space-y-4">
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>מקור הזמנה</Label>
-                <Select value={formData.source} onValueChange={(v) => setFormData({...formData, source: v})}>
+                <Label>מקור הגעה</Label>
+                {/* Same option list the lead screens use, so "מוקד" means the
+                    same thing on a lead and on the order it became. */}
+                <Select
+                  value={formData.source}
+                  onValueChange={(v) => { setSourceTouched(true); setFormData({...formData, source: v}); }}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="store">חנות</SelectItem>
-                    <SelectItem value="callcenter">מוקד טלפוני</SelectItem>
-                    <SelectItem value="digital">דיגיטל</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    {LEAD_SOURCE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

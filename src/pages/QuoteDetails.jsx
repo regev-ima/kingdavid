@@ -8,6 +8,8 @@ import { useQuoteModal } from '@/components/quote/QuoteModalContext';
 import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
+import DocumentTermsCard from '@/components/shared/DocumentTermsCard';
+import useDocumentTermsDefaults from '@/hooks/use-document-terms';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -129,6 +131,9 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
     queryFn: () => base44.entities.User.list(),
     staleTime: 300000,
   });
+
+  // What a quote's own legal texts fall back to when it was saved without them.
+  const { defaults: termsDefaults } = useDocumentTermsDefaults();
 
   const updateQuoteMutation = useMutation({
     mutationFn: (data) => base44.entities.Quote.update(quoteId, data),
@@ -585,23 +590,10 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
             </CardContent>
           </Card>
 
-          {/* Terms */}
-          {quote.terms && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  תנאים
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">תנאי תשלום ואספקה</p>
-                  <p className="text-sm text-foreground whitespace-pre-line">{quote.terms}</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* Terms — always rendered. A quote saved before these fields
+              existed shows the company defaults instead of nothing at all;
+              same card, same wording as the order screen and the PDF. */}
+          <DocumentTermsCard doc={quote} defaults={termsDefaults} />
         </div>
 
         {/* Sidebar */}
@@ -692,17 +684,8 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
             </Card>
           )}
 
-          {/* Notes */}
-          {quote.notes && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">הערות</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground whitespace-pre-line">{quote.notes}</p>
-              </CardContent>
-            </Card>
-          )}
+          {/* `quote.notes` holds the general terms block — it's shown in the
+              תנאים card above, so there's no second copy of it here. */}
         </div>
       </div>
 

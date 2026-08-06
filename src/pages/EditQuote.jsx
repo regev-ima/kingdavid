@@ -70,6 +70,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     total: 0,
     valid_until: '',
     terms: '',
+    warranty_terms: '',
     notes: '',
     special_requests: '',
     payment_terms_selection: [],
@@ -166,6 +167,7 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
         total: quote.total || 0,
         valid_until: quote.valid_until || '',
         terms: quote.terms || '',
+        warranty_terms: quote.warranty_terms || '',
         notes: quote.notes || '',
         special_requests: quote.special_requests || '',
         payment_terms_selection: Array.isArray(quote.payment_terms_selection) ? quote.payment_terms_selection : [],
@@ -803,6 +805,15 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
               />
             </div>
             <div className="space-y-1.5">
+              <Label className="text-sm font-medium">אחריות</Label>
+              <Textarea
+                value={formData.warranty_terms}
+                onChange={(e) => setFormData({...formData, warranty_terms: e.target.value})}
+                rows={2}
+                className="resize-none"
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label className="text-sm font-medium">אמצעי תשלום</Label>
               <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.</p>
               <div className="flex flex-wrap gap-2">
@@ -833,11 +844,13 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">הערות</Label>
+              {/* `notes` is the quote's general terms block — the same text an
+                  order keeps in `legal_notes`. */}
+              <Label className="text-sm font-medium">תנאים כלליים</Label>
               <Textarea
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                rows={3}
+                rows={8}
                 className="resize-none"
               />
               </div>

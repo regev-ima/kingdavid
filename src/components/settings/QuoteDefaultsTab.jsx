@@ -4,7 +4,6 @@ import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Loader2, Save, Check } from 'lucide-react';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
@@ -20,13 +19,15 @@ export default function QuoteDefaultsTab() {
     retry: false,
   });
 
-  const [draft, setDraft] = useState({ terms: '', notes: '', payment_terms_selection: [] });
+  // Only the payment-method chips live here now: the legal texts moved to
+  // הגדרות ← טקסטים ותנאים (app_settings), so a quote and an order can't drift
+  // apart on wording. The quote_defaults.terms / .notes columns are left alone
+  // rather than migrated away — nothing reads them any more.
+  const [draft, setDraft] = useState({ payment_terms_selection: [] });
 
   useEffect(() => {
     if (row) {
       setDraft({
-        terms: row.terms || '',
-        notes: row.notes || '',
         payment_terms_selection: Array.isArray(row.payment_terms_selection) ? row.payment_terms_selection : [],
       });
     }
@@ -35,8 +36,6 @@ export default function QuoteDefaultsTab() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       await base44.entities.QuoteDefaults.update(1, {
-        terms: draft.terms,
-        notes: draft.notes,
         payment_terms_selection: draft.payment_terms_selection,
       });
     },
@@ -78,21 +77,11 @@ export default function QuoteDefaultsTab() {
       <CardHeader>
         <CardTitle>ברירות-מחדל להצעה</CardTitle>
         <CardDescription>
-          הטקסטים והאפשרויות שיופיעו אוטומטית בכל הצעה חדשה. נציגים עדיין יכולים לערוך אותם פר-הצעה.
+          אמצעי התשלום שייבחרו אוטומטית בכל הצעה חדשה. נציגים עדיין יכולים לשנות פר-הצעה.
+          הנוסח המשפטי (תנאים, אחריות, תנאים כלליים) נערך בהגדרות ← טקסטים ותנאים.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="qd-terms">תנאי תשלום ואספקה</Label>
-          <Textarea
-            id="qd-terms"
-            value={draft.terms}
-            onChange={(e) => setDraft({ ...draft, terms: e.target.value })}
-            rows={3}
-            className="resize-none"
-          />
-        </div>
-
         <div className="space-y-2">
           <Label>אמצעי תשלום</Label>
           <p className="text-[11px] text-muted-foreground">ייבחרו אוטומטית בכל הצעה חדשה. ניתן להוסיף/להסיר.</p>
@@ -121,17 +110,6 @@ export default function QuoteDefaultsTab() {
               );
             })}
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="qd-notes">הערות</Label>
-          <Textarea
-            id="qd-notes"
-            value={draft.notes}
-            onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
-            rows={14}
-            className="font-mono text-[13px]"
-          />
         </div>
 
         <div className="flex items-center gap-3">

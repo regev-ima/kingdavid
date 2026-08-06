@@ -26,6 +26,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 // the Representatives page, BulkUpdate, the drag-drop menu lib, etc. up front.
 const ImportOrders = lazy(() => import('@/components/service/ImportOrders'));
 const QuoteDefaultsTab = lazy(() => import('@/components/settings/QuoteDefaultsTab'));
+const DocumentTermsTab = lazy(() => import('@/components/settings/DocumentTermsTab'));
 const CompanyClosuresTab = lazy(() => import('@/components/settings/CompanyClosuresTab'));
 const Sms019SettingsTab = lazy(() => import('@/components/settings/Sms019SettingsTab'));
 const BulkUpdate = lazy(() => import('@/pages/BulkUpdate'));
@@ -99,7 +100,8 @@ export default function Settings() {
     { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      perm: 'settings.statuses' },
     { value: 'lead-import',    label: 'ייבוא לידים',        desc: 'ייבוא מכוורת / CSV עם איתור אנשי קשר', icon: 'group_add', perm: 'settings.lead_import' },
     { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    perm: 'settings.data_import' },
-    { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'טקסטים ותנאים קבועים',      icon: 'receipt_long',   perm: 'settings.quote_defaults' },
+    { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'אמצעי תשלום קבועים להצעה',  icon: 'receipt_long',   perm: 'settings.quote_defaults' },
+    { value: 'document-terms', label: 'טקסטים ותנאים',     desc: 'הנוסח המשפטי על הצעה והזמנה', icon: 'gavel',        perm: 'settings.document_terms' },
     { value: 'closures',       label: 'ימי סגירה',         desc: 'חגים וימי אי-פעילות',        icon: 'event_busy',     perm: 'settings.closures' },
     { value: 'sms',            label: 'שליחת SMS',         desc: 'חיבור חשבון 019',           icon: 'sms',            perm: 'settings.sms' },
     { value: 'wa-templates',   label: 'תבניות וואטסאפ',    desc: 'תבניות הודעה וקיצורים לקומפוזר', icon: 'forum',    perm: 'settings.wa_templates' },
@@ -373,6 +375,14 @@ export default function Settings() {
           <TabsContent value="quote-defaults" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <QuoteDefaultsTab />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {can('settings.document_terms') && (
+          <TabsContent value="document-terms" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <DocumentTermsTab />
             </Suspense>
           </TabsContent>
         )}
