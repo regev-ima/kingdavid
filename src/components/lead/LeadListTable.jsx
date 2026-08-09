@@ -31,6 +31,13 @@ export default function LeadListTable({
   users = [],
   onRowClick,
   highlightId,
+  // 'full' keeps every column (Marketing still wants SLA / rep / activity
+  // date). 'tasks' is the manager's leads/tasks screen: the columns the
+  // approved design shows, in its order, and nothing else.
+  columnSet = 'full',
+  // Multi-select is opt-in on the tasks screen — the design has no checkbox
+  // column, so it appears only when the manager turns "בחירה מרובה" on.
+  showSelection = true,
 }) {
   const queryClient = useQueryClient();
   // Ticks every 30s so a lead whose task comes due rises to the top and gets
@@ -106,8 +113,9 @@ export default function LeadListTable({
       ? [...selectedLeads, id]
       : selectedLeads.filter((x) => x !== id));
   };
+  const isTasksView = columnSet === 'tasks';
   const columns = [
-    ...(isAdmin && onSelectionChange ? [{
+    ...(isAdmin && onSelectionChange && showSelection ? [{
       header: () => (
         <div className="flex items-center justify-center">
           <Checkbox
@@ -129,16 +137,32 @@ export default function LeadListTable({
       ),
     }] : []),
     {
-      header: 'לקוח',
+      header: isTasksView ? 'ליד' : 'לקוח',
       accessor: 'full_name',
-      width: '260px',
+      // Name + phone + the call button need about 190px; the old 260 left a
+      // column of empty space and pushed the call button away from the name
+      // it belongs to.
+      width: isTasksView ? '190px' : '260px',
       render: (row) => (
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
-            <RepeatEnquiryBadge ordinal={repeatEnquiries.get(row.id)} />
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
+              <RepeatEnquiryBadge ordinal={repeatEnquiries.get(row.id)} />
+            </div>
+            <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
           </div>
-          <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
+          {isTasksView && row.phone ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleClickToCall(row.phone); }}
+              className="h-8 w-8 flex-none grid place-items-center rounded-full text-primary hover:bg-primary/10 transition-colors"
+              title={`חיוג ל${row.full_name || ''}`}
+              aria-label="חיוג"
+            >
+              <Phone className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       ),
     },
@@ -157,7 +181,7 @@ export default function LeadListTable({
         return <span className="text-sm text-foreground/80 line-clamp-2 leading-snug" title={adName}>{adName}</span>;
       },
     },
-    {
+    ...(isTasksView ? [] : [{
       header: 'SLA',
       accessor: 'sla_status',
       width: '128px',
@@ -186,9 +210,9 @@ export default function LeadListTable({
         }
         return <span className={`block text-sm font-medium whitespace-nowrap truncate ${color}`} title={label}>{label}</span>;
       },
-    },
+    }]),
     {
-      header: 'מקור',
+      header: isTasksView ? 'מקור הגעה' : 'מקור',
       width: '120px',
       render: (row) => (
         <p className="text-xs text-muted-foreground truncate" title={formatSourceLabel(row.source)}>
@@ -196,7 +220,7 @@ export default function LeadListTable({
         </p>
       ),
     },
-    {
+    ...(isTasksView ? [] : [{
       header: 'נציג מטפל',
       width: '160px',
       render: (row) => {
@@ -204,7 +228,7 @@ export default function LeadListTable({
         const name = repNameByEmail.get(row.rep1) || row.rep1;
         return <p className="text-sm truncate" title={name}>{name}</p>;
       },
-    },
+    }]),
     {
       header: 'משימה הבאה',
       accessor: 'next_active_task',
@@ -239,6 +263,31 @@ export default function LeadListTable({
           e.stopPropagation();
           setCompletingTask({ ...task, rep1: task.rep1 || row.rep1, rep2: task.rep2 || row.rep2 });
         };
+        // The design stacks the task over its time — "שיחת היכרות" then
+        // "היום | 10:00" — and closing a task moves to the row menu, so the
+        // column stays two clean lines instead of a line plus a button.
+        if (isTasksView) {
+          const dayLabel = due
+            ? (overdueDays > 0
+              ? `בפיגור ${overdueDays} ימים`
+              : isToday ? 'היום' : formatInTimeZone(due, 'Asia/Jerusalem', 'dd/MM'))
+            : '';
+          return (
+            <div className="flex flex-col justify-center gap-1 min-w-0 min-h-[44px] text-center">
+              <div className="flex items-center justify-center gap-1.5 text-sm min-w-0">
+                <span className="font-semibold truncate">{task.summary?.split('\n')[0] || meta.label}</span>
+                <meta.Icon className={`h-3.5 w-3.5 flex-shrink-0 ${meta.color}`} />
+              </div>
+              {due ? (
+                <div className="flex items-center justify-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                  <span>{formatInTimeZone(due, 'Asia/Jerusalem', 'HH:mm')}</span>
+                  <span className="text-border" aria-hidden="true">|</span>
+                  <span className={overdueDays > 0 ? 'text-red-600 font-medium' : ''}>{dayLabel}</span>
+                </div>
+              ) : null}
+            </div>
+          );
+        }
         return (
           <div onClick={(e) => e.stopPropagation()} className="flex flex-col justify-center gap-1 min-w-0 min-h-[44px]">
             <div className="flex items-center gap-1.5 text-sm min-w-0 flex-wrap">
@@ -258,11 +307,11 @@ export default function LeadListTable({
       },
     },
     {
-      header: 'תאריך פעילות',
+      header: isTasksView ? 'תאריך יצירה' : 'תאריך פעילות',
       width: '120px',
       render: (row) => {
         try {
-          const d = row.effective_sort_date || row.created_date;
+          const d = isTasksView ? row.created_date : (row.effective_sort_date || row.created_date);
           return d ? <span className="text-xs text-muted-foreground">{format(new Date(d), 'dd/MM/yyyy')}</span> : '—';
         } catch { return '—'; }
       },
@@ -283,13 +332,27 @@ export default function LeadListTable({
       ),
     },
   ];
+  // The design reads ליד → סטטוס → מקור הגעה → שם מודעה; the historical order
+  // put the ad before the source. Swapping here keeps both views honest
+  // instead of forking the column list.
+  const orderedColumns = (() => {
+    if (!isTasksView) return columns;
+    const indexOf = (header) => columns.findIndex((column) => column.header === header);
+    const source = indexOf('מקור הגעה');
+    const ad = indexOf('שם מודעה');
+    if (source === -1 || ad === -1) return columns;
+    const next = [...columns];
+    [next[ad], next[source]] = [next[source], next[ad]];
+    return next;
+  })();
+
   return (
     <>
     {/* Desktop table + mobile cards — same responsive component the Leads
         page used, so reps on a phone get the card view instead of a
         1400px-wide horizontal scroll. */}
     <ResponsiveLeadsTable
-      columns={columns}
+      columns={orderedColumns}
       data={orderedLeads}
       isLoading={isLoading}
       selectedIds={selectedLeads}
