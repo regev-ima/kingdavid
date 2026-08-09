@@ -1,10 +1,9 @@
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, orderTermsFields, resolveDocumentTerms } from "@/constants/documentTerms";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
+import { renderPagesToPdf, withMountedPages } from "@/lib/pdfPages";
 
 const PAYMENT_METHOD_LABELS = {
   cash: "מזומן",
@@ -48,7 +47,7 @@ const OrderPdfGenerator = async (orderData) => {
     if (lines.length === 0) return "";
     return lines
       .map((line) => esc(line.replace(/^\*\s*/, "")))
-      .map((line) => `<div class="notes-item"><span class="notes-bullet">•</span><span>${line}</span></div>`)
+      .map((line) => `<div class="terms-item"><span class="terms-bullet">•</span><span>${line}</span></div>`)
       .join("");
   };
 
@@ -238,14 +237,17 @@ const OrderPdfGenerator = async (orderData) => {
     <style>
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; }
-      .page { width: 794px; min-height: 1123px; margin: 0 auto; background:#fff; overflow:hidden; box-shadow: 0 10px 34px rgba(16,24,40,.12); }
+      /* One A4 sheet. Flex column so the footer sits on the bottom edge even on
+         the terms sheet, which doesn't fill its page. */
+      .page { width: 794px; min-height: 1123px; margin: 0 auto; background:#fff; overflow:hidden; box-shadow: 0 10px 34px rgba(16,24,40,.12); display:flex; flex-direction:column; }
+      .page + .page { margin-top: 18px; }
       .topbar { padding: 18px 22px; background:#0B0B0B; color:#F3F4F6; display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid #1F2933; }
       .brand { display:flex; flex-direction:column; gap:2px; }
       .brand h1 { margin:0; font-size:18px; font-weight:900; letter-spacing:.2px; }
       .brand .sub { margin:0; font-size:11px; opacity:.82; font-weight:700; }
       .logoWrap { display:flex; align-items:center; justify-content:center; flex:1; }
       .logo { height:46px; width:auto; background:transparent; padding:0; filter:none; }
-      .content { padding:18px 22px 14px; }
+      .content { padding:18px 22px 14px; flex:1; }
       .titleRow { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
       .title { font-size:16px; font-weight:900; margin:0; color:#0B1220; }
       .titleWithNumber { display:flex; align-items:center; gap:12px; }
@@ -285,14 +287,23 @@ const OrderPdfGenerator = async (orderData) => {
       .paymentTable { padding:0 14px 14px; }
       .paymentTable table { margin-top:8px; border-radius:10px; }
       .noPayments { padding:14px; font-size:11px; color:#667085; text-align:center; font-weight:900; }
-      .notes { margin-top:8px; border:1px solid #E8ECF4; background:#FFFFFF; border-radius:14px; padding:8px 12px; font-size:9px; color:#0B1220; font-weight:400; line-height:1.4; }
-      .notes p { margin:0 0 3px 0; font-weight:400; }
-      .notes p:last-child { margin:0; }
-      .notes-label { font-weight:700; margin:0 0 6px 0; color:#111827; }
-      .notes-item { display:flex; flex-direction:row; align-items:flex-start; gap:6px; margin:0 0 4px 0; font-weight:400; text-align:right; }
-      .notes-item:last-child { margin:0; }
-      .notes-bullet { flex:0 0 auto; color:#4B5563; line-height:1.6; }
-      .sig { margin-top:10px; border:1px solid #E8ECF4; border-radius:14px; padding:12px; background:#fff; }
+      /* The legal texts get a sheet of their own, so they get readable type
+         (11px) instead of the 9px they were squeezed to when everything had to
+         fit under the payment block. */
+      .terms { margin-top:10px; border:1px solid #E8ECF4; background:#FFFFFF; border-radius:14px; padding:10px 14px; font-size:11px; color:#0B1220; font-weight:400; line-height:1.65; }
+      .terms p { margin:0 0 4px 0; font-weight:400; }
+      .terms p:last-child { margin:0; }
+      .terms-label { font-size:12px; font-weight:900; margin:0 0 8px 0; color:#111827; }
+      .terms-item { display:flex; flex-direction:row; align-items:flex-start; gap:8px; margin:0 0 6px 0; font-weight:400; text-align:right; }
+      .terms-item:last-child { margin:0; }
+      .terms-bullet { flex:0 0 auto; color:#4B5563; line-height:1.65; }
+      /* The terms sheet is a column so the signature can be pushed to the foot
+         of the page (margin-top:auto) instead of leaving a blank third under
+         it. When the terms overflow there's no free space left and the block
+         simply follows them. */
+      .termsContent { display:flex; flex-direction:column; }
+      .termsContent .sig { margin-top:auto; }
+      .sig { margin-top:12px; border:1px solid #E8ECF4; border-radius:14px; padding:12px; background:#fff; }
       .sig .label { font-size:11px; font-weight:900; color:#111827; margin:0; }
       .sig .line { margin-top:38px; border-bottom:2px solid #111827; opacity:.18; }
       .sig .hint { margin:8px 0 0; font-size:10px; color:#667085; font-weight:900; text-align:center; }
@@ -300,6 +311,7 @@ const OrderPdfGenerator = async (orderData) => {
       .footer .row { margin:2px 0; }
     </style>
 
+    <!-- Sheet 1 — the order itself: who, what, how much, what was paid. -->
     <div class="page" id="order-page">
       <div class="topbar">
         <div class="brand">
@@ -526,19 +538,58 @@ const OrderPdfGenerator = async (orderData) => {
               : `<div class="noPayments">לא נרשמו תשלומים על ההזמנה</div>`
           }
         </div>
+      </div>
 
-        <div class="notes">
-          <p class="notes-label">${DOCUMENT_TERMS_LABELS.terms}:</p>
+      <div class="footer">
+        <div class="row">משרדים וחנות המפעל – רח׳ בן צבי 23 ראשל״צ</div>
+        <div class="row">כתובת מפעל החברה: רחוב העמל 6 קרית מלאכי</div>
+        <div class="row">טל: 1700-700-464, פקס: 03-9622319</div>
+      </div>
+    </div>
+
+    <!-- Sheet 2 — the legal texts and the signature. They used to trail the
+         payment block on sheet 1 and get chopped mid-clause wherever the A4
+         line happened to fall; on a sheet of their own they read in full, and
+         the customer signs directly under what he's signing for. -->
+    <div class="page" id="order-page-terms">
+      <div class="topbar">
+        <div class="brand">
+          <h1>המלך דוד</h1>
+          <p class="sub">תעשיות מזרנים בע״מ</p>
+        </div>
+        <div class="logoWrap">
+          <img class="logo" src="${logoUrl}" alt="King David Logo" />
+        </div>
+        <div style="text-align:left; font-size:11px; font-weight:900; opacity:.92;">
+          <div>ח.פ. 512052960</div>
+          <div>עוסק מורשה: 812082980</div>
+        </div>
+      </div>
+
+      <div class="content termsContent">
+        <div class="titleRow">
+          <div class="titleWithNumber">
+            <h2 class="title">תנאי ההזמנה</h2>
+            <span class="orderNum">#${esc(orderData.order_number)}</span>
+          </div>
+          <div class="meta">
+            ${orderData.customer_name ? `<span>${esc(orderData.customer_name)}</span>` : ""}
+            <span>תאריך: ${createdDate}</span>
+          </div>
+        </div>
+
+        <div class="terms">
+          <p class="terms-label">${DOCUMENT_TERMS_LABELS.terms}:</p>
           <p>${escMultiline(printedTerms.terms)}</p>
         </div>
 
-        <div class="notes">
-          <p class="notes-label">${DOCUMENT_TERMS_LABELS.warranty_terms}:</p>
+        <div class="terms">
+          <p class="terms-label">${DOCUMENT_TERMS_LABELS.warranty_terms}:</p>
           <p>${escMultiline(printedTerms.warranty_terms)}</p>
         </div>
 
-        <div class="notes">
-          <p class="notes-label">${DOCUMENT_TERMS_LABELS.legal_notes}:</p>
+        <div class="terms">
+          <p class="terms-label">${DOCUMENT_TERMS_LABELS.legal_notes}:</p>
           ${formatNotesAsList(printedTerms.legal_notes)}
         </div>
 
@@ -560,90 +611,15 @@ const OrderPdfGenerator = async (orderData) => {
   </div>
   `;
 
-  const tempDiv = document.createElement("div");
-  tempDiv.innerHTML = htmlContent;
-  tempDiv.style.position = "fixed";
-  tempDiv.style.left = "-10000px";
-  tempDiv.style.top = "0";
-  tempDiv.style.width = "794px";
-  tempDiv.style.zIndex = "-1";
-  document.body.appendChild(tempDiv);
+  // Sheet 1 (order) then sheet 2 (terms), each rendered onto its own A4 page.
+  const pdf = await withMountedPages(htmlContent, (pages) => renderPagesToPdf(pages));
 
-  try {
-    const pageEl = tempDiv.querySelector("#order-page");
-    if (!pageEl) throw new Error("PDF root element not found");
-
-    // Cap at 2× so the html2canvas pass is lighter and doesn't freeze the modal.
-    const scale = 2;
-    const canvas = await html2canvas(pageEl, {
-      scale,
-      useCORS: true,
-      allowTaint: false,
-      backgroundColor: "#ffffff",
-      logging: false,
-      windowWidth: 794,
-    });
-
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    const pxPerMm = canvas.width / pdfWidth;
-    const pageHeightPx = Math.floor(pdfHeight * pxPerMm);
-
-    const pageCanvas = document.createElement("canvas");
-    pageCanvas.width = canvas.width;
-    const ctx = pageCanvas.getContext("2d");
-
-    // Back a page break up to a BLANK row so slicing never cuts through a line
-    // of text / the footer (same fix as the quote PDF).
-    let fullData = null;
-    try {
-      fullData = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
-    } catch { fullData = null; }
-    const isBlankRow = (ry) => {
-      if (!fullData) return false;
-      const base = ry * canvas.width * 4;
-      for (let x = 0; x < canvas.width; x++) {
-        const i = base + x * 4;
-        if (fullData[i] < 250 || fullData[i + 1] < 250 || fullData[i + 2] < 250) return false;
-      }
-      return true;
-    };
-    const cleanBreak = (targetY) => {
-      const limit = Math.max(targetY - 220, 0);
-      for (let ry = Math.min(targetY, canvas.height - 1); ry >= limit; ry--) {
-        if (isBlankRow(ry)) return ry + 1;
-      }
-      return targetY;
-    };
-
-    let y = 0;
-    let pageIndex = 0;
-    while (y < canvas.height) {
-      if (canvas.height - y < 8) break;
-      let breakY = y + pageHeightPx;
-      breakY = breakY >= canvas.height ? canvas.height : cleanBreak(breakY);
-      const heightToRender = breakY - y;
-      pageCanvas.height = heightToRender;
-      ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-      ctx.drawImage(canvas, 0, y, canvas.width, heightToRender, 0, 0, canvas.width, heightToRender);
-      const sliceHeightMm = heightToRender / pxPerMm;
-      const imgData = pageCanvas.toDataURL("image/png", 1.0);
-      if (pageIndex > 0) pdf.addPage();
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, sliceHeightMm, undefined, "FAST");
-      y = breakY;
-      pageIndex += 1;
-    }
-
-    const pdfBlob = pdf.output("blob");
-    const file = new File([pdfBlob], `order-${safe(orderData.order_number) || orderData.id}.pdf`, {
-      type: "application/pdf",
-    });
-    const uploadRes = await base44.integrations.Core.UploadFile({ file });
-    return uploadRes.file_url;
-  } finally {
-    document.body.removeChild(tempDiv);
-  }
+  const pdfBlob = pdf.output("blob");
+  const file = new File([pdfBlob], `order-${safe(orderData.order_number) || orderData.id}.pdf`, {
+    type: "application/pdf",
+  });
+  const uploadRes = await base44.integrations.Core.UploadFile({ file });
+  return uploadRes.file_url;
 };
 
 export default OrderPdfGenerator;

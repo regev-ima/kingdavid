@@ -1,10 +1,9 @@
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
 import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, resolveDocumentTerms } from "@/constants/documentTerms";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
+import { renderPagesToPdf, withMountedPages } from "@/lib/pdfPages";
 
 /**
  * KING DAVID - Premium PDF Quote Generator
@@ -58,7 +57,7 @@ const QuotePdfGenerator = async (quoteData) => {
     if (lines.length === 0) return "";
     return lines
       .map((line) => esc(line.replace(/^\*\s*/, "")))
-      .map((line) => `<div class="notes-item"><span class="notes-bullet">•</span><span>${line}</span></div>`)
+      .map((line) => `<div class="terms-item"><span class="terms-bullet">•</span><span>${line}</span></div>`)
       .join("");
   };
 
@@ -170,6 +169,8 @@ const QuotePdfGenerator = async (quoteData) => {
       @page { size: A4; margin: 0; }
       * { box-sizing: border-box; }
 
+      /* One A4 sheet. Flex column so the footer sits on the bottom edge even on
+         the terms sheet, which doesn't fill its page. */
       .page {
         width: 794px;
         min-height: 1123px;
@@ -177,7 +178,10 @@ const QuotePdfGenerator = async (quoteData) => {
         background: #ffffff;
         overflow: hidden;
         box-shadow: 0 10px 34px rgba(16,24,40,.12);
+        display: flex;
+        flex-direction: column;
       }
+      .page + .page { margin-top: 18px; }
 
       /* Header (Black) for Gold Logo */
       .topbar {
@@ -204,7 +208,7 @@ const QuotePdfGenerator = async (quoteData) => {
         filter: none;
       }
 
-      .content { padding: 18px 22px 14px; }
+      .content { padding: 18px 22px 14px; flex: 1; }
 
       .titleRow {
         display:flex;
@@ -343,20 +347,42 @@ const QuotePdfGenerator = async (quoteData) => {
         margin: 0 0 6px 0;
         color: #111827;
       }
-      .notes-item {
+      /* The legal texts get a sheet of their own, so they get readable type
+         (11px) instead of the 9px they were squeezed to when everything had to
+         fit under the totals. */
+      .terms {
+        margin-top: 10px;
+        border: 1px solid #E8ECF4;
+        background: #FFFFFF;
+        border-radius: 14px;
+        padding: 10px 14px;
+        font-size: 11px;
+        color: #0B1220;
+        font-weight: 400;
+        line-height: 1.65;
+      }
+      .terms p { margin: 0 0 4px 0; font-weight: 400; }
+      .terms p:last-child { margin: 0; }
+      .terms-label {
+        font-size: 12px;
+        font-weight: 900;
+        margin: 0 0 8px 0;
+        color: #111827;
+      }
+      .terms-item {
         display: flex;
         flex-direction: row;
         align-items: flex-start;
-        gap: 6px;
-        margin: 0 0 4px 0;
+        gap: 8px;
+        margin: 0 0 6px 0;
         font-weight: 400;
         text-align: right;
       }
-      .notes-item:last-child { margin: 0; }
-      .notes-bullet {
+      .terms-item:last-child { margin: 0; }
+      .terms-bullet {
         flex: 0 0 auto;
         color: #4B5563;
-        line-height: 1.6;
+        line-height: 1.65;
       }
 
       .footer {
@@ -369,6 +395,7 @@ const QuotePdfGenerator = async (quoteData) => {
       .footer .row { margin: 2px 0; }
     </style>
 
+    <!-- Sheet 1 — the quote itself: who, what, how much. -->
     <div class="page" id="quote-page">
       <div class="topbar">
         <div class="brand">
@@ -517,18 +544,59 @@ const QuotePdfGenerator = async (quoteData) => {
             : ""
         }
 
-        <div class="notes">
-          <p class="notes-label">${DOCUMENT_TERMS_LABELS.terms}:</p>
+      </div>
+
+      <div class="footer">
+        <div class="row">משרדים וחנות המפעל – רח׳ בן צבי 23 ראשל״צ</div>
+        <div class="row">כתובת מפעל החברה: רחוב העמל 6 קרית מלאכי</div>
+        <div class="row">טל: 1700-700-464, פקס: 03-9622319</div>
+      </div>
+    </div>
+
+    <!-- Sheet 2 — the legal texts. They used to trail the totals on sheet 1 and
+         get chopped mid-clause wherever the A4 line happened to fall; on a
+         sheet of their own they read in full, at a size a customer can read. -->
+    <div class="page" id="quote-page-terms">
+      <div class="topbar">
+        <div class="brand">
+          <h1>המלך דוד</h1>
+          <p class="sub">תעשיות מזרנים בע״מ</p>
+        </div>
+
+        <div class="logoWrap">
+          <img class="logo" src="${logoUrl}" alt="King David Logo" />
+        </div>
+
+        <div style="text-align:left; font-size:11px; font-weight:900; opacity:.92;">
+          <div>ח.פ. 512052960</div>
+          <div>עוסק מורשה: 812082980</div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="titleRow">
+          <div class="titleWithNumber">
+            <h2 class="title">תנאי ההצעה</h2>
+            <span class="quoteNum">#${safe(quoteData.quote_number)}</span>
+          </div>
+          <div class="meta">
+            ${quoteData.customer_name ? `<span>${esc(quoteData.customer_name)}</span>` : ""}
+            <span>תאריך: ${createdDate}</span>
+          </div>
+        </div>
+
+        <div class="terms">
+          <p class="terms-label">${DOCUMENT_TERMS_LABELS.terms}:</p>
           <p>${escMultiline(printedTerms.terms)}</p>
         </div>
 
-        <div class="notes">
-          <p class="notes-label">${DOCUMENT_TERMS_LABELS.warranty_terms}:</p>
+        <div class="terms">
+          <p class="terms-label">${DOCUMENT_TERMS_LABELS.warranty_terms}:</p>
           <p>${escMultiline(printedTerms.warranty_terms)}</p>
         </div>
 
-        <div class="notes">
-          <p class="notes-label">${DOCUMENT_TERMS_LABELS.legal_notes}:</p>
+        <div class="terms">
+          <p class="terms-label">${DOCUMENT_TERMS_LABELS.legal_notes}:</p>
           ${formatNotesAsList(printedTerms.legal_notes)}
         </div>
       </div>
@@ -542,109 +610,17 @@ const QuotePdfGenerator = async (quoteData) => {
   </div>
   `;
 
-  // Mount hidden DOM
-  const tempDiv = document.createElement("div");
-  tempDiv.innerHTML = htmlContent;
-  tempDiv.style.position = "fixed";
-  tempDiv.style.left = "-10000px";
-  tempDiv.style.top = "0";
-  tempDiv.style.width = "794px";
-  tempDiv.style.zIndex = "-1";
-  document.body.appendChild(tempDiv);
+  // Sheet 1 (quote) then sheet 2 (terms), each rendered onto its own A4 page.
+  const pdf = await withMountedPages(htmlContent, (pages) => renderPagesToPdf(pages));
 
-  try {
-    const pageEl = tempDiv.querySelector("#quote-page");
-    if (!pageEl) throw new Error("PDF root element not found");
+  // Upload via Base44
+  const pdfBlob = pdf.output("blob");
+  const file = new File([pdfBlob], `${safe(quoteData.quote_number)}.pdf`, {
+    type: "application/pdf",
+  });
 
-    // Render canvas. Cap at 2× (~190 DPI on A4 — sharp enough for text) so the
-    // synchronous html2canvas pass is ~2× lighter and doesn't freeze the modal.
-    const scale = 2;
-
-    const canvas = await html2canvas(pageEl, {
-      scale,
-      useCORS: true,
-      allowTaint: false,
-      backgroundColor: "#ffffff",
-      logging: false,
-      windowWidth: 794,
-    });
-
-    // Build PDF (A4)
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-
-    // Slice canvas into pages
-    const pxPerMm = canvas.width / pdfWidth;
-    const pageHeightPx = Math.floor(pdfHeight * pxPerMm);
-
-    const pageCanvas = document.createElement("canvas");
-    pageCanvas.width = canvas.width;
-    const ctx = pageCanvas.getContext("2d");
-
-    // Read all pixels once so a page break can be backed up to a BLANK row —
-    // slicing at an exact A4 boundary cut through a line of text / the footer,
-    // which is what made page 2 look garbled/doubled.
-    let fullData = null;
-    try {
-      fullData = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
-    } catch { fullData = null; }
-    const isBlankRow = (ry) => {
-      if (!fullData) return false;
-      const base = ry * canvas.width * 4;
-      for (let x = 0; x < canvas.width; x++) {
-        const i = base + x * 4;
-        if (fullData[i] < 250 || fullData[i + 1] < 250 || fullData[i + 2] < 250) return false;
-      }
-      return true;
-    };
-    // Nearest blank row at/above targetY (scan up to ~220px); fall back to the
-    // hard boundary if the page is genuinely full.
-    const cleanBreak = (targetY) => {
-      const limit = Math.max(targetY - 220, 0);
-      for (let ry = Math.min(targetY, canvas.height - 1); ry >= limit; ry--) {
-        if (isBlankRow(ry)) return ry + 1;
-      }
-      return targetY;
-    };
-
-    let y = 0;
-    let pageIndex = 0;
-
-    while (y < canvas.height) {
-      if (canvas.height - y < 8) break; // nothing meaningful left
-
-      let breakY = y + pageHeightPx;
-      breakY = breakY >= canvas.height ? canvas.height : cleanBreak(breakY);
-      const heightToRender = breakY - y;
-
-      // Each page's image is exactly its content height (placed at the top of
-      // the A4 page), so nothing gets stretched and the rest stays white.
-      pageCanvas.height = heightToRender;
-      ctx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
-      ctx.drawImage(canvas, 0, y, canvas.width, heightToRender, 0, 0, canvas.width, heightToRender);
-
-      const sliceHeightMm = heightToRender / pxPerMm;
-      const imgData = pageCanvas.toDataURL("image/png", 1.0);
-
-      if (pageIndex > 0) pdf.addPage();
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, sliceHeightMm, undefined, "FAST");
-
-      y = breakY;
-      pageIndex += 1;
-    }
-
-    // Upload via Base44
-    const pdfBlob = pdf.output("blob");
-    const file = new File([pdfBlob], `${safe(quoteData.quote_number)}.pdf`, {
-      type: "application/pdf",
-    });
-
-    const uploadRes = await base44.integrations.Core.UploadFile({ file });
-    return uploadRes.file_url;
-  } finally {
-    document.body.removeChild(tempDiv);
-  }
+  const uploadRes = await base44.integrations.Core.UploadFile({ file });
+  return uploadRes.file_url;
 };
 
 export default QuotePdfGenerator;
