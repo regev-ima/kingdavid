@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
+import LeadOverview from '@/components/lead/LeadOverview';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,67 +21,44 @@ import {
   SelectValue } from
 "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle } from
 "@/components/ui/dialog";
 import {
-  ArrowRight,
-  Save,
-  Pencil,
   Loader2,
-  MessageCircle,
   FileText,
-  Clock,
   Tag,
-  MoreVertical,
   Headphones,
   ShoppingBag,
   AlertTriangle,
-  Crown,
   Phone,
   Mail,
   MapPin,
   Home,
-  Globe,
-  Megaphone,
   StickyNote,
   MessageSquare,
-  CalendarDays,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import SLABadge from '@/components/sla/SLABadge';
 import AddCommunication from '@/components/lead/AddCommunication';
-import RepCard from '@/components/lead/RepCard';
-import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
 import { differenceInDays } from '@/lib/safe-date-fns';
-import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import NewQuoteDialog from '@/components/quote/NewQuoteDialog';
-import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
-import LeadWorkbenchQueue from '@/components/lead/LeadWorkbenchQueue';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { createAuditLog } from '@/utils/auditLog';
 import NewOrder from '@/pages/NewOrder';
-import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, formatSourceLabel } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '@/constants/leadOptions';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
-import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
-import { isSameRep, reconcileRepSlots, repsExcludingPrimary } from '@/lib/repSlots';
+import { isSameRep, reconcileRepSlots } from '@/lib/repSlots';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 
@@ -262,13 +240,9 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const leadForRepeatLookup = useMemo(() => (lead ? [lead] : []), [lead]);
   const repeatEnquiryOrdinal = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
 
-  // Where the lead came from, resolved once for the header. A rep asking
-  // "מאיפה הוא הגיע?" wants two things: the channel (מקור) and the specific
-  // ad that produced the enquiry — and they want both before they dial, not
-  // after clicking into the שיווק tab. Falls back down the chain because not
-  // every integration fills facebook_ad_name: campaign name, UTM campaign,
-  // ad set, and finally the source form.
-  const sourceLabel = lead ? formatSourceLabel(lead.source) : '';
+  // The specific ad that produced the enquiry, resolved the same way
+  // LeadOverview resolves it for the facts strip — the customer-details list
+  // below only needs it to avoid printing source_form a second time.
   const adLabel = lead
     ? (lead.facebook_ad_name
       || lead.facebook_campaign_name
@@ -277,10 +251,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       || lead.source_form
       || '')
     : '';
-  const arrivedAtLabel = lead?.created_date
-    ? formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')
-    : '';
-
   // Does the customer-details card have anything to say? Name, phone, source
   // and the ad live in the header, so on a fresh lead the answer is usually
   // no — and then the card doesn't render at all rather than showing a column
@@ -443,41 +413,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
     queryClient.invalidateQueries(['leadActivityLogs', leadId]);
     updateLeadMutation.mutate(updateData);
-  };
-
-  const handleWorkbenchAction = (item, action) => {
-    if (!action) return;
-
-    switch (action) {
-      case 'open_task': {
-        const selectedTask = tasks.find((task) => String(task.id) === String(item?.id));
-        if (selectedTask) {
-          setEditingTask(selectedTask);
-          setShowEditTaskDialog(true);
-          return;
-        }
-        navigate(createPageUrl('SalesTasks'));
-        return;
-      }
-      case 'complete_task': {
-        const selectedTask = tasks.find((task) => String(task.id) === String(item?.id));
-        if (!selectedTask) return;
-        // Same "מה קרה?" flow the tasks screen uses, so closing from here
-        // still records an outcome and can schedule the follow-up.
-        setCompletingTask({
-          ...selectedTask,
-          rep1: selectedTask.rep1 || lead?.rep1,
-          rep2: selectedTask.rep2 || lead?.rep2,
-        });
-        return;
-      }
-      case 'new_task':
-      case 'empty':
-        requestAddTask();
-        return;
-      default:
-        return;
-    }
   };
 
   if (isLoading) {
@@ -717,311 +652,52 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   };
 
   return (
-    /* In modal mode the LeadDetails IS the dialog body — it takes the
-       full dialog height and splits into a frozen top region (name +
-       action bar) and a scrollable body, so the header is genuinely
-       fixed instead of relying on sticky inside a portal/transform
-       context where sticky was unreliable. Full-page mode keeps the
-       original space-y-6 vertical flow. */
-    <div className={isModal ? 'flex flex-col min-h-0 overflow-hidden' : 'space-y-6'}>
-      {/* Status accent bar — purely decorative thin strip at the very
-          top of the rendered tree. */}
-      <div className="h-1.5 w-full bg-blue-500 shrink-0" />
-      {/* Header — name, status, SLA, mode toggle. In popup mode it's
-          flex-shrink-0 so it never scrolls; pe-12 reserves room for
-          the Radix close-X that sits in the dialog's right corner. */}
-      <div className={
-        `flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4` +
-        (isModal
-          // pe-16 (not pe-12): the dialog's own close-X is absolutely
-          // positioned at left-4 and is ~40px wide, so it occupies the first
-          // 56px of the inline-end edge. The freshness block now sits at that
-          // edge and needs to clear it.
-          ? ' flex-shrink-0 px-6 pt-5 pb-3 pe-16 bg-card border-b border-border'
-          : '')
-      }>
-        <div className="flex items-center gap-3">
-          {isModal ? (
-            <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg" onClick={onClose} title="סגור">
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          ) : (
-            <Link to={createPageUrl('Leads')}>
-              <Button variant="outline" size="icon" className="h-9 w-9 rounded-lg">
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          )}
-          <div>
-            {/* Name and every chip on ONE row. Status, SLA and the repeat
-                marker used to sit on three different lines with a "סטטוס:"
-                prefix in front of one of them — three places to look for
-                three one-word facts. They belong together, next to the name
-                they describe. */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground">{lead.full_name}</h1>
-              <StatusBadge status={lead.status} />
-              <SLABadge lead={lead} />
-              <RepeatEnquiryBadge ordinal={repeatEnquiryOrdinal} />
-            </div>
-            {/* Provenance line — phone, WHERE the lead came from (channel +
-                the specific ad), and when it arrived. This is the header's
-                job and the header's alone: the same fields used to be
-                repeated inside "פרטי לקוח", which is what made the screen
-                read as the same information twice. */}
-            {(() => {
-              const facts = [
-                lead.phone ? { key: 'phone', node: <span dir="ltr">{lead.phone}</span> } : null,
-                sourceLabel ? {
-                  key: 'source',
-                  node: (
-                    <span className="inline-flex items-center gap-1" title={`מקור: ${sourceLabel}`}>
-                      <Globe className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-                      {sourceLabel}
-                    </span>
-                  ),
-                } : null,
-                adLabel ? {
-                  key: 'ad',
-                  node: (
-                    <span className="inline-flex items-center gap-1 min-w-0 max-w-[240px] sm:max-w-[360px]" title={`מודעה: ${adLabel}`}>
-                      <Megaphone className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-                      <span className="truncate">{adLabel}</span>
-                    </span>
-                  ),
-                } : null,
-                arrivedAtLabel ? { key: 'arrived', node: <span>נכנס {arrivedAtLabel}</span> } : null,
-              ].filter(Boolean);
-              if (facts.length === 0) return null;
-              return (
-                <div className="flex items-center gap-x-2 gap-y-0.5 mt-0.5 text-sm text-muted-foreground flex-wrap">
-                  {facts.map((fact, index) => (
-                    <React.Fragment key={fact.key}>
-                      {index > 0 ? <span className="text-muted-foreground/40" aria-hidden="true">·</span> : null}
-                      {fact.node}
-                    </React.Fragment>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-
-        {/* Left edge of the header (RTL): freshness + the open-tickets alert.
-            "עדכון אחרון" and "גיל הליד" used to sit at the foot of the details
-            list, which meant scrolling past everything to answer "is this lead
-            still warm?". Up here they're readable the moment the lead opens,
-            and they stay out of the name's way. */}
-        <div className="flex items-center gap-3 flex-wrap lg:justify-end lg:text-end">
-          {(lead.updated_date || lead.created_date) ? (
-            <div className="text-[11px] leading-tight text-muted-foreground/80">
-              {lead.updated_date ? (
-                <div className="flex items-center gap-1.5 lg:justify-end">
-                  <CalendarDays className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-                  <span>עדכון אחרון</span>
-                  <span className="tabular-nums text-foreground/70">
-                    {formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
-                  </span>
-                </div>
-              ) : null}
-              {lead.created_date ? (
-                <div className="lg:text-end mt-0.5">
-                  גיל הליד: <span className="text-foreground/70">{formatLeadAge(lead.created_date)}</span>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {/* Open-tickets alert: replaces the old "sales / service mode"
-              toggle. Now that the lead screen shows sales and service
-              together in one scroll (no mode switching), this badge is
-              the one cross-functional signal a sales rep needs — "this
-              customer has open service issues" — and clicking it jumps
-              them straight to the service section. Hidden when there
-              are no open tickets so the header stays clean. */}
-          {openServiceTicketsCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => {
-                document.getElementById('lead-service-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
-              title="עבור לאזור פניות השירות"
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              {openServiceTicketsCount === 1 ? 'קריאת שירות פתוחה' : `${openServiceTicketsCount} קריאות שירות פתוחות`}
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="lg:hidden flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          onClick={() => handleClickToCall(lead.phone)}
-          disabled={!lead.phone}
-          className="flex-1 min-w-[120px] justify-center h-9 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          <Phone className="h-3.5 w-3.5 me-1.5" />
-          חייג
-        </Button>
-        <LeadWhatsAppChatButton phone={lead.phone} name={lead.full_name} className="flex-1 min-w-[120px] justify-center h-9" />
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={requestAddTask}
-          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
-        >
-          <Clock className="h-3.5 w-3.5 me-1.5" />
-          משימה חדשה
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => setShowQuoteDialog(true)}
-          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
-        >
-          <FileText className="h-3.5 w-3.5 me-1.5" />
-          הצעה חדשה
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowOrderDialog(true)}
-          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
-        >
-          <ShoppingBag className="h-3.5 w-3.5 me-1.5" />
-          הזמנה חדשה
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowAddCommunication(true)}
-          className="flex-1 min-w-[120px] justify-center h-9 text-xs"
-        >
-          <MessageCircle className="h-3.5 w-3.5 me-1.5" />
-          הוסף תקשורת
-        </Button>
-        {canEdit ? (
-          <Button
-            size="sm"
-            variant={isEditing ? 'default' : 'outline'}
-            onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
-            disabled={updateLeadMutation.isPending}
-            className="flex-1 min-w-[120px] justify-center h-9 text-xs"
-          >
-            {updateLeadMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : isEditing ? (
-              <>
-                <Save className="h-3.5 w-3.5 me-1.5" />
-                שמור
-              </>
-            ) : (
-              <>
-                <Pencil className="h-3.5 w-3.5 me-1.5" />
-                ערוך
-              </>
-            )}
-          </Button>
-        ) : null}
-      </div>
-
-      {/* Action bar — חייג / משימה / הצעה. Always one click away
-          while reading the lead. In page mode it sticks below the
-          global chrome (top-16). In popup mode it sits as a
-          flex-shrink-0 sibling of the header — genuinely fixed at
-          the top of the dialog, no sticky involved. The old
-          sales/service mode toggle that used to live here was
-          removed in favor of a single unified lead screen. */}
-      <div className={
-        isModal
-          ? 'hidden lg:flex flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-background/95 backdrop-blur px-6 py-2'
-          : 'hidden lg:flex sticky top-16 z-10 items-center justify-end gap-2 rounded-xl border border-border bg-background/95 backdrop-blur px-3 py-2 shadow-card'
-      }>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => handleClickToCall(lead.phone)}
-            disabled={!lead.phone}
-            className="h-8 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
-          >
-            <Phone className="h-3.5 w-3.5 me-1" />
-            חייג
-          </Button>
-          <LeadWhatsAppChatButton phone={lead.phone} name={lead.full_name} />
-          <Button variant="outline" size="sm" onClick={requestAddTask} className="h-8 text-xs">
-            <Clock className="h-3.5 w-3.5 me-1" />
-            משימה חדשה
-          </Button>
-          <Button size="sm" onClick={() => setShowQuoteDialog(true)} className="h-8 text-xs">
-            <FileText className="h-3.5 w-3.5 me-1" />
-            הצעה חדשה
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)} className="h-8 text-xs">
-            <ShoppingBag className="h-3.5 w-3.5 me-1" />
-            הזמנה חדשה
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowAddCommunication(true)} className="h-8 text-xs">
-            <MessageCircle className="h-3.5 w-3.5 me-1" />
-            הוסף תקשורת
-          </Button>
-          {/* Editing lives here now that the details card isn't a tab and
-              doesn't always render — from the action bar it's reachable
-              whichever tab is open, and on a lead with nothing filled in yet. */}
-          {canEdit ? (
-            <Button
-              size="sm"
-              variant={isEditing ? 'default' : 'outline'}
-              onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
-              disabled={updateLeadMutation.isPending}
-              className="h-8 text-xs"
-            >
-              {updateLeadMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : isEditing ? (
-                <>
-                  <Save className="h-3.5 w-3.5 me-1" />
-                  שמור
-                </>
-              ) : (
-                <>
-                  <Pencil className="h-3.5 w-3.5 me-1" />
-                  ערוך
-                </>
-              )}
-            </Button>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="h-8 w-8">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" dir="rtl">
-              {lead.status !== 'won' ? (
-                <DropdownMenuItem
-                  onClick={() => convertToCustomerMutation.mutate()}
-                  disabled={convertToCustomerMutation.isPending}
-                >
-                  <Crown className="h-3.5 w-3.5 me-2" />
-                  המר ללקוח
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* Scrollable body — ONE column now. In modal mode this is the only
-          thing inside the dialog that actually scrolls: the header + action
-          bar above are fixed flex-shrink-0 siblings, so they NEVER move and
-          NEVER get occluded by content scrolling under them. In full-page
-          mode it's a passive wrapper. The two-pane split it replaced put the
-          activity feed in a permanent 380px rail; the feed now closes the
-          page instead (see the bottom of this block). */}
-      <div className={isModal
-        ? 'flex-auto min-h-0 overflow-y-auto p-4 lg:p-6 space-y-4'
-        : 'space-y-4 min-w-0'}>
+    /* The whole top of the screen — identity, the five facts, the six
+       actions, the next task, marketing and the activity track — is
+       LeadOverview (the v6 layout). Everything this page still owns
+       renders as its children, inside the same scroll area. */
+    <>
+      <LeadOverview
+        lead={lead}
+        tasks={tasks}
+        users={users}
+        salesReps={salesReps}
+        queue={workbenchState.nowQueue}
+        isModal={isModal}
+        isEditing={isEditing}
+        isSaving={updateLeadMutation.isPending}
+        canEdit={canEdit}
+        canEditRep1={canEditLeadRep1}
+        canEditRep2={canEditLeadRep2}
+        repeatEnquiryOrdinal={repeatEnquiryOrdinal}
+        openServiceTicketsCount={openServiceTicketsCount}
+        leadAge={lead.created_date ? formatLeadAge(lead.created_date) : ''}
+        onBack={isModal ? onClose : () => navigate(createPageUrl('Leads'))}
+        onCall={handleClickToCall}
+        onOpenStatusTask={openLastTask}
+        onAssignRep1={handleQuickAssignRep1}
+        onAssignRep2={handleQuickAssignRep2}
+        onRemoveRep={handleRemoveRep}
+        onToggleEdit={() => (isEditing ? handleSave() : setIsEditing(true))}
+        onAddTask={requestAddTask}
+        onNewQuote={() => setShowQuoteDialog(true)}
+        onNewOrder={() => setShowOrderDialog(true)}
+        onAddCommunication={() => setShowAddCommunication(true)}
+        onConvertToCustomer={() => convertToCustomerMutation.mutate()}
+        canConvertToCustomer={lead.status !== 'won' && !convertToCustomerMutation.isPending}
+        onOpenTask={(task) => { setEditingTask(task); setShowEditTaskDialog(true); }}
+        // Closing a task from the card runs the same "מה קרה?" flow the tasks
+        // screen uses, so an outcome is still recorded and the follow-up can
+        // be scheduled.
+        onCompleteTask={(task) => setCompletingTask({
+          ...task,
+          rep1: task.rep1 || lead?.rep1,
+          rep2: task.rep2 || lead?.rep2,
+        })}
+        onOpenServiceSection={() => {
+          document.getElementById('lead-service-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+      >
 
       {/* Cross-rep view/serve banner — shown when this rep isn't the owner
           (and isn't admin). Makes clear the lead belongs to someone else and
@@ -1038,127 +714,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </span>
         </div>
       )}
-
-        {/* ESSENTIALS bar — status + both rep slots on ONE row.
-            This used to be three stacked cards, ~104px of height for three
-            values a rep reads in a glance and changes rarely. Same three
-            controls, same affordances, ~44px: the labels sit inline and the
-            slots share one bordered strip (1px gaps drawn by the container's
-            background) instead of three shadowed cards. Collapses to one
-            slot per row below sm, where there's no width to share. */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-px rounded-xl border border-border bg-border overflow-hidden shadow-card">
-          {/* Lead Status */}
-          <div className="bg-card min-w-0">
-            {canEdit ? (
-              // Status changes go through a task, so this opens the lead's
-              // most recent task instead of editing the status directly.
-              <button
-                type="button"
-                onClick={openLastTask}
-                title="הסטטוס משתנה דרך משימה — לחץ לפתיחת המשימה האחרונה"
-                className="w-full h-11 px-2.5 flex items-center gap-2 min-w-0 hover:bg-muted/60 transition-colors text-start"
-              >
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">סטטוס</span>
-                <span className="min-w-0 flex-1 truncate"><StatusBadge status={lead.status} /></span>
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground/70 flex-shrink-0">
-                  <Clock className="h-3.5 w-3.5" />
-                  עדכן במשימה
-                </span>
-              </button>
-            ) : (
-              <div className="h-11 px-2.5 flex items-center gap-2 min-w-0">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">סטטוס</span>
-                <StatusBadge status={lead.status} />
-              </div>
-            )}
-          </div>
-
-          {/* Primary rep */}
-          <div className="bg-card min-w-0">
-            <div className={isEditing && canEditLeadRep1 ? 'p-2.5' : ''}>
-              {isEditing && canEditLeadRep1 ? (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">נציג ראשי</Label>
-                  <Select
-                    value={formData.rep1 || ''}
-                    /* Promoting whoever sits in the secondary slot empties it —
-                       one person never holds both (see lib/repSlots). */
-                    onValueChange={(value) => setFormData({
-                      ...formData,
-                      rep1: value,
-                      ...(isSameRep(value, formData.rep2) ? { rep2: '' } : {}),
-                      status: value ? 'assigned' : formData.status,
-                    })}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={null}>ללא שיוך</SelectItem>
-                      {salesReps.map((rep) =>
-                        <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <>
-                  <RepCard
-                    compact
-                    label="נציג ראשי"
-                    rep={lead.rep1 ? (salesReps.find((r) => r.email === lead.rep1) || { email: lead.rep1, full_name: getRepDisplayName(lead.rep1, salesReps) }) : null}
-                    isEmpty={!lead.rep1 && !lead.pending_rep_email}
-                    canEdit={canEditLeadRep1}
-                    salesReps={salesReps}
-                    onAssign={handleQuickAssignRep1}
-                    onRemove={lead.rep1 ? () => handleRemoveRep('rep1') : undefined}
-                    isPending={updateLeadMutation.isPending}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Secondary rep */}
-          <div className="bg-card min-w-0">
-            <div className={isEditing && canEditLeadRep2 ? 'p-2.5' : ''}>
-              {isEditing && canEditLeadRep2 ? (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">נציג משני</Label>
-                  <Select
-                    value={formData.rep2 || ''}
-                    onValueChange={(value) => setFormData({ ...formData, rep2: value })}>
-                    <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={null}>ללא</SelectItem>
-                      {repsExcludingPrimary(salesReps, formData.rep1 || lead.rep1).map((rep) =>
-                        <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <RepCard
-                  compact
-                  label="נציג משני"
-                  // Same fallback the primary card has: a rep2 whose email
-                  // isn't in `salesReps` — a rep who left, or one whose role
-                  // isn't sales — used to resolve to null, which dropped the
-                  // card into its empty state. The slot looked unassigned
-                  // while the lead very much had a rep2, so there was nothing
-                  // to remove and no way to clear it.
-                  rep={lead.rep2
-                    ? (salesReps.find((r) => r.email === lead.rep2) || { email: lead.rep2, full_name: getRepDisplayName(lead.rep2, salesReps) })
-                    : null}
-                  isEmpty={!lead.rep2}
-                  canEdit={canEditLeadRep2}
-                  salesReps={salesReps}
-                  excludeEmails={[lead.rep1]}
-                  onAssign={handleQuickAssignRep2}
-                  onRemove={lead.rep2 ? () => handleRemoveRep('rep2') : undefined}
-                  isPending={updateLeadMutation.isPending}
-                />
-              )}
-            </div>
-          </div>
-        </div>
 
         {/* Pending rep — the integration named someone but the lead is still
             unassigned. Lifted out of the primary slot so the essentials bar
@@ -1220,12 +775,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             )}
           </div>
         )}
-
-        {/* TASKS — leading, always visible. */}
-        {/* Upcoming sales task — sits between the customer details and
-            the task history: the rep reads who the lead is, then what
-            they need to do next, then what's already been done. */}
-        <LeadWorkbenchQueue state={workbenchState} onAction={handleWorkbenchAction} />
 
         {/* Other enquiries from the same person. Deliberately ABOVE the tabs
             and not inside "פרטי לקוח מלאים": a rep must know they are calling
@@ -1566,22 +1115,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
         </Tabs>
 
-      {/* ACTIVITY — last, full width. It used to be a 380px rail pinned
-          beside the lead, which took a third of the screen permanently for
-          a feed you read after you've decided what to do. At the bottom it
-          gets the full width (entries stop wrapping after four words) and
-          the work — status, reps, next task, details — comes first. Capped
-          so a long-lived lead's feed doesn't push the page to a mile; the
-          feed scrolls inside its own box. */}
-      <LeadUnifiedTimeline
-        className="max-h-[560px]"
-        leadId={leadId}
-        tasks={tasks}
-        users={users}
-        onOpenTask={(task) => { setEditingTask(task); setShowEditTaskDialog(true); }}
-      />
-
-      </div>{/* end of body wrapper */}
+      </LeadOverview>
 
       {/* Close a task straight from the next-task strip */}
       <CompleteTaskDialog
@@ -1702,6 +1236,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       </Dialog>
 
 
-    </div>);
+    </>);
 
 }
