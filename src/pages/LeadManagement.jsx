@@ -627,10 +627,23 @@ export default function LeadManagement() {
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
   const relatedLeadIds = relatedScopeSets[scope] || [];
+  // Only the ids for the page being shown go into the query. `{ id: { $in: … } }`
+  // becomes `id=in.(uuid,uuid,…)` on a GET, so a scope holding 879 leads built a
+  // ~33KB URL that the server refused — and the refusal rendered as an empty
+  // list under a tile reading 879. Infinite scroll still works: `limit` grows,
+  // the slice grows with it. The ids arrive in the related table's own order
+  // (task due date, quote recency), which is the order these scopes want.
+  const relatedLeadIdsPage = useMemo(
+    () => relatedLeadIds.slice(0, limit),
+    [relatedLeadIds, limit],
+  );
 
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds }),
-    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds],
+    () => buildLeadsQuery({
+      filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported,
+      relatedLeadIds: relatedLeadIdsPage,
+    }),
+    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIdsPage],
   );
   // Reset paging to the first page whenever the query itself changes (scope /
   // filter / rep / status / date / search) — without this, switching views
@@ -651,13 +664,19 @@ export default function LeadManagement() {
     placeholderData: (prev) => prev, // ← key: don't drop rows on loadMore so the scroll stays put
     queryFn: () => base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', limit, undefined, LEAD_LIST_COLUMNS),
   });
-  const { data: filteredCount = null } = useQuery({
+  // A count over the sliced page would just report the page size, so the
+  // related scopes report the size of the set the tile counted instead. Any
+  // other filter on top narrows the rows below it, which is what the filter
+  // chips above the list are there to say.
+  const isRelatedScope = RELATED_SCOPES.includes(scope);
+  const { data: countedLeads = null } = useQuery({
     queryKey: ['leadMgmt-count', leadsQuery],
-    enabled: !!effectiveUser && repResolved,
+    enabled: !!effectiveUser && repResolved && !isRelatedScope,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: () => base44.entities.Lead.count(leadsQuery),
   });
+  const filteredCount = isRelatedScope ? relatedLeadIds.length : countedLeads;
 
   // ───────────────────────────────────────────────────────────────
   // "בטיפול" status breakdown. When a handling scope is active, count each
@@ -1169,7 +1188,10 @@ export default function LeadManagement() {
         <ActiveFilterSummary
           scope={scope}
           filters={filters}
-          dateRange={dateRange}
+          // These scopes deliberately ignore the arrival-date range (an open
+          // quote says nothing about when its lead came in), so the summary
+          // must not claim a date is narrowing the list.
+          dateRange={isRelatedScope ? null : dateRange}
           hourLabel={hourActive ? `${hourLabel(hourFrom ?? 0)}–${hourLabel(hourTo ?? 24)}` : null}
           onClearHour={() => { setHourFrom(null); setHourTo(null); }}
           repNameByEmail={repNameByEmail}
@@ -1534,6 +1556,10 @@ function ActiveFilterSummary({
     lc_handling: 'בטיפול',
     lc_won: 'נסגרו',
     lc_lost: 'נאבדו',
+    open_quotes: 'הצעות מחיר פתוחות',
+    tasks_today: 'משימות להיום',
+    tasks_open: 'נותרו לטיפול',
+    won: 'נסגרה עסקה',
   };
   const statusLabel = filters.status !== 'all'
     ? (LEAD_STATUS_OPTIONS.find((s) => s.value === filters.status)?.label
