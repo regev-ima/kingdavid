@@ -81,6 +81,8 @@ import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, ALL_TASK_TYPE_LABELS, SOURCE_
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
+import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
+import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 import { isSameRep, reconcileRepSlots, repsExcludingPrimary } from '@/lib/repSlots';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
@@ -264,6 +266,12 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     ).length,
     [serviceTickets]
   );
+
+  // "פנייה נוספת" — is this row a repeat enquiry from someone who already
+  // came in before? OtherEnquiriesCard lists the siblings further down the
+  // page; the header just needs the one-glance marker.
+  const leadForRepeatLookup = useMemo(() => (lead ? [lead] : []), [lead]);
+  const repeatEnquiryOrdinal = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
 
   // Sync form data when lead loads or updates (for real-time status changes)
   const leadUpdatedDate = lead?.updated_date;
@@ -714,7 +722,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </Link>
           )}
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground">{lead.full_name}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground">{lead.full_name}</h1>
+              <RepeatEnquiryBadge ordinal={repeatEnquiryOrdinal} />
+            </div>
             {/* Phone + source kept in the always-visible header so they
                 never hide behind a tab (display-only). */}
             {(lead.phone || lead.source) && (

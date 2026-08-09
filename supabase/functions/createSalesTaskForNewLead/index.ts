@@ -36,56 +36,19 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Lead not found' }, { status: 404, headers: corsHeaders });
     }
 
-    // Check if an assignment task already exists for this lead (prevent duplicates)
-    const { data: existingTasks } = await supabase
-      .from('sales_tasks')
-      .select('*')
-      .eq('lead_id', leadData.id);
-
-    const hasAssignmentTask = existingTasks?.some((t: any) => t.task_type === 'assignment');
-    if (hasAssignmentTask) {
-      return Response.json({
-        message: 'Assignment task already exists for this lead',
-        task_id: existingTasks!.find((t: any) => t.task_type === 'assignment').id,
-      }, { headers: corsHeaders });
-    }
-
-    // A lead that arrives with rep1 already on it was typed in by hand
-    // (/NewLead, /NewQuote), and the form assigns it to whoever typed it — so
-    // there is nobody to assign it TO, and "יש לשייך את הליד לנציג" would just
-    // be busywork an admin has to close. trackLeadAssignment creates that rep's
-    // follow-up call task off the same INSERT; here we only drop the admin
-    // prompt and keep the FYI notification below.
+    // This function no longer opens a "יש לשייך את הליד לנציג" task.
     //
-    // Gated on rep1 ALONE, deliberately. A lead that comes in through the API
-    // lands unassigned by design (see the note in upsertLead) and carries
-    // `pending_rep_email` only as a hint of who the integration meant it for —
-    // it still needs a manager to triage it, so it still gets this task.
+    // Assigning an incoming lead is the manager's standing job — they open the
+    // unassigned pool and hand leads out. A task row per lead added nothing to
+    // that, and one row per lead is a lot of rows: the manager's queue filled
+    // with items whose only content was "a lead arrived", which then had to be
+    // closed one by one. The notification below is the signal; the unassigned
+    // pool ("לא משויכים" on /LeadManagement) is the work list.
+    //
+    // trackLeadAssignment still creates the rep's follow-up call task off the
+    // same INSERT when the lead arrives already assigned, so a hand-typed lead
+    // keeps its call task exactly as before.
     const assignedRep = String(leadData.rep1 || '').trim();
-
-    let salesTask = null;
-    if (!assignedRep) {
-      const dueDate = new Date();
-      dueDate.setHours(dueDate.getHours() + 3);
-
-      const taskData = {
-        lead_id: leadData.id,
-        task_type: 'assignment',
-        task_status: 'not_completed',
-        summary: `יש לשייך את הליד ${leadData.full_name || 'החדש'} לנציג`,
-        due_date: dueDate.toISOString(),
-        work_start_date: new Date().toISOString(),
-      };
-
-      const { data: inserted, error } = await supabase
-        .from('sales_tasks')
-        .insert(taskData)
-        .select()
-        .single();
-
-      if (error) throw error;
-      salesTask = inserted;
-    }
 
     // Notify all admins about the new lead (in-app bell + mobile push)
     try {
@@ -177,9 +140,8 @@ Deno.serve(async (req) => {
 
     return Response.json({
       message: assignedRep
-        ? `Lead already assigned to ${assignedRep} on creation — no assignment task needed`
-        : 'Assignment task created successfully',
-      task: salesTask,
+        ? `New lead notification sent — already assigned to ${assignedRep} on creation`
+        : 'New lead notification sent — lead waiting in the unassigned pool',
     }, { headers: corsHeaders });
 
   } catch (error) {

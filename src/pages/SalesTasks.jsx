@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy, Clock } from "lucide-react";
+import { Calendar, Phone, MessageCircle, FileText, Plus, FileSpreadsheet, Search, X, CheckCircle2, XCircle, Ban, List, AlertCircle, ArrowUpRight, Mail, Users, UserPlus, RefreshCw, ClipboardList, Paperclip, LayoutGrid, ChevronDown, Globe, LifeBuoy } from "lucide-react";
 import StatCube from "@/components/shared/StatCube";
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -60,7 +60,7 @@ import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { canAccessSalesWorkspace, filterSalesTasksForUser, isAdmin as isAdminUser } from '@/components/shared/rbac';
 import { compareSalesTasks, getTaskCounterMismatches, matchesSalesTaskTab, normalizeTaskStatus, parseSalesTaskDate, sortSalesTasks } from '@/components/shared/salesTaskWorkbench';
-import { compareTasksByPriority, isAssignmentTask, isStaleOverdueTask, isTaskDueNow, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
+import { compareTasksByPriority, isStaleOverdueTask, isTaskDueNow, STALE_TASK_THRESHOLD_DAYS } from '@/lib/salesTaskWorkbench';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { SOURCE_LABELS, SLA_THRESHOLDS, CLOSED_STATUSES } from '@/constants/leadOptions';
 import { getLeadSlaAnchor, isReturningLead, isLeadHandled } from '@/utils/leadStatus';
@@ -114,14 +114,13 @@ export default function SalesTasks() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab');
-  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'assignment', 'completed', 'completed_today', 'not_done', 'cancelled', 'all',
+  const [activeTab, setActiveTab] = useState(['today', 'overdue', 'upcoming', 'undated', 'not_completed', 'completed', 'completed_today', 'not_done', 'cancelled', 'all',
     'leads_new_today', 'leads_unhandled', 'leads_in_handling',
     'cat_new_lead', 'cat_no_answer', 'cat_before_quote', 'cat_after_quote', 'cat_meeting'].includes(initialTab) ? initialTab : 'today');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('priority');
   const [dateFilter, setDateFilter] = useState('');
   const [showStale, setShowStale] = useState(false);
-  const [showAssignmentTasks, setShowAssignmentTasks] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'day' | 'week'
   const [showNewTaskDialog, setShowNewTaskDialog] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -171,18 +170,12 @@ export default function SalesTasks() {
   const isAdmin = isAdminUser(effectiveUser);
   const userEmail = effectiveUser?.email;
 
-  // Effective rules:
-  //   - non-admin reps never see assignment tasks anywhere on this page
-  //   - admin sees them only on the dedicated "להקצות" tab, or when the
-  //     "כלול X משימות שיוך" toggle is on
-  //   - the toggle drives BOTH the counts and the list, so the badge on
-  //     "היום" can't say 73 while the list renders 1 (the bug we just hit)
-  // Counts ignore activeTab (they describe every bucket at once), so the
-  // assignment tab itself doesn't bring assignment rows into the count.
-  const includeAssignmentInCounts = isAdmin && showAssignmentTasks;
-  const includeAssignmentInList = isAdmin && (showAssignmentTasks || activeTab === 'assignment');
-  const applyUserScope = (q, { includeAssignment } = { includeAssignment: false }) => {
-    if (!includeAssignment) q = q.neq('task_type', 'assignment');
+  // The manager's assignment queue is retired — nothing creates `assignment`
+  // tasks any more (see supabase/functions/createSalesTaskForNewLead), and the
+  // rows left over from when it did are not work anybody has to close. They
+  // stay out of every count and every list on this page, for admins too.
+  const applyUserScope = (q) => {
+    q = q.neq('task_type', 'assignment');
     if (!isAdmin && userEmail) {
       // ilike (no wildcards) = case-insensitive equality, matching the
       // client-side taskBelongsToUser which lowercases both sides. A rep whose
@@ -212,53 +205,23 @@ export default function SalesTasks() {
   const today = new Date();
   const todayStartIso = startOfDay(today).toISOString();
   const todayEndIso = endOfDay(today).toISOString();
-  // Cutoff for "stale" — applied to assignment tasks via created_date and
-  // (in the legacy hint UI) regular tasks via due_date. Same threshold so
-  // the toggle reads as one unified concept to the user.
+  // Cutoff for "stale" — an open task whose due_date is older than this is
+  // treated as migration noise and hidden behind a toggle.
   const staleCutoffIso = useMemo(() => {
     const c = new Date();
     c.setDate(c.getDate() - STALE_TASK_THRESHOLD_DAYS);
     return c.toISOString();
   }, []);
 
-  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0, assignmentOpen: 0, staleAssignmentHidden: 0 } } = useQuery({
-    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts, showStale],
+  const { data: counts = { total: 0, open: 0, completed: 0, today: 0, overdue: 0, upcoming: 0, undated: 0, completedToday: 0 } } = useQuery({
+    queryKey: ['salesTasks-counts', todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', showStale],
     enabled: canAccessSales,
     staleTime: 60_000,
     queryFn: async () => {
       const head = async (build) => {
         const { count, error } = await build(
-          applyUserScope(base44.supabase.from('sales_tasks').select('*', { count: 'exact', head: true }), { includeAssignment: includeAssignmentInCounts }),
+          applyUserScope(base44.supabase.from('sales_tasks').select('*', { count: 'exact', head: true })),
         );
-        if (error) throw error;
-        return count || 0;
-      };
-      // Assignment-tab badge needs its own count regardless of the
-      // includeAssignmentInCounts toggle — the badge is the whole reason
-      // an admin notices the queue exists. The stale filter applies here
-      // too so the badge stays in sync with the list when showStale=false.
-      const assignmentHead = async () => {
-        if (!isAdmin) return 0;
-        let q = base44.supabase
-          .from('sales_tasks')
-          .select('*', { count: 'exact', head: true })
-          .eq('task_status', 'not_completed')
-          .eq('task_type', 'assignment');
-        if (!showStale) q = q.gte('created_date', staleCutoffIso);
-        const { count, error } = await q;
-        if (error) throw error;
-        return count || 0;
-      };
-      // How many assignment tasks the stale filter is hiding right now —
-      // surfaced in the toggle button so the admin knows what's parked.
-      const staleAssignmentHiddenHead = async () => {
-        if (!isAdmin || showStale) return 0;
-        const { count, error } = await base44.supabase
-          .from('sales_tasks')
-          .select('*', { count: 'exact', head: true })
-          .eq('task_status', 'not_completed')
-          .eq('task_type', 'assignment')
-          .lt('created_date', staleCutoffIso);
         if (error) throw error;
         return count || 0;
       };
@@ -270,7 +233,7 @@ export default function SalesTasks() {
       const staleOpenHidden = showStale
         ? 0
         : await head((q) => q.eq('task_status', 'not_completed').lt('due_date', staleCutoffIso));
-      const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday, assignmentOpen, staleAssignmentHidden] = await Promise.all([
+      const [total, open, completed, todayCnt, overdue, upcoming, undated, completedToday] = await Promise.all([
         head((q) => q),
         head((q) => q.eq('task_status', 'not_completed')),
         head((q) => q.eq('task_status', 'completed')),
@@ -279,8 +242,6 @@ export default function SalesTasks() {
         head((q) => q.eq('task_status', 'not_completed').gt('due_date', todayEndIso)),
         head((q) => q.eq('task_status', 'not_completed').is('due_date', null)),
         head((q) => q.eq('task_status', 'completed').gte('updated_date', todayStartIso).lte('updated_date', todayEndIso)),
-        assignmentHead(),
-        staleAssignmentHiddenHead(),
       ]);
       return {
         total: total - staleOpenHidden,
@@ -291,8 +252,6 @@ export default function SalesTasks() {
         upcoming,
         undated,
         completedToday,
-        assignmentOpen,
-        staleAssignmentHidden,
       };
     },
   });
@@ -303,7 +262,7 @@ export default function SalesTasks() {
   // ~8k rows on every page load; this brings it down to ≤ 1000.
   const TASKS_FETCH_LIMIT = 1000;
   const { data: allSalesTasks = [], isLoading } = useQuery({
-    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInList, showStale, leadStatusFilter],
+    queryKey: ['salesTasks-tab', activeTab, todayStartIso, todayEndIso, isAdmin ? 'admin' : userEmail || 'anon', showStale, leadStatusFilter],
     enabled: canAccessSales,
     staleTime: 60_000,
     // Keep today's queue live without a manual refresh — newly scheduled or
@@ -311,7 +270,7 @@ export default function SalesTasks() {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'), { includeAssignment: includeAssignmentInList });
+      let q = applyUserScope(base44.supabase.from('sales_tasks').select('*'));
       if (activeTab === 'today') {
         q = q.eq('task_status', 'not_completed').gte('due_date', todayStartIso).lte('due_date', todayEndIso);
       } else if (activeTab === 'overdue') {
@@ -322,9 +281,6 @@ export default function SalesTasks() {
         q = q.eq('task_status', 'not_completed').is('due_date', null);
       } else if (activeTab === 'not_completed') {
         q = q.eq('task_status', 'not_completed');
-      } else if (activeTab === 'assignment') {
-        q = q.eq('task_status', 'not_completed').eq('task_type', 'assignment');
-        if (!showStale) q = q.gte('created_date', staleCutoffIso);
       } else if (activeTab === 'completed_today') {
         // "הושלמו היום" cube: completed AND touched within today's window —
         // must mirror the count query's completedToday, not the generic
@@ -391,7 +347,7 @@ export default function SalesTasks() {
   // with no open task lands in neither the count nor the list. Scoped to the
   // rep via applyUserScope, exactly like the list query.
   const { data: openTaskRows = [] } = useQuery({
-    queryKey: ['salesTasks-open-cube-rows', isAdmin ? 'admin' : userEmail || 'anon', includeAssignmentInCounts],
+    queryKey: ['salesTasks-open-cube-rows', isAdmin ? 'admin' : userEmail || 'anon'],
     enabled: canAccessSales,
     staleTime: 60_000,
     refetchInterval: 60_000,
@@ -405,7 +361,6 @@ export default function SalesTasks() {
       for (let from = 0; from < 30_000; from += PAGE) {
         const { data, error } = await applyUserScope(
           base44.supabase.from('sales_tasks').select('lead_id, status, created_date').eq('task_status', 'not_completed').not('lead_id', 'is', null),
-          { includeAssignment: includeAssignmentInCounts },
         ).order('id', { ascending: true }).range(from, from + PAGE - 1);
         if (error) throw error;
         out.push(...(data || []));
@@ -438,13 +393,11 @@ export default function SalesTasks() {
   // fetch their own lead below. This stays an (empty, stable) map so the rare
   // fallback lookups degrade gracefully without extra deps churn.
   const leadsById = EMPTY_LEADS_BY_ID;
-  // Non-admin reps never see assignment tasks anywhere on this page —
-  // those belong to the manager workflow. Stripping them at the
-  // ownedTasks layer makes counts, toggles, and empty-state CTAs all
-  // collapse to 0/hidden automatically for non-admins.
   const ownedTasks = useMemo(() => {
-    const base = filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById);
-    const filtered = isAdminUser(effectiveUser) ? base : base.filter((t) => !isAssignmentTask(t));
+    // filterSalesTasksForUser already drops `assignment` rows for everyone —
+    // the manager's assignment queue is retired, and the server query excludes
+    // them too, so nothing on this page can surface one.
+    const filtered = filterSalesTasksForUser(effectiveUser, allSalesTasks, leadsById);
     // Category tabs partition the open queue by the related lead's
     // status. We do the lookup here (rather than in the server query)
     // because the leadsById map is already loaded for ownership scoping
@@ -503,25 +456,9 @@ export default function SalesTasks() {
     () => ownedTasks.filter((t) => isStaleOverdueTask(t, now)).length,
     [ownedTasks, now],
   );
-  // Server-side count — survives the toggle, since otherwise hiding
-  // assignment tasks would also hide the only signal that they exist.
-  const assignmentTaskCount = counts.assignmentOpen || 0;
-  // When the active tab's entire bucket is assignment-only (e.g. today
-  // is dominated by `assignment` tasks the rep filter hides), the list
-  // looks empty and the rep doesn't know why. Surface this as a CTA in
-  // the empty state.
-  const assignmentInActiveTabCount = useMemo(
-    () =>
-      ownedTasks.filter(
-        (t) => isAssignmentTask(t) && matchesSalesTaskTab(t, activeTab, now),
-      ).length,
-    [ownedTasks, activeTab, now],
-  );
-
-  // The list view drops legacy migration leftovers and the admin-only
-  // assignment queue by default, since both flooded the rep's screen with
-  // noise. Toggles below the filter bar bring them back. The "assignment"
-  // tab always shows assignment tasks regardless of the toggle.
+  // The list view drops legacy migration leftovers by default, since they
+  // flooded the rep's screen with noise. A toggle below the filter bar brings
+  // them back.
   const scopedTasks = useMemo(() => {
     let tasks = ownedTasks;
     // Stale (>30d overdue) tasks are migration noise on the time buckets, so
@@ -531,13 +468,8 @@ export default function SalesTasks() {
     // cube says 3 while the list shows 0. So skip stale-hiding for those tabs.
     const isLeadDrivenTab = activeTab.startsWith('cat_') || activeTab.startsWith('leads_');
     if (!showStale && !isLeadDrivenTab) tasks = tasks.filter((t) => !isStaleOverdueTask(t, now));
-    if (activeTab === 'assignment') {
-      tasks = tasks.filter(isAssignmentTask);
-    } else if (!showAssignmentTasks) {
-      tasks = tasks.filter((t) => !isAssignmentTask(t));
-    }
     return tasks;
-  }, [ownedTasks, showStale, showAssignmentTasks, activeTab, now]);
+  }, [ownedTasks, showStale, activeTab, now]);
   // (Used to call buildScopedTaskMetrics here. Now that KPIs come from the
   // server-side `counts` query, the metric arrays it produced were unused on
   // this page. Dropped to avoid the wasted computation on every rerender.)
@@ -545,13 +477,7 @@ export default function SalesTasks() {
   // Reset pagination when filters change
   useEffect(() => {
     setTasksPage(0);
-  }, [activeTab, search, sortBy, dateFilter, leadStatusFilter, showStale, showAssignmentTasks]);
-
-  // Assignment tab is admin-only. Bounce non-admins who land here via
-  // a stale URL (?tab=assignment) back to the default view.
-  useEffect(() => {
-    if (!isAdmin && activeTab === 'assignment') setActiveTab('today');
-  }, [isAdmin, activeTab]);
+  }, [activeTab, search, sortBy, dateFilter, leadStatusFilter, showStale]);
 
   // 2. Filter & sort tasks BEFORE enriching with lead data (no lead data needed here)
   const { totalFilteredCount, paginatedTasks } = useMemo(() => {
@@ -951,16 +877,6 @@ export default function SalesTasks() {
               }`}>
                 {timeLabel}
               </span>
-              {/* Names the amber row tint. The tint on its own said "this row
-                  is special" without saying why — reps read it as a colour
-                  with no meaning. The chip spells out the actual rule: the
-                  due time is inside the ±60-min due-now window. */}
-              {isTaskDueNow(row, now) && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 ring-1 ring-amber-300 text-[10px] font-semibold px-1.5 py-0.5 whitespace-nowrap">
-                  <Clock className="h-2.5 w-2.5" />
-                  לטפל עכשיו
-                </span>
-              )}
             </div>
             {row.summary && (
               <p className="text-xs text-muted-foreground/80 line-clamp-2">{row.summary}</p>
@@ -1048,8 +964,8 @@ export default function SalesTasks() {
         </div>
       ),
     },
-    // `now` ticks every 30s — the "לטפל עכשיו" chip has to re-evaluate with
-    // it, the same way the row tint and the today-queue sort do.
+    // `now` ticks every 30s — the due-now row tint and the today-queue sort
+    // have to re-evaluate with it.
   ], [allUsers, now]);
 
   if (isLoadingUser) {
@@ -1188,8 +1104,8 @@ export default function SalesTasks() {
           The header tiles cover the rep's daily drivers (today + the three
           lead snapshots). Everything else — overdue, completed-today, and
           the rarely-touched states (עתידי / ללא יעד / לא בוצע / בוטל / הכל)
-          plus the admin-only assignment queue — sits in this small dropdown
-          so it stays reachable without competing with the primary tiles. */}
+          — sits in this small dropdown so it stays reachable without
+          competing with the primary tiles. */}
       {(() => {
         const SECONDARY = [
           { id: 'overdue',        label: 'משימות באיחור', count: overdueCount,        Icon: AlertCircle },
@@ -1199,7 +1115,6 @@ export default function SalesTasks() {
           { id: 'not_done',  label: 'לא בוצע',  count: null,           Icon: XCircle },
           { id: 'cancelled', label: 'בוטל',     count: null,           Icon: Ban },
           { id: 'all',       label: 'הכל',      count: totalCount,     Icon: List },
-          ...(isAdmin ? [{ id: 'assignment', label: 'להקצות', count: assignmentTaskCount, Icon: ClipboardList }] : []),
         ];
         const currentSecondary = SECONDARY.find((s) => s.id === activeTab);
         return (
@@ -1323,41 +1238,22 @@ export default function SalesTasks() {
         </div>
       </div>
 
-      {/* ===== HIDDEN-ITEMS HINT =====
-          On the assignment tab the label swaps to talk about "stale
-          assignment tasks" so the admin doesn't think the regular
-          stale-overdue counter is what they're toggling. Same showStale
-          state — the user thinks of "stale" as one concept. */}
+      {/* ===== HIDDEN-ITEMS HINT ===== */}
       {(() => {
-        const onAssignmentTab = activeTab === 'assignment';
         // Lead-cube / funnel tabs (leads_* / cat_*) intentionally SKIP stale-hiding
         // — an unhandled lead must show regardless of age, or the cube says 30 and
         // the list shows 17. So the "hide N stale" toggle does nothing there; don't
         // show it (clicking it looked broken because it genuinely had no effect).
         const isLeadDrivenTab = activeTab.startsWith('leads_') || activeTab.startsWith('cat_');
-        const staleCount = onAssignmentTab ? counts.staleAssignmentHidden : hiddenStaleCount;
-        const showStaleHint = staleCount > 0 && !isLeadDrivenTab;
-        const showAssignmentHint = assignmentTaskCount > 0 && !showAssignmentTasks && !onAssignmentTab;
-        if (!showStaleHint && !showAssignmentHint) return null;
-        const staleLabel = onAssignmentTab ? 'משימות שיוך ישנות' : 'משימות ישנות';
+        if (hiddenStaleCount === 0 || isLeadDrivenTab) return null;
         return (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground/80">
-            {showStaleHint && (
-              <button
-                onClick={() => setShowStale((v) => !v)}
-                className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
-              >
-                {showStale ? 'הסתר' : 'הצג'} {staleCount.toLocaleString()} {staleLabel} מ-{STALE_TASK_THRESHOLD_DAYS} ימים
-              </button>
-            )}
-            {showAssignmentHint && (
-              <button
-                onClick={() => setShowAssignmentTasks((v) => !v)}
-                className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
-              >
-                {showAssignmentTasks ? 'הסתר' : 'כלול'} {assignmentTaskCount.toLocaleString()} משימות שיוך
-              </button>
-            )}
+            <button
+              onClick={() => setShowStale((v) => !v)}
+              className="rounded-full border border-dashed border-border bg-card px-3 py-1 hover:bg-muted transition-colors"
+            >
+              {showStale ? 'הסתר' : 'הצג'} {hiddenStaleCount.toLocaleString()} משימות ישנות מ-{STALE_TASK_THRESHOLD_DAYS} ימים
+            </button>
           </div>
         );
       })()}
@@ -1375,68 +1271,35 @@ export default function SalesTasks() {
             <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center">
               <ClipboardList className="h-7 w-7 text-muted-foreground/40" />
             </div>
-            {assignmentInActiveTabCount > 0 && activeTab !== 'assignment' && !showAssignmentTasks ? (
-              <>
-                <div className="text-center max-w-md">
-                  <p className="text-foreground font-medium text-sm">אין משימות עבודה — רק משימות שיוך</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    יש {assignmentInActiveTabCount.toLocaleString()} משימות שיוך פתוחות שמחכות להקצאה לנציג. הן הוסתרו מתצוגת העבודה היומית.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
-                  {isAdmin && (
-                    <Button
-                      onClick={() => setActiveTab('assignment')}
-                      size="sm"
-                      className="text-xs h-8 gap-1"
-                    >
-                      <ClipboardList className="h-3.5 w-3.5" />
-                      עבור לתור השיוך
-                    </Button>
-                  )}
-                  <Button
-                    onClick={() => setShowAssignmentTasks(true)}
-                    size="sm"
-                    variant="outline"
-                    className="text-xs h-8 border-primary/20 text-primary hover:bg-primary/5"
-                  >
-                    הצג כאן בכל זאת
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="text-center">
-                  <p className="text-muted-foreground font-medium text-sm">אין משימות להצגה</p>
-                  <p className="text-muted-foreground/70 text-xs mt-0.5">
-                    {(search || dateFilter || leadStatusFilter !== 'all')
-                      ? 'הסינון הפעיל לא מצא תוצאות — אפס אותו או שנה בחירה'
-                      : 'שנה את הפילטר או הוסף משימה חדשה'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
-                  {(search || dateFilter || leadStatusFilter !== 'all') && (
-                    <Button
-                      onClick={() => { setSearch(''); setDateFilter(''); setLeadStatusFilter('all'); }}
-                      size="sm"
-                      className="text-xs h-8 gap-1"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      אפס סינון
-                    </Button>
-                  )}
-                  <Button
-                    onClick={() => setShowNewTaskDialog(true)}
-                    size="sm"
-                    variant="outline"
-                    className="text-xs h-8 border-primary/20 text-primary hover:bg-primary/5 gap-1"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    הוסף משימה
-                  </Button>
-                </div>
-              </>
-            )}
+            <div className="text-center">
+              <p className="text-muted-foreground font-medium text-sm">אין משימות להצגה</p>
+              <p className="text-muted-foreground/70 text-xs mt-0.5">
+                {(search || dateFilter || leadStatusFilter !== 'all')
+                  ? 'הסינון הפעיל לא מצא תוצאות — אפס אותו או שנה בחירה'
+                  : 'שנה את הפילטר או הוסף משימה חדשה'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
+              {(search || dateFilter || leadStatusFilter !== 'all') && (
+                <Button
+                  onClick={() => { setSearch(''); setDateFilter(''); setLeadStatusFilter('all'); }}
+                  size="sm"
+                  className="text-xs h-8 gap-1"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  אפס סינון
+                </Button>
+              )}
+              <Button
+                onClick={() => setShowNewTaskDialog(true)}
+                size="sm"
+                variant="outline"
+                className="text-xs h-8 border-primary/20 text-primary hover:bg-primary/5 gap-1"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                הוסף משימה
+              </Button>
+            </div>
           </div>
         ) : (
           <DataTable
@@ -1449,19 +1312,18 @@ export default function SalesTasks() {
             tableClassName="table-fixed min-w-[1280px]"
             // "Due now" — an open task whose due time falls inside the
             // ±60-min window around the current clock: the call that is up
-            // *right now*. A static amber tint marks it and the "לטפל עכשיו"
-            // chip in the משימה column says why.
+            // *right now*. A static amber tint marks it.
             //
             // This used to also carry `animate-pulse`, which animates the
             // opacity of the whole <tr> — every name, phone and badge in the
             // row faded in and out with it, which is tiring to read and
             // ignores prefers-reduced-motion. Marking the row is enough.
             //
-            // Shares isTaskDueNow with the chip and the today-queue sort, so
-            // all three can't drift apart: the inline copy this replaced
-            // compared task_status raw (no alias normalization) and parsed
-            // the date differently, so it could tint a row the sort had not
-            // floated — or leave one untinted.
+            // Shares isTaskDueNow with the today-queue sort so the two can't
+            // drift apart: the inline copy this replaced compared task_status
+            // raw (no alias normalization) and parsed the date differently, so
+            // it could tint a row the sort had not floated — or leave one
+            // untinted.
             rowClassName={(row) => (
               isTaskDueNow(row, now) ? 'bg-amber-50 hover:bg-amber-100/70' : ''
             )}
@@ -1483,7 +1345,7 @@ export default function SalesTasks() {
                 const serverTabTotal = {
                   today: counts.today, overdue: counts.overdue, upcoming: counts.upcoming,
                   undated: counts.undated, not_completed: counts.open, completed: counts.completed,
-                  completed_today: counts.completedToday, all: counts.total, assignment: counts.assignmentOpen,
+                  completed_today: counts.completedToday, all: counts.total,
                 }[activeTab];
                 const hasClientFilters = !!search || !!dateFilter || leadStatusFilter !== 'all';
                 const capped = allSalesTasks.length >= TASKS_FETCH_LIMIT;

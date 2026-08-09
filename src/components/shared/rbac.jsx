@@ -68,14 +68,15 @@ function taskBelongsToUser(user, task, leadsById) {
 
 export function filterSalesTasksForUser(user, allTasks, leadsById) {
   if (!user || !allTasks) return [];
-  if (user.role === 'admin') return allTasks;
-  // Non-admin reps never see assignment tasks — those belong to the
-  // manager queue. Stripping them at the canonical filter means every
-  // surface that calls this helper (Dashboard widgets, SalesTasks list,
-  // KPI counts) automatically excludes them.
-  return allTasks.filter(
-    (task) => task?.task_type !== 'assignment' && taskBelongsToUser(user, task, leadsById),
-  );
+  // Nobody sees `assignment` tasks any more — the manager's assignment queue
+  // is retired (nothing creates those rows; see the note in
+  // supabase/functions/createSalesTaskForNewLead), and the rows left behind by
+  // it are history, not work. Stripping them at the canonical filter means
+  // every surface that calls this helper (Dashboard widgets, SalesTasks list,
+  // KPI counts) automatically excludes them — admins included.
+  const tasks = allTasks.filter((task) => task?.task_type !== 'assignment');
+  if (user.role === 'admin') return tasks;
+  return tasks.filter((task) => taskBelongsToUser(user, task, leadsById));
 }
 
 export function filterLeadsForUser(user, leads) {
