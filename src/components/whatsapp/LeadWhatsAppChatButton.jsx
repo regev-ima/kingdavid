@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
+import { cn } from '@/lib/utils';
 import { useImpersonation } from '@/components/shared/ImpersonationContext';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
@@ -48,7 +49,11 @@ export default function LeadWhatsAppChatButton({ phone, name, className = '' }) 
         size="sm"
         variant="outline"
         onClick={() => (chat ? setThreadOpen(true) : setStartOpen(true))}
-        className={`h-8 text-xs gap-1.5 border-green-300 text-green-700 hover:bg-green-50 ${className}`}
+        /* cn(), not string concatenation: the lead overview renders this in a
+           row of 44px action buttons and passes its own height/size classes,
+           which only win if tailwind-merge drops the defaults they conflict
+           with. */
+        className={cn('h-8 text-xs gap-1.5 border-green-300 text-green-700 hover:bg-green-50', className)}
       >
         <MessageCircle className="h-3.5 w-3.5" />
         {chat ? "צ'אט וואטסאפ" : 'שלח וואטסאפ'}
