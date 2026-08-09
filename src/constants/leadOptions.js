@@ -99,6 +99,39 @@ export const CLOSED_STATUSES = [
   'delivery_inquiry_handled',
 ];
 
+// ==================== Automatic task creation ====================
+//
+// A task opens BY ITSELF only when the lead lands in one of these statuses.
+// Everything else is the rep's own call: they know they have to phone back,
+// and a queue that fills itself with "יש להתקשר ללקוח" rows is noise they
+// then have to close one by one.
+//
+// The three that stay are the ones that are meaningless without a scheduled
+// time — a follow-up or a meeting IS a commitment to a moment, so the system
+// owns the reminder:
+//   פולאפ לפני הצעה · פולאפ אחרי הצעה · פגישה
+//
+// `will_arrive_for_meeting` is listed beside `coming_to_branch` because both
+// exist in production under the same Hebrew label (see the note on
+// LEAD_STATUS_OPTIONS) — the app writes one and migration 20260426000004 left
+// the other, and the rule has to hold for a lead carrying either.
+export const AUTO_TASK_STATUSES = [
+  'followup_before_quote',
+  'followup_after_quote',
+  'coming_to_branch',
+  'will_arrive_for_meeting',
+];
+
+/** Does landing in this status open a task on its own? */
+export function statusOpensAutoTask(status) {
+  return AUTO_TASK_STATUSES.includes(String(status || ''));
+}
+
+/** Is this one of the meeting statuses (as opposed to a follow-up)? */
+export function isMeetingStatus(status) {
+  return status === 'coming_to_branch' || status === 'will_arrive_for_meeting';
+}
+
 // ==================== Lead Sources ====================
 
 export const LEAD_SOURCE_OPTIONS = [

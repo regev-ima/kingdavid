@@ -37,44 +37,18 @@ Deno.serve(async (req) => {
     }
 
     if (event.type === 'create') {
-      // On create, if rep1 is already set, create an initial task for the rep
-      if (leadData.rep1) {
-        // "Track Lead Assignment Changes" is registered twice in the Supabase
-        // console (see automation-optimization-guide.md), so this runs twice per
-        // INSERT. Every hand-typed lead now arrives with rep1 set, which would
-        // put two identical "יש להתקשר ללקוח" rows in the rep's queue each time
-        // — so check first, the way createSalesTaskForNewLead guards its own
-        // task. Two truly simultaneous runs can still slip through; this closes
-        // the ordinary case, and the duplicate automation is the real fix.
-        const { data: existingTasks } = await supabase
-          .from('sales_tasks')
-          .select('id, task_type, task_status')
-          .eq('lead_id', leadData.id);
-
-        const hasOpenCallTask = existingTasks?.some(
-          (t: any) => t.task_type === 'call' && t.task_status === 'not_completed'
-        );
-        if (hasOpenCallTask) {
-          return Response.json({ message: 'Initial call task already exists for this lead' }, { headers: corsHeaders });
-        }
-
-        const dueDate = new Date();
-        dueDate.setHours(dueDate.getHours() + 3);
-        await supabase
-          .from('sales_tasks')
-          .insert({
-            lead_id: leadData.id,
-            task_type: 'call',
-            task_status: 'not_completed',
-            summary: `יש להתקשר ללקוח ${leadData.full_name || ''}`,
-            due_date: dueDate.toISOString(),
-            work_start_date: new Date().toISOString(),
-            rep1: leadData.rep1,
-            status: leadData.status || 'new_lead',
-          });
-        return Response.json({ message: 'Initial task created for assigned rep on lead creation' }, { headers: corsHeaders });
-      }
-      return Response.json({ message: 'No assignment on creation' }, { headers: corsHeaders });
+      // No "יש להתקשר ללקוח" task is opened here any more.
+      //
+      // A new lead arrives at `new_lead`, and a task only opens by itself when
+      // the lead is in a status that schedules itself — follow-up before/after
+      // quote, or a meeting (see AUTO_TASK_STATUSES in
+      // src/constants/leadOptions.js). A rep who has just been handed a lead
+      // knows they have to call it; the row said nothing they didn't know and
+      // then had to be closed by hand.
+      //
+      // This function keeps its real job below: recording rep changes in
+      // assignment_history and notifying the rep they were assigned.
+      return Response.json({ message: 'Lead created — no automatic task' }, { headers: corsHeaders });
     }
 
     if (!oldLeadData) {

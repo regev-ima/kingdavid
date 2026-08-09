@@ -62,8 +62,7 @@ import RepCard from '@/components/lead/RepCard';
 import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
-import { addHours, addDays, startOfDay, format, differenceInDays } from '@/lib/safe-date-fns';
-import { he } from 'date-fns/locale';
+import { differenceInDays } from '@/lib/safe-date-fns';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
@@ -155,18 +154,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [assignBeforeTaskRep, setAssignBeforeTaskRep] = useState('');
   const [showAssignBeforeTask, setShowAssignBeforeTask] = useState(false);
   const [isAssigningBeforeTask, setIsAssigningBeforeTask] = useState(false);
-  const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
-  const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
   // Task being closed from the "סיים" shortcut on the next-task strip.
   const [completingTask, setCompletingTask] = useState(null);
-  // In-flight guard for the no-answer / followup "אישור" buttons. These
-  // handlers fire raw base44 writes (status update + task create) rather
-  // than a react-query mutation, so there was no `isPending` flag to lean
-  // on — the dialog stayed open and clickable through the whole network
-  // round-trip, and every extra click minted another duplicate follow-up
-  // task. This flag disables the button and short-circuits re-entry until
-  // the write settles and the dialog closes.
-  const [isSavingStatusFlow, setIsSavingStatusFlow] = useState(false);
   // The old `workMode` state (sales vs service) was removed when we
   // collapsed the two modes into a single unified lead screen. Sales
   // and service info now live side-by-side, the service section is a
@@ -566,19 +555,10 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         });
       }
 
-      // 3. Create a call task for the new rep (due in 3 hours)
-      const dueDate = new Date();
-      dueDate.setHours(dueDate.getHours() + 3);
-      await base44.entities.SalesTask.create({
-        lead_id: leadId,
-        rep1: email,
-        task_type: 'call',
-        task_status: 'not_completed',
-        summary: `יש להתקשר ללקוח ${lead.full_name || ''}`,
-        due_date: dueDate.toISOString(),
-        work_start_date: new Date().toISOString(),
-        status: lead.status || 'new_lead',
-      });
+      // 3. No "יש להתקשר ללקוח" task. Assigning a lead doesn't schedule
+      //    anything — a task opens by itself only for the statuses that ARE a
+      //    scheduled commitment (see AUTO_TASK_STATUSES). The rep just got the
+      //    lead; they know to call it.
 
       // 4. Audit log
       await createAuditLog({
@@ -1721,284 +1701,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         </DialogContent>
       </Dialog>
 
-      {/* No-answer callback scheduling dialog */}
-      <Dialog open={!!noAnswerFlow} onOpenChange={(open) => {
-        if (!open) {
-          setNoAnswerFlow(null);
-          setFormData(prev => ({ ...prev, status: lead.status }));
-        }
-      }}>
-        <DialogContent className="max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-center">
-              תזמון חזרה ללקוח
-            </DialogTitle>
-          </DialogHeader>
-          {noAnswerFlow && (
-            <div className="space-y-5 pt-2">
-              <div className="text-center p-3 bg-amber-50 rounded-xl border border-amber-200">
-                <p className="text-sm font-semibold text-amber-800">
-                  הסטטוס ישתנה ל: <span className="text-amber-900">{noAnswerFlow.label}</span>
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground text-center mb-3">חזור ללקוח בעוד:</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {[2, 3, 4, 5].map((h) => (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => setNoAnswerFlow({ ...noAnswerFlow, selectedHours: h })}
-                      className={`py-3 rounded-xl border-2 text-sm font-bold transition-all ${
-                        noAnswerFlow.selectedHours === h
-                          ? 'border-amber-500 bg-amber-100 text-amber-800 shadow-sm'
-                          : 'border-border bg-white hover:border-amber-300 hover:bg-amber-50 text-muted-foreground'
-                      }`}
-                    >
-                      {h} שעות
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <Button
-                  className="flex-1"
-                  disabled={!noAnswerFlow.selectedHours || isSavingStatusFlow}
-                  onClick={async () => {
-                    if (!noAnswerFlow.selectedHours || isSavingStatusFlow) return;
-                    setIsSavingStatusFlow(true);
-                    try {
-                      // 1. Update lead status
-                      createAuditLog({
-                        leadId,
-                        actionType: 'status_changed',
-                        description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${noAnswerFlow.status}"`,
-                        user,
-                        fieldName: 'status',
-                        oldValue: lead.status,
-                        newValue: noAnswerFlow.status,
-                      });
-                      const noAnswerNow = new Date().toISOString();
-                      await base44.entities.Lead.update(leadId, { status: noAnswerFlow.status });
-
-                      // 2. Mark current open tasks as completed with timestamp
-                      const openTasks = tasks.filter(t => t.task_status === 'not_completed');
-                      if (openTasks.length > 0) {
-                        await Promise.all(openTasks.map(t =>
-                          base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                        ));
-                      }
-
-                      // 3. Create new call task
-                      const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
-                      await base44.entities.SalesTask.create({
-                        lead_id: leadId,
-                        rep1: lead.rep1 || user?.email,
-                        rep2: lead.rep2 || '',
-                        task_type: 'call',
-                        task_status: 'not_completed',
-                        status: noAnswerFlow.status,
-                        due_date: dueDate.toISOString(),
-                        work_start_date: noAnswerNow,
-                        created_date: noAnswerNow,
-                        summary: `חזור ללקוח ${lead.full_name || ''} - ${noAnswerFlow.label}`,
-                      });
-
-                      // 4. Refresh
-                      queryClient.invalidateQueries(['lead', leadId]);
-                      queryClient.invalidateQueries(['tasks', leadId]);
-                      queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                      queryClient.invalidateQueries(['salesTasks']);
-                      queryClient.invalidateQueries(['taskCounters']);
-                      setNoAnswerFlow(null);
-                    } catch (err) {
-                      toast({ title: 'שמירת הסטטוס נכשלה', description: err?.message || 'נסה שוב', variant: 'destructive' });
-                    } finally {
-                      setIsSavingStatusFlow(false);
-                    }
-                  }}
-                >
-                  {isSavingStatusFlow ? 'שומר…' : 'אישור'}
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isSavingStatusFlow}
-                  onClick={() => {
-                    setNoAnswerFlow(null);
-                    setFormData(prev => ({ ...prev, status: lead.status }));
-                  }}
-                >
-                  ביטול
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Followup before quote scheduling dialog */}
-      <Dialog open={!!followupFlow} onOpenChange={(open) => {
-        if (!open) {
-          setFollowupFlow(null);
-          setFormData(prev => ({ ...prev, status: lead.status }));
-        }
-      }}>
-        <DialogContent className="max-w-md" dir="rtl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-center">
-              תזמון פולואפ - {followupFlow?.status === 'followup_after_quote' ? 'אחרי הצעה' : 'לפני הצעה'}
-            </DialogTitle>
-          </DialogHeader>
-          {followupFlow && (
-            <div className="space-y-5 pt-2">
-              <div className="text-center p-3 bg-blue-50 rounded-xl border border-blue-200">
-                <p className="text-sm font-semibold text-blue-800">
-                  מתי לחזור ללקוח?
-                </p>
-              </div>
-
-              {/* Day selection - next 5 working days, no Saturday */}
-              <div>
-                <p className="text-sm text-muted-foreground text-center mb-3">בחר יום:</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {(() => {
-                    const days = [];
-                    let d = startOfDay(new Date());
-                    while (days.length < 5) {
-                      if (d.getDay() !== 6) days.push(new Date(d));
-                      d = addDays(d, 1);
-                    }
-                    return days;
-                  })().map((day) => {
-                    const dayKey = day.toISOString();
-                    const dayName = format(day, 'EEEE', { locale: he });
-                    const dateLabel = format(day, 'd/M');
-                    const isSelected = followupFlow.selectedDate === dayKey;
-                    return (
-                      <button
-                        key={dayKey}
-                        type="button"
-                        onClick={() => setFollowupFlow({ ...followupFlow, selectedDate: dayKey })}
-                        className={`flex flex-col items-center py-3 px-1 rounded-xl border-2 text-xs font-bold transition-all ${
-                          isSelected
-                            ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-sm'
-                            : 'border-border bg-white hover:border-blue-300 hover:bg-blue-50 text-muted-foreground'
-                        }`}
-                      >
-                        <span>{dayName}</span>
-                        <span className="text-[10px] font-normal mt-0.5 opacity-70">{dateLabel}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Hour selection */}
-              {followupFlow.selectedDate && (
-                <div>
-                  <p className="text-sm text-muted-foreground text-center mb-3">בחר שעה:</p>
-                  <div className="grid grid-cols-5 gap-2">
-                    {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((hour) => {
-                      const isSelected = followupFlow.selectedHour === hour;
-                      return (
-                        <button
-                          key={hour}
-                          type="button"
-                          onClick={() => setFollowupFlow({ ...followupFlow, selectedHour: hour })}
-                          className={`py-2.5 rounded-xl border-2 text-sm font-bold transition-all ${
-                            isSelected
-                              ? 'border-blue-500 bg-blue-100 text-blue-800 shadow-sm'
-                              : 'border-border bg-white hover:border-blue-300 hover:bg-blue-50 text-muted-foreground'
-                          }`}
-                        >
-                          {String(hour).padStart(2, '0')}:00
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  disabled={!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingStatusFlow}
-                  onClick={async () => {
-                    if (!followupFlow.selectedDate || followupFlow.selectedHour == null || isSavingStatusFlow) return;
-                    setIsSavingStatusFlow(true);
-                    try {
-                      const dueDate = new Date(followupFlow.selectedDate);
-                      dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
-                      const now = new Date().toISOString();
-                      const fStatus = followupFlow.status;
-                      const statusLabel = fStatus === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
-                      const statusHebrew = fStatus === 'followup_after_quote' ? 'פולאפ - אחרי הצעת מחיר' : 'פולאפ - לפני הצעה';
-
-                      // 1. Update lead status
-                      createAuditLog({
-                        leadId,
-                        actionType: 'status_changed',
-                        description: `${user.full_name} שינה סטטוס: "${lead.status}" → "${statusHebrew}"`,
-                        user,
-                        fieldName: 'status',
-                        oldValue: lead.status,
-                        newValue: fStatus,
-                      });
-                      await base44.entities.Lead.update(leadId, { status: fStatus });
-
-                      // 2. Mark current open tasks as completed with timestamp
-                      const openTasks = tasks.filter(t => t.task_status === 'not_completed');
-                      if (openTasks.length > 0) {
-                        await Promise.all(openTasks.map(t =>
-                          base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
-                        ));
-                      }
-
-                      // 3. Create followup call task
-                      await base44.entities.SalesTask.create({
-                        lead_id: leadId,
-                        rep1: lead.rep1 || user?.email,
-                        rep2: lead.rep2 || '',
-                        task_type: 'call',
-                        task_status: 'not_completed',
-                        status: fStatus,
-                        due_date: dueDate.toISOString(),
-                        work_start_date: now,
-                        created_date: now,
-                        summary: `פולואפ - חזור ללקוח ${lead.full_name || ''} ${statusLabel}`,
-                      });
-
-                      // 4. Refresh
-                      queryClient.invalidateQueries(['lead', leadId]);
-                      queryClient.invalidateQueries(['tasks', leadId]);
-                      queryClient.invalidateQueries(['leadActivityLogs', leadId]);
-                      queryClient.invalidateQueries(['salesTasks']);
-                      queryClient.invalidateQueries(['taskCounters']);
-                      setFollowupFlow(null);
-                    } catch (err) {
-                      toast({ title: 'שמירת הסטטוס נכשלה', description: err?.message || 'נסה שוב', variant: 'destructive' });
-                    } finally {
-                      setIsSavingStatusFlow(false);
-                    }
-                  }}
-                >
-                  {isSavingStatusFlow ? 'שומר…' : 'אישור'}
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isSavingStatusFlow}
-                  onClick={() => {
-                    setFollowupFlow(null);
-                    setFormData(prev => ({ ...prev, status: lead.status }));
-                  }}
-                >
-                  ביטול
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
     </div>);
 

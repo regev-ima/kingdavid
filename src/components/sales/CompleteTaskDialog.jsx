@@ -39,6 +39,7 @@ import {
   TASK_COMPLETION_FLOWS,
   TONE_CLASSES,
   resolveOutcomeStatus,
+  outcomeOpensNextTask,
 } from '@/lib/taskCompletionFlow';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 
@@ -108,14 +109,19 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
     setFollowUpSummary('');
   }, [isOpen, task?.id]);
 
-  // When the rep picks an outcome, seed the follow-up form from the
-  // outcome's preset (if any) so they only have to edit what changed.
-  // Reps can always toggle the section off, or on for outcomes without a
-  // preset, and freely override every field.
+  // When the rep picks an outcome, seed the follow-up form from the outcome's
+  // preset — but ONLY when the lead lands in a status that schedules itself
+  // (follow-up before/after quote, or a meeting). For every other outcome the
+  // section starts OFF: closing "לא ענה" no longer mints another call by
+  // itself, and the rep who does want one flips the toggle.
+  //
+  // The toggle is never taken away, so nothing a rep could do before is
+  // impossible now — it just stopped happening on its own.
   useEffect(() => {
     if (!selectedOutcome) return;
+    const currentLeadStatus = task?.status || task?.lead?.status || null;
     const nt = selectedOutcome.nextTask;
-    if (nt) {
+    if (nt && outcomeOpensNextTask(selectedOutcome, currentLeadStatus)) {
       setFollowUpEnabled(true);
       setFollowUpType(nt.task_type || 'call');
       setFollowUpSummary(nt.summary || '');
@@ -126,7 +132,7 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
       setFollowUpSummary('');
       setFollowUpDueDate('');
     }
-  }, [selectedOutcome]);
+  }, [selectedOutcome, task]);
 
   const outcomes = TASK_COMPLETION_FLOWS[task?.task_type] || [];
   const currentTaskMeta = TASK_TYPE_META[task?.task_type];
