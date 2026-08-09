@@ -1,0 +1,441 @@
+<title>פופאפ ליד — גרסה 6</title>
+<style>
+  :root {
+    --bg:            hsl(240 20% 99%);
+    --page:          hsl(240 14% 96%);
+    --card:          hsl(0 0% 100%);
+    --fg:            hsl(230 25% 15%);
+    --fg-muted:      hsl(230 9% 46%);
+    --fg-faint:      hsl(230 8% 62%);
+    --border:        hsl(230 16% 91%);
+    --border-soft:   hsl(230 16% 94%);
+    --inset:         hsl(240 14% 97%);
+    --primary:       hsl(234 72% 56%);
+    --primary-fg:    hsl(0 0% 100%);
+    --primary-soft:  hsl(234 80% 95%);
+    --green:         hsl(150 62% 36%);
+    --green-soft:    hsl(150 62% 96%);
+    --green-ring:    hsl(150 45% 80%);
+    --amber:         hsl(32 85% 45%);
+    --amber-soft:    hsl(38 92% 95%);
+    --blue:          hsl(216 85% 52%);
+    --blue-soft:     hsl(216 92% 96%);
+    --shadow:        0 1px 2px rgb(16 24 40 / .04), 0 1px 3px rgb(16 24 40 / .06);
+    --shadow-pop:    0 24px 64px -16px rgb(16 24 40 / .28);
+    --r-sm: 8px; --r: 10px; --r-lg: 14px; --r-xl: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: hsl(230 18% 11%); --page: hsl(230 18% 8%); --card: hsl(230 16% 14%);
+      --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+      --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+      --primary: hsl(234 82% 70%); --primary-fg: hsl(230 18% 11%); --primary-soft: hsl(234 40% 24%);
+      --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 18%); --green-ring: hsl(150 30% 32%);
+      --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 19%);
+      --blue: hsl(216 88% 70%); --blue-soft: hsl(216 40% 21%);
+      --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: hsl(230 18% 11%); --page: hsl(230 18% 8%); --card: hsl(230 16% 14%);
+    --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+    --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+    --primary: hsl(234 82% 70%); --primary-fg: hsl(230 18% 11%); --primary-soft: hsl(234 40% 24%);
+    --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 18%); --green-ring: hsl(150 30% 32%);
+    --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 19%);
+    --blue: hsl(216 88% 70%); --blue-soft: hsl(216 40% 21%);
+    --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 18px 60px; direction: rtl;
+    background: var(--page); color: var(--fg);
+    font-family: 'Heebo','Assistant','Rubik','Noto Sans Hebrew',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; }
+  .note { font-size: 12px; color: var(--fg-faint); margin: 0 4px 14px; }
+  .note b { color: var(--fg); font-weight: 600; }
+
+  .modal {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 22px; box-shadow: var(--shadow-pop); overflow: hidden;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────────────── */
+  .head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
+  .iconbtn {
+    flex: none; width: 40px; height: 40px; border-radius: var(--r);
+    border: 1px solid var(--border); background: var(--card); color: var(--fg-muted);
+    display: grid; place-items: center; cursor: pointer;
+  }
+  .iconbtn:hover { background: var(--inset); color: var(--fg); }
+  .avatar {
+    flex: none; width: 44px; height: 44px; border-radius: 999px;
+    background: var(--primary-soft); color: var(--primary);
+    display: grid; place-items: center; font-size: 18px; font-weight: 700;
+  }
+  .head h1 { margin: 0; font-size: 25px; font-weight: 800; letter-spacing: -.02em; }
+  /* The phone sits mid-header and the edit/kebab pair holds the far end —
+     two auto margins, so the gap opens on BOTH sides of the number instead
+     of parking it against the edit button. */
+  .phone {
+    margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px;
+    font-size: 15px; font-variant-numeric: tabular-nums;
+  }
+  .head-end { margin-inline-start: auto; display: flex; align-items: center; gap: 10px; }
+  .phone .num { direction: ltr; unicode-bidi: isolate; }
+  .ghosticon {
+    border: 0; background: transparent; color: var(--fg-faint); cursor: pointer;
+    width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px;
+  }
+  .ghosticon:hover { background: var(--inset); color: var(--fg); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    height: 40px; padding: 0 14px; border-radius: var(--r);
+    border: 1px solid var(--border); background: var(--card); color: var(--fg);
+    font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap;
+  }
+  .btn:hover { background: var(--inset); }
+  .btn .ic { color: var(--primary); }
+
+  /* ── Facts strip ────────────────────────────────────────────────────── */
+  .facts {
+    margin: 0 20px; background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--shadow);
+    display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+  }
+  .fact { padding: 14px 12px; text-align: center; min-width: 0; }
+  /* Divider on the START side of every cell but the first — in RTL that is
+     the cell's right edge, i.e. BETWEEN it and the cell before it. Using
+     `end` instead drew a stray rule on the strip's outer left edge and left
+     סטטוס/מקור הגעה with no divider at all. */
+  .fact + .fact { border-inline-start: 1px solid var(--border-soft); }
+  .fact dt { font-size: 12px; color: var(--fg-faint); margin: 0 0 7px; }
+  .fact dd {
+    margin: 0; font-size: 14px; font-weight: 500;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    min-width: 0;
+  }
+  .fact dd span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--green-soft); color: var(--green);
+    border-radius: 999px; padding: 3px 11px; font-size: 13px; font-weight: 600;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .muted-ic { color: var(--fg-faint); }
+
+  /* ── Actions ────────────────────────────────────────────────────────── */
+  /* Six equal columns filling the width, the way the reference lays them
+     out — not a right-bunched flex row with dead space on the left. */
+  .actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; padding: 18px 20px 4px; }
+  @media (max-width: 860px) { .actions { grid-template-columns: repeat(2, 1fr); } }
+  .actions .btn { height: 44px; border-radius: 11px; justify-content: center; }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); font-weight: 600; }
+  .btn-primary .ic { color: currentColor; }
+  .btn-primary:hover { filter: brightness(.94); background: var(--primary); }
+  .btn-wa { border-color: var(--green-ring); color: var(--green); }
+  .btn-wa .ic { color: currentColor; }
+  .btn-wa:hover { background: var(--green-soft); }
+
+  /* ── Two-column ─────────────────────────────────────────────────────── */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } .facts { grid-template-columns: repeat(2,1fr); } }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 15px 18px;
+  }
+  .card-title { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; }
+  .card-title .ic { color: var(--primary); }
+  .card-body { padding: 0 18px 18px; }
+
+  /* next task */
+  .task { background: var(--inset); border-radius: 12px; padding: 16px; }
+  .task-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .task-notes-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--fg-faint); order: 2;
+  }
+  .task h4 { margin: 0; font-size: 15px; font-weight: 700; order: 1; }
+  .task p { margin: 8px 0 0; font-size: 13.5px; color: var(--fg-muted); line-height: 1.6; }
+  .task-meta {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 16px; font-size: 13px; color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .task-meta .g { display: inline-flex; align-items: center; gap: 6px; }
+  .task-meta .sep { color: var(--border); }
+  .task-actions { display: flex; margin-top: 16px; }
+  .btn-done {
+    height: 38px; border-radius: var(--r); border: 1px solid var(--green-ring);
+    background: var(--card); color: var(--green); font-weight: 600;
+    display: inline-flex; align-items: center; gap: 8px; padding: 0 14px;
+    font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    margin-inline-start: auto;
+  }
+  .btn-done:hover { background: var(--green-soft); }
+
+  /* marketing rows */
+  .kv { list-style: none; margin: 0; padding: 0; }
+  .kv li {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 0; font-size: 14px;
+  }
+  .kv li + li { border-top: 1px solid var(--border-soft); }
+  .kv .k { color: var(--fg-faint); font-size: 13px; flex: none; }
+  .kv .v { color: var(--fg); text-align: start; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Activity ───────────────────────────────────────────────────────── */
+  .activity { margin: 0 20px 20px; }
+  .act-head {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 15px 18px;
+  }
+  .act-head .count { font-size: 13px; color: var(--fg-muted); text-align: center; }
+  .act-head .chev { justify-self: end; }
+  .track {
+    display: flex; align-items: center; gap: 0; padding: 6px 18px 20px;
+  }
+  .node { display: flex; align-items: center; gap: 12px; flex: none; }
+  .node .bubble {
+    width: 42px; height: 42px; border-radius: 999px; display: grid; place-items: center; flex: none;
+  }
+  .node .txt { text-align: start; }
+  .node .when { font-size: 12px; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+  .node .what { font-size: 13.5px; font-weight: 500; margin-top: 2px; }
+  .rail { flex: 1 1 auto; height: 1px; background: var(--border); min-width: 24px; }
+  .b-blue  { background: var(--blue-soft);  color: var(--blue); }
+  .b-amber { background: var(--amber-soft); color: var(--amber); }
+  .b-green { background: var(--green-soft); color: var(--green); }
+  .btn-all { height: 38px; border-radius: var(--r); flex: none; }
+
+  svg.ic { width: 1.15em; height: 1.15em; display: block; flex: none; }
+  .fact svg.ic, .task-meta svg.ic { width: 15px; height: 15px; }
+  :where(button,a,[tabindex]):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-sm); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="note"><b>מוקאפ — גרסה 6.</b> אותו עיצוב שהעברת, על נתונים אמיתיים מהמערכת. עדיין לא נגעתי בקוד.</p>
+
+  <div class="modal">
+
+    <!-- Header -->
+    <div class="head">
+      <button class="iconbtn" type="button" aria-label="חזרה">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+      <span class="avatar">ח</span>
+      <h1>חיים</h1>
+
+      <span class="phone">
+        <button class="ghosticon" type="button" aria-label="העתק מספר">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <span class="num">0547000929</span>
+      </span>
+
+      <span class="head-end">
+        <button class="btn" type="button">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          ערוך ליד
+        </button>
+        <button class="iconbtn" type="button" aria-label="עוד">
+          <svg class="ic" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+        </button>
+      </span>
+    </div>
+
+    <!-- Facts -->
+    <dl class="facts">
+      <div class="fact">
+        <dt>סטטוס</dt>
+        <dd><span class="pill"><span class="dot"></span>ליד חדש</span></dd>
+      </div>
+      <div class="fact">
+        <dt>מקור הגעה</dt>
+        <dd>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.2c0-.6-.1-1.2-.2-1.8H12v3.5h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.2Z"/><path fill="#34A853" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.7-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 14a6 6 0 0 1 0-3.8V7.6H3.1a10 10 0 0 0 0 9L6.4 14Z"/><path fill="#EA4335" d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.8-2.8A10 10 0 0 0 3.1 7.6l3.3 2.6C7.2 7.6 9.4 5.9 12 5.9Z"/></svg>
+          <span class="t">Google Ads</span>
+        </dd>
+      </div>
+      <div class="fact">
+        <dt>תאריך כניסה</dt>
+        <dd>
+          <svg class="ic muted-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+          <span class="t">09/08/2026 17:01</span>
+        </dd>
+      </div>
+      <div class="fact">
+        <dt>נציג אחראי</dt>
+        <dd>
+          <svg class="ic muted-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 1 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
+          <span class="t">נובל</span>
+        </dd>
+      </div>
+      <div class="fact">
+        <dt>נציג שני</dt>
+        <dd>
+          <svg class="ic muted-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 1 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>
+          <span class="t">יעל לוי</span>
+        </dd>
+      </div>
+    </dl>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button class="btn btn-primary" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.8 2Z"/></svg>
+        חיוג
+      </button>
+      <button class="btn btn-wa" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.2A8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/></svg>
+        שלח וואטסאפ
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg>
+        משימה חדשה
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+        הצעה חדשה
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+        הזמנה חדשה
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        עוד פעולות
+      </button>
+    </div>
+
+    <!-- Two columns -->
+    <div class="cols">
+      <!-- Marketing — first in DOM, so it lands on the RIGHT in RTL -->
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
+            פרטי שיווק
+          </span>
+        </div>
+        <div class="card-body">
+          <ul class="kv">
+            <li><span class="k">UTM Source</span><span class="v">Google Ads</span></li>
+            <li><span class="k">UTM Medium</span><span class="v">cpc</span></li>
+            <li><span class="k">UTM Campaign</span><span class="v">מבצע 160 200</span></li>
+            <li><span class="k">UTM Content</span><span class="v">738490923020</span></li>
+            <li><span class="k">UTM Term</span><span class="v">מודעות במבצע 160 200</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- Next task — now the LEFT column -->
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg>
+            משימה הבאה
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="task">
+            <div class="task-top">
+              <h4>חזרה אל הלקוח עם הצעה</h4>
+              <span class="task-notes-label">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>
+                הערות
+              </span>
+            </div>
+            <p>להכין הצעה ולהוסיף דגם אושן ולשלוח בוואטסאפ</p>
+            <div class="task-meta">
+              <span class="g">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
+                10/08/2026
+              </span>
+              <span class="g">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                10:00
+              </span>
+              <span class="sep">|</span>
+              <span>נובל</span>
+            </div>
+            <div class="task-actions">
+              <button class="btn-done" type="button">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                סמן כבוצע
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Activity -->
+    <section class="card activity">
+      <div class="act-head">
+        <span class="card-title">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+          פעילות הליד
+        </span>
+        <span class="count">3 פעילויות אחרונות</span>
+        <button class="ghosticon chev" type="button" aria-label="הרחב">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </div>
+
+      <div class="track">
+        <div class="node">
+          <span class="bubble b-blue">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>
+          </span>
+          <span class="txt">
+            <span class="when">09/08/2026 14:10</span>
+            <div class="what">הערה</div>
+          </span>
+        </div>
+
+        <span class="rail"></span>
+
+        <div class="node">
+          <span class="bubble b-amber">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg>
+          </span>
+          <span class="txt">
+            <span class="when">09/08/2026 15:20</span>
+            <div class="what">משימה: ליצור קשר חוזר</div>
+          </span>
+        </div>
+
+        <span class="rail"></span>
+
+        <div class="node">
+          <span class="bubble b-green">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.8 2Z"/></svg>
+          </span>
+          <span class="txt">
+            <span class="when">09/08/2026 16:45</span>
+            <div class="what">שיחה יוצאת</div>
+          </span>
+        </div>
+
+        <span class="rail"></span>
+
+        <button class="btn btn-all" type="button">הצג הכל</button>
+      </div>
+    </section>
+
+  </div>
+
+  <p class="note" style="margin-top:16px">
+    <b>שאלה אחת לפני שאני מיישם:</b> בעיצוב הזה אין הצעות מחיר, אין שירות ואין פרטי לקוח (אימייל/כתובת/הערות).
+    אפשר להשאיר אותם מתחת ל"פעילות הליד" כאזורים מתקפלים, או להוריד לגמרי ולהגיע אליהם רק מ"עוד פעולות". תגיד מה עדיף.
+  </p>
+</div>
