@@ -1,54 +1,44 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Phone,
   Users,
   FileText,
   ShoppingCart,
-  UserCheck,
   RefreshCw,
   ClipboardList,
-  AlertTriangle,
-  Clock,
+  CheckCircle2,
+  Plus,
 } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { he } from 'date-fns/locale';
 import { format, differenceInCalendarDays } from '@/lib/safe-date-fns';
 import { parseWorkbenchDate } from '@/lib/leadWorkbench';
 
-// Visual metadata for each task type. The label here is the
-// glanceable verb the rep sees on the row — "שיחה", "פגישה" —
-// because their first question scanning the queue is "what kind of
-// action is this?", not "what's its summary text?". Colour groups
-// match the rest of the app's type palette (calls = blue, quotes =
-// indigo, etc.) so the queue looks at home next to the action bar.
+// Visual metadata for each task type. The label here is the glanceable verb
+// the rep sees on the row — "שיחה", "פגישה" — because their first question
+// scanning the queue is "what kind of action is this?", not "what's its
+// summary text?".
 const TYPE_META = {
-  call:              { label: 'שיחה',         icon: Phone,         tone: 'bg-blue-100    text-blue-700    border-blue-200' },
-  meeting:           { label: 'פגישה',        icon: Users,         tone: 'bg-amber-100   text-amber-700   border-amber-200' },
-  quote_preparation: { label: 'הצעת מחיר',   icon: FileText,      tone: 'bg-indigo-100  text-indigo-700  border-indigo-200' },
-  close_order:       { label: 'סגירת הזמנה', icon: ShoppingCart,  tone: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  assignment:        { label: 'שיוך',         icon: UserCheck,     tone: 'bg-slate-100   text-slate-700   border-slate-200' },
-  followup:          { label: 'מעקב',         icon: RefreshCw,     tone: 'bg-violet-100  text-violet-700  border-violet-200' },
+  call:              { label: 'שיחה',        icon: Phone },
+  meeting:           { label: 'פגישה',       icon: Users },
+  quote_preparation: { label: 'הצעת מחיר',  icon: FileText },
+  close_order:       { label: 'סגירת הזמנה', icon: ShoppingCart },
+  followup:          { label: 'מעקב',        icon: RefreshCw },
 };
-const FALLBACK_TYPE_META = { label: 'משימה', icon: ClipboardList, tone: 'bg-muted text-foreground/70 border-border' };
+const FALLBACK_TYPE_META = { label: 'משימה', icon: ClipboardList };
 
-// Visual treatment per urgency bucket. The left border colour is the
-// single most glanceable signal — rep can scroll the lead screen and
-// instantly count how many red bars sit in the queue.
-const BUCKET_STYLE = {
-  task_overdue:  { rail: 'bg-red-500',    rowHover: 'hover:bg-red-50/40' },
-  task_today:    { rail: 'bg-amber-500',  rowHover: 'hover:bg-amber-50/40' },
-  task_upcoming: { rail: 'bg-blue-400',   rowHover: 'hover:bg-blue-50/40' },
-  task_undated:  { rail: 'bg-slate-300',  rowHover: 'hover:bg-slate-50/40' },
+// The strip itself is amber — "here is the thing to do" — and the bucket
+// chip on the end carries the urgency colour. Straight from the mockup.
+const BUCKET_CHIP = {
+  task_overdue:  { label: 'באיחור', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+  task_today:    { label: 'להיום',  cls: 'bg-amber-100 text-amber-800 ring-amber-300' },
+  task_upcoming: { label: 'עתידי',  cls: 'bg-sky-50 text-sky-700 ring-sky-200' },
+  task_undated:  { label: 'ללא יעד', cls: 'bg-muted text-muted-foreground ring-border' },
 };
 
-// Compact, human-readable "when?" string. Designed for one-glance
-// reading at small font sizes — the rep should be able to triage the
-// queue without parsing dates. For overdue tasks we show how long
-// ago they slipped; for today/tomorrow we just show the time; for
-// further-out tasks we fall back to a Hebrew weekday + time so the
-// rep can compare across days without doing date math.
+// Compact, human-readable "when?" string. Designed for one-glance reading at
+// small font sizes — the rep should be able to triage without parsing dates.
 function whenLabel(item, dueDate, now) {
   if (item.type === 'task_undated' || !dueDate) return 'ללא תאריך יעד';
 
@@ -71,120 +61,93 @@ function whenLabel(item, dueDate, now) {
   return `${formatInTimeZone(dueDate, 'Asia/Jerusalem', 'd/M')} ${time}`;
 }
 
+/**
+ * The lead's open tasks, one strip each.
+ *
+ * This used to be a titled card ("משימת מכירה קרובה" + "N משימות פתוחות
+ * במוקד שלך" + bucket chips + rows), which spent four lines of chrome on
+ * what is usually one task. Now each task IS the row: type, what it says,
+ * when it's due, and the two things a rep does with it — open it, or close
+ * it. Nothing else.
+ */
 export default function LeadWorkbenchQueue({ state, onAction }) {
   const queue = state?.nowQueue || [];
-  const counters = state?.counters || {};
   const now = React.useMemo(() => new Date(), []);
 
-  // Only render chips for non-zero buckets — the previous version
-  // always rendered all four ("באיחור: 0 | להיום: 0 | …") which the
-  // product owner called out as visual noise on a clean lead.
-  const chips = [
-    { label: 'באיחור', count: counters.overdueTasks || 0, cls: 'bg-red-100 text-red-700 border-red-200' },
-    { label: 'להיום',  count: counters.todayTasks   || 0, cls: 'bg-amber-100 text-amber-700 border-amber-200' },
-    { label: 'עתידי',  count: counters.upcomingTasks || 0, cls: 'bg-blue-100 text-blue-700 border-blue-200' },
-    { label: 'ללא יעד', count: counters.undatedTasks || 0, cls: 'bg-slate-100 text-slate-700 border-slate-200' },
-  ].filter((chip) => chip.count > 0);
+  if (queue.length === 0) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-muted/30 px-3 py-2">
+        <span className="text-xs text-muted-foreground">אין משימות פתוחות לליד הזה.</span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-[11px] gap-1 bg-card"
+          onClick={() => onAction?.({ type: 'empty' }, 'new_task')}
+        >
+          <Plus className="h-3 w-3" />
+          משימה חדשה
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    /* The "next-step" card is the rep's primary jump-off point on
-       any given lead, so it gets a distinct sky tint to stand out
-       from the surrounding white cards (customer details, tasks
-       history, etc.). Not red (would feel alarming) and not green
-       (would feel "done") — sky is calm but distinct, the same
-       family Google uses for primary actions in Gmail / Tasks. */
-    <Card className="rounded-2xl border-sky-200 bg-sky-50/40 shadow-card overflow-hidden">
-      <CardHeader className="px-5 py-4 border-b border-sky-200/60 bg-sky-100/40">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="space-y-0.5">
-            <CardTitle className="text-base font-bold flex items-center gap-2 text-sky-900">
-              <Clock className="h-4 w-4 text-sky-600" />
-              משימת מכירה קרובה
-            </CardTitle>
-            <p className="text-xs text-sky-800/70">
-              {queue.length === 0
-                ? 'אין משימות פתוחות לליד הזה'
-                : `${queue.length} ${queue.length === 1 ? 'משימה פתוחה במוקד שלך' : 'משימות פתוחות במוקד שלך'}`}
-            </p>
-          </div>
-          {chips.length > 0 ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {chips.map((chip) => (
-                <span
-                  key={chip.label}
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${chip.cls}`}
-                >
-                  {chip.label} <span className="tabular-nums">{chip.count}</span>
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </CardHeader>
+    <div className="space-y-2">
+      {queue.map((item) => {
+        const dueDate = parseWorkbenchDate(item.dueAt);
+        const typeMeta = TYPE_META[item.entity?.task_type] || FALLBACK_TYPE_META;
+        const chip = BUCKET_CHIP[item.type] || BUCKET_CHIP.task_undated;
+        const TypeIcon = typeMeta.icon;
+        const summary = (item.entity?.summary || '').trim();
 
-      <CardContent className="p-0 bg-white">
-        {queue.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-muted-foreground flex items-center justify-between gap-3">
-            <span>הכל מסודר כרגע — אין מה לעשות לליד הזה ברגע זה.</span>
-            <Button size="sm" variant="outline" onClick={() => onAction?.({ type: 'empty' }, 'new_task')}>
-              משימה חדשה
+        return (
+          <div
+            key={`${item.type}-${item.id}`}
+            role="button"
+            tabIndex={0}
+            className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 cursor-pointer transition-colors hover:bg-amber-100/70"
+            onClick={() => onAction?.(item, 'open_task')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onAction?.(item, 'open_task');
+              }
+            }}
+          >
+            <span className="h-6 w-6 rounded-full bg-card flex items-center justify-center flex-shrink-0">
+              <TypeIcon className="h-3.5 w-3.5 text-amber-700" />
+            </span>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-foreground truncate">
+                {summary ? `${typeMeta.label} — ${summary}` : typeMeta.label}
+              </p>
+              <p className="text-[11px] text-amber-700 mt-px">
+                {whenLabel(item, dueDate, now)}
+              </p>
+            </div>
+
+            <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1 flex-shrink-0 ${chip.cls}`}>
+              {chip.label}
+            </span>
+
+            {/* Close the task without opening it first. Same "מה קרה?" flow
+                the tasks screen uses, so an outcome is still recorded. */}
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[11px] flex-shrink-0 gap-1 bg-card"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAction?.(item, 'complete_task');
+              }}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              סיים משימה
             </Button>
           </div>
-        ) : (
-          <div className="divide-y divide-border/40">
-            {queue.map((item) => {
-              const dueDate = parseWorkbenchDate(item.dueAt);
-              const taskType = item.entity?.task_type;
-              const typeMeta = TYPE_META[taskType] || FALLBACK_TYPE_META;
-              const bucketStyle = BUCKET_STYLE[item.type] || BUCKET_STYLE.task_undated;
-              const TypeIcon = typeMeta.icon;
-              const isOverdue = item.type === 'task_overdue';
-              const summary = (item.entity?.summary || '').trim();
-
-              return (
-                <button
-                  type="button"
-                  key={`${item.type}-${item.id}`}
-                  className={`w-full text-right flex items-stretch gap-0 transition-colors cursor-pointer ${bucketStyle.rowHover}`}
-                  onClick={() => onAction?.(item, 'open_task')}
-                >
-                  {/* Urgency rail — single most glanceable signal.
-                      Red bar = overdue, amber = today, etc. */}
-                  <span className={`w-1 flex-shrink-0 ${bucketStyle.rail}`} aria-hidden />
-
-                  {/* Bumped py-3 → py-4 and px-4 → px-5 so the rows
-                      get the same breathing room as the rest of the
-                      Google-style cards we've moved to. */}
-                  <div className="flex-1 min-w-0 py-4 px-5 flex items-center gap-4">
-                    {/* Type chip — the verb. */}
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold flex-shrink-0 ${typeMeta.tone}`}>
-                      <TypeIcon className="h-3.5 w-3.5" />
-                      {typeMeta.label}
-                    </span>
-
-                    {/* Optional content line. Empty when the rep
-                        didn't fill תוכן on creation (which is now
-                        the common case since content is optional). */}
-                    {summary ? (
-                      <span className="text-sm text-foreground truncate flex-1 min-w-0">{summary}</span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground/50 truncate flex-1 min-w-0">—</span>
-                    )}
-
-                    {/* When? — relative time, glanceable. Overdue
-                        gets a destructive accent so the eye locks on
-                        it even before reading the words. */}
-                    <span className={`flex items-center gap-1 text-xs font-semibold tabular-nums flex-shrink-0 ${isOverdue ? 'text-red-700' : 'text-muted-foreground'}`}>
-                      {isOverdue ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
-                      {whenLabel(item, dueDate, now)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        );
+      })}
+    </div>
   );
 }
