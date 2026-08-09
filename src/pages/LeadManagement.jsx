@@ -5,7 +5,6 @@ import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
 import LeadListTable from '@/components/lead/LeadListTable';
-import FilterBar from '@/components/shared/FilterBar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -15,9 +14,10 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import UserAvatar from '@/components/shared/UserAvatar';
 import {
-  Users, UserPlus, UserCheck, Calendar as CalendarIcon,
+  Users, UserCheck, Calendar as CalendarIcon,
   Filter, X as XIcon, FileSpreadsheet, ArrowRightLeft, Sparkles,
-  Clock, Hourglass, Loader2, CheckCircle2,
+  Clock, Hourglass, Loader2, CheckCircle2, ChevronDown, Search,
+  FileText, ClipboardCheck, DollarSign, CheckSquare,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
@@ -133,7 +133,12 @@ function handlingStatusTone(value) {
 // Build the filter object that gets handed to base44.entities.Lead.{filter,count}.
 // Shared so the row query, the count query, and the KPI queries all stay
 // consistent — change one rule here and all three move together.
-function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported }) {
+// Tiles whose bucket lives in another table: nothing on `leads` says "has an
+// open quote", so those scopes resolve to a set of lead ids first and the list
+// filters on those.
+const RELATED_SCOPES = ['open_quotes', 'tasks_today', 'tasks_open'];
+
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds }) {
   const conditions = [];
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
@@ -157,6 +162,13 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
   } else if (scope === 'handling') {
     // בטיפול — past the new_lead stage and not yet closed.
     conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
+  } else if (scope === 'won') {
+    // סה״כ מכירות — the deals that closed inside the range.
+    conditions.push({ status: 'deal_closed' });
+  } else if (RELATED_SCOPES.includes(scope)) {
+    // An empty set has to return nothing rather than everything, so the
+    // impossible id is deliberate.
+    conditions.push({ id: { $in: relatedLeadIds && relatedLeadIds.length ? relatedLeadIds : ['__none__'] } });
   } else if (LIFECYCLE_SCOPES[scope]) {
     // Per-rep workload drill-down (חדשים/בטיפול/נסגרו/נאבדו). Combined with the
     // rep filter below it reproduces the count shown on that rep's card.
@@ -308,6 +320,10 @@ export default function LeadManagement() {
     setRepResolved(true);
   }, [repResolved, effectiveUser, defaultRep]);
   const [selectedLeads, setSelectedLeads] = useState([]);
+  // The design has no checkbox column and no rep panel on the way in — both are
+  // manager tools you reach for, so they start closed.
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [showWorkload, setShowWorkload] = useState(false);
   const [assigningRep, setAssigningRep] = useState('');
   const [showImport, setShowImport] = useState(false);
   const [limit, setLimit] = useState(Number(urlParams.get('limit')) || 100);
@@ -406,18 +422,6 @@ export default function LeadManagement() {
   // the view. Computed on mount; a page left open past midnight is refreshed by
   // the normal refetch cycle.
   const todayWindow = useMemo(() => israelDayWindow(), []);
-  const { data: todayCount = null } = useQuery({
-    queryKey: ['leadMgmt-today', seesAllLeads, userEmail, todayWindow.from],
-    enabled: !!effectiveUser && !!userEmail,
-    staleTime: 60_000,
-    placeholderData: (p) => p,
-    queryFn: () => {
-      const conditions = [{ effective_sort_date: { $gte: todayWindow.from, $lt: todayWindow.to } }];
-      if (!seesAllLeads) conditions.unshift({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
-      return base44.entities.Lead.count(conditions.length === 1 ? conditions[0] : { $and: conditions });
-    },
-  });
-
   // ───────────────────────────────────────────────────────────────
   // Category KPI tiles. All buckets respect the selected date range.
   // ───────────────────────────────────────────────────────────────
@@ -449,6 +453,79 @@ export default function LeadManagement() {
         base44.entities.Lead.count(base()),
       ]);
       return { assignedUnhandledCount, unassignedCount, handlingCount, totalCount };
+    },
+  });
+
+  // The rep whose numbers these are, or null for whoever sees the whole floor.
+  // Every tile below carries it, which is what makes the rep's screen the same
+  // screen showing their own leads, quotes, tasks and closings.
+  const scopedRep = seesAllLeads ? null : userEmail;
+
+  // What the header says the numbers are cut by ("תצוגת נתונים לפי: היום").
+  const activePresetLabel = datePresetId === 'range' && customRange?.from && customRange?.to
+    ? `${format(customRange.from, 'dd/MM/yyyy')} - ${format(customRange.to, 'dd/MM/yyyy')}`
+    : (DATE_PRESETS.find((preset) => preset.id === datePresetId)?.label || 'כל הזמנים');
+
+  // Open tasks: the ones due today, and the whole untouched backlog.
+  const { data: taskTiles = { today: 0, open: 0 } } = useQuery({
+    queryKey: ['leadMgmt-task-tiles', scopedRep, todayWindow.from],
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const mine = scopedRep ? [{ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] }] : [];
+      const build = (extra) => {
+        const conditions = [{ task_status: 'not_completed' }, ...mine, ...extra];
+        return conditions.length === 1 ? conditions[0] : { $and: conditions };
+      };
+      const [today, open] = await Promise.all([
+        base44.entities.SalesTask.count(build([{ due_date: { $gte: todayWindow.from, $lt: todayWindow.to } }])),
+        base44.entities.SalesTask.count(build([])),
+      ]);
+      return { today, open };
+    },
+  });
+
+  // Quotes still waiting on an answer — a rep sees the ones they wrote.
+  const { data: openQuotesCount = 0 } = useQuery({
+    queryKey: ['leadMgmt-open-quotes', scopedRep],
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+    queryFn: () => {
+      const conditions = [{ status: { $in: ['draft', 'sent'] } }];
+      if (scopedRep) conditions.push({ created_by_rep: scopedRep });
+      return base44.entities.Quote.count(conditions.length === 1 ? conditions[0] : { $and: conditions });
+    },
+  });
+
+  // Money closed in the selected range. The COUNT comes from the leads that
+  // closed — the number already scoped to the viewing rep — and the shekels
+  // come from the orders attached to exactly those leads, so the count and the
+  // sum can never describe two different sets.
+  const { data: sales = { count: 0, total: 0 } } = useQuery({
+    queryKey: ['leadMgmt-sales', scopedRep, fromIso, toIso],
+    enabled: !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const conditions = [{ status: 'deal_closed' }];
+      if (scopedRep) conditions.push({ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] });
+      if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
+      const closed = await base44.entities.Lead.filter(
+        conditions.length === 1 ? conditions[0] : { $and: conditions },
+        '-effective_sort_date', 500, undefined, 'id',
+      );
+      const ids = closed.map((lead) => lead.id).filter(Boolean);
+      if (ids.length === 0) return { count: 0, total: 0 };
+      const orders = await base44.entities.Order
+        .filter({ lead_id: { $in: ids } }, '-created_date', 1000)
+        .catch(() => []);
+      // The amount column has drifted across imports, so read whichever one is
+      // present instead of trusting a single name.
+      const total = orders.reduce((sum, order) => sum
+        + Number(order?.total_amount ?? order?.total ?? order?.final_amount ?? order?.total_price ?? 0), 0);
+      return { count: closed.length, total };
     },
   });
 
@@ -538,9 +615,36 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
+  // Lead ids behind a quote / task tile. Only runs while one of those tiles is
+  // the active scope; otherwise the list query stays a pure leads filter.
+  const { data: relatedLeadIds = [] } = useQuery({
+    queryKey: ['leadMgmt-scope-ids', scope, scopedRep, todayWindow.from],
+    enabled: RELATED_SCOPES.includes(scope) && !!effectiveUser && !!userEmail,
+    staleTime: 60_000,
+    queryFn: async () => {
+      if (scope === 'open_quotes') {
+        const conditions = [{ status: { $in: ['draft', 'sent'] } }];
+        if (scopedRep) conditions.push({ created_by_rep: scopedRep });
+        const rows = await base44.entities.Quote.filter(
+          conditions.length === 1 ? conditions[0] : { $and: conditions }, '-created_date', 2000,
+        );
+        return [...new Set(rows.map((quote) => quote.lead_id).filter(Boolean))];
+      }
+      const conditions = [{ task_status: 'not_completed' }];
+      if (scopedRep) conditions.push({ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] });
+      if (scope === 'tasks_today') {
+        conditions.push({ due_date: { $gte: todayWindow.from, $lt: todayWindow.to } });
+      }
+      const rows = await base44.entities.SalesTask.filter(
+        conditions.length === 1 ? conditions[0] : { $and: conditions }, 'due_date', 2000,
+      );
+      return [...new Set(rows.map((task) => task.lead_id).filter(Boolean))];
+    },
+  });
+
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported }),
-    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported],
+    () => buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds }),
+    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds],
   );
   // Reset paging to the first page whenever the query itself changes (scope /
   // filter / rep / status / date / search) — without this, switching views
@@ -760,22 +864,68 @@ export default function LeadManagement() {
 
   return (
     <div className="space-y-4" dir="rtl">
-      {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Top bar — title, the view the numbers are cut by, and the three
+          actions a manager reaches for from this screen. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            ניהול לידים
+            ניהול משימות
           </h1>
-          <p className="text-sm text-muted-foreground">תצוגה מקיפה של עומס הצוות, שיוך לידים והעברה בין נציגים</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            תצוגת נתונים לפי: <span className="text-foreground/80">{activePresetLabel}</span>
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin ? (
-            <Button onClick={() => setShowImport(true)} variant="outline" size="sm" className="gap-1.5">
-              <FileSpreadsheet className="h-4 w-4" /> ייבוא מ-Sheets
-            </Button>
-          ) : null}
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* An exact day or a custom range. The presets beside it are the
+              common cuts; this is how you reach any other one. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="h-11 rounded-xl gap-2 px-3.5 font-normal">
+                <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="tabular-nums">
+                  {customRange?.from && customRange?.to
+                    ? `${format(customRange.from, 'dd/MM/yyyy')} - ${format(customRange.to, 'dd/MM/yyyy')}`
+                    : dateRange
+                      ? format(dateRange.from, 'dd/MM/yyyy')
+                      : 'כל הזמנים'}
+                </span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end" dir="rtl">
+              <Calendar
+                mode="range"
+                selected={customRange || undefined}
+                onSelect={(range) => { setCustomRange(range); if (range?.from) setDatePresetId('range'); }}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+
+          {/* היום / השבוע / החודש / הכל — one segmented control instead of a
+              bar of loose chips. */}
+          <div className="inline-flex items-center rounded-xl border border-border bg-card p-1 h-11">
+            {DATE_PRESETS.filter((preset) => preset.id !== 'range').map((preset) => {
+              const active = datePresetId === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => { setDatePresetId(preset.id); setCustomRange(null); }}
+                  className={`h-9 px-5 rounded-lg text-sm font-medium transition-colors ${
+                    active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+
           <LeadQuickActions
+            toolbar
             currentUser={effectiveUser}
             onLeadCreated={() => {
               queryClient.invalidateQueries({ queryKey: ['leadMgmt-leads'] });
@@ -785,190 +935,251 @@ export default function LeadManagement() {
         </div>
       </div>
 
-      {/* Date range picker — every number below derives from this */}
-      <div className="flex items-center gap-2 flex-wrap bg-card border border-border rounded-xl p-2 shadow-card">
-        <span className="text-xs font-medium text-muted-foreground ms-1">טווח זמן:</span>
-        {DATE_PRESETS.map((p) => {
-          const active = datePresetId === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                setDatePresetId(p.id);
-                if (p.id !== 'range') setCustomRange(null);
-              }}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-all ${
-                active ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              {p.label}
-            </button>
-          );
-        })}
-        {datePresetId === 'range' ? (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 text-xs">
-                <CalendarIcon className="me-1.5 h-3.5 w-3.5" />
-                {customRange?.from && customRange?.to
-                  ? `${format(customRange.from, 'dd.MM.yy')} - ${format(customRange.to, 'dd.MM.yy')}`
-                  : 'בחר טווח'}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end" dir="rtl">
-              <Calendar mode="range" selected={customRange || undefined} onSelect={setCustomRange} initialFocus />
-            </PopoverContent>
-          </Popover>
-        ) : null}
-        {dateRange ? (
-          <span className="text-[11px] text-muted-foreground">
-            ({format(dateRange.from, 'dd.MM.yy')} – {format(dateRange.to, 'dd.MM.yy')})
-          </span>
-        ) : null}
-
-        {/* Hour-of-day narrowing, inside the same bar — it refines the range
-            above rather than replacing it. Hidden until the DB side exists. */}
-        {hourFilterSupported ? (
-          <HourRangeFilter
-            from={hourFrom}
-            to={hourTo}
-            onChange={(nextFrom, nextTo) => { setHourFrom(nextFrom); setHourTo(nextTo); }}
-          />
-        ) : null}
+      {/* The six numbers the screen opens on. Every one of them is a filter:
+          clicking a tile scopes the list below to exactly the rows it counts,
+          and clicking it again releases the scope. For a rep each number is
+          their own — their leads, their quotes, their tasks, their closings —
+          because every query behind them carries the same rep scope the lead
+          list does. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <TaskKpiTile
+          label="לידים שהתקבלו"
+          value={kpiCounts.totalCount}
+          sub={activePresetLabel}
+          subTone="text-sky-600"
+          icon={Users}
+          tone="sky"
+          isActive={scope === 'all' && !hasActiveFilter}
+          onClick={() => { setScope('all'); setFilters({ search: '', status: 'all', source: 'all', rep: 'all' }); }}
+        />
+        <TaskKpiTile
+          label="בטיפול"
+          value={kpiCounts.handlingCount}
+          sub={activePresetLabel}
+          subTone="text-sky-600"
+          icon={Hourglass}
+          tone="indigo"
+          isActive={scope === 'handling'}
+          onClick={() => toggleScope('handling')}
+        />
+        <TaskKpiTile
+          label="הצעות מחיר פתוחות"
+          value={openQuotesCount}
+          sub="סה״כ פתוחות"
+          icon={FileText}
+          tone="emerald"
+          isActive={scope === 'open_quotes'}
+          onClick={() => toggleScope('open_quotes')}
+        />
+        <TaskKpiTile
+          label="משימות להיום"
+          value={taskTiles.today}
+          sub="מתוכן להיום"
+          icon={ClipboardCheck}
+          tone="amber"
+          isActive={scope === 'tasks_today'}
+          onClick={() => toggleScope('tasks_today')}
+        />
+        <TaskKpiTile
+          label="נותרו לטיפול"
+          value={taskTiles.open}
+          sub="טרם טופלו"
+          subTone="text-rose-600"
+          icon={Clock}
+          tone="rose"
+          isActive={scope === 'tasks_open'}
+          onClick={() => toggleScope('tasks_open')}
+        />
+        <TaskKpiTile
+          label="סה״כ מכירות"
+          value={sales.count}
+          sub={`${fmt(sales.total)} ₪`}
+          subTone="text-emerald-600"
+          secondarySub={activePresetLabel}
+          icon={DollarSign}
+          tone="emerald"
+          isActive={scope === 'won'}
+          onClick={() => toggleScope('won')}
+        />
       </div>
 
-      {/* Category tiles — clickable to filter the list. The three status
-          buckets follow the date range above; the intake cube is today's full
-          24 hours (Israel time), independent of the picker. For a rep the whole
-          strip is scoped to their own leads, and the manager-only tiles
-          (unassigned pool, today's intake) are replaced with a personal summary
-          tile — a rep's view stays focused on the leads that belong to them. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          // Shows kpiCounts.totalCount, which follows the visibility policy.
-          // Once a rep sees the whole pipeline that number is no longer "mine",
-          // so the label has to follow it.
-          ...(!isAdmin ? [{
-            id: '__mine',
-            label: seesAllLeads ? 'כל הלידים' : 'הלידים שלי',
-            value: kpiCounts.totalCount,
-            tone: 'sky',
-            icon: Users,
-            desc: seesAllLeads ? 'כל הלידים במערכת בטווח' : 'כל הלידים המשויכים אליי בטווח',
-          }] : []),
-          { id: 'assigned_unhandled', label: 'לידים חדשים', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
-          // "לא משויכים" is a management-only pool — reps only handle leads
-          // assigned to them, so the unassigned tile is hidden for them.
-          ...(isAdmin ? [{ id: 'unassigned', label: 'לא משויכים', value: kpiCounts.unassignedCount, tone: 'amber', icon: UserPlus, desc: 'לידים בלי נציג ראשי' }] : []),
-          { id: 'handling',           label: 'בטיפול',          value: kpiCounts.handlingCount,          tone: 'indigo', icon: Hourglass, desc: 'אחרי שלב "ליד חדש", טרם נסגר' },
-        ].map((tile) => (
-          <CategoryTile
-            key={tile.id}
-            label={tile.label}
-            value={tile.value}
-            tone={tile.tone}
-            icon={tile.icon}
-            desc={tile.desc}
-            isActive={tile.id === '__mine' ? scope === 'all' && !hasActiveFilter : scope === tile.id}
-            onClick={() => (tile.id === '__mine'
-              ? (setScope('all'), setFilters({ search: '', status: 'all', source: 'all', rep: 'all' }))
-              : toggleScope(tile.id))}
-          />
-        ))}
-        {isAdmin ? (
-          <TodayLeadsCube
-            todayCount={todayCount}
-            rangeCount={kpiCounts.totalCount}
-            rangeLabel={dateRange
-              ? `${format(dateRange.from, 'dd.MM.yy')}–${format(dateRange.to, 'dd.MM.yy')}`
-              : 'כל הזמנים'}
-            isToday={datePresetId === 'today'}
-            hourLabel={hourActive ? `${hourLabel(hourFrom ?? 0)}–${hourLabel(hourTo ?? 24)}` : null}
-            onClick={() => {
-              setDatePresetId('today');
-              setCustomRange(null);
-              setHourFrom(null);
-              setHourTo(null);
-              setScope('all');
-              setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
-            }}
-          />
-        ) : null}
-      </div>
-
-      {/* Rep workload panel — admin only. Click the card header to filter the
-          list to that rep, or click a single bucket to drill into that rep's
-          new / handling / won / lost leads. Counts and the list it opens both
-          follow the selected date range. */}
+      {/* Rep performance — admin only, and closed. It is a drill-down tool,
+          not something you read on the way in, so the screen opens on the
+          list and the panel is one click away. */}
       {isAdmin ? (
         <div>
-          <p className="text-xs font-semibold text-muted-foreground mb-2 px-1 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowWorkload((open) => !open)}
+            className="flex items-center gap-2 px-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+          >
             <Users className="h-3.5 w-3.5" />
-            עומס לפי נציג ({sortedReps.length} בצוות)
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
-            {/* "All team" card first */}
-            <RepWorkloadCard
-              repEmail="all"
-              label="כל הצוות"
-              avatar={<span className="h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">כל</span>}
-              newCount={workloadByRep.team.newCount}
-              handlingCount={workloadByRep.team.handlingCount}
-              wonCount={workloadByRep.team.wonCount}
-              lostCount={workloadByRep.team.lostCount}
-              activeRep={filters.rep}
-              activeScope={scope}
-              accent="indigo"
-              onSelect={selectRepBucket}
-            />
-            {sortedReps.map((rep) => {
-              const wl = workloadByRep.byRep.get(rep.email) || EMPTY_WL;
-              return (
-                <RepWorkloadCard
-                  key={rep.email}
-                  repEmail={rep.email}
-                  label={rep.full_name || rep.email}
-                  avatar={<UserAvatar user={rep} size="sm" />}
-                  newCount={wl.newCount}
-                  handlingCount={wl.handlingCount}
-                  wonCount={wl.wonCount}
-                  lostCount={wl.lostCount}
-                  activeRep={filters.rep}
-                  activeScope={scope}
-                  accent="emerald"
-                  onSelect={selectRepBucket}
-                />
-              );
-            })}
-          </div>
+            ביצועי הנציגים ({sortedReps.length} בצוות)
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showWorkload ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showWorkload ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2 mt-2">
+              <RepWorkloadCard
+                repEmail="all"
+                label="כל הצוות"
+                avatar={<span className="h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">כל</span>}
+                newCount={workloadByRep.team.newCount}
+                handlingCount={workloadByRep.team.handlingCount}
+                wonCount={workloadByRep.team.wonCount}
+                lostCount={workloadByRep.team.lostCount}
+                activeRep={filters.rep}
+                activeScope={scope}
+                accent="indigo"
+                onSelect={selectRepBucket}
+              />
+              {sortedReps.map((rep) => {
+                const wl = workloadByRep.byRep.get(rep.email) || EMPTY_WL;
+                return (
+                  <RepWorkloadCard
+                    key={rep.email}
+                    repEmail={rep.email}
+                    label={rep.full_name || rep.email}
+                    avatar={<UserAvatar user={rep} size="sm" />}
+                    newCount={wl.newCount}
+                    handlingCount={wl.handlingCount}
+                    wonCount={wl.wonCount}
+                    lostCount={wl.lostCount}
+                    activeRep={filters.rep}
+                    activeScope={scope}
+                    accent="emerald"
+                    onSelect={selectRepBucket}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      {/* Filter bar */}
-      <FilterBar
-        filters={[
-          { key: 'status', label: 'סטטוס', allLabel: 'כל הסטטוסים', options: [...LEAD_STATUS_OPTIONS, ...customStatusesForFilter] },
-          { key: 'source', label: 'מקור',  allLabel: 'כל המקורות',  options: LEAD_SOURCE_OPTIONS },
-          // Shown to anyone who can see the whole floor, not just admins — a
-          // rep who now OPENS on their own leads needs a way back to all of
-          // them, and this is it.
-          ...(isAdmin || seesAllLeads ? [{
-            key: 'rep',
-            label: 'נציג',
-            allLabel: 'כל הנציגים',
-            options: repsForPanel.map((r) => ({ value: r.email, label: r.full_name || r.email })),
-          }] : []),
-        ]}
-        values={filters}
-        onChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
-        onClear={() => setFilters({ search: '', status: 'all', source: 'all', rep: 'all' })}
-        searchPlaceholder="חפש לפי שם, טלפון או אימייל..."
-      />
+      {/* Filters — search, source, date, status, and the one button that
+          undoes all of them. */}
+      <div className="rounded-2xl border border-border bg-card shadow-card p-3 flex flex-wrap items-end gap-3">
+        <div className="relative flex-1 min-w-[240px]">
+          <Search className="absolute inset-y-0 my-auto end-3 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <input
+            value={filters.search}
+            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+            placeholder="חפש לפי שם, טלפון או אימייל..."
+            className="h-11 w-full rounded-xl border border-border bg-card ps-3 pe-9 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+          />
+        </div>
 
-      {/* Active filter summary card — the "בטיפול" status breakdown rides
-          inside it (as `extra`) so it doesn't add a second purple bar. */}
-      {hasActiveFilter || dateRange || hourActive ? (
+        <LabeledFilter label="מקור הגעה">
+          <Select
+            value={filters.source}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, source: value }))}
+          >
+            <SelectTrigger className="h-11 w-48 rounded-xl"><SelectValue placeholder="כל המקורות" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">כל המקורות</SelectItem>
+              {LEAD_SOURCE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </LabeledFilter>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="h-11 rounded-xl gap-2 font-normal">
+              <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+              <span className="tabular-nums">
+                {dateRange
+                  ? `${format(dateRange.from, 'dd/MM/yyyy')} - ${format(dateRange.to, 'dd/MM/yyyy')}`
+                  : 'כל הזמנים'}
+              </span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end" dir="rtl">
+            <Calendar
+              mode="range"
+              selected={customRange || undefined}
+              onSelect={(range) => { setCustomRange(range); if (range?.from) setDatePresetId('range'); }}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
+
+        <LabeledFilter label="סטטוס">
+          <Select
+            value={filters.status}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}
+          >
+            <SelectTrigger className="h-11 w-48 rounded-xl"><SelectValue placeholder="כל הסטטוסים" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">כל הסטטוסים</SelectItem>
+              {[...LEAD_STATUS_OPTIONS, ...customStatusesForFilter].map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </LabeledFilter>
+
+        {isAdmin || seesAllLeads ? (
+          <LabeledFilter label="נציג">
+            <Select
+              value={filters.rep}
+              onValueChange={(value) => setFilters((prev) => ({ ...prev, rep: value }))}
+            >
+              <SelectTrigger className="h-11 w-44 rounded-xl"><SelectValue placeholder="כל הנציגים" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">כל הנציגים</SelectItem>
+                {repsForPanel.map((r) => (
+                  <SelectItem key={r.email} value={r.email}>{r.full_name || r.email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </LabeledFilter>
+        ) : null}
+
+        <Button
+          variant="ghost"
+          className="h-11 rounded-xl gap-2 bg-primary/5 text-primary hover:bg-primary/10"
+          onClick={() => {
+            setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
+            setScope('all');
+            setHourFrom(null);
+            setHourTo(null);
+          }}
+        >
+          <XIcon className="h-4 w-4" />
+          נקה פילטרים
+        </Button>
+
+        {isAdmin ? (
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-11 w-11 rounded-xl"
+            onClick={() => setShowImport(true)}
+            title="ייבוא לידים מ-Google Sheets"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+          </Button>
+        ) : null}
+
+        {isAdmin ? (
+          <Button
+            variant={multiSelect ? 'default' : 'outline'}
+            className="h-11 rounded-xl gap-2"
+            onClick={() => { setMultiSelect((on) => !on); setSelectedLeads([]); }}
+            title="בחירה מרובה — להעברת לידים בין נציגים"
+          >
+            <CheckSquare className="h-4 w-4" />
+            בחירה מרובה
+          </Button>
+        ) : null}
+      </div>
+
+      {/* Drill-down summary — only when a tile or a rep bucket is pinned. The
+          everyday filters have "נקה פילטרים" above and need no banner. */}
+      {scope !== 'all' ? (
         <ActiveFilterSummary
           scope={scope}
           filters={filters}
@@ -998,7 +1209,7 @@ export default function LeadManagement() {
       ) : null}
 
       {/* Bulk action bar — surfaces when leads are selected */}
-      {isAdmin && selectedLeads.length > 0 ? (
+      {isAdmin && multiSelect && selectedLeads.length > 0 ? (
         <div className="sticky top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-primary bg-primary/5 px-4 py-2.5 shadow-card backdrop-blur-sm">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
@@ -1079,7 +1290,7 @@ export default function LeadManagement() {
           "הכל" picks every lead loaded in the table — note this is
           the LOADED set (capped by `limit`), not the entire matching
           count in the DB, so we show the working number next to it. */}
-      {isAdmin && leads.length > 0 ? (
+      {isAdmin && multiSelect && leads.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-card">
           <span className="text-xs font-medium text-muted-foreground">בחירה מהירה:</span>
           {[5, 10, 20, 30, 50].map((n) => {
@@ -1132,6 +1343,8 @@ export default function LeadManagement() {
         leads={leads}
         isLoading={isLoading && !leads.length}
         isAdmin={isAdmin}
+        columnSet="tasks"
+        showSelection={multiSelect}
         selectedLeads={selectedLeads}
         onSelectionChange={setSelectedLeads}
         repNameByEmail={repNameByEmail}
@@ -1157,128 +1370,50 @@ export default function LeadManagement() {
   );
 }
 
-// ─── Category tiles ─────────────────────────────────────────────
-const TILE_TONES = {
-  rose:   { active: 'bg-rose-50 border-rose-500 ring-2 ring-rose-400',       value: 'text-rose-700' },
-  amber:  { active: 'bg-amber-50 border-amber-500 ring-2 ring-amber-400',    value: 'text-amber-700' },
-  indigo: { active: 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-400', value: 'text-indigo-700' },
-  violet: { active: 'bg-violet-50 border-violet-500 ring-2 ring-violet-400', value: 'text-violet-700' },
-  sky:    { active: 'bg-sky-50 border-sky-500 ring-2 ring-sky-400',          value: 'text-sky-700' },
-};
 
-function CategoryTile({ label, value, tone, icon: Icon, desc, isActive, onClick }) {
-  const tones = TILE_TONES[tone];
-  const cardCls = isActive ? tones.active : 'border-border bg-muted/30 hover:bg-muted/50';
-  const valueCls = isActive ? tones.value : 'text-muted-foreground';
+// One number on the header strip: what it counts, the count, and the qualifier
+// under it. Every tile is a filter, so they all take onClick; the isActive ring
+// marks which one the list below is currently scoped to.
+function TaskKpiTile({ label, value, sub, subTone = 'text-muted-foreground', secondarySub, icon: Icon, tone = 'sky', isActive = false, onClick }) {
+  const TONES = {
+    sky:     'bg-sky-50 text-sky-600',
+    indigo:  'bg-indigo-50 text-indigo-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    amber:   'bg-amber-50 text-amber-600',
+    rose:    'bg-rose-50 text-rose-600',
+  };
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`text-right rounded-xl border-2 p-4 shadow-card transition-all ${cardCls}`}
-    >
-      <div className="flex items-center justify-between mb-1.5">
-        <p className={`text-xs font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{label}</p>
-        <Icon className={`h-4 w-4 ${valueCls} ${isActive ? 'opacity-100' : 'opacity-50'}`} />
-      </div>
-      <p className={`text-3xl font-bold tabular-nums ${valueCls}`}>{fmt(value)}</p>
-      <p className="text-[11px] text-muted-foreground mt-1">{desc}</p>
-    </button>
-  );
-}
-
-// ─── Hour-of-day filter ─────────────────────────────────────────
-// Two selects — "משעה" / "עד שעה" — narrowing the list to the hours leads
-// arrived in (Israel time), on top of the date range. The end hour is exclusive
-// (09:00 → 12:00 = the 09/10/11 hours), and picking an end earlier than the
-// start is a legitimate window across midnight (20:00 → 08:00).
-function HourRangeFilter({ from, to, onChange }) {
-  const active = from != null || to != null;
-  const starts = Array.from({ length: 24 }, (_, h) => h);        // 00:00 … 23:00
-  const ends = Array.from({ length: 24 }, (_, h) => h + 1);      // 01:00 … 24:00
-  return (
-    <div className="flex items-center gap-1.5 ps-2 border-s border-border">
-      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-      <span className="text-xs font-medium text-muted-foreground">שעה:</span>
-      <Select
-        value={from == null ? 'any' : String(from)}
-        onValueChange={(v) => onChange(v === 'any' ? null : Number(v), to)}
-      >
-        <SelectTrigger className="h-8 w-[92px] text-xs" dir="ltr">
-          <SelectValue placeholder="משעה" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="any">כל השעות</SelectItem>
-          {starts.map((h) => (
-            <SelectItem key={h} value={String(h)} dir="ltr">{hourLabel(h)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-xs text-muted-foreground">עד</span>
-      <Select
-        value={to == null ? 'any' : String(to)}
-        onValueChange={(v) => onChange(from, v === 'any' ? null : Number(v))}
-      >
-        <SelectTrigger className="h-8 w-[92px] text-xs" dir="ltr">
-          <SelectValue placeholder="עד שעה" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="any">סוף היום</SelectItem>
-          {ends.map((h) => (
-            <SelectItem key={h} value={String(h)} dir="ltr">{hourLabel(h)}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {active ? (
-        <button
-          type="button"
-          onClick={() => onChange(null, null)}
-          className="text-muted-foreground hover:text-foreground p-1"
-          aria-label="נקה סינון שעה"
-          title="נקה סינון שעה"
-        >
-          <XIcon className="h-3.5 w-3.5" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-// Intake cube — how many leads came in TODAY, counting the whole Israel calendar
-// day (00:00–23:59), so it doesn't move when the manager narrows the date range
-// or the hours. Clicking it pins the whole page to today. The selected range's
-// own total sits underneath as a secondary line (with the active hour window, if
-// any) so the tile still reconciles with the list below.
-function TodayLeadsCube({ todayCount, rangeCount, rangeLabel, isToday, hourLabel: hourText, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title="הצג את הלידים שנכנסו היום"
-      className={`text-right rounded-xl border-2 p-3 shadow-card transition-all ${
-        isToday && !hourText ? 'border-primary bg-primary/[0.06]' : 'border-border bg-muted/30 hover:border-primary/40'
+      className={`flex items-start gap-3 rounded-2xl border bg-card p-4 shadow-card text-start w-full transition-colors hover:border-primary/50 ${
+        isActive ? 'border-primary ring-1 ring-primary/30' : 'border-border'
       }`}
     >
-      <div className="px-1 py-0.5">
-        <div className="flex items-center justify-between mb-0.5">
-          <p className="text-xs font-medium text-muted-foreground">
-            לידים שנכנסו היום <span className="text-[10px] opacity-70">00:00–23:59</span>
-          </p>
-          <Sparkles className="h-4 w-4 text-muted-foreground opacity-50" />
-        </div>
-        <p className="text-3xl font-bold tabular-nums text-foreground">
-          {todayCount == null ? '...' : fmt(todayCount)}
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] text-muted-foreground truncate" title={label}>{label}</p>
+        <p className="text-3xl font-bold tabular-nums mt-1">{fmt(value)}</p>
+        <p className={`text-xs mt-1 truncate ${subTone}`}>
+          {sub}
+          {secondarySub ? <span className="text-muted-foreground"> · {secondarySub}</span> : null}
         </p>
       </div>
-      <div className="mt-2 rounded-lg border border-border bg-card px-2.5 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-medium text-muted-foreground">בטווח שנבחר</span>
-          <span className="text-base font-bold tabular-nums text-foreground">{fmt(rangeCount)}</span>
-        </div>
-        <p className="text-[9px] text-muted-foreground" dir="ltr">
-          {rangeLabel}{hourText ? ` · ${hourText}` : ''}
-        </p>
-      </div>
+      <span className={`h-11 w-11 flex-none rounded-full grid place-items-center ${TONES[tone] || TONES.sky}`}>
+        <Icon className="h-5 w-5" />
+      </span>
     </button>
+  );
+}
+
+// A filter control with its name floating above it, the way the design labels
+// מקור הגעה / סטטוס — a placeholder alone can't say what a select filters once
+// a value is chosen.
+function LabeledFilter({ label, children }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[11px] text-muted-foreground px-1">{label}</span>
+      {children}
+    </label>
   );
 }
 
