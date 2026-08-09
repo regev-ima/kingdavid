@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import DataTable from '@/components/shared/DataTable';
 import { LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
 import StatusBadge from '@/components/shared/StatusBadge';
+import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
@@ -76,7 +77,7 @@ function getRepDisplay(row, users) {
   return rep || { email: row.rep1, full_name: row.rep1 };
 }
 
-function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall, isLastOpened, className = '' }) {
+function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, onClickToCall, isLastOpened, repeatOrdinal, className = '' }) {
   const isSelected = selectedIds.includes(row.id);
   const isSelectionMode = selectedIds.length > 0;
   const sla = getSlaData(row);
@@ -118,6 +119,7 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
           </div>
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-base font-semibold text-foreground truncate">{row.full_name}</h3>
+            <RepeatEnquiryBadge ordinal={repeatOrdinal} />
             {isReturningLead(row) && (
               <span className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0">
                 🔁 פניה חוזרת
@@ -230,6 +232,10 @@ export default function ResponsiveLeadsTable({
   highlightId,
   rowClassName,
   cardClassName,
+  // leadId → enquiry ordinal, from useRepeatEnquiries. The desktop columns
+  // read it themselves (they're built by the caller); the mobile card gets it
+  // through here so both views carry the same "פנייה נוספת" marker.
+  repeatEnquiries,
 }) {
   return (
     <>
@@ -272,6 +278,7 @@ export default function ResponsiveLeadsTable({
               onOpenLead={onOpenLead}
               onClickToCall={onClickToCall}
               isLastOpened={row.id === highlightId}
+              repeatOrdinal={repeatEnquiries?.get(row.id)}
             />
           ))
         )}

@@ -5,15 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import StatusBadge from '@/components/shared/StatusBadge';
 import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
+import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
-import { Phone, Users, FileText, ShoppingCart, MessageCircle, UserPlus, Clock } from 'lucide-react';
+import { Phone, Users, FileText, ShoppingCart, MessageCircle } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
-import { ALL_TASK_TYPE_LABELS, SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { ALL_TASK_TYPE_LABELS, formatSourceLabel, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { formatIsraeliPhone as formatPhone } from '@/utils/phoneUtils';
 import { isTaskDueNow } from '@/lib/salesTaskWorkbench';
+import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 
 // Lead table for the lead-management page. Desktop renders a DataTable (via
 // ResponsiveLeadsTable); on a phone the same component swaps to stacked cards
@@ -67,9 +69,9 @@ export default function LeadListTable({
     const map = new Map();
     for (const t of leadActiveTasks) {
       if (!t?.lead_id) continue;
-      // Assignment ("שיוך") tasks are a management concern — reps shouldn't see
-      // them as their "next task".
-      if (!isAdmin && t.task_type === 'assignment') continue;
+      // Assignment ("שיוך") tasks are retired — nothing creates them any more,
+      // and a leftover row is never anyone's "next task".
+      if (t.task_type === 'assignment') continue;
       const existing = map.get(t.lead_id);
       if (!existing) { map.set(t.lead_id, t); continue; }
       const a = t.due_date ? new Date(t.due_date).getTime() : Infinity;
@@ -77,8 +79,12 @@ export default function LeadListTable({
       if (a < b) map.set(t.lead_id, t);
     }
     return map;
-  }, [leadActiveTasks, isAdmin]);
+  }, [leadActiveTasks]);
   const [completingTask, setCompletingTask] = useState(null);
+
+  // "פנייה נוספת" — which of the visible leads are a repeat enquiry from
+  // someone who already came in before. One batched query for the page.
+  const repeatEnquiries = useRepeatEnquiries(leads);
 
   // The list arrives sorted by activity date, which says nothing about what
   // needs doing. A lead whose next task is due right now (±60 min) belongs at
@@ -128,7 +134,10 @@ export default function LeadListTable({
       width: '260px',
       render: (row) => (
         <div className="min-w-0">
-          <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
+            <RepeatEnquiryBadge ordinal={repeatEnquiries.get(row.id)} />
+          </div>
           <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
         </div>
       ),
@@ -182,8 +191,8 @@ export default function LeadListTable({
       header: 'מקור',
       width: '120px',
       render: (row) => (
-        <p className="text-xs text-muted-foreground truncate" title={row.source ? (SOURCE_LABELS[row.source] || row.source) : ''}>
-          {row.source ? (SOURCE_LABELS[row.source] || row.source) : '—'}
+        <p className="text-xs text-muted-foreground truncate" title={formatSourceLabel(row.source)}>
+          {formatSourceLabel(row.source) || '—'}
         </p>
       ),
     },
@@ -211,7 +220,6 @@ export default function LeadListTable({
           quote_preparation: { Icon: FileText, label: 'הצעת מחיר', color: 'text-primary' },
           close_order: { Icon: ShoppingCart, label: 'סגירת הזמנה', color: 'text-emerald-600' },
           whatsapp: { Icon: MessageCircle, label: 'וואטסאפ', color: 'text-green-600' },
-          assignment: { Icon: UserPlus, label: 'שיוך', color: 'text-violet-600' },
         };
         const meta = TYPE_META[task.task_type] || { Icon: Phone, label: ALL_TASK_TYPE_LABELS[task.task_type] || task.task_type, color: 'text-muted-foreground' };
         const due = task.due_date ? new Date(task.due_date) : null;
@@ -241,14 +249,6 @@ export default function LeadListTable({
               }`}>
                 {timeLabel}
               </span>
-              {/* Names the amber row tint, so it reads as a rule and not as a
-                  colour: this lead's task is inside the due-now window. */}
-              {isTaskDueNow(task, now) && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 ring-1 ring-amber-300 text-[10px] font-semibold px-1.5 py-0.5 whitespace-nowrap">
-                  <Clock className="h-2.5 w-2.5" />
-                  לטפל עכשיו
-                </span>
-              )}
             </div>
             <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] w-fit" onClick={handleQuickComplete}>
               סיים משימה
@@ -297,6 +297,7 @@ export default function LeadListTable({
       onToggleSelect={(row, checked) => toggleOne(row.id, checked)}
       onOpenLead={(row) => onRowClick(row)}
       highlightId={highlightId}
+      repeatEnquiries={repeatEnquiries}
       onClickToCall={(phone) => handleClickToCall(phone)}
       rowClassName={(row) => (
         isTaskDueNow(nextActiveTaskByLead.get(row.id), now) ? 'bg-amber-50 hover:bg-amber-100/70' : ''

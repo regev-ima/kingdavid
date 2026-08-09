@@ -17,34 +17,12 @@ Deno.serve(async (req) => {
       return Response.json({ error: 'Lead not found' }, { status: 404 });
     }
 
-    // Check if an assignment task already exists for this lead (prevent duplicates)
-    const existingTasks = await base44.asServiceRole.entities.SalesTask.filter({ lead_id: leadData.id });
-    const hasAssignmentTask = existingTasks.some(t => t.task_type === 'assignment');
-    if (hasAssignmentTask) {
-      return Response.json({
-        message: 'Assignment task already exists for this lead',
-        task_id: existingTasks.find(t => t.task_type === 'assignment').id
-      });
-    }
-
-    // Always create ONE assignment task for admins (no rep1 so only admins see it)
-    const dueDate = new Date();
-    dueDate.setHours(dueDate.getHours() + 3);
-
-    const taskData = {
-      lead_id: leadData.id,
-      task_type: 'assignment',
-      task_status: 'not_completed',
-      summary: `יש לשייך את הליד ${leadData.full_name || 'החדש'} לנציג`,
-      due_date: dueDate.toISOString(),
-      work_start_date: new Date().toISOString(),
-    };
-
-    const salesTask = await base44.asServiceRole.entities.SalesTask.create(taskData);
-
+    // No assignment task is opened for an incoming lead — see the note in
+    // supabase/functions/createSalesTaskForNewLead. Handing leads out is the
+    // manager's standing job and the unassigned pool is the work list, so a
+    // task row per lead was pure queue noise.
     return Response.json({
-      message: 'Assignment task created successfully',
-      task: salesTask
+      message: 'No assignment task created — assignment queue retired'
     });
 
   } catch (error) {

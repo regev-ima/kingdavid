@@ -1,0 +1,593 @@
+<title>פופאפ ליד — גרסה קומפקטית</title>
+<style>
+  /* ── Tokens ─────────────────────────────────────────────────────────────
+     Taken from the app's own system (src/index.css): warm stone neutrals,
+     indigo primary, 0.5rem radius. This is a proposal for an existing
+     product — it has to read as the app, not as a new identity.          */
+  :root {
+    --bg:            hsl(30 6% 97%);
+    --card:          hsl(0 0% 100%);
+    --card-2:        hsl(30 6% 98.5%);
+    --fg:            hsl(24 10% 10%);
+    --fg-muted:      hsl(24 6% 45%);
+    --fg-faint:      hsl(24 6% 62%);
+    --border:        hsl(24 6% 90%);
+    --border-strong: hsl(24 6% 82%);
+    --muted:         hsl(30 6% 95%);
+    --primary:       hsl(239 84% 67%);
+    --primary-fg:    hsl(0 0% 100%);
+    --primary-soft:  hsl(239 84% 96%);
+    --primary-ring:  hsl(239 84% 87%);
+
+    --amber:      hsl(32 81% 39%);
+    --amber-soft: hsl(48 96% 93%);
+    --amber-ring: hsl(45 93% 80%);
+    --rose:       hsl(350 74% 42%);
+    --rose-soft:  hsl(356 100% 97%);
+    --rose-ring:  hsl(353 96% 90%);
+    --emerald:      hsl(163 88% 26%);
+    --emerald-soft: hsl(152 81% 96%);
+    --emerald-ring: hsl(152 76% 84%);
+    --indigo:      hsl(243 75% 52%);
+    --indigo-soft: hsl(240 100% 97%);
+    --indigo-ring: hsl(239 84% 87%);
+
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / .08), 0 1px 2px -1px rgb(0 0 0 / .08);
+    --shadow-pop:  0 24px 60px -12px rgb(0 0 0 / .28);
+    --radius: .5rem;
+    --radius-lg: .75rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:            hsl(24 10% 8%);
+      --card:          hsl(24 9% 12%);
+      --card-2:        hsl(24 9% 14%);
+      --fg:            hsl(30 8% 94%);
+      --fg-muted:      hsl(28 6% 65%);
+      --fg-faint:      hsl(26 5% 50%);
+      --border:        hsl(24 7% 21%);
+      --border-strong: hsl(24 7% 30%);
+      --muted:         hsl(24 8% 16%);
+      --primary:       hsl(239 84% 72%);
+      --primary-fg:    hsl(24 10% 8%);
+      --primary-soft:  hsl(239 40% 20%);
+      --primary-ring:  hsl(239 50% 34%);
+
+      --amber:      hsl(45 93% 70%);
+      --amber-soft: hsl(36 40% 17%);
+      --amber-ring: hsl(38 45% 30%);
+      --rose:       hsl(353 96% 78%);
+      --rose-soft:  hsl(350 40% 18%);
+      --rose-ring:  hsl(350 45% 32%);
+      --emerald:      hsl(152 76% 66%);
+      --emerald-soft: hsl(160 40% 15%);
+      --emerald-ring: hsl(158 40% 27%);
+      --indigo:      hsl(239 84% 78%);
+      --indigo-soft: hsl(239 40% 21%);
+      --indigo-ring: hsl(239 45% 34%);
+
+      --shadow-card: 0 1px 3px 0 rgb(0 0 0 / .5);
+      --shadow-pop:  0 24px 60px -12px rgb(0 0 0 / .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:            hsl(24 10% 8%);
+    --card:          hsl(24 9% 12%);
+    --card-2:        hsl(24 9% 14%);
+    --fg:            hsl(30 8% 94%);
+    --fg-muted:      hsl(28 6% 65%);
+    --fg-faint:      hsl(26 5% 50%);
+    --border:        hsl(24 7% 21%);
+    --border-strong: hsl(24 7% 30%);
+    --muted:         hsl(24 8% 16%);
+    --primary:       hsl(239 84% 72%);
+    --primary-fg:    hsl(24 10% 8%);
+    --primary-soft:  hsl(239 40% 20%);
+    --primary-ring:  hsl(239 50% 34%);
+
+    --amber:      hsl(45 93% 70%);
+    --amber-soft: hsl(36 40% 17%);
+    --amber-ring: hsl(38 45% 30%);
+    --rose:       hsl(353 96% 78%);
+    --rose-soft:  hsl(350 40% 18%);
+    --rose-ring:  hsl(350 45% 32%);
+    --emerald:      hsl(152 76% 66%);
+    --emerald-soft: hsl(160 40% 15%);
+    --emerald-ring: hsl(158 40% 27%);
+    --indigo:      hsl(239 84% 78%);
+    --indigo-soft: hsl(239 40% 21%);
+    --indigo-ring: hsl(239 45% 34%);
+
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / .5);
+    --shadow-pop:  0 24px 60px -12px rgb(0 0 0 / .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    direction: rtl;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Heebo', 'Assistant', 'Rubik', 'Noto Sans Hebrew', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; }
+
+  /* ── Brief ─────────────────────────────────────────────────────────── */
+  .brief { margin-bottom: 20px; }
+  .brief h1 { font-size: 20px; font-weight: 800; margin: 0 0 4px; letter-spacing: -.01em; text-wrap: balance; }
+  .brief p  { margin: 0 0 14px; color: var(--fg-muted); font-size: 13px; }
+  .changes {
+    display: grid; gap: 8px; margin: 0; padding: 0; list-style: none;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+  .changes li {
+    display: flex; gap: 8px; align-items: flex-start;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 9px 10px; box-shadow: var(--shadow-card);
+    font-size: 12px; color: var(--fg-muted);
+  }
+  .changes b { display: block; color: var(--fg); font-weight: 600; font-size: 12.5px; }
+  .num {
+    flex: none; width: 18px; height: 18px; border-radius: 999px;
+    background: var(--primary); color: var(--primary-fg);
+    font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+    font-variant-numeric: tabular-nums; margin-top: 1px;
+  }
+  .num.ghost { background: var(--muted); color: var(--fg-muted); box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+  /* ── Modal shell ───────────────────────────────────────────────────── */
+  .modal {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 1rem; box-shadow: var(--shadow-pop); overflow: hidden;
+  }
+
+  /* Header: the single owner of the lead's identity. */
+  .head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
+  .iconbtn {
+    flex: none; width: 32px; height: 32px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--card); color: var(--fg-muted);
+    display: grid; place-items: center; cursor: pointer;
+  }
+  .iconbtn:hover { background: var(--muted); color: var(--fg); }
+  .ident { min-width: 0; flex: 1; }
+  .ident-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ident h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+  .ident-sub {
+    margin: 3px 0 0; font-size: 12.5px; color: var(--fg-muted);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .ident-sub .sep { color: var(--fg-faint); }
+  .ltr { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    border-radius: var(--radius); padding: 2px 7px;
+    font-size: 11px; font-weight: 600; line-height: 1.45;
+  }
+  .chip-amber   { background: var(--amber-soft);   color: var(--amber);   box-shadow: inset 0 0 0 1px var(--amber-ring); }
+  .chip-rose    { background: var(--rose-soft);    color: var(--rose);    box-shadow: inset 0 0 0 1px var(--rose-ring); }
+  .chip-emerald { background: var(--emerald-soft); color: var(--emerald); box-shadow: inset 0 0 0 1px var(--emerald-ring); }
+  .chip-indigo  { background: var(--indigo-soft);  color: var(--indigo);  box-shadow: inset 0 0 0 1px var(--indigo-ring); }
+  .chip-plain   { background: var(--muted);        color: var(--fg-muted); box-shadow: inset 0 0 0 1px var(--border); }
+
+  /* Action bar */
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--card-2); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    height: 32px; padding: 0 11px; border-radius: var(--radius);
+    border: 1px solid var(--border-strong); background: var(--card); color: var(--fg);
+    font: inherit; font-size: 12.5px; font-weight: 500;
+  }
+  .btn:hover { background: var(--muted); }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); font-weight: 600; }
+  .btn-primary:hover { filter: brightness(.94); }
+  .btn-green { background: hsl(142 71% 96%); border-color: hsl(142 60% 80%); color: hsl(142 72% 26%); }
+  :root[data-theme="dark"] .btn-green { background: hsl(150 40% 15%); border-color: hsl(150 40% 28%); color: hsl(142 60% 70%); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .btn-green { background: hsl(150 40% 15%); border-color: hsl(150 40% 28%); color: hsl(142 60% 70%); }
+  }
+  .btn-ghost { border-color: transparent; background: transparent; color: var(--fg-muted); }
+
+  .body { padding: 16px 18px 18px; display: grid; gap: 12px; }
+
+  /* ── ① Essentials bar — was three tall cards, now one row ──────────── */
+  .essentials {
+    display: grid; gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 720px) { .essentials { grid-template-columns: 1fr 1fr 1fr; } }
+  .slot {
+    background: var(--card); display: flex; align-items: center; gap: 8px;
+    padding: 0 10px; height: 44px; min-width: 0; cursor: pointer;
+  }
+  .slot:hover { background: var(--card-2); }
+  .slot-label { font-size: 10.5px; font-weight: 600; color: var(--fg-faint); letter-spacing: .04em; flex: none; }
+  .slot-value { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
+  .slot-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot-hint { font-size: 11px; color: var(--fg-faint); flex: none; }
+  .slot-empty { font-size: 12.5px; color: var(--fg-faint); }
+  .av {
+    flex: none; width: 22px; height: 22px; border-radius: 999px;
+    background: var(--primary-soft); color: var(--primary);
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    box-shadow: inset 0 0 0 1px var(--primary-ring);
+  }
+  .av.empty { background: var(--muted); color: var(--fg-faint); box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+  /* ── Next task ─────────────────────────────────────────────────────── */
+  .task {
+    border: 1px solid var(--amber-ring); background: var(--amber-soft);
+    border-radius: var(--radius-lg); padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .task-main { flex: 1; min-width: 200px; }
+  .task-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .task-meta  { font-size: 11.5px; color: var(--amber); margin-top: 1px; }
+
+  /* ── Repeat-enquiry strip ──────────────────────────────────────────── */
+  .repeat {
+    border: 1px solid var(--indigo-ring); background: var(--indigo-soft);
+    border-radius: var(--radius-lg); padding: 8px 12px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    font-size: 12.5px;
+  }
+  .repeat-title { font-weight: 600; color: var(--indigo); }
+  .repeat-item { color: var(--fg-muted); display: flex; align-items: center; gap: 6px; }
+  .repeat a { color: var(--indigo); text-decoration: none; font-weight: 500; }
+  .repeat a:hover { text-decoration: underline; }
+
+  /* ── Tabs ──────────────────────────────────────────────────────────── */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; margin-top: 2px; }
+  .tab {
+    flex: none; border: 0; background: transparent; font: inherit; cursor: pointer;
+    padding: 8px 12px; font-size: 13px; color: var(--fg-muted);
+    border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .tab:hover { color: var(--fg); }
+  .tab[aria-selected="true"] { color: var(--fg); font-weight: 600; border-bottom-color: var(--primary); }
+  .tab .count {
+    font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+    background: var(--muted); color: var(--fg-muted); border-radius: 999px; padding: 0 5px; line-height: 16px;
+  }
+  .tab[aria-selected="true"] .count { background: var(--primary-soft); color: var(--primary); }
+
+  /* ── Detail list ───────────────────────────────────────────────────── */
+  .panel { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); overflow: hidden; }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px; background: var(--card-2); border-bottom: 1px solid var(--border);
+  }
+  .panel-title { font-size: 12.5px; font-weight: 600; }
+  .panel-note { font-size: 11px; color: var(--fg-faint); }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .field {
+    display: flex; align-items: baseline; gap: 8px; padding: 7px 12px;
+    border-bottom: 1px solid var(--border); min-width: 0;
+  }
+  .field dt { flex: none; width: 84px; font-size: 11.5px; color: var(--fg-faint); margin: 0; }
+  .field dd { margin: 0; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .field dd.empty { color: var(--fg-faint); }
+
+  /* ── ⑤ Activity, moved to the bottom ───────────────────────────────── */
+  .activity { margin-top: 4px; }
+  .activity-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--card-2);
+  }
+  .filters { display: flex; gap: 4px; flex-wrap: wrap; }
+  .filter {
+    border: 1px solid var(--border); background: var(--card); color: var(--fg-muted);
+    font: inherit; font-size: 11.5px; border-radius: 999px; padding: 2px 10px; cursor: pointer;
+  }
+  .filter[aria-pressed="true"] { background: var(--fg); color: var(--card); border-color: var(--fg); font-weight: 600; }
+  .feed { list-style: none; margin: 0; padding: 4px 0; }
+  .feed li { display: flex; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .feed li:last-child { border-bottom: 0; }
+  .dot {
+    flex: none; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+    background: var(--muted); color: var(--fg-muted); box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .dot.ok  { background: var(--emerald-soft); color: var(--emerald); box-shadow: inset 0 0 0 1px var(--emerald-ring); }
+  .dot.chg { background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary-ring); }
+  .feed-main { min-width: 0; flex: 1; }
+  .feed-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .feed-title { font-size: 12.5px; font-weight: 500; }
+  .feed-time { font-size: 11px; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+  .feed-body {
+    margin: 4px 0 0; font-size: 12px; color: var(--fg-muted);
+    background: var(--muted); border-radius: var(--radius); padding: 6px 8px;
+  }
+  .feed-by { font-size: 11px; color: var(--fg-faint); margin-top: 3px; }
+  .strike { text-decoration: line-through; }
+
+  /* ── Annotation pins ───────────────────────────────────────────────── */
+  .pin {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--fg); color: var(--card);
+    border-radius: 999px; padding: 1px 8px 1px 4px;
+    font-size: 10.5px; font-weight: 600; white-space: nowrap;
+  }
+  .pin i {
+    width: 15px; height: 15px; border-radius: 999px; background: var(--card); color: var(--fg);
+    font-style: normal; font-size: 10px; font-weight: 800; line-height: 15px; text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .rowhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rowhead h3 { margin: 0; font-size: 11px; font-weight: 600; color: var(--fg-faint); letter-spacing: .04em; }
+
+  svg.ic { width: 1em; height: 1em; display: block; flex: none; }
+  .measure {
+    font-size: 11px; color: var(--fg-faint); font-variant-numeric: tabular-nums;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .measure b { color: var(--emerald); font-weight: 700; }
+
+  :where(button, a, [tabindex]):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="brief">
+    <h1>פופאפ ליד — הצעה קומפקטית</h1>
+    <p>אותו ליד מהצילום (טל לב-ארי), מסודר מחדש לפי ההערות. הסידור הזה מיושם עכשיו במסך הליד עצמו — הדף הזה נשאר כהתייחסות.</p>
+    <ul class="changes">
+      <li><span class="num">1</span><span><b>פעילות הליד יורדת למטה</b>הרייל השמאלי מתפנה — הפעילות בפס רוחב מלא בתחתית</span></li>
+      <li><span class="num">2</span><span><b>סטטוס + נציגים בפס אחד</b>‎127px ← 46px גובה (נמדד), קיטון של 64%</span></li>
+      <li><span class="num">3</span><span><b>פרטי לקוח פעם אחת</b>הכותרת מחזיקה שם/טלפון/מקור, הכרטיס רק מה שאין בה</span></li>
+      <li><span class="num">4</span><span><b>"תמונת מצב" הוסר</b>התוכן שלו כבר מופיע בפעילות ובכרטיסים</span></li>
+      <li><span class="num">5</span><span><b>הצעות ושירות = שני טאבים</b>כל אחד עם המונה שלו</span></li>
+      <li><span class="num ghost">+</span><span><b>מקור ומודעה בכותרת</b>רואים מאיפה הליד הגיע לפני שמרימים טלפון</span></li>
+      <li><span class="num ghost">+</span><span><b>"הוסף תקשורת" נשאר</b>בפס הפעולות, בדיוק כמו היום</span></li>
+    </ul>
+  </header>
+
+  <div class="modal">
+
+    <!-- ③ Identity — the single place the name / phone / source appear -->
+    <div class="head">
+      <button class="iconbtn" type="button" aria-label="סגור">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="ident">
+        <div class="ident-line">
+          <h2>טל לב-ארי</h2>
+          <span class="chip chip-amber">ללא מענה 1</span>
+          <span class="chip chip-rose">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+            3 ימים ו-6 שעות
+          </span>
+          <span class="chip chip-indigo">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            פנייה נוספת
+          </span>
+        </div>
+        <p class="ident-sub">
+          <span class="ltr">0505589555</span>
+          <span class="sep">·</span>
+          <span style="display:inline-flex;align-items:center;gap:4px">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z"/></svg>
+            גוגל
+          </span>
+          <span class="sep">·</span>
+          <span style="display:inline-flex;align-items:center;gap:4px">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 15-6v14L3 13Z"/><path d="M7 12.5V19a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-5"/></svg>
+            עלית ויסקו 90/200 — קיץ 2026
+          </span>
+          <span class="sep">·</span>
+          <span>נכנס 06/08/2026 11:01</span>
+          <span class="pin"><i>3</i>כאן, ורק כאן</span>
+        </p>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.8 2Z"/></svg>
+        חייג
+      </button>
+      <button class="btn btn-green" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.2A8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/></svg>
+        שלח וואטסאפ
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        משימה חדשה
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+        הצעה חדשה
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18l-1.5 12a2 2 0 0 1-2 1.8H6.5a2 2 0 0 1-2-1.8Z"/><path d="M8 7V5a4 4 0 0 1 8 0v2"/></svg>
+        הזמנה חדשה
+      </button>
+      <button class="btn" type="button">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.2A8.5 8.5 0 0 1 12 3a8.4 8.4 0 0 1 9 8.5Z"/></svg>
+        הוסף תקשורת
+      </button>
+      <button class="btn btn-ghost" type="button" aria-label="עוד פעולות">
+        <svg class="ic" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+      </button>
+    </div>
+
+    <div class="body">
+
+      <!-- ② Essentials: three tall cards → one 44px row -->
+      <div class="rowhead">
+        <h3>סטטוס ושיוך</h3>
+        <span class="pin"><i>2</i>שורה אחת במקום שלושה כרטיסים</span>
+        <span class="measure">גובה: <span class="strike">127px</span> ← <b>46px</b></span>
+      </div>
+      <div class="essentials">
+        <button class="slot" type="button" title="הסטטוס משתנה דרך משימה">
+          <span class="slot-label">סטטוס</span>
+          <span class="slot-value"><span class="chip chip-amber">ללא מענה 1</span></span>
+          <span class="slot-hint">עדכן במשימה</span>
+        </button>
+        <button class="slot" type="button" title="החלף נציג ראשי">
+          <span class="slot-label">נציג ראשי</span>
+          <span class="slot-value">
+            <span class="av">א</span>
+            <span class="slot-name">אלעד</span>
+          </span>
+          <svg class="ic slot-hint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <button class="slot" type="button" title="בחר נציג משני">
+          <span class="slot-label">נציג משני</span>
+          <span class="slot-value">
+            <span class="av empty">+</span>
+            <span class="slot-empty">בחר נציג לשיוך</span>
+          </span>
+          <svg class="ic slot-hint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </div>
+
+      <!-- Next task: the one thing that is actually work -->
+      <div class="task">
+        <span class="dot" style="background: var(--card);">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        </span>
+        <span class="task-main">
+          <span class="task-title">שיחה — יש להתקשר ללקוח טל לב-ארי</span>
+          <span class="task-meta">יעד 06/08/2026 · באיחור 3 ימים</span>
+        </span>
+        <span class="chip chip-rose">באיחור</span>
+        <button class="btn" type="button">סיים משימה</button>
+      </div>
+
+      <!-- Repeat enquiry: one line instead of a card -->
+      <div class="repeat">
+        <span class="repeat-title">פנייה נוספת מאותו אדם</span>
+        <span class="repeat-item">
+          <span class="chip chip-emerald">נסגרה עסקה</span>
+          18/07/2026 · גוגל דף חדש עלית
+        </span>
+        <a href="#activity">פתח את הליד הקודם ←</a>
+      </div>
+
+      <!-- ④⑤ Tabs: "תמונת מצב" gone, deals split in two -->
+      <div class="rowhead" style="margin-top:2px">
+        <span class="pin"><i>4</i>"תמונת מצב" הוסר</span>
+        <span class="pin"><i>5</i>הצעות ושירות — שני טאבים</span>
+      </div>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" type="button">פרטי לקוח</button>
+        <button class="tab" role="tab" aria-selected="false" type="button">שיווק ומקור</button>
+        <button class="tab" role="tab" aria-selected="false" type="button">הצעות מחיר <span class="count">1</span></button>
+        <button class="tab" role="tab" aria-selected="false" type="button">שירות <span class="count">0</span></button>
+      </div>
+
+      <!-- ③ Details: only what the header does NOT already say -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">פרטי לקוח</span>
+          <span class="panel-note">שם, טלפון ומקור מופיעים בכותרת ולא חוזרים כאן</span>
+        </div>
+        <dl class="fields">
+          <div class="field"><dt>טלפון נוסף</dt><dd class="ltr">—</dd></div>
+          <div class="field"><dt>אימייל</dt><dd class="ltr">tal.levari@gmail.com</dd></div>
+          <div class="field"><dt>עיר</dt><dd>פתח תקווה</dd></div>
+          <div class="field"><dt>כתובת</dt><dd>הרצל 14</dd></div>
+          <div class="field"><dt>ת"ז</dt><dd class="empty">לא הוזן</dd></div>
+          <div class="field"><dt>מזהה ליד</dt><dd class="ltr">LD-40217</dd></div>
+          <div class="field" style="grid-column: 1 / -1; border-bottom: 0;">
+            <dt>הערות</dt>
+            <dd>עלית ויסקו 90/200 מזרן יחיד לאיסוף 1350 ש"ח. מתייעץ עם האישה, שעצרה לנו הזמנה.</dd>
+          </div>
+        </dl>
+      </div>
+
+      <!-- ① Activity: moved out of the side rail, full width, bottom -->
+      <div class="rowhead" style="margin-top:6px">
+        <span class="pin"><i>1</i>הפעילות ירדה לתחתית, ברוחב מלא</span>
+      </div>
+      <section class="panel activity" id="activity">
+        <div class="activity-head">
+          <span class="panel-title">פעילות הליד</span>
+          <div class="filters">
+            <button class="filter" type="button" aria-pressed="true">הכל</button>
+            <button class="filter" type="button" aria-pressed="false">תקשורת</button>
+            <button class="filter" type="button" aria-pressed="false">משימות</button>
+            <button class="filter" type="button" aria-pressed="false">שינויים</button>
+          </div>
+        </div>
+        <ul class="feed">
+          <li>
+            <span class="dot ok">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </span>
+            <div class="feed-main">
+              <div class="feed-top">
+                <span class="feed-title">שיחה בוצעה</span>
+                <span class="chip chip-amber">ללא מענה 1</span>
+                <span class="feed-time">06/08/2026 · 11:01</span>
+              </div>
+              <p class="feed-body">עלית ויסקו 90/200 מזרן יחיד לאיסוף 1350 ש"ח, מתייעץ עם האישה שעצרה לנו הזמנה.</p>
+              <div class="feed-by">אלעד</div>
+            </div>
+          </li>
+          <li>
+            <span class="dot chg">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>
+            </span>
+            <div class="feed-main">
+              <div class="feed-top">
+                <span class="feed-title">שינוי סטטוס</span>
+                <span class="feed-time">06/08/2026 · 11:01</span>
+              </div>
+              <div class="feed-top" style="margin-top:4px">
+                <span class="chip chip-plain strike">פולואפ — אחרי הצעת מחיר</span>
+                <span class="feed-time">←</span>
+                <span class="chip chip-amber">ללא מענה 1</span>
+              </div>
+              <div class="feed-by">אלעד</div>
+            </div>
+          </li>
+          <li>
+            <span class="dot chg">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>
+            </span>
+            <div class="feed-main">
+              <div class="feed-top">
+                <span class="feed-title">שינוי סטטוס</span>
+                <span class="feed-time">06/08/2026 · 10:23</span>
+              </div>
+              <div class="feed-top" style="margin-top:4px">
+                <span class="chip chip-plain strike">ללא מענה 1</span>
+                <span class="feed-time">←</span>
+                <span class="chip chip-indigo">פולואפ — אחרי הצעת מחיר</span>
+              </div>
+              <div class="feed-by">אלעד</div>
+            </div>
+          </li>
+          <li>
+            <span class="dot ok">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </span>
+            <div class="feed-main">
+              <div class="feed-top">
+                <span class="feed-title">שיחה בוצעה</span>
+                <span class="chip chip-amber">ללא מענה 1</span>
+                <span class="feed-time">06/08/2026 · 10:22</span>
+              </div>
+              <p class="feed-body">יש להתקשר ללקוח טל לב-ארי.</p>
+              <div class="feed-by">אלעד</div>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+    </div>
+  </div>
+
+  <p style="margin:14px 2px 0;font-size:11.5px;color:var(--fg-faint)">
+    מה שלא נגעתי בו: פס הפעולות, המשימה הקרובה, השדות עצמם וההרשאות — רק הסידור והגדלים.
+  </p>
+</div>

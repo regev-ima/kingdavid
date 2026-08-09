@@ -234,7 +234,7 @@ export const PERMISSION_GROUPS = [
     key: 'tasks',
     label: 'משימות מכירה',
     icon: 'checklist',
-    description: 'תור המשימות של הנציגים ותור השיוך של המנהל.',
+    description: 'תור המשימות של הנציגים.',
     permissions: [
       {
         key: 'tasks.view',
@@ -275,13 +275,6 @@ export const PERMISSION_GROUPS = [
             key: 'tasks.delete',
             label: 'מחיקת משימה',
             description: 'הסרת משימה מהתור.',
-            baseline: BASELINE.ADMIN,
-            tiers: t(false, true, true),
-          },
-          {
-            key: 'tasks.assignment_queue',
-            label: 'תור שיוך לידים',
-            description: 'משימות מסוג "שיוך" — התור הניהולי שמחלק לידים לנציגים.',
             baseline: BASELINE.ADMIN,
             tiers: t(false, true, true),
           },

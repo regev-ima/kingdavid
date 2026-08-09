@@ -17,8 +17,12 @@ const REMOVE_VALUE = '__remove__';
  * lib/repSlots) simply isn't offered. `onRemove` adds "הסר שיוך" to the same
  * menu: a slot filled by mistake used to be unclearable from here, which left
  * an admin with a wrong secondary rep and no way out.
+ *
+ * `compact` renders the same slot as one ~44px row instead of a ~104px card,
+ * for the lead screen's essentials bar. Nothing is taken away: the label moves
+ * inline, and the rep's phone moves from a second line into the row's tooltip.
  */
-export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, excludeEmails = [], salesReps, canEdit, isPending }) {
+export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, excludeEmails = [], salesReps, canEdit, isPending, compact = false }) {
   const assignableReps = (salesReps || []).filter(
     (r) => !excludeEmails.some((email) => isSameRep(r?.email, email)),
   );
@@ -26,6 +30,102 @@ export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, exclu
     if (value === REMOVE_VALUE) onRemove?.();
     else onAssign?.(value);
   };
+
+  const handleWhatsAppFor = (target) => (e) => {
+    e.stopPropagation();
+    const phone = (target?.phone || '').replace(/[^0-9]/g, '');
+    if (phone) {
+      window.open(`https://wa.me/972${phone.startsWith('0') ? phone.slice(1) : phone}`, '_blank');
+    }
+  };
+  const handleCallFor = (target) => (e) => {
+    e.stopPropagation();
+    if (target?.phone) window.open(`tel:${target.phone}`, '_self');
+  };
+
+  if (compact) {
+    const slotLabel = (
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
+        {label}
+      </span>
+    );
+
+    if (isEmpty || !rep) {
+      return (
+        <div className="flex items-center gap-2 h-11 px-2.5 min-w-0">
+          {slotLabel}
+          {canEdit && onAssign && assignableReps.length > 0 ? (
+            <Select onValueChange={handleSelect} disabled={isPending}>
+              <SelectTrigger className="h-8 flex-1 min-w-0 border-0 bg-transparent px-1.5 text-[13px] shadow-none hover:bg-muted focus:ring-0">
+                <SelectValue placeholder={isPending ? 'משייך…' : 'בחר נציג לשיוך'} />
+              </SelectTrigger>
+              <SelectContent>
+                {assignableReps.map((r) => (
+                  <SelectItem key={r.id} value={r.email}>{r.full_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <span className="text-[13px] text-muted-foreground/70 truncate">לא משויך</span>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-2 h-11 px-2.5 min-w-0" title={rep.phone || rep.email || ''}>
+        {slotLabel}
+        <UserAvatar user={rep} size="sm" className="h-6 w-6 text-[10px] flex-shrink-0" />
+        <p className="text-[13px] font-medium text-foreground truncate flex-1 min-w-0">{rep.full_name}</p>
+        {rep.phone ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full text-muted-foreground/70 hover:text-green-600 hover:bg-green-50 flex-shrink-0"
+              onClick={handleWhatsAppFor(rep)}
+              title="וואטסאפ לנציג"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full text-muted-foreground/70 hover:text-blue-600 hover:bg-blue-50 flex-shrink-0"
+              onClick={handleCallFor(rep)}
+              title="חייג לנציג"
+            >
+              <Phone className="h-3.5 w-3.5" />
+            </Button>
+          </>
+        ) : null}
+        {canEdit && (onAssign || onRemove) ? (
+          <Select onValueChange={handleSelect} disabled={isPending}>
+            <SelectTrigger
+              className="h-7 w-7 p-0 border-0 bg-transparent hover:bg-muted rounded-full flex-shrink-0 [&>svg:last-child]:hidden"
+              title="החלף נציג"
+            >
+              <RefreshCw className="h-3.5 w-3.5 text-muted-foreground/70" />
+            </SelectTrigger>
+            <SelectContent>
+              {assignableReps.filter((r) => !isSameRep(r.email, rep?.email)).map((r) => (
+                <SelectItem key={r.id} value={r.email}>{r.full_name}</SelectItem>
+              ))}
+              {onRemove && (
+                <SelectItem value={REMOVE_VALUE} className="text-destructive focus:text-destructive">
+                  <span className="inline-flex items-center gap-2">
+                    <UserMinus className="h-3.5 w-3.5" />
+                    הסר שיוך
+                  </span>
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+        ) : null}
+      </div>
+    );
+  }
+
   if (isEmpty || !rep) {
     return (
       <div className="p-3 rounded-lg border border-dashed border-border bg-muted/50">
@@ -55,20 +155,8 @@ export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, exclu
     );
   }
 
-  const handleWhatsApp = (e) => {
-    e.stopPropagation();
-    const phone = (rep.phone || rep.email || '').replace(/[^0-9]/g, '');
-    if (phone) {
-      window.open(`https://wa.me/972${phone.startsWith('0') ? phone.slice(1) : phone}`, '_blank');
-    }
-  };
-
-  const handleCall = (e) => {
-    e.stopPropagation();
-    if (rep.phone) {
-      window.open(`tel:${rep.phone}`, '_self');
-    }
-  };
+  const handleWhatsApp = handleWhatsAppFor(rep);
+  const handleCall = handleCallFor(rep);
 
   return (
     <div className="p-3 rounded-lg border border-border bg-white hover:border-violet-200 hover:bg-violet-50/30 transition-all duration-150">

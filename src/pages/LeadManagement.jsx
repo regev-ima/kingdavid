@@ -148,8 +148,9 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
   if (scope === 'unassigned') {
     conditions.push({ $or: [{ rep1: null }, { rep1: '' }] });
   } else if (scope === 'assigned_unhandled') {
-    // משויך ולא טופל — has an owning rep but is still sitting at new_lead,
-    // i.e. nothing happened beyond the assignment itself.
+    // "לידים חדשים" — has an owning rep but is still sitting at new_lead,
+    // i.e. nothing happened beyond the assignment itself. (The scope id is
+    // the older name for the same rule; only the label changed.)
     conditions.push({ status: 'new_lead' });
     conditions.push({ rep1: { $ne: null } });
     conditions.push({ rep1: { $ne: '' } });
@@ -506,11 +507,11 @@ export default function LeadManagement() {
       // which a "status not in (...)" filter then excluded → mismatch).
       const countsFor = async (repEmail) => {
         const base = repEmail ? [{ $or: [{ rep1: repEmail }, { rep2: repEmail }] }] : [];
-        // "חדשים שטרם טופלו" = assigned-but-untouched. For a rep this is implicit
+        // "לידים חדשים" = assigned-but-untouched. For a rep this is implicit
         // (the card is filtered to them). For the TEAM card (repEmail null) we
         // must add "has a rep", otherwise unassigned new leads — which belong to
         // the separate "לא משויכים" pool, not to anyone's workload — would inflate
-        // it and clash with the "משויך ולא טופל" tile. Mirrors LIFECYCLE_SCOPES +
+        // it and clash with the "לידים חדשים" tile. Mirrors LIFECYCLE_SCOPES +
         // the assigned_unhandled scope so card === tile === filtered list.
         const newCond = repEmail
           ? [LIFECYCLE_SCOPES.lc_new]
@@ -856,7 +857,7 @@ export default function LeadManagement() {
             icon: Users,
             desc: seesAllLeads ? 'כל הלידים במערכת בטווח' : 'כל הלידים המשויכים אליי בטווח',
           }] : []),
-          { id: 'assigned_unhandled', label: 'משויך ולא טופל', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
+          { id: 'assigned_unhandled', label: 'לידים חדשים', value: kpiCounts.assignedUnhandledCount, tone: 'rose',   icon: UserCheck, desc: 'שויך לנציג אך נשאר "ליד חדש"' },
           // "לא משויכים" is a management-only pool — reps only handle leads
           // assigned to them, so the unassigned tile is hidden for them.
           ...(isAdmin ? [{ id: 'unassigned', label: 'לא משויכים', value: kpiCounts.unassignedCount, tone: 'amber', icon: UserPlus, desc: 'לידים בלי נציג ראשי' }] : []),
@@ -1355,7 +1356,7 @@ function RepWorkloadCard({ repEmail, label, avatar, newCount, handlingCount, won
   // in handling) and closed outcomes (won + lost/not-interested). Each carries
   // the scope it drills into (see LIFECYCLE_SCOPES / buildLeadsQuery).
   const stats = [
-    { scope: isTeam ? 'assigned_unhandled' : 'lc_new', label: 'חדשים שטרם טופלו', title: isTeam ? 'לידים משויכים שטרם טופלו (ללא "לא משויכים")' : 'לידים חדשים שטרם טופלו', value: newCount, box: 'bg-sky-50', text: 'text-sky-700', sub: 'text-sky-700/80', ring: 'ring-sky-400 border-sky-500' },
+    { scope: isTeam ? 'assigned_unhandled' : 'lc_new', label: 'לידים חדשים', title: isTeam ? 'לידים חדשים משויכים (ללא "לא משויכים")' : 'לידים חדשים שטרם טופלו', value: newCount, box: 'bg-sky-50', text: 'text-sky-700', sub: 'text-sky-700/80', ring: 'ring-sky-400 border-sky-500' },
     { scope: 'lc_handling', label: 'בטיפול',           title: 'לידים בטיפול',                  value: handlingCount, box: 'bg-amber-50',   text: 'text-amber-700',   sub: 'text-amber-700/80',   ring: 'ring-amber-400 border-amber-500' },
     { scope: 'lc_won',      label: 'נסגרו',            title: 'לידים שנסגרו בעסקה',            value: wonCount,      box: 'bg-emerald-50', text: 'text-emerald-700', sub: 'text-emerald-700/80', ring: 'ring-emerald-400 border-emerald-500' },
     { scope: 'lc_lost',     label: 'נאבדו',            title: 'לידים שנאבדו – לא מעוניינים',   value: lostCount,     box: 'bg-rose-50',    text: 'text-rose-700',    sub: 'text-rose-700/80',    ring: 'ring-rose-400 border-rose-500' },
@@ -1405,10 +1406,10 @@ function ActiveFilterSummary({
   filteredCount, totalCount, onClearScope, onClearFilter, onClearHour, onClearAll, extra,
 }) {
   const SCOPE_LABELS = {
-    assigned_unhandled: 'משויך ולא טופל',
+    assigned_unhandled: 'לידים חדשים',
     unassigned: 'לא משויכים',
     handling: 'בטיפול',
-    lc_new: 'חדשים שטרם טופלו',
+    lc_new: 'לידים חדשים',
     lc_handling: 'בטיפול',
     lc_won: 'נסגרו',
     lc_lost: 'נאבדו',
