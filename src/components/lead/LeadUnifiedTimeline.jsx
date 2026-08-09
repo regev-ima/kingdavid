@@ -147,7 +147,7 @@ const FILTERS = [
  * "activity log" blocks. Self-contained: fetches the activity log itself and
  * takes the lead's tasks + users as props (the lead screen already loads both).
  */
-export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], onOpenTask }) {
+export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], onOpenTask, className = '' }) {
   const [filter, setFilter] = useState('all');
 
   const { data: logs = [], isLoading } = useQuery({
@@ -203,10 +203,11 @@ export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], on
   const filtered = filter === 'all' ? events : events.filter((e) => e.kind === filter);
 
   return (
-    /* Full-height card so it can sit as a side rail (modal: parent gives it a
-       fixed height → the body scrolls; full-page: it just grows). The blue
-       right-accent matches the lead screen's accent language. */
-    <div className="h-full flex flex-col rounded-xl border border-black/[0.06] border-r-4 border-r-blue-500 bg-card shadow-card overflow-hidden">
+    /* Grows to fit by default; `className` is where a caller bounds it —
+       the lead screen passes a max-height so the feed scrolls inside its own
+       box instead of stretching the page. The blue right-accent matches the
+       lead screen's accent language. */
+    <div className={`h-full flex flex-col rounded-xl border border-black/[0.06] border-r-4 border-r-blue-500 bg-card shadow-card overflow-hidden ${className}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <h3 className="font-semibold text-sm flex items-center gap-2">
           <Activity className="h-4 w-4 text-blue-500" />

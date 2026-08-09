@@ -114,6 +114,41 @@ export const SOURCE_LABELS = Object.fromEntries(
   LEAD_SOURCE_OPTIONS.map(s => [s.value, s.label])
 );
 
+// Sources that arrive from an ad platform or integration rather than from the
+// picker above. They are real values sitting in leads.source (a Google lead
+// carries "google_ads"), so a screen that knows only LEAD_SOURCE_OPTIONS
+// prints the raw key at the customer — which is exactly what the lead header
+// was doing. Kept separate from LEAD_SOURCE_OPTIONS on purpose: these are not
+// things a person should be able to pick by hand.
+const INTEGRATION_SOURCE_LABELS = {
+  google_ads: 'גוגל',
+  google: 'גוגל',
+  google_organic: 'גוגל אורגני',
+  facebook_ads: 'פייסבוק',
+  facebook: 'פייסבוק',
+  instagram: 'אינסטגרם',
+  tiktok: 'טיקטוק',
+  organic: 'אורגני',
+  direct: 'ישיר',
+  email: 'מייל',
+  sms: 'SMS',
+  phone: 'טלפון',
+  import: 'ייבוא',
+};
+
+/**
+ * The Hebrew label for a lead's source — the picker's own values first, then
+ * the integration ones, and finally the key itself with its underscores
+ * opened up, so an unknown source still reads as words instead of code.
+ */
+export function formatSourceLabel(source) {
+  if (!source) return '';
+  const key = String(source).trim();
+  return SOURCE_LABELS[key]
+    || INTEGRATION_SOURCE_LABELS[key.toLowerCase()]
+    || key.replace(/_/g, ' ');
+}
+
 // ==================== Task Types ====================
 
 export const TASK_TYPE_OPTIONS = [

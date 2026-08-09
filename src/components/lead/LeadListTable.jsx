@@ -12,7 +12,7 @@ import { Phone, Users, FileText, ShoppingCart, MessageCircle } from 'lucide-reac
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
-import { ALL_TASK_TYPE_LABELS, SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { ALL_TASK_TYPE_LABELS, formatSourceLabel, SLA_THRESHOLDS } from '@/constants/leadOptions';
 import { formatIsraeliPhone as formatPhone } from '@/utils/phoneUtils';
 import { isTaskDueNow } from '@/lib/salesTaskWorkbench';
 import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
@@ -191,8 +191,8 @@ export default function LeadListTable({
       header: 'מקור',
       width: '120px',
       render: (row) => (
-        <p className="text-xs text-muted-foreground truncate" title={row.source ? (SOURCE_LABELS[row.source] || row.source) : ''}>
-          {row.source ? (SOURCE_LABELS[row.source] || row.source) : '—'}
+        <p className="text-xs text-muted-foreground truncate" title={formatSourceLabel(row.source)}>
+          {formatSourceLabel(row.source) || '—'}
         </p>
       ),
     },

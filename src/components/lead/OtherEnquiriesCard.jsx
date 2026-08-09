@@ -7,7 +7,7 @@ import { History, ArrowLeft } from 'lucide-react';
 import { format } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { createPageUrl } from '@/utils';
-import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, formatSourceLabel } from '@/constants/leadOptions';
 
 const STATUS_LABEL = Object.fromEntries(
   LEAD_STATUS_OPTIONS.map((s) => [s.value, s.label]),
@@ -77,7 +77,7 @@ export default function OtherEnquiriesCard({ lead }) {
                       {STATUS_LABEL[s.status] || s.status || 'ללא סטטוס'}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {[s.source, s.rep1].filter(Boolean).join(' · ') || '—'}
+                      {[formatSourceLabel(s.source), s.rep1].filter(Boolean).join(' · ') || '—'}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
