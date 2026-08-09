@@ -174,7 +174,11 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
     // rep filter below it reproduces the count shown on that rep's card.
     conditions.push(LIFECYCLE_SCOPES[scope]);
   }
-  if (hasRange) {
+  // The arrival-date range is skipped for the quote / task scopes: those tiles
+  // count open quotes and open tasks, which say nothing about when the lead
+  // came in. Applying it on top is what made "26 הצעות פתוחות" open a list of
+  // one — the other 25 belong to leads that arrived on earlier days.
+  if (hasRange && !RELATED_SCOPES.includes(scope)) {
     conditions.push({ effective_sort_date: { $gte: startDate.toISOString(), $lte: endDate.toISOString() } });
   }
   // Hour-of-day narrowing rides on top of the date range.
@@ -429,8 +433,8 @@ export default function LeadManagement() {
     assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0,
   };
   const { data: kpiCounts = EMPTY_KPI } = useQuery({
-    queryKey: ['leadMgmt-kpis', seesAllLeads, userEmail, fromIso, toIso, hourKey],
-    enabled: !!effectiveUser && !!userEmail,
+    queryKey: ['leadMgmt-kpis', seesAllLeads, userEmail, filters.rep, fromIso, toIso, hourKey],
+    enabled: !!effectiveUser && !!userEmail && repResolved,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
@@ -438,6 +442,7 @@ export default function LeadManagement() {
       const base = (extra) => {
         const conditions = [];
         if (!seesAllLeads) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
+        if (filters.rep && filters.rep !== 'all') conditions.push({ $or: [{ rep1: filters.rep }, { rep2: filters.rep }] });
         if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
         if (hourCond) conditions.push(hourCond);
         if (Array.isArray(extra)) conditions.push(...extra);
@@ -459,45 +464,51 @@ export default function LeadManagement() {
   // The rep whose numbers these are, or null for whoever sees the whole floor.
   // Every tile below carries it, which is what makes the rep's screen the same
   // screen showing their own leads, quotes, tasks and closings.
-  const scopedRep = seesAllLeads ? null : userEmail;
+  const scopedRep = (filters.rep && filters.rep !== 'all')
+    ? filters.rep
+    : (seesAllLeads ? null : userEmail);
 
   // What the header says the numbers are cut by ("תצוגת נתונים לפי: היום").
   const activePresetLabel = datePresetId === 'range' && customRange?.from && customRange?.to
     ? `${format(customRange.from, 'dd/MM/yyyy')} - ${format(customRange.to, 'dd/MM/yyyy')}`
     : (DATE_PRESETS.find((preset) => preset.id === datePresetId)?.label || 'כל הזמנים');
 
-  // Open tasks: the ones due today, and the whole untouched backlog.
-  const { data: taskTiles = { today: 0, open: 0 } } = useQuery({
-    queryKey: ['leadMgmt-task-tiles', scopedRep, todayWindow.from],
-    enabled: !!effectiveUser && !!userEmail,
+  // Leads behind the quote / task tiles. Each tile counts LEADS — the rows the
+  // list shows when you click it — not quote or task rows, so the number on
+  // the tile is exactly the number the click produces. One resolver, used both
+  // for the counts and for the active scope.
+  const relatedScopeSets = useQuery({
+    queryKey: ['leadMgmt-related-sets', scopedRep, todayWindow.from],
+    enabled: !!effectiveUser && !!userEmail && repResolved,
     staleTime: 60_000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const mine = scopedRep ? [{ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] }] : [];
-      const build = (extra) => {
-        const conditions = [{ task_status: 'not_completed' }, ...mine, ...extra];
-        return conditions.length === 1 ? conditions[0] : { $and: conditions };
-      };
-      const [today, open] = await Promise.all([
-        base44.entities.SalesTask.count(build([{ due_date: { $gte: todayWindow.from, $lt: todayWindow.to } }])),
-        base44.entities.SalesTask.count(build([])),
-      ]);
-      return { today, open };
-    },
-  });
+      const wrap = (conditions) => (conditions.length === 1 ? conditions[0] : { $and: conditions });
+      const leadIds = (rows) => [...new Set(rows.map((row) => row.lead_id).filter(Boolean))];
 
-  // Quotes still waiting on an answer — a rep sees the ones they wrote.
-  const { data: openQuotesCount = 0 } = useQuery({
-    queryKey: ['leadMgmt-open-quotes', scopedRep],
-    enabled: !!effectiveUser && !!userEmail,
-    staleTime: 60_000,
-    placeholderData: (prev) => prev,
-    queryFn: () => {
-      const conditions = [{ status: { $in: ['draft', 'sent'] } }];
-      if (scopedRep) conditions.push({ created_by_rep: scopedRep });
-      return base44.entities.Quote.count(conditions.length === 1 ? conditions[0] : { $and: conditions });
+      const [quotes, openTasks] = await Promise.all([
+        base44.entities.Quote.filter(
+          wrap([{ status: { $in: ['draft', 'sent'] } }, ...(scopedRep ? [{ created_by_rep: scopedRep }] : [])]),
+          '-created_date', 5000,
+        ).catch(() => []),
+        base44.entities.SalesTask.filter(
+          wrap([{ task_status: 'not_completed' }, ...mine]), 'due_date', 5000,
+        ).catch(() => []),
+      ]);
+
+      const dueToday = openTasks.filter((task) => {
+        const due = task?.due_date;
+        return due && due >= todayWindow.from && due < todayWindow.to;
+      });
+
+      return {
+        open_quotes: leadIds(quotes),
+        tasks_open: leadIds(openTasks),
+        tasks_today: leadIds(dueToday),
+      };
     },
-  });
+  }).data || { open_quotes: [], tasks_open: [], tasks_today: [] };
 
   // Money closed in the selected range. The COUNT comes from the leads that
   // closed — the number already scoped to the viewing rep — and the shekels
@@ -505,7 +516,7 @@ export default function LeadManagement() {
   // sum can never describe two different sets.
   const { data: sales = { count: 0, total: 0 } } = useQuery({
     queryKey: ['leadMgmt-sales', scopedRep, fromIso, toIso],
-    enabled: !!effectiveUser && !!userEmail,
+    enabled: !!effectiveUser && !!userEmail && repResolved,
     staleTime: 60_000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
@@ -615,32 +626,7 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
-  // Lead ids behind a quote / task tile. Only runs while one of those tiles is
-  // the active scope; otherwise the list query stays a pure leads filter.
-  const { data: relatedLeadIds = [] } = useQuery({
-    queryKey: ['leadMgmt-scope-ids', scope, scopedRep, todayWindow.from],
-    enabled: RELATED_SCOPES.includes(scope) && !!effectiveUser && !!userEmail,
-    staleTime: 60_000,
-    queryFn: async () => {
-      if (scope === 'open_quotes') {
-        const conditions = [{ status: { $in: ['draft', 'sent'] } }];
-        if (scopedRep) conditions.push({ created_by_rep: scopedRep });
-        const rows = await base44.entities.Quote.filter(
-          conditions.length === 1 ? conditions[0] : { $and: conditions }, '-created_date', 2000,
-        );
-        return [...new Set(rows.map((quote) => quote.lead_id).filter(Boolean))];
-      }
-      const conditions = [{ task_status: 'not_completed' }];
-      if (scopedRep) conditions.push({ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] });
-      if (scope === 'tasks_today') {
-        conditions.push({ due_date: { $gte: todayWindow.from, $lt: todayWindow.to } });
-      }
-      const rows = await base44.entities.SalesTask.filter(
-        conditions.length === 1 ? conditions[0] : { $and: conditions }, 'due_date', 2000,
-      );
-      return [...new Set(rows.map((task) => task.lead_id).filter(Boolean))];
-    },
-  });
+  const relatedLeadIds = relatedScopeSets[scope] || [];
 
   const leadsQuery = useMemo(
     () => buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds }),
@@ -870,7 +856,7 @@ export default function LeadManagement() {
         <div>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            ניהול משימות
+            ניהול לידים
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             תצוגת נתונים לפי: <span className="text-foreground/80">{activePresetLabel}</span>
@@ -964,7 +950,7 @@ export default function LeadManagement() {
         />
         <TaskKpiTile
           label="הצעות מחיר פתוחות"
-          value={openQuotesCount}
+          value={relatedScopeSets.open_quotes.length}
           sub="סה״כ פתוחות"
           icon={FileText}
           tone="emerald"
@@ -973,7 +959,7 @@ export default function LeadManagement() {
         />
         <TaskKpiTile
           label="משימות להיום"
-          value={taskTiles.today}
+          value={relatedScopeSets.tasks_today.length}
           sub="מתוכן להיום"
           icon={ClipboardCheck}
           tone="amber"
@@ -982,7 +968,7 @@ export default function LeadManagement() {
         />
         <TaskKpiTile
           label="נותרו לטיפול"
-          value={taskTiles.open}
+          value={relatedScopeSets.tasks_open.length}
           sub="טרם טופלו"
           subTone="text-rose-600"
           icon={Clock}
