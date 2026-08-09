@@ -2,6 +2,7 @@ import { base44 } from "@/api/base44Client";
 import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, orderTermsFields, resolveDocumentTerms } from "@/constants/documentTerms";
+import { SOURCE_LABELS } from "@/constants/leadOptions";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
 import { renderPagesToPdf, withMountedPages } from "@/lib/pdfPages";
 
@@ -80,6 +81,12 @@ const OrderPdfGenerator = async (orderData) => {
   ]
     .filter(Boolean)
     .join(" · ");
+
+  // "מקור הגעה" — where the sale came from. The order stores the bucket
+  // (the lead's source, stamped at creation); the campaign/UTM detail behind it
+  // stays on the lead and off the customer's copy. Same labels as the order
+  // screen and the orders list, so one order reads the same everywhere.
+  const sourceLabel = SOURCE_LABELS[orderData.source] || safe(orderData.source);
 
   // The order stores the rep's email; the printed order should show their name.
   // A failed lookup falls back to the email — the customer's copy naming the
@@ -397,6 +404,11 @@ const OrderPdfGenerator = async (orderData) => {
               ${
                 repName
                   ? `<div class="k">נציג מטפל</div><div class="v">${esc(repName)}</div>`
+                  : ""
+              }
+              ${
+                sourceLabel
+                  ? `<div class="k">מקור הגעה</div><div class="v">${esc(sourceLabel)}</div>`
                   : ""
               }
             </div>
