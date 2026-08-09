@@ -2,6 +2,12 @@
 // should automatically appear. Consumed by CompleteTaskDialog and by the
 // quick-action buttons in Leads.jsx / LeadDetails.
 //
+// Whether the `nextTask` on an outcome actually fires is NOT decided here —
+// it's decided by the status the lead lands in, via outcomeOpensNextTask()
+// below. See AUTO_TASK_STATUSES in constants/leadOptions.
+
+import { statusOpensAutoTask } from '@/constants/leadOptions';
+//
 // Each outcome has:
 //   id            — stable identifier
 //   label         — Hebrew text shown on the button
@@ -215,6 +221,24 @@ export function resolveOutcomeStatus(outcome, currentStatus) {
     return outcome.newLeadStatus(currentStatus);
   }
   return outcome.newLeadStatus ?? null;
+}
+
+/**
+ * Should closing a task with this outcome open the next one?
+ *
+ * Only when the lead ENDS UP in a status that schedules itself — follow-up
+ * before/after quote, or a meeting. Every other outcome closes the task and
+ * stops: "לא ענה" no longer mints another call, "ענה — מעוניין" no longer
+ * mints a quote task. The rep opens what they need.
+ *
+ * An outcome that leaves the status alone (`newLeadStatus: null`) is judged on
+ * the status the lead already has, so a no-show on a lead sitting in follow-up
+ * still gets its reminder.
+ */
+export function outcomeOpensNextTask(outcome, currentStatus) {
+  if (!outcome?.nextTask) return false;
+  const next = resolveOutcomeStatus(outcome, currentStatus);
+  return statusOpensAutoTask(next ?? currentStatus);
 }
 
 // Compute the due-date ISO string for the auto-created follow-up task.

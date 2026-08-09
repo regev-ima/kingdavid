@@ -17,7 +17,7 @@ import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
-import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS } from '@/constants/leadOptions';
+import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS, statusOpensAutoTask, isMeetingStatus } from '@/constants/leadOptions';
 import { useHiddenStatuses, getVisibleStatusOptions } from '@/hooks/useHiddenStatuses';
 import { useClosureChecker } from '@/hooks/useCompanyClosures';
 import { parseTimeToMinutes } from '@/lib/companyClosures';
@@ -58,12 +58,6 @@ const safeFormat = (dateStr, fmt) => {
   return isValid(d) ? format(d, fmt) : dateStr;
 };
 
-const NO_ANSWER_STATUSES = {
-  no_answer_1: 'ללא מענה 1',
-  no_answer_2: 'ללא מענה 2',
-  no_answer_3: 'ללא מענה 3',
-  no_answer_4: 'ללא מענה 4',
-};
 
 /**
  * The rep a task belongs to.
@@ -131,7 +125,6 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
   const [showNextTaskForm, setShowNextTaskForm] = useState(false);
   const [nextTask, setNextTask] = useState({ task_type: 'call', due_date: '', due_hours: null });
   const [originalLeadStatus, setOriginalLeadStatus] = useState('');
-  const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDate, selectedHour, status }
   const [isSavingFollowup, setIsSavingFollowup] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -206,7 +199,6 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     setShowCompletedFlow(false);
     setShowNextTaskForm(false);
     setNextTask({ task_type: 'call', due_date: '', due_hours: null });
-    setNoAnswerFlow(null);
     setFollowupFlow(null);
     setIsAssigning(false);
     setShowQuoteDialog(false);
@@ -405,46 +397,6 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     );
   };
 
-  // Shared between create and edit: when the rep picks a "ללא מענה" status, log
-  // the (now-completed, in edit) attempt and schedule a callback in N hours. In
-  // create mode there is no prior attempt task, so we only schedule the callback
-  // and snapshot the lead status.
-  const confirmNoAnswer = async () => {
-    if (!noAnswerFlow?.selectedHours) return;
-    if (!currentLeadId) { setValidationError('יש לבחור ליד'); return; }
-    setIsSavingFollowup(true);
-    try {
-      const now = new Date().toISOString();
-      await base44.entities.Lead.update(currentLeadId, { status: noAnswerFlow.status });
-      if (!isCreate) {
-        await base44.entities.SalesTask.update(editingTask.id, {
-          task_status: 'completed',
-          status: noAnswerFlow.status,
-        });
-      }
-      const dueDate = addHours(new Date(), noAnswerFlow.selectedHours);
-      await base44.entities.SalesTask.create({
-        lead_id: currentLeadId,
-        rep1: editingTask.rep1,
-        rep2: editingTask.rep2,
-        task_type: 'call',
-        task_status: 'not_completed',
-        status: noAnswerFlow.status,
-        due_date: dueDate.toISOString(),
-        work_start_date: now,
-        summary: `חזור ללקוח ${currentLead?.full_name || ''} - ${noAnswerFlow.label}`,
-      });
-      invalidateTaskCaches(queryClient);
-      toast.success(isCreate ? 'נקבעה משימת חזרה ללקוח' : 'המשימה נשמרה ונקבעה משימה חדשה');
-      onClose();
-    } catch (err) {
-      console.error('No-answer save failed', err);
-      toast.error(`שמירה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
-    } finally {
-      setIsSavingFollowup(false);
-    }
-  };
-
   const confirmFollowup = async () => {
     if (!followupFlow?.selectedDate || followupFlow.selectedHour == null) return;
     if (!currentLeadId) { setValidationError('יש לבחור ליד'); return; }
@@ -453,6 +405,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
       const dueDate = new Date(followupFlow.selectedDate);
       dueDate.setHours(followupFlow.selectedHour, 0, 0, 0);
       const now = new Date().toISOString();
+      const meeting = isMeetingStatus(followupFlow.status);
       const statusLabel = followupFlow.status === 'followup_after_quote' ? 'אחרי הצעת מחיר' : 'לפני הצעת מחיר';
 
       await base44.entities.Lead.update(currentLeadId, { status: followupFlow.status });
@@ -466,15 +419,23 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
         lead_id: currentLeadId,
         rep1: editingTask.rep1,
         rep2: editingTask.rep2,
-        task_type: 'call',
+        // A meeting status produces a meeting task, not a phone call — the
+        // rep is committing to being somewhere, and the queue should say so.
+        task_type: meeting ? 'meeting' : 'call',
         task_status: 'not_completed',
         status: followupFlow.status,
         due_date: dueDate.toISOString(),
         work_start_date: now,
-        summary: `פולואפ - חזור ללקוח ${currentLead?.full_name || ''} ${statusLabel}`,
+        summary: meeting
+          ? `פגישה עם ${currentLead?.full_name || ''}`
+          : `פולואפ - חזור ללקוח ${currentLead?.full_name || ''} ${statusLabel}`,
       });
       invalidateTaskCaches(queryClient);
-      toast.success(isCreate ? 'נקבעה משימת פולואפ' : 'המשימה נשמרה ונקבעה משימה חדשה');
+      toast.success(
+        meeting
+          ? 'נקבעה פגישה'
+          : (isCreate ? 'נקבעה משימת פולואפ' : 'המשימה נשמרה ונקבעה משימה חדשה'),
+      );
       onClose();
     } catch (err) {
       console.error('Followup save failed', err);
@@ -519,18 +480,19 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     }
   };
 
-  // Status dropdown handler — picking a no-answer / followup status opens its
-  // scheduling sub-flow; anything else just sets the status.
+  // Status dropdown handler — a status that schedules itself (follow-up
+  // before/after quote, or a meeting) opens its scheduling sub-flow so the rep
+  // names the time; anything else just sets the status and opens nothing.
+  //
+  // "ללא מענה" used to open a "when do I call back?" flow and mint a task from
+  // it. It doesn't any more: the rep knows a lead that didn't answer needs
+  // another call, and the forced callback row was the single biggest source of
+  // queue noise. They can still open one from "משימה חדשה".
   const handleStatusChange = (val) => {
     setEditingTask({ ...editingTask, status: val });
-    if (NO_ANSWER_STATUSES[val]) {
-      setNoAnswerFlow({ status: val, label: NO_ANSWER_STATUSES[val], selectedHours: null });
-      setFollowupFlow(null);
-    } else if (val === 'followup_before_quote' || val === 'followup_after_quote') {
+    if (statusOpensAutoTask(val)) {
       setFollowupFlow({ selectedDate: null, selectedHour: null, status: val });
-      setNoAnswerFlow(null);
     } else {
-      setNoAnswerFlow(null);
       setFollowupFlow(null);
     }
   };
@@ -552,7 +514,6 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
   const handleClearPickedLead = () => {
     setEditingTask(prev => ({ ...prev, lead: null, lead_id: '', status: '' }));
     setOriginalLeadStatus('');
-    setNoAnswerFlow(null);
     setFollowupFlow(null);
   };
 
@@ -566,7 +527,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
   const leadPhone = editingTask.lead?.phone;
   const repName = users.find(u => u.email === editingTask.rep1)?.full_name || editingTask.rep1;
   const rep2Name = users.find(u => u.email === editingTask.rep2)?.full_name || editingTask.rep2;
-  const flowActive = !!noAnswerFlow || !!followupFlow;
+  const flowActive = !!followupFlow;
 
   // ----- Shared: the reps selector (admin) / read-only (rep). Rendered inline
   // in create mode and inside the "rep_details" tab in edit mode.
@@ -639,44 +600,19 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
       </div>
 
       {/* No-answer automation flow */}
-      {noAnswerFlow && (
-        <div className="border border-amber-300 bg-amber-50/60 rounded-xl p-4 space-y-4">
-          <div className="text-center">
-            <p className="text-sm font-bold text-amber-800">
-              הסטטוס ישתנה ל: <span className="text-amber-900">{noAnswerFlow.label}</span>
-            </p>
-            <p className="text-xs text-amber-600 mt-1">בחר מתי לחזור ללקוח:</p>
-          </div>
-          <div className="grid grid-cols-4 gap-2">
-            {[2, 3, 4, 5].map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => setNoAnswerFlow({ ...noAnswerFlow, selectedHours: h })}
-                className={`py-3 rounded-xl border-2 text-sm font-bold transition-all ${
-                  noAnswerFlow.selectedHours === h
-                    ? 'border-amber-500 bg-amber-100 text-amber-800 shadow-sm'
-                    : 'border-border bg-white hover:border-amber-300 hover:bg-amber-50 text-muted-foreground'
-                }`}
-              >
-                בעוד {h} שעות
-              </button>
-            ))}
-          </div>
-          <Button className="w-full" disabled={!noAnswerFlow.selectedHours || isSavingFollowup} onClick={confirmNoAnswer}>
-            {isSavingFollowup ? 'שומר...' : 'אישור'}
-          </Button>
-        </div>
-      )}
-
-      {/* Followup (before / after quote) flow */}
+      {/* Scheduling flow for the statuses that ARE a commitment to a time:
+          follow-up before / after quote, and a meeting. */}
       {followupFlow && (
         <div className="border border-blue-300 bg-blue-50/60 rounded-xl p-4 space-y-4">
           <div className="text-center">
             <p className="text-sm font-bold text-blue-800">
-              תזמון חזרה ללקוח - {followupFlow.status === 'followup_after_quote' ? 'פולואפ אחרי הצעה' : 'פולואפ לפני הצעה'}
+              {isMeetingStatus(followupFlow.status)
+                ? 'תזמון פגישה'
+                : `תזמון חזרה ללקוח - ${followupFlow.status === 'followup_after_quote' ? 'פולואפ אחרי הצעה' : 'פולואפ לפני הצעה'}`}
             </p>
-            <p className="text-xs text-blue-600 mt-1">בחר יום ושעה לחזרה:</p>
+            <p className="text-xs text-blue-600 mt-1">
+              {isMeetingStatus(followupFlow.status) ? 'בחר יום ושעה לפגישה:' : 'בחר יום ושעה לחזרה:'}
+            </p>
           </div>
 
           {/* Day selection — a continuous run of upcoming days. Closed days
@@ -1374,7 +1310,6 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
             queryClient.invalidateQueries({ queryKey: ['quotes', editingTask?.lead_id] });
             setEditingTask(prev => ({ ...prev, status: 'followup_after_quote' }));
             setFollowupFlow({ status: 'followup_after_quote', selectedDate: null, selectedHour: null });
-            setNoAnswerFlow(null);
             setShowQuoteDialog(false);
           }}
         />
