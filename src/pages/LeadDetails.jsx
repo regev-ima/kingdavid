@@ -34,6 +34,7 @@ import {
 import {
   ArrowRight,
   Save,
+  Pencil,
   Loader2,
   MessageCircle,
   FileText,
@@ -78,6 +79,7 @@ import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
 import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
+import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 import { isSameRep, reconcileRepSlots, repsExcludingPrimary } from '@/lib/repSlots';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
@@ -155,6 +157,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const [isAssigningBeforeTask, setIsAssigningBeforeTask] = useState(false);
   const [noAnswerFlow, setNoAnswerFlow] = useState(null); // { status, label, selectedHours }
   const [followupFlow, setFollowupFlow] = useState(null); // { selectedDay, selectedHour }
+  // Task being closed from the "סיים" shortcut on the next-task strip.
+  const [completingTask, setCompletingTask] = useState(null);
   // In-flight guard for the no-answer / followup "אישור" buttons. These
   // handlers fire raw base44 writes (status update + task create) rather
   // than a react-query mutation, so there was no `isPending` flag to lean
@@ -287,6 +291,22 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const arrivedAtLabel = lead?.created_date
     ? formatInTimeZone(lead.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')
     : '';
+
+  // Does the customer-details card have anything to say? Name, phone, source
+  // and the ad live in the header, so on a fresh lead the answer is usually
+  // no — and then the card doesn't render at all rather than showing a column
+  // of blanks. `source_form` counts only when the header isn't already using
+  // it as the ad label.
+  const hasCustomerDetails = !!lead && [
+    lead.phone_2,
+    lead.email,
+    lead.city,
+    lead.address,
+    lead.source_form === adLabel ? '' : lead.source_form,
+    lead.subject,
+    lead.notes,
+  ].some((value) => String(value || '').trim() !== '')
+    || (Array.isArray(lead?.tags) && lead.tags.length > 0);
 
   // Sync form data when lead loads or updates (for real-time status changes)
   const leadUpdatedDate = lead?.updated_date;
@@ -448,6 +468,18 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           return;
         }
         navigate(createPageUrl('SalesTasks'));
+        return;
+      }
+      case 'complete_task': {
+        const selectedTask = tasks.find((task) => String(task.id) === String(item?.id));
+        if (!selectedTask) return;
+        // Same "מה קרה?" flow the tasks screen uses, so closing from here
+        // still records an outcome and can schedule the follow-up.
+        setCompletingTask({
+          ...selectedTask,
+          rep1: selectedTask.rep1 || lead?.rep1,
+          rep2: selectedTask.rep2 || lead?.rep2,
+        });
         return;
       }
       case 'new_task':
@@ -721,7 +753,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       <div className={
         `flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4` +
         (isModal
-          ? ' flex-shrink-0 px-6 pt-5 pb-3 pe-12 bg-card border-b border-border'
+          // pe-16 (not pe-12): the dialog's own close-X is absolutely
+          // positioned at left-4 and is ~40px wide, so it occupies the first
+          // 56px of the inline-end edge. The freshness block now sits at that
+          // edge and needs to clear it.
+          ? ' flex-shrink-0 px-6 pt-5 pb-3 pe-16 bg-card border-b border-border'
           : '')
       }>
         <div className="flex items-center gap-3">
@@ -737,8 +773,15 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </Link>
           )}
           <div>
+            {/* Name and every chip on ONE row. Status, SLA and the repeat
+                marker used to sit on three different lines with a "סטטוס:"
+                prefix in front of one of them — three places to look for
+                three one-word facts. They belong together, next to the name
+                they describe. */}
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl sm:text-2xl font-bold text-foreground">{lead.full_name}</h1>
+              <StatusBadge status={lead.status} />
+              <SLABadge lead={lead} />
               <RepeatEnquiryBadge ordinal={repeatEnquiryOrdinal} />
             </div>
             {/* Provenance line — phone, WHERE the lead came from (channel +
@@ -781,40 +824,55 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                 </div>
               );
             })()}
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {/* "סטטוס:" prefix — the bare badge read as just another tag in
-                  the header; naming the field makes it unambiguous. Kept in
-                  one flex group with the badge so the label never wraps away
-                  from the value it describes. */}
-              <span className="inline-flex items-center gap-1.5">
-                <span className="text-xs font-medium text-muted-foreground">סטטוס:</span>
-                <StatusBadge status={lead.status} />
-              </span>
-              <SLABadge lead={lead} />
-            </div>
           </div>
         </div>
 
-        {/* Open-tickets alert: replaces the old "sales / service mode"
-            toggle. Now that the lead screen shows sales and service
-            together in one scroll (no mode switching), this badge is
-            the one cross-functional signal a sales rep needs — "this
-            customer has open service issues" — and clicking it jumps
-            them straight to the service section. Hidden when there
-            are no open tickets so the header stays clean. */}
-        {openServiceTicketsCount > 0 ? (
-          <button
-            type="button"
-            onClick={() => {
-              document.getElementById('lead-service-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }}
-            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
-            title="עבור לאזור פניות השירות"
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            {openServiceTicketsCount === 1 ? 'קריאת שירות פתוחה' : `${openServiceTicketsCount} קריאות שירות פתוחות`}
-          </button>
-        ) : null}
+        {/* Left edge of the header (RTL): freshness + the open-tickets alert.
+            "עדכון אחרון" and "גיל הליד" used to sit at the foot of the details
+            list, which meant scrolling past everything to answer "is this lead
+            still warm?". Up here they're readable the moment the lead opens,
+            and they stay out of the name's way. */}
+        <div className="flex items-center gap-3 flex-wrap lg:justify-end lg:text-end">
+          {(lead.updated_date || lead.created_date) ? (
+            <div className="text-[11px] leading-tight text-muted-foreground/80">
+              {lead.updated_date ? (
+                <div className="flex items-center gap-1.5 lg:justify-end">
+                  <CalendarDays className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+                  <span>עדכון אחרון</span>
+                  <span className="tabular-nums text-foreground/70">
+                    {formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
+                  </span>
+                </div>
+              ) : null}
+              {lead.created_date ? (
+                <div className="lg:text-end mt-0.5">
+                  גיל הליד: <span className="text-foreground/70">{formatLeadAge(lead.created_date)}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Open-tickets alert: replaces the old "sales / service mode"
+              toggle. Now that the lead screen shows sales and service
+              together in one scroll (no mode switching), this badge is
+              the one cross-functional signal a sales rep needs — "this
+              customer has open service issues" — and clicking it jumps
+              them straight to the service section. Hidden when there
+              are no open tickets so the header stays clean. */}
+          {openServiceTicketsCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById('lead-service-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 px-3 py-1.5 text-xs font-semibold hover:bg-amber-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400"
+              title="עבור לאזור פניות השירות"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {openServiceTicketsCount === 1 ? 'קריאת שירות פתוחה' : `${openServiceTicketsCount} קריאות שירות פתוחות`}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="lg:hidden flex flex-wrap gap-2">
@@ -863,6 +921,29 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           <MessageCircle className="h-3.5 w-3.5 me-1.5" />
           הוסף תקשורת
         </Button>
+        {canEdit ? (
+          <Button
+            size="sm"
+            variant={isEditing ? 'default' : 'outline'}
+            onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+            disabled={updateLeadMutation.isPending}
+            className="flex-1 min-w-[120px] justify-center h-9 text-xs"
+          >
+            {updateLeadMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : isEditing ? (
+              <>
+                <Save className="h-3.5 w-3.5 me-1.5" />
+                שמור
+              </>
+            ) : (
+              <>
+                <Pencil className="h-3.5 w-3.5 me-1.5" />
+                ערוך
+              </>
+            )}
+          </Button>
+        ) : null}
       </div>
 
       {/* Action bar — חייג / משימה / הצעה. Always one click away
@@ -904,6 +985,32 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             <MessageCircle className="h-3.5 w-3.5 me-1" />
             הוסף תקשורת
           </Button>
+          {/* Editing lives here now that the details card isn't a tab and
+              doesn't always render — from the action bar it's reachable
+              whichever tab is open, and on a lead with nothing filled in yet. */}
+          {canEdit ? (
+            <Button
+              size="sm"
+              variant={isEditing ? 'default' : 'outline'}
+              onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+              disabled={updateLeadMutation.isPending}
+              className="h-8 text-xs"
+            >
+              {updateLeadMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : isEditing ? (
+                <>
+                  <Save className="h-3.5 w-3.5 me-1" />
+                  שמור
+                </>
+              ) : (
+                <>
+                  <Pencil className="h-3.5 w-3.5 me-1" />
+                  ערוך
+                </>
+              )}
+            </Button>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="icon" className="h-8 w-8">
@@ -1147,57 +1254,19 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             person's only enquiry, so a first-time lead stays uncluttered. */}
         <OtherEnquiriesCard lead={lead} />
 
-        {/* Detail tabs — customer details, marketing, quotes, service.
-            "הצעות / שירות" used to be one tab holding two unrelated lists;
-            they're separate tabs now, each with its own count. The old
-            "תמונת מצב" tab is gone: every number on it is either in the
-            header (arrival, SLA), in the essentials bar (status, reps), on
-            the next-task strip, or in the activity feed at the bottom. */}
-        <Tabs defaultValue="details" dir="rtl" className="w-full">
-          <TabsList className="bg-muted rounded-lg p-1 gap-1 h-auto flex flex-wrap justify-start">
-            <TabsTrigger value="details" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">פרטי לקוח</TabsTrigger>
-            <TabsTrigger value="marketing" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">שיווק ומקור</TabsTrigger>
-            <TabsTrigger value="quotes" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
-              הצעות מחיר
-              <span className="ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
-                {quotes.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="service" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
-              שירות
-              <span className={`ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none ${
-                openServiceTicketsCount > 0
-                  ? 'bg-amber-500 text-white'
-                  : 'bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground'
-              }`}>
-                {serviceTickets.length}
-              </span>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="details" className="mt-4 space-y-4">
+        {/* Customer details — rendered only when there is something to show
+            (or while editing). The header carries the identity; this card is
+            for the fields it cannot fit, and on a fresh lead that set is
+            empty, so nothing renders at all. */}
+        {(isEditing || hasCustomerDetails) && (
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50">
+            {/* No edit button here — "ערוך" moved to the action bar, where
+                it's reachable even when this card isn't on screen. */}
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50 py-3">
               <CardTitle className="text-sm font-semibold">פרטי לקוח</CardTitle>
-              {canEdit &&
-              <Button
-                variant={isEditing ? "default" : "outline"}
-                size="sm"
-                onClick={() => isEditing ? handleSave() : setIsEditing(true)}
-                disabled={updateLeadMutation.isPending} className="h-8 text-xs px-3">
-
-                  {updateLeadMutation.isPending ?
-                <Loader2 className="h-4 w-4 animate-spin" /> :
-                isEditing ?
-                <>
-                      <Save className="h-4 w-4 me-2" />
-                      שמור
-                    </> :
-
-                'ערוך'
-                }
-                </Button>
-              }
+              <span className="text-[11px] text-muted-foreground/70">
+                שם, טלפון ומקור מופיעים בכותרת
+              </span>
             </CardHeader>
             <CardContent className="p-5">
               {isEditing ? (
@@ -1342,29 +1411,48 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                     </div>
                   ) : null}
 
-                  {/* Last update + how old the lead is. The creation time
-                      isn't repeated — the header's "נכנס …" is that value. */}
-                  {lead.updated_date || lead.created_date ? (
-                    <div className="flex items-baseline gap-3 py-3 text-xs text-muted-foreground/70">
-                      <dt className="flex items-center gap-1.5 w-28 flex-shrink-0">
-                        <CalendarDays className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-                        <span>עדכון אחרון</span>
-                      </dt>
-                      <dd className="min-w-0 flex-1 flex flex-wrap gap-x-4 gap-y-1">
-                        {lead.updated_date ? (
-                          <span>{formatInTimeZone(lead.updated_date, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}</span>
-                        ) : null}
-                        {lead.created_date ? (
-                          <span>גיל הליד: {formatLeadAge(lead.created_date)}</span>
-                        ) : null}
-                      </dd>
-                    </div>
-                  ) : null}
+                  {/* No timestamps row — "עדכון אחרון" and "גיל הליד" moved
+                      to the top-left of the header, and "נכנס …" is on the
+                      header's provenance line. */}
                 </dl>
               )}
+
             </CardContent>
           </Card>
-          </TabsContent>
+        )}
+
+        {/* Detail tabs — customer details, marketing, quotes, service.
+            "הצעות / שירות" used to be one tab holding two unrelated lists;
+            they're separate tabs now, each with its own count. The old
+            "תמונת מצב" tab is gone: every number on it is either in the
+            header (arrival, SLA), in the essentials bar (status, reps), on
+            the next-task strip, or in the activity feed at the bottom. */}
+        {/* The customer's own details are NOT a tab any more. The header
+            already carries the identity, so what was left was a mostly-empty
+            card sitting on the screen's default tab — the first thing you saw
+            on a fresh lead was a list of blanks. It renders below the tabs
+            instead, and only when at least one field has a value; editing is
+            reached from "ערוך" in the action bar, which works from any tab. */}
+        <Tabs defaultValue="marketing" dir="rtl" className="w-full">
+          <TabsList className="bg-muted rounded-lg p-1 gap-1 h-auto flex flex-wrap justify-start">
+            <TabsTrigger value="marketing" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">שיווק ומקור</TabsTrigger>
+            <TabsTrigger value="quotes" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
+              הצעות מחיר
+              <span className="ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
+                {quotes.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="service" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
+              שירות
+              <span className={`ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none ${
+                openServiceTicketsCount > 0
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground'
+              }`}>
+                {serviceTickets.length}
+              </span>
+            </TabsTrigger>
+          </TabsList>
 
           <TabsContent value="marketing" className="mt-4 space-y-4">
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
@@ -1514,6 +1602,19 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       />
 
       </div>{/* end of body wrapper */}
+
+      {/* Close a task straight from the next-task strip */}
+      <CompleteTaskDialog
+        isOpen={!!completingTask}
+        task={completingTask}
+        onClose={() => setCompletingTask(null)}
+        onCompleted={() => {
+          setCompletingTask(null);
+          queryClient.invalidateQueries({ queryKey: ['tasks', leadId] });
+          queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+          queryClient.invalidateQueries({ queryKey: ['leadActivityLogs', leadId] });
+        }}
+      />
 
       {/* Add Communication Dialog */}
       <AddCommunication

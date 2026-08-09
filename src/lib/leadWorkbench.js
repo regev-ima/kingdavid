@@ -72,7 +72,14 @@ export function buildLeadWorkbenchState({
   const todayStart = new Date(safeNow.getFullYear(), safeNow.getMonth(), safeNow.getDate());
   const tomorrowStart = new Date(safeNow.getFullYear(), safeNow.getMonth(), safeNow.getDate() + 1);
 
-  const openTasks = tasks.filter((task) => String(task?.task_status || '').toLowerCase() === 'not_completed');
+  // `assignment` rows are excluded: the manager's assignment queue is retired
+  // and nothing in this codebase opens one any more, but rows still arrive
+  // from the Supabase-side automation, and the lead screen was the one place
+  // left that surfaced them as "the next thing to do".
+  const openTasks = tasks.filter(
+    (task) => String(task?.task_status || '').toLowerCase() === 'not_completed'
+      && task?.task_type !== 'assignment',
+  );
 
   const queueItems = openTasks
     .map((task) => {
