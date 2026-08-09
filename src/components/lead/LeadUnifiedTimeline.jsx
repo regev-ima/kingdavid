@@ -21,6 +21,8 @@ import {
   Activity,
   Mail,
   StickyNote,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -147,8 +149,46 @@ const FILTERS = [
  * "activity log" blocks. Self-contained: fetches the activity log itself and
  * takes the lead's tasks + users as props (the lead screen already loads both).
  */
-export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], onOpenTask, className = '' }) {
+// One event boiled down to what the collapsed track shows: a coloured bubble,
+// a few words, and when. Built from the same metadata tables the full feed
+// renders from, so the track can never describe an event differently than the
+// row it expands into.
+function summarizeEvent(event) {
+  if (event.kind === 'communication') {
+    const meta = COMM_TYPE[event.comm?.type]
+      || { icon: MessageCircle, label: 'תקשורת', tone: 'bg-muted text-muted-foreground' };
+    return { Icon: meta.icon, tone: meta.tone, label: meta.label };
+  }
+  if (event.kind === 'task') {
+    const chip = TASK_TYPE_CHIP[event.task?.task_type] || FALLBACK_TASK_TYPE_CHIP;
+    const first = String(event.task?.summary || '').split('\n')[0].trim();
+    return {
+      Icon: chip.icon,
+      tone: chip.tone,
+      label: `משימה: ${first || ALL_TASK_TYPE_LABELS[event.task?.task_type] || 'משימה'}`,
+    };
+  }
+  const type = event.log?.action_type;
+  return {
+    Icon: actionIcons[type] || Activity,
+    tone: actionColors[type] || 'bg-muted text-foreground/80',
+    label: actionLabels[type] || 'עדכון',
+  };
+}
+
+export default function LeadUnifiedTimeline({
+  leadId,
+  tasks = [],
+  users = [],
+  onOpenTask,
+  className = '',
+  // Start as a horizontal track of the three most recent events. The lead
+  // screen wants the feed as context, not as the work — "הצג הכל" swaps in
+  // the full vertical feed underneath.
+  collapsible = false,
+}) {
   const [filter, setFilter] = useState('all');
+  const [expanded, setExpanded] = useState(!collapsible);
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['leadActivityLogs', leadId],
@@ -201,6 +241,64 @@ export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], on
   }, [logs, closedTasks, comms]);
 
   const filtered = filter === 'all' ? events : events.filter((e) => e.kind === filter);
+  const track = events.slice(0, 3).reverse(); // oldest → newest, which in RTL reads right → left
+
+  if (collapsible && !expanded) {
+    return (
+      <div className={`rounded-xl border border-border bg-card shadow-card overflow-hidden ${className}`}>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 py-3">
+          <h3 className="font-semibold text-sm flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" />
+            פעילות הליד
+          </h3>
+          <p className="text-xs text-muted-foreground text-center">
+            {isLoading ? 'טוען…' : `${track.length} פעילויות אחרונות`}
+          </p>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="justify-self-end h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground grid place-items-center"
+            aria-label="הצג את כל הפעילות"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+        </div>
+
+        {track.length === 0 ? (
+          <p className="px-4 pb-4 text-xs text-muted-foreground">אין פעילות עדיין.</p>
+        ) : (
+          <div className="flex items-center px-4 pb-4 gap-0">
+            {track.map((event) => {
+              const { Icon, tone, label } = summarizeEvent(event);
+              return (
+                <React.Fragment key={event.id}>
+                  <div className="flex items-center gap-3 flex-none">
+                    <span className={`h-10 w-10 rounded-full grid place-items-center flex-none ${tone}`}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-start">
+                      <span className="block text-[11px] text-muted-foreground tabular-nums">
+                        {formatInTimeZone(new Date(event.ts), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
+                      </span>
+                      <span className="block text-[13px] font-medium mt-0.5">{label}</span>
+                    </span>
+                  </div>
+                  <span className="flex-1 h-px bg-border min-w-[24px]" aria-hidden />
+                </React.Fragment>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="flex-none h-9 px-3 rounded-lg border border-border bg-card text-sm hover:bg-muted transition-colors"
+            >
+              הצג הכל
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     /* Grows to fit by default; `className` is where a caller bounds it —
@@ -208,26 +306,38 @@ export default function LeadUnifiedTimeline({ leadId, tasks = [], users = [], on
        box instead of stretching the page. The blue right-accent matches the
        lead screen's accent language. */
     <div className={`h-full flex flex-col rounded-xl border border-black/[0.06] border-r-4 border-r-blue-500 bg-card shadow-card overflow-hidden ${className}`}>
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 gap-2 flex-wrap">
         <h3 className="font-semibold text-sm flex items-center gap-2">
           <Activity className="h-4 w-4 text-blue-500" />
           פעילות הליד
         </h3>
-        <div className="inline-flex bg-muted rounded-lg p-0.5 gap-0.5 text-xs">
-          {FILTERS.map((f) => (
+        <div className="flex items-center gap-2">
+          <div className="inline-flex bg-muted rounded-lg p-0.5 gap-0.5 text-xs">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                  filter === f.key
+                    ? 'bg-card shadow-sm text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {collapsible ? (
             <button
-              key={f.key}
               type="button"
-              onClick={() => setFilter(f.key)}
-              className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                filter === f.key
-                  ? 'bg-card shadow-sm text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              onClick={() => setExpanded(false)}
+              className="h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground grid place-items-center"
+              aria-label="כווץ"
             >
-              {f.label}
+              <ChevronUp className="h-4 w-4" />
             </button>
-          ))}
+          ) : null}
         </div>
       </div>
 
