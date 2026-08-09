@@ -29,16 +29,9 @@ import {
 import {
   Loader2,
   FileText,
-  Tag,
   Headphones,
   ShoppingBag,
   AlertTriangle,
-  Phone,
-  Mail,
-  MapPin,
-  Home,
-  StickyNote,
-  MessageSquare,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import AddCommunication from '@/components/lead/AddCommunication';
@@ -112,6 +105,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   const initialMode = initialModeProp ?? (urlParams.get('mode') === 'service' ? 'service' : 'sales');
 
   const [isEditing, setIsEditing] = useState(false);
+  // הצעות מחיר / שירות open only on a click; '' means both are closed.
+  const [openSection, setOpenSection] = useState('');
   const [formData, setFormData] = useState({});
   const [showAddCommunication, setShowAddCommunication] = useState(false);
   const [showEditTaskDialog, setShowEditTaskDialog] = useState(false);
@@ -239,33 +234,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   // page; the header just needs the one-glance marker.
   const leadForRepeatLookup = useMemo(() => (lead ? [lead] : []), [lead]);
   const repeatEnquiryOrdinal = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
-
-  // The specific ad that produced the enquiry, resolved the same way
-  // LeadOverview resolves it for the facts strip — the customer-details list
-  // below only needs it to avoid printing source_form a second time.
-  const adLabel = lead
-    ? (lead.facebook_ad_name
-      || lead.facebook_campaign_name
-      || lead.utm_campaign
-      || lead.facebook_adset_name
-      || lead.source_form
-      || '')
-    : '';
-  // Does the customer-details card have anything to say? Name, phone, source
-  // and the ad live in the header, so on a fresh lead the answer is usually
-  // no — and then the card doesn't render at all rather than showing a column
-  // of blanks. `source_form` counts only when the header isn't already using
-  // it as the ad label.
-  const hasCustomerDetails = !!lead && [
-    lead.phone_2,
-    lead.email,
-    lead.city,
-    lead.address,
-    lead.source_form === adLabel ? '' : lead.source_form,
-    lead.subject,
-    lead.notes,
-  ].some((value) => String(value || '').trim() !== '')
-    || (Array.isArray(lead?.tags) && lead.tags.length > 0);
 
   // Sync form data when lead loads or updates (for real-time status changes)
   const leadUpdatedDate = lead?.updated_date;
@@ -783,22 +751,20 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             person's only enquiry, so a first-time lead stays uncluttered. */}
         <OtherEnquiriesCard lead={lead} />
 
-        {/* Customer details — rendered only when there is something to show
-            (or while editing). The header carries the identity; this card is
-            for the fields it cannot fit, and on a fresh lead that set is
-            empty, so nothing renders at all. */}
-        {(isEditing || hasCustomerDetails) && (
+        {/* Editing the lead. There is no read-only twin of this card any
+            more: the overview above shows the lead's facts, so a second
+            copy of them down here was the screen saying everything twice.
+            The form is what's left — it opens from "ערוך ליד" and holds
+            the fields the overview has no control for, marketing included. */}
+        {isEditing && (
           <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            {/* No edit button here — "ערוך" moved to the action bar, where
-                it's reachable even when this card isn't on screen. */}
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold">פרטי לקוח</CardTitle>
+              <CardTitle className="text-sm font-semibold">עריכת ליד</CardTitle>
               <span className="text-[11px] text-muted-foreground/70">
-                שם, טלפון ומקור מופיעים בכותרת
+                נציגים משתנים מרצועת הפרטים למעלה
               </span>
             </CardHeader>
             <CardContent className="p-5">
-              {isEditing ? (
                 <div className="space-y-4">
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
@@ -867,111 +833,47 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                     <Label className="text-xs text-muted-foreground">הערות</Label>
                     <Textarea value={formData.notes || ''} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows={3} />
                   </div>
+
+                  {/* Marketing fields moved here when the "שיווק ומקור" tab
+                      went away. The overview's פרטי שיווק card shows the five
+                      UTM values read-only; everything else — the facebook_*
+                      set, landing page, click id — is still editable, just
+                      from the form instead of from a tab of its own. */}
+                  <div className="space-y-2 border-t border-border/50 pt-4">
+                    <Label className="text-xs text-muted-foreground">מידע שיווקי</Label>
+                    <LeadMarketingSection
+                      data={formData}
+                      onChange={(field, value) => setFormData({ ...formData, [field]: value })}
+                    />
+                  </div>
                 </div>
-              ) : (
-                /* Compact, Google-card-style detail list. Replaced the
-                   old two-column DetailField grid (label on top, big
-                   value below, border-t between every section) — that
-                   layout was airy by design but wasted vertical space
-                   even when most fields were empty. The new structure:
-                   one row per field with a small leading icon, slim
-                   label, value on the left, rows with no value HIDDEN
-                   entirely so a sparse lead doesn't show six empty
-                   "-"s. dir is left at default (RTL) so even phone /
-                   email values render aligned to the right edge next
-                   to their label — the digits inside stay LTR-readable
-                   thanks to browser bidi without forcing the whole
-                   cell to switch sides. */
-                /* Name, phone, source, ad and arrival time are NOT here —
-                   the header above owns them and shows them on every tab.
-                   Repeating them was the single biggest reason this screen
-                   read as the same information twice. What stays is what the
-                   header can't fit. */
-                <dl className="divide-y divide-border/30">
-                  {[
-                    { label: 'טלפון נוסף', value: lead.phone_2,                                         icon: Phone },
-                    { label: 'אימייל',     value: lead.email,                                           icon: Mail },
-                    { label: 'עיר',        value: lead.city,                                            icon: MapPin },
-                    { label: 'כתובת',      value: lead.address,                                         icon: Home },
-                    // Skipped when the header is already showing this exact
-                    // string as the ad — the fallback chain there ends on
-                    // source_form, and printing it twice is the duplication
-                    // this pass is removing.
-                    { label: 'טופס מקור',  value: lead.source_form === adLabel ? '' : lead.source_form, icon: FileText },
-                    { label: 'נושא הפנייה', value: lead.subject,                                        icon: MessageSquare },
-                    { label: 'הערות',      value: lead.notes, whitespace: 'pre-wrap',                   icon: StickyNote },
-                  ]
-                    .filter((row) => row.value)
-                    .map((row) => {
-                      const Icon = row.icon;
-                      return (
-                        <div key={row.label} className="flex items-baseline gap-3 py-3">
-                          <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
-                            <Icon className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-                            <span>{row.label}</span>
-                          </dt>
-                          <dd
-                            className={`text-sm text-foreground min-w-0 flex-1 ${row.whitespace === 'pre-wrap' ? 'whitespace-pre-wrap break-words' : 'truncate'}`}
-                          >
-                            {row.value}
-                          </dd>
-                        </div>
-                      );
-                    })}
-
-                  {/* Tags inline as their own row — only when present.
-                      Keeps the visual rhythm of the rest of the list. */}
-                  {Array.isArray(lead.tags) && lead.tags.length > 0 ? (
-                    <div className="flex items-baseline gap-3 py-3">
-                      <dt className="flex items-center gap-1.5 text-xs text-muted-foreground/80 w-28 flex-shrink-0">
-                        <Tag className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-                        <span>תגיות</span>
-                      </dt>
-                      <dd className="flex flex-wrap gap-1.5 min-w-0 flex-1">
-                        {lead.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center rounded-md bg-indigo-100 text-indigo-800 text-[11px] font-medium px-1.5 py-0.5"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </dd>
-                    </div>
-                  ) : null}
-
-                  {/* No timestamps row — "עדכון אחרון" and "גיל הליד" moved
-                      to the top-left of the header, and "נכנס …" is on the
-                      header's provenance line. */}
-                </dl>
-              )}
 
             </CardContent>
           </Card>
         )}
 
-        {/* Detail tabs — customer details, marketing, quotes, service.
-            "הצעות / שירות" used to be one tab holding two unrelated lists;
-            they're separate tabs now, each with its own count. The old
-            "תמונת מצב" tab is gone: every number on it is either in the
-            header (arrival, SLA), in the essentials bar (status, reps), on
-            the next-task strip, or in the activity feed at the bottom. */}
-        {/* The customer's own details are NOT a tab any more. The header
-            already carries the identity, so what was left was a mostly-empty
-            card sitting on the screen's default tab — the first thing you saw
-            on a fresh lead was a list of blanks. It renders below the tabs
-            instead, and only when at least one field has a value; editing is
-            reached from "ערוך" in the action bar, which works from any tab. */}
-        <Tabs defaultValue="marketing" dir="rtl" className="w-full">
+        {/* הצעות מחיר ושירות — closed until you ask for them. Both are
+            lists you consult, not things you read on the way in, so the
+            section starts collapsed and a click on the tab opens it (a
+            second click closes it again). "שיווק ומקור" is gone: the facts
+            strip and the פרטי שיווק card above already say it.
+
+            Controlled with no onValueChange on purpose — the triggers own
+            the toggle, and letting Radix set the value too would re-open a
+            section on the same click that closed it. */}
+        <Tabs value={openSection} dir="rtl" className="w-full">
           <TabsList className="bg-muted rounded-lg p-1 gap-1 h-auto flex flex-wrap justify-start">
-            <TabsTrigger value="marketing" className="data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">שיווק ומקור</TabsTrigger>
-            <TabsTrigger value="quotes" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
+            <TabsTrigger
+              value="quotes"
+              onClick={() => setOpenSection((current) => (current === 'quotes' ? '' : 'quotes'))} className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
               הצעות מחיר
               <span className="ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
                 {quotes.length}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="service" className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
+            <TabsTrigger
+              value="service"
+              onClick={() => setOpenSection((current) => (current === 'service' ? '' : 'service'))} className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
               שירות
               <span className={`ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none ${
                 openServiceTicketsCount > 0
@@ -982,27 +884,6 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               </span>
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="marketing" className="mt-4 space-y-4">
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Tag className="h-4 w-4 text-muted-foreground" />
-                מידע שיווקי
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4">
-              {isEditing ? (
-                <LeadMarketingSection
-                  data={formData}
-                  onChange={(field, value) => setFormData({ ...formData, [field]: value })}
-                />
-              ) : (
-                <LeadMarketingSection data={lead} readOnly />
-              )}
-            </CardContent>
-          </Card>
-          </TabsContent>
 
           <TabsContent value="quotes" className="mt-4 space-y-4">
           {/* Quotes */}
