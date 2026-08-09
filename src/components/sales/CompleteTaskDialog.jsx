@@ -41,7 +41,7 @@ import {
   resolveOutcomeStatus,
   outcomeOpensNextTask,
 } from '@/lib/taskCompletionFlow';
-import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
+import { cancelOpenTasksForStatus } from '@/lib/dealClose';
 
 // The "מה קרה?" dialog. Opens after a rep clicks "סיים משימה" on a task.
 // Flow:
@@ -171,16 +171,18 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
       }
       await base44.entities.SalesTask.update(task.id, taskUpdate);
 
-      // 2.5 If this completion closes the deal, sweep every other open
-      // task for the lead — they're obsolete the moment the deal is in.
-      // Pass exceptTaskId = current task.id so we don't race the update
-      // we just made above.
-      if (
-        task.lead_id &&
-        nextLeadStatus === 'deal_closed' &&
-        currentLeadStatus !== 'deal_closed'
-      ) {
-        await cancelOpenTasksForClosedDeal(task.lead_id, task.id);
+      // 2.5 Sweep the lead's other open tasks whenever the status it lands in
+      // no longer justifies one — not just on a closed deal. A lead marked
+      // "לא מעוניין" used to keep every follow-up it had, and those reminders
+      // sat in "באיחור" forever. Runs BEFORE step 3 so a follow-up the rep
+      // deliberately scheduled below is never swept by it, and passes
+      // exceptTaskId so it can't race the update just made above.
+      if (task.lead_id) {
+        await cancelOpenTasksForStatus(
+          task.lead_id,
+          nextLeadStatus || currentLeadStatus,
+          task.id,
+        );
       }
 
       // 3. Create the rep-configured follow-up task (when enabled).
