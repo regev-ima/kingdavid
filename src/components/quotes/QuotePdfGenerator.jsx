@@ -3,12 +3,19 @@ import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, resolveDocumentTerms } from "@/constants/documentTerms";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
-import { renderPagesToPdf, withMountedPages } from "@/lib/pdfPages";
+import { renderPagesToPdf, uploadPdfBlob, withMountedPages } from "@/lib/pdfPages";
 
 /**
  * KING DAVID - Premium PDF Quote Generator
+ *
+ * Renders the quote and hands back the bytes. Split out from the default
+ * export because "צור PDF" wants the file itself, not a link to it — uploading
+ * first and then opening the URL lost the file to the popup blocker (see
+ * lib/downloadBlob.js).
+ *
+ * @returns {Promise<{blob: Blob, fileName: string}>}
  */
-const QuotePdfGenerator = async (quoteData) => {
+export const buildQuotePdfBlob = async (quoteData) => {
   const logoUrl = "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6956450f0d239229ec5ea53f/0de0b7ac4_image.png";
 
   const safe = (v) => (v === null || v === undefined ? "" : String(v));
@@ -613,14 +620,17 @@ const QuotePdfGenerator = async (quoteData) => {
   // Sheet 1 (quote) then sheet 2 (terms), each rendered onto its own A4 page.
   const pdf = await withMountedPages(htmlContent, (pages) => renderPagesToPdf(pages));
 
-  // Upload via Base44
-  const pdfBlob = pdf.output("blob");
-  const file = new File([pdfBlob], `${safe(quoteData.quote_number)}.pdf`, {
-    type: "application/pdf",
-  });
-
-  const uploadRes = await base44.integrations.Core.UploadFile({ file });
-  return uploadRes.file_url;
+  return {
+    blob: pdf.output("blob"),
+    fileName: `${safe(quoteData.quote_number) || quoteData.id}.pdf`,
+  };
 };
+
+/**
+ * The same PDF, uploaded — for the paths that need a URL to hand to someone
+ * else (WhatsApp, email) or to store on the quote as `pdf_url`.
+ * @returns {Promise<string>} the uploaded file's URL
+ */
+const QuotePdfGenerator = async (quoteData) => uploadPdfBlob(await buildQuotePdfBlob(quoteData));
 
 export default QuotePdfGenerator;

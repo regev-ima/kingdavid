@@ -1,5 +1,6 @@
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { base44 } from "@/api/base44Client";
 
 // One A4 sheet at 96dpi, in CSS pixels. 210×297mm is 793.7×1122.5px, rounded up
 // to whole pixels — which is why a "full" page canvas comes out a hair TALLER
@@ -125,6 +126,22 @@ export async function renderPagesToPdf(pageElements, { scale = 2 } = {}) {
   }
 
   return pdf;
+}
+
+/**
+ * Put a rendered PDF in storage and return its URL.
+ *
+ * Only for the paths that need a link to hand to someone else — WhatsApp, email
+ * or `quote.pdf_url`. A plain "download this" never comes through here: it saves
+ * the blob directly (see lib/downloadBlob.js).
+ *
+ * @param {{blob: Blob, fileName: string}} pdf
+ * @returns {Promise<string>}
+ */
+export async function uploadPdfBlob({ blob, fileName }) {
+  const file = new File([blob], fileName, { type: "application/pdf" });
+  const uploadRes = await base44.integrations.Core.UploadFile({ file });
+  return uploadRes.file_url;
 }
 
 /**

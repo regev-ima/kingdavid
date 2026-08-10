@@ -12,6 +12,13 @@
 // defaults come from the `app_settings` row an admin edits in
 // הגדרות ← טקסטים ותנאים; when that table/row isn't there (the migration is
 // applied by hand in Supabase) everything still resolves, to the text below.
+//
+// A document stores wording ONLY where someone deliberately changed it (see
+// customDocumentTerms). Standard wording is left NULL on the record so it keeps
+// resolving through Settings — otherwise every quote and every order carried a
+// full copy of the defaults, a copy always won over Settings, and editing the
+// texts there changed nothing anyone could see. That was the bug: "שיניתי את
+// התנאים בהגדרות אבל בהזמנה עדיין מופיע הישן".
 
 export const DEFAULT_DOCUMENT_TERMS = {
   terms: `30 ימי עסקים בהזמנת מיטה / 14 ימי עסקים בהזמנת מזרן.
@@ -101,5 +108,34 @@ export function resolveDocumentTerms(doc, defaults) {
       f.notes,
       DEFAULT_DOCUMENT_TERMS.legal_notes,
     ),
+  };
+}
+
+// Whitespace-insensitive: a reflowed paragraph or a stray trailing newline is
+// not a change to what the customer reads, and shouldn't freeze a document out
+// of later corrections made in Settings.
+const sameText = (a, b) =>
+  String(a ?? '').trim().replace(/\s+/g, ' ') === String(b ?? '').trim().replace(/\s+/g, ' ');
+
+/**
+ * What to STORE on a document: only the texts that actually differ from the
+ * company defaults in force right now. A field holding the standard wording
+ * comes back null, so the record saves nothing there and keeps resolving
+ * through הגדרות ← טקסטים ותנאים for the rest of its life.
+ *
+ * The inverse of resolveDocumentTerms: resolve to display, this to save.
+ *
+ * @param {object|null} doc      A quote, an order, or a plain
+ *                               {terms, warranty_terms, legal_notes} bag.
+ * @param {object|null} defaults The company defaults to measure against.
+ * @returns {{terms: string|null, warranty_terms: string|null, legal_notes: string|null}}
+ */
+export function customDocumentTerms(doc, defaults) {
+  const written = resolveDocumentTerms(doc, defaults);
+  const standard = resolveDocumentTerms(null, defaults);
+  return {
+    terms: sameText(written.terms, standard.terms) ? null : written.terms,
+    warranty_terms: sameText(written.warranty_terms, standard.warranty_terms) ? null : written.warranty_terms,
+    legal_notes: sameText(written.legal_notes, standard.legal_notes) ? null : written.legal_notes,
   };
 }

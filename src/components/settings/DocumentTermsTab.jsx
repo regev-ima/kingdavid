@@ -74,7 +74,8 @@ export default function DocumentTermsTab() {
         <CardTitle>טקסטים ותנאים</CardTitle>
         <CardDescription>
           הנוסח המשפטי שמופיע על הצעות מחיר והזמנות — במסך המסמך וב-PDF.
-          הזמנה שומרת עותק של הנוסח ביום שנוצרה, כך ששינוי כאן לא משנה הזמנות קיימות.
+          שינוי כאן חל על כל המסמכים שמשתמשים בנוסח הסטנדרטי, כולל קיימים.
+          מסמך שבו הנציג כתב נוסח משלו שומר את הנוסח שלו ולא מושפע מכאן.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">

@@ -10,7 +10,9 @@ import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import DocumentTermsCard from '@/components/shared/DocumentTermsCard';
 import useDocumentTermsDefaults from '@/hooks/use-document-terms';
-import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
+import QuotePdfGenerator, { buildQuotePdfBlob } from '@/components/quotes/QuotePdfGenerator';
+import { uploadPdfBlob } from '@/lib/pdfPages';
+import { downloadBlob } from '@/lib/downloadBlob';
 import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -174,13 +176,19 @@ export default function QuoteDetails({ id: idProp, isModal = false, onClose, onE
 
   const generatePdfMutation = useMutation({
     mutationFn: async () => {
-      const pdfUrl = await QuotePdfGenerator(quote);
+      const pdf = await buildQuotePdfBlob(quote);
+      // The file the rep asked for, first. The upload below only feeds the
+      // email / WhatsApp buttons (and the "הורד PDF" shortcut), so it must not
+      // stand between the click and the download — a window.open() that late
+      // was silently swallowed by the popup blocker.
+      downloadBlob(pdf.blob, `הצעת-מחיר-${quote.quote_number}.pdf`);
+      const pdfUrl = await uploadPdfBlob(pdf);
       await base44.entities.Quote.update(quoteId, { pdf_url: pdfUrl });
       return pdfUrl;
     },
-    onSuccess: (pdfUrl) => {
+    onSuccess: () => {
       queryClient.invalidateQueries(['quote', quoteId]);
-      window.open(pdfUrl, '_blank');
+      toast.success('ה-PDF ירד');
     },
     onError: (err) => toast.error(`יצירת ה-PDF נכשלה: ${err?.message || 'שגיאה לא צפויה'}`),
   });
