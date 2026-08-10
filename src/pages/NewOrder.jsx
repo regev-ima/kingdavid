@@ -1119,7 +1119,18 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
               addonPrices={addonPrices}
             />
 
-            <QuoteTotalsSummary items={formData.items} extras={formData.extras} total={formData.total} />
+            {/* Products only. The delivery extra is auto-detected the moment an
+                item is added — two steps before the screen that owns it — so
+                this panel used to fold a charge into the total that the rep had
+                not seen, could not see, and had no way to reconcile: the total
+                sat ₪250 above the price they had just set on the item.
+
+                Passing no `total` is what keeps the two honest: summaryRows
+                then works the figure out from the items and extras it was
+                handed, so the amount here is exactly the products. The delivery
+                joins the total on step 3, next to the row that states it and
+                the control that removes it. */}
+            <QuoteTotalsSummary items={formData.items} extras={[]} />
           </CardContent>
         </Card>
         )}
