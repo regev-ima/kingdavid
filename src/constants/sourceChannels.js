@@ -54,7 +54,11 @@ const CHANNEL_RULES = [
   ['callcenter', [/שיחה נכנסת/, /^שיחה$/, /^callcenter$/, /^מוקד$/]],
   ['store',      [/כניסה לחנות/, /^store$/, /^חנות$/]],
   ['website',    [/אתר/, /דף נחיתה/, /^website$/]],
-  ['referral',   [/לקוח חוזר/, /לקוחה חוזרת/, /^חבר$/, /^לקוח$/, /^חברה$/, /^referral$/]],
+  // Both picker keys and the Hebrew a rep might type by hand. "הפניה" was
+  // missing: the picker stores `referral`, so it resolved, but the same word
+  // typed into the free-text source did not.
+  ['referral',   [/לקוח חוזר/, /לקוחה חוזרת/, /^הפניה$/, /^חבר$/, /^לקוח$/, /^חברה$/,
+                  /^referral$/, /^returning_customer$/]],
   ['service',    [/שירות לקוחות/]],
 ];
 
