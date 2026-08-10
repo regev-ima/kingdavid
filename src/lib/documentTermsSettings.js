@@ -1,10 +1,22 @@
 // Read/write side of the legal texts an admin edits in
 // הגדרות ← טקסטים ותנאים. Stored as one JSON row in `app_settings`.
 //
-// The migration that creates `app_settings` is applied by hand in Supabase, so
-// every read here has to survive the table not existing yet: a failed read
+// The row is addressed by `key`, not by `id`. The migration in this repo
+// declares `id text PRIMARY KEY` — the setting key as the primary key — but it
+// was written as CREATE TABLE IF NOT EXISTS against a database that already had
+// an `app_settings` table with a uuid `id` and a separate `key` column. IF NOT
+// EXISTS does not alter an existing table, so the migration was a silent no-op
+// and the real table never had the shape the code assumed. Saving reported
+// `invalid input syntax for type uuid: "document_terms"` — the key going into a
+// uuid column.
+//
+// Keying on `key` is also the better shape on its own terms: a surrogate id
+// stays stable while the natural key means something, which is why the table
+// was built that way in the first place.
+//
+// Every read has to survive the table not existing at all: a failed read
 // resolves to `null` and the callers fall back to DEFAULT_DOCUMENT_TERMS.
-// Writes are the one place we do surface the error — an admin pressing "שמור"
+// Writes are the one place the error is surfaced — an admin pressing "שמור"
 // has to be told the row didn't save.
 
 import { base44 } from '@/api/base44Client';
@@ -27,6 +39,10 @@ function parseValue(value) {
   return typeof value === 'object' ? value : null;
 }
 
+function findRow() {
+  return base44.entities.AppSettings.filter({ key: DOCUMENT_TERMS_SETTING_KEY }, null, 1);
+}
+
 /**
  * The stored defaults, or null when there is nothing usable to read
  * (table not migrated yet, RLS, network, empty row).
@@ -34,7 +50,7 @@ function parseValue(value) {
  */
 export async function fetchDocumentTermsSetting() {
   try {
-    const rows = await base44.entities.AppSettings.filter({ id: DOCUMENT_TERMS_SETTING_KEY }, null, 1);
+    const rows = await findRow();
     const row = rows?.[0];
     const value = parseValue(row?.value);
     if (!value) return null;
@@ -51,14 +67,16 @@ export async function fetchDocumentTermsSetting() {
 }
 
 /**
- * Upsert the three texts. The entity layer has no upsert, and the row is
- * addressed by its key (app_settings.id), so: look, then update or insert.
+ * Upsert the three texts. The entity layer has no upsert and addresses rows by
+ * their primary key, so: look the row up by `key`, then update it by the `id`
+ * the database gave it, or insert a new one.
  */
 export async function saveDocumentTermsSetting(value, updatedBy) {
-  const rows = await base44.entities.AppSettings.filter({ id: DOCUMENT_TERMS_SETTING_KEY }, null, 1);
+  const rows = await findRow();
+  const existing = rows?.[0];
   const payload = { value, updated_by: updatedBy || null };
-  if (rows?.[0]) {
-    return base44.entities.AppSettings.update(DOCUMENT_TERMS_SETTING_KEY, payload);
+  if (existing?.id) {
+    return base44.entities.AppSettings.update(existing.id, payload);
   }
-  return base44.entities.AppSettings.create({ id: DOCUMENT_TERMS_SETTING_KEY, ...payload });
+  return base44.entities.AppSettings.create({ key: DOCUMENT_TERMS_SETTING_KEY, ...payload });
 }

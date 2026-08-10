@@ -21,18 +21,35 @@
 BEGIN;
 
 -- ── app_settings ─────────────────────────────────────────────────────────────
--- `id` IS the setting key (text), not a surrogate uuid: the generic entity
--- layer addresses rows with .eq('id', …), so keying on `id` lets the client do
--- AppSettings.update('document_terms', …) without a bespoke API.
+-- A surrogate uuid `id` plus a natural `key`. This block previously declared
+-- `id text PRIMARY KEY` — the setting key AS the primary key — which was wrong
+-- twice over: production already had an app_settings table with a uuid id and a
+-- separate key column, and CREATE TABLE IF NOT EXISTS does not alter an
+-- existing table. The migration ran, changed nothing, reported success, and
+-- saving the texts failed with `invalid input syntax for type uuid:
+-- "document_terms"` — the key going into a uuid column.
+--
+-- The shape below is the one production actually has, so a fresh environment
+-- now matches it. The client looks the row up by `key` and updates it by the
+-- `id` the database assigned.
 CREATE TABLE IF NOT EXISTS public.app_settings (
-  id           text        PRIMARY KEY,
+  id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  key          text        NOT NULL UNIQUE,
   value        jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  created_date timestamptz NOT NULL DEFAULT now(),
   updated_date timestamptz NOT NULL DEFAULT now(),
   updated_by   text
 );
 
+-- For a database that DID get the text-id version created by the earlier form
+-- of this migration: give it the key column and move the ids into it. A table
+-- already shaped correctly is untouched by all three statements.
+ALTER TABLE public.app_settings ADD COLUMN IF NOT EXISTS key text;
+UPDATE public.app_settings SET key = id::text WHERE key IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS app_settings_key_uniq ON public.app_settings (key);
+
 COMMENT ON TABLE public.app_settings IS
-  'Key/value app configuration. id = the setting key, value = JSON payload.';
+  'Key/value app configuration. key = the setting name, value = JSON payload.';
 
 -- Bump updated_date on every write so the Settings UI can show "last edited"
 -- without the client having to remember to send it.
