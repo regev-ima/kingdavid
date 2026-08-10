@@ -57,6 +57,23 @@ const statusConfig = {
   delivery_inquiry: { label: 'בירור אספקה', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
   delivery_inquiry_handled: { label: 'בירור אספקה - טופל', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
 
+  // ── Lead-status palette ───────────────────────────────────────────────────
+  // Applied below, after this object, so the colour of a lead status is decided
+  // by the group it belongs to rather than typed 49 times by hand. Adding a
+  // status means putting it in a group; forgetting to means it keeps whatever
+  // colour it was declared with above, never an unstyled badge.
+  //
+  // Colour answers one question on a busy screen — "is this lead in play?" —
+  // and the label answers the rest. That is why every terminal status shares
+  // one grey: "לא רלוונטי - ליד כפול" and "שמע מחיר ולא מעוניין" call for the
+  // same action, which is none, and giving them separate colours spends the
+  // reader's attention on a distinction they cannot act on.
+  //
+  // The one rule the old palette broke: red now means exactly one thing, a
+  // lead worth calling right now. It used to also mean "ללא מענה 5" and
+  // "שמע מחיר ולא מעוניין" — three unrelated meanings competing for the
+  // loudest colour on the screen.
+
   // Task Status
   not_completed: { label: 'ממתין לביצוע', color: 'bg-orange-100 text-orange-700 ring-1 ring-orange-200' },
   completed: { label: 'בוצע', color: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' },
@@ -157,6 +174,88 @@ const statusConfig = {
   lost: { label: 'אבוד', color: 'bg-gray-100 text-gray-600 ring-1 ring-gray-200' },
   contact: { label: 'צור קשר', color: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200' },
 };
+
+// ── The groups ──────────────────────────────────────────────────────────────
+// Only lead statuses are re-toned here. Order, delivery, payment, support and
+// the rest keep the colours declared above — they are separate vocabularies
+// that happen to share this component.
+const LEAD_STATUS_TONES = [
+  // Just arrived, nobody has worked it yet.
+  ['bg-blue-100 text-blue-700 ring-1 ring-blue-200', [
+    'new_lead', 'second_line_lead', 'call_from_google', 'call_from_facebook',
+  ]],
+  // Call this one now. The only red on the screen.
+  ['bg-red-100 text-red-700 ring-1 ring-red-200', [
+    'hot_lead', 'manager_call_potential_close',
+  ]],
+  // Live, committed to a date — before a quote exists.
+  ['bg-violet-100 text-violet-700 ring-1 ring-violet-200', [
+    'followup_before_quote', 'return_to_followup',
+    'transferred_by_manager_for_followup', 'changed_direction',
+  ]],
+  // Live, committed to a date — a price is already on the table. Deliberately
+  // a different hue from the one above: the two follow-up tiers are the most
+  // frequent pair on the screen and used to be near-identical purples.
+  ['bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200', [
+    'followup_after_quote',
+  ]],
+  // A booked meeting — the strongest commitment short of a sale.
+  ['bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200', [
+    'coming_to_branch', 'will_arrive_for_meeting',
+  ]],
+  // Chasing, early. The ramp below escalates with the number of attempts, so
+  // the colour tells the rep how tired this lead is of the phone.
+  ['bg-amber-100 text-amber-700 ring-1 ring-amber-200', [
+    'no_answer_1', 'no_answer_2',
+  ]],
+  ['bg-orange-100 text-orange-700 ring-1 ring-orange-200', [
+    'no_answer_3', 'no_answer_4', 'no_answer_calls',
+  ]],
+  // Chasing, exhausted. Rose rather than red: loud, but never mistaken for
+  // "ליד רותח" at a glance.
+  ['bg-rose-100 text-rose-700 ring-1 ring-rose-200', [
+    'no_answer_5', 'no_answer_8_calls',
+  ]],
+  // We reached out and the ball is in their court. Used to be green, which
+  // read as "done" while sitting in the middle of the no-answer ramp.
+  ['bg-yellow-100 text-yellow-700 ring-1 ring-yellow-200', [
+    'no_answer_whatsapp_sent',
+  ]],
+  // Sold.
+  ['bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200', [
+    'deal_closed',
+  ]],
+  // Already a customer — an inquiry, not a sale to win. Used to share the
+  // "נסגרה עסקה" green, which made the closed-deal colour mean two things.
+  ['bg-teal-100 text-teal-700 ring-1 ring-teal-200', [
+    'already_purchased_inquiry', 'service_handled',
+    'service_30_nights_trial_handled', 'service_warranty_handled',
+    'service_cancellations_handled', 'service_missing_items_handled',
+    'delivery_inquiry_handled',
+  ]],
+  // Service, still open. "בירור אספקה" joins its own family here; it used to
+  // be blue, alone among the open service statuses.
+  ['bg-amber-100 text-amber-700 ring-1 ring-amber-200', [
+    'service_30_nights_trial', 'service_warranty', 'service_cancellations',
+    'service_missing_items', 'delivery_inquiry',
+  ]],
+  // Out of play, whatever the reason. The label carries the reason.
+  ['bg-slate-100 text-slate-600 ring-1 ring-slate-200', [
+    'not_relevant_duplicate', 'not_relevant_bought_elsewhere',
+    'not_relevant_1000_nis', 'not_relevant_denies_contact',
+    'not_relevant_service', 'not_relevant_no_explanation',
+    'not_relevant_wrong_number', 'not_relevant_not_mature',
+    'heard_price_not_interested', 'not_interested_hangs_up',
+    'lives_far_phone_concern', 'products_not_available',
+    'mailing_remove_request', 'closed_by_manager_to_mailing', 'system_test',
+  ]],
+];
+
+for (const [color, statuses] of LEAD_STATUS_TONES) {
+  for (const status of statuses) {
+    if (statusConfig[status]) statusConfig[status].color = color;
+  }
+}
 
 // Extract the dot color from the text color class
 function getDotColor(colorString) {
