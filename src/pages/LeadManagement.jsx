@@ -486,6 +486,26 @@ export default function LeadManagement() {
     ? filters.rep
     : (seesAllLeads ? null : userEmail);
 
+  // The tasks tile counts over the TASK's due date, which is a different axis
+  // from the arrival-date range every other tile uses — a task due tomorrow
+  // says nothing about when its lead came in, which is why the quote/task
+  // scopes ignore that range in the first place. But a task HAS a date of its
+  // own, so the filter can mean something here: it selects the window the work
+  // is due in. Picking 02/08–10/08 answers "what was due that week and is
+  // still open", which is the backlog question the tile could not answer while
+  // it was pinned to today.
+  //
+  // With no range chosen ("כל הזמנים") today is the sensible default — an
+  // unbounded task tile is just the "נותרו לטיפול" tile beside it.
+  const taskDueWindow = useMemo(() => (
+    fromIso && toIso
+      ? { from: fromIso, to: toIso }
+      : { from: todayWindow.from, to: new Date(new Date(todayWindow.to).getTime() - 1).toISOString() }
+  ), [fromIso, toIso, todayWindow]);
+  // Today is the ordinary case, and the tile keeps its familiar name there.
+  const taskWindowIsToday = !fromIso || !toIso || datePresetId === 'today';
+  const tasksTileLabel = taskWindowIsToday ? 'משימות להיום' : 'משימות בטווח';
+
   // What the header says the numbers are cut by ("תצוגת נתונים לפי: היום").
   const activePresetLabel = datePresetId === 'range' && customRange?.from && customRange?.to
     ? `${format(customRange.from, 'dd/MM/yyyy')} - ${format(customRange.to, 'dd/MM/yyyy')}`
@@ -496,7 +516,7 @@ export default function LeadManagement() {
   // the tile is exactly the number the click produces. One resolver, used both
   // for the counts and for the active scope.
   const relatedScopeSets = useQuery({
-    queryKey: ['leadMgmt-related-sets', scopedRep, todayWindow.from],
+    queryKey: ['leadMgmt-related-sets', scopedRep, taskDueWindow.from, taskDueWindow.to],
     enabled: !!effectiveUser && !!userEmail && repResolved,
     staleTime: 60_000,
     placeholderData: (prev) => prev,
@@ -512,7 +532,7 @@ export default function LeadManagement() {
           '-created_date',
           'lead_id',
         ).catch(() => []),
-        // due_date rides along because the "משימות להיום" set is cut from the
+        // due_date rides along because the tasks-in-window set is cut from the
         // same rows — one trip instead of two.
         fetchAllRows(
           base44.entities.SalesTask,
@@ -522,15 +542,18 @@ export default function LeadManagement() {
         ).catch(() => []),
       ]);
 
-      const dueToday = openTasks.filter((task) => {
+      // Open tasks whose due date lands in the selected window. Still open is
+      // the point: in a window that has passed, these are the ones nobody got
+      // to, which is what the rep opens the tile to find.
+      const dueInWindow = openTasks.filter((task) => {
         const due = task?.due_date;
-        return due && due >= todayWindow.from && due < todayWindow.to;
+        return due && due >= taskDueWindow.from && due <= taskDueWindow.to;
       });
 
       return {
         open_quotes: leadIds(quotes),
         tasks_open: leadIds(openTasks),
-        tasks_today: leadIds(dueToday),
+        tasks_today: leadIds(dueInWindow),
       };
     },
   }).data || { open_quotes: [], tasks_open: [], tasks_today: [] };
@@ -703,6 +726,7 @@ export default function LeadManagement() {
   // other filter on top narrows the rows below it, which is what the filter
   // chips above the list are there to say.
   const isRelatedScope = RELATED_SCOPES.includes(scope);
+  const ignoresDateRange = isRelatedScope && scope !== 'tasks_today';
   const { data: countedLeads = null } = useQuery({
     queryKey: ['leadMgmt-count', leadsQuery],
     enabled: !!effectiveUser && repResolved && !isRelatedScope,
@@ -1011,9 +1035,9 @@ export default function LeadManagement() {
           onClick={() => toggleScope('open_quotes')}
         />
         <TaskKpiTile
-          label="משימות להיום"
+          label={tasksTileLabel}
           value={relatedScopeSets.tasks_today.length}
-          sub="מתוכן להיום"
+          sub={taskWindowIsToday ? 'מתוכן להיום' : activePresetLabel}
           icon={ClipboardCheck}
           tone="amber"
           isActive={scope === 'tasks_today'}
@@ -1222,10 +1246,12 @@ export default function LeadManagement() {
         <ActiveFilterSummary
           scope={scope}
           filters={filters}
-          // These scopes deliberately ignore the arrival-date range (an open
-          // quote says nothing about when its lead came in), so the summary
-          // must not claim a date is narrowing the list.
-          dateRange={isRelatedScope ? null : dateRange}
+          // "הצעות מחיר פתוחות" and "נותרו לטיפול" deliberately ignore the
+          // arrival-date range — an open quote says nothing about when its lead
+          // came in — so the summary must not claim a date is narrowing them.
+          // The tasks scope is the exception: it reads the range as the window
+          // the work is due in, so its chip is the truth.
+          dateRange={ignoresDateRange ? null : dateRange}
           hourLabel={hourActive ? `${hourLabel(hourFrom ?? 0)}–${hourLabel(hourTo ?? 24)}` : null}
           onClearHour={() => { setHourFrom(null); setHourTo(null); }}
           repNameByEmail={repNameByEmail}
@@ -1591,7 +1617,7 @@ function ActiveFilterSummary({
     lc_won: 'נסגרו',
     lc_lost: 'נאבדו',
     open_quotes: 'הצעות מחיר פתוחות',
-    tasks_today: 'משימות להיום',
+    tasks_today: 'משימות',
     tasks_open: 'נותרו לטיפול',
     won: 'נסגרה עסקה',
   };
