@@ -6,7 +6,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import { format } from '@/lib/safe-date-fns';
 import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { createPageUrl } from '@/utils';
-import { formatSourceLabel } from '@/constants/leadOptions';
+import SourceBadge from '@/components/shared/SourceBadge';
 
 /**
  * "This person has enquired before" — the other leads sharing this lead's
@@ -49,7 +49,7 @@ export default function OtherEnquiriesCard({ lead }) {
 
   const latest = siblings[0];
   const when = parseDbTimestamp(latest.effective_sort_date || latest.created_date);
-  const source = formatSourceLabel(latest.source);
+
   const rest = siblings.length - 1;
 
   return (
@@ -61,9 +61,8 @@ export default function OtherEnquiriesCard({ lead }) {
 
       <span className="inline-flex items-center gap-2 min-w-0 text-muted-foreground">
         <StatusBadge status={latest.status} />
-        <span className="truncate">
-          {[when ? format(when, 'dd/MM/yyyy') : null, source].filter(Boolean).join(' · ')}
-        </span>
+        <SourceBadge source={latest.source} />
+        {when ? <span className="truncate">{format(when, 'dd/MM/yyyy')}</span> : null}
       </span>
 
       {rest > 0 ? (
