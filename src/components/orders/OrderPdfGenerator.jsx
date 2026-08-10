@@ -4,7 +4,7 @@ import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, orderTermsFields, resolveDocumentTerms } from "@/constants/documentTerms";
 import { SOURCE_LABELS } from "@/constants/leadOptions";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
-import { renderPagesToPdf, withMountedPages } from "@/lib/pdfPages";
+import { renderPagesToPdf, uploadPdfBlob, withMountedPages } from "@/lib/pdfPages";
 
 const PAYMENT_METHOD_LABELS = {
   cash: "מזומן",
@@ -23,7 +23,16 @@ const PAYMENT_STATUS_LABELS = {
   refunded: { label: "הוחזר", bg: "#E0E7FF", color: "#3730A3" },
 };
 
-const OrderPdfGenerator = async (orderData) => {
+/**
+ * Render the order to a PDF and hand back the bytes.
+ *
+ * Split out from the default export because "הורד PDF" wants the file itself,
+ * not a link to it: uploading first and then opening the URL cost a round trip
+ * and lost the file to the popup blocker (see lib/downloadBlob.js).
+ *
+ * @returns {Promise<{blob: Blob, fileName: string}>}
+ */
+export const buildOrderPdfBlob = async (orderData) => {
   const logoUrl =
     "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6956450f0d239229ec5ea53f/0de0b7ac4_image.png";
 
@@ -626,12 +635,17 @@ const OrderPdfGenerator = async (orderData) => {
   // Sheet 1 (order) then sheet 2 (terms), each rendered onto its own A4 page.
   const pdf = await withMountedPages(htmlContent, (pages) => renderPagesToPdf(pages));
 
-  const pdfBlob = pdf.output("blob");
-  const file = new File([pdfBlob], `order-${safe(orderData.order_number) || orderData.id}.pdf`, {
-    type: "application/pdf",
-  });
-  const uploadRes = await base44.integrations.Core.UploadFile({ file });
-  return uploadRes.file_url;
+  return {
+    blob: pdf.output("blob"),
+    fileName: `order-${safe(orderData.order_number) || orderData.id}.pdf`,
+  };
 };
+
+/**
+ * The same PDF, uploaded — for the paths that need a URL to hand to someone
+ * else (WhatsApp, email).
+ * @returns {Promise<string>} the uploaded file's URL
+ */
+const OrderPdfGenerator = async (orderData) => uploadPdfBlob(await buildOrderPdfBlob(orderData));
 
 export default OrderPdfGenerator;

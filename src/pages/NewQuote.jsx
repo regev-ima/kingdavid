@@ -17,6 +17,7 @@ import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { QUOTE_DEFAULTS_FALLBACK } from '@/constants/quoteDefaultsFallback';
 import useDocumentTermsDefaults from '@/hooks/use-document-terms';
+import { customDocumentTerms } from '@/constants/documentTerms';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -244,8 +245,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     const src = (quoteDefaults && !defaultsErrored) ? quoteDefaults : QUOTE_DEFAULTS_FALLBACK;
     setFormData((prev) => ({
       ...prev,
-      // Stamped onto the quote, not just displayed: the wording the customer
-      // was shown has to survive a later edit of the company defaults.
+      // Seeded so the rep sees (and can edit) the real wording. What's saved is
+      // only the part they changed — see customDocumentTerms at save time.
       terms: prev.terms || termsDefaults.terms,
       warranty_terms: prev.warranty_terms || termsDefaults.warranty_terms,
       notes: prev.notes || termsDefaults.legal_notes,
@@ -320,6 +321,15 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
         }
       }
 
+      // Only wording the rep actually rewrote is stored on the quote; a quote
+      // carrying the standard texts keeps resolving through
+      // הגדרות ← טקסטים ותנאים, so a later correction there reaches it (and
+      // the order it becomes) instead of only reaching quotes written after.
+      const customTerms = customDocumentTerms(
+        { terms: data.terms, warranty_terms: data.warranty_terms, legal_notes: data.notes },
+        termsDefaults,
+      );
+
       // Atomically allocate a unique quote_number — fetch + insert with
       // retry-on-unique-violation so two reps saving at the same moment can't
       // collide on the same Q#### (which used to throw 23505 to the user).
@@ -332,6 +342,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           ...data,
           lead_id: leadId,
           quote_number: newNumber,
+          terms: customTerms.terms,
+          warranty_terms: customTerms.warranty_terms,
+          // A quote's general terms block lives in `notes`.
+          notes: customTerms.legal_notes,
           created_by_rep: isAdmin(effectiveUser) ? (lead?.rep1 || effectiveUser?.email) : (effectiveUser?.email || lead?.rep1),
           items: data.items.map((item) => ({
             product_id: item.product_id || '',

@@ -25,7 +25,7 @@ import { createWithSequentialNumber } from '@/utils/sequentialNumber';
 import { applyCrossRepReassignment } from '@/lib/crossRepReassignment';
 import { PAYMENT_TERMS_OPTIONS } from '@/constants/paymentTerms';
 import { LEAD_SOURCE_OPTIONS } from '@/constants/leadOptions';
-import { resolveDocumentTerms } from '@/constants/documentTerms';
+import { customDocumentTerms } from '@/constants/documentTerms';
 import useDocumentTermsDefaults from '@/hooks/use-document-terms';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
@@ -353,18 +353,20 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     }
   }, [customer]);
 
-  // The legal wording an order is stamped with. Never blank and never errors,
-  // so a missing app_settings row can't hold up an order.
-  const { defaults: termsDefaults } = useDocumentTermsDefaults();
+  // The legal wording an order is measured against. Never blank and never
+  // errors, so a missing app_settings row can't hold up an order.
+  const { defaults: termsDefaults, isLoading: termsDefaultsLoading } = useDocumentTermsDefaults();
 
   const createOrderMutation = useMutation({
     mutationFn: async (data) => {
-      // The order keeps its own copy of the legal wording: the quote's text if
-      // it was converted from one, otherwise today's company defaults. Editing
-      // the texts in Settings later must not rewrite an order that was already
-      // sold. If the columns aren't migrated yet the entity layer drops them
-      // and the insert still goes through — an order is never lost over this.
-      const termsCopy = resolveDocumentTerms(quote, termsDefaults);
+      // The order copies only wording the quote actually customised. Standard
+      // wording is left NULL so the order goes on reading הגדרות ← טקסטים
+      // ותנאים — an admin fixing a typo there fixes it on the orders too,
+      // which is the whole point of the screen. Until the defaults have loaded
+      // there is nothing to measure against, so nothing is copied; the order
+      // resolves live either way. If the columns aren't migrated yet the entity
+      // layer drops them and the insert still goes through.
+      const termsCopy = termsDefaultsLoading ? {} : customDocumentTerms(quote, termsDefaults);
 
       // Atomically allocate a unique order_number — fetch + insert with
       // retry-on-unique-violation so two reps saving at the same moment can't
@@ -377,9 +379,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         buildPayload: (newNumber) => ({
           ...data,
           order_number: newNumber,
-          terms: termsCopy.terms,
-          warranty_terms: termsCopy.warranty_terms,
-          legal_notes: termsCopy.legal_notes,
+          terms: termsCopy.terms ?? null,
+          warranty_terms: termsCopy.warranty_terms ?? null,
+          legal_notes: termsCopy.legal_notes ?? null,
           // A self-pickup order is never "waiting to be scheduled" — it waits
           // for the customer at the factory, and the logistics queue must not
           // treat it as an unscheduled delivery.

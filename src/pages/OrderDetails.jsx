@@ -61,7 +61,8 @@ import CancelOrderDialog from '@/components/order/CancelOrderDialog';
 import { isCancelledOrder } from '@/lib/cancelOrder';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
-import OrderPdfGenerator from '@/components/orders/OrderPdfGenerator';
+import OrderPdfGenerator, { buildOrderPdfBlob } from '@/components/orders/OrderPdfGenerator';
+import { downloadBlob } from '@/lib/downloadBlob';
 import WhatsAppSendPdfButton from '@/components/whatsapp/WhatsAppSendPdfButton';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import DocumentTermsCard from '@/components/shared/DocumentTermsCard';
@@ -167,14 +168,14 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
     },
   });
 
+  // "הורד PDF" saves the file straight to the browser's downloads. It used to
+  // upload the PDF and window.open() the URL, which the popup blocker ate —
+  // generating takes seconds, so the tab was no longer tied to the click.
   const generatePdfMutation = useMutation({
-    mutationFn: async () => {
-      const pdfUrl = await OrderPdfGenerator(order);
-      return pdfUrl;
-    },
-    onSuccess: (pdfUrl) => {
-      window.open(pdfUrl, '_blank');
-      toast.success('PDF נוצר בהצלחה');
+    mutationFn: () => buildOrderPdfBlob(order),
+    onSuccess: ({ blob }) => {
+      downloadBlob(blob, `הזמנה-${order.order_number}.pdf`);
+      toast.success('ה-PDF ירד');
     },
     onError: (err) => {
       toast.error(`יצירת PDF נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);

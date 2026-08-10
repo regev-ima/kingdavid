@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
@@ -28,6 +28,8 @@ import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
 import { genBedConfigToken, legacyFabricToFields } from '@/lib/bedConfig';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
+import useDocumentTermsDefaults from '@/hooks/use-document-terms';
+import { customDocumentTerms } from '@/constants/documentTerms';
 import { buildLeadsById, canAccessSalesWorkspace, canViewQuote } from '@/lib/rbac';
 import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -127,8 +129,20 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     enabled: canAccessSales,
   });
 
+  // The company texts a quote falls back to. A quote only stores wording the
+  // rep rewrote, so the editor has to fill the blanks from here — otherwise
+  // step 3 opens with three empty boxes on a quote that does have terms.
+  const { defaults: termsDefaults, isLoading: termsDefaultsLoading } = useDocumentTermsDefaults();
+
+  // Seeded once per quote. The effect now also depends on the company texts,
+  // and a background refetch of any of its sources must not throw away an edit
+  // the rep is in the middle of making.
+  const seededQuoteIdRef = useRef(null);
+
   useEffect(() => {
-    if (quote && variations.length > 0) {
+    if (termsDefaultsLoading) return;
+    if (quote && variations.length > 0 && seededQuoteIdRef.current !== quote.id) {
+      seededQuoteIdRef.current = quote.id;
       // Enrich items with product_id from variations
       const enrichedItems = (quote.items || []).map(item => {
         let it = item;
@@ -166,19 +180,30 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
         vat_amount: quote.vat_amount || 0,
         total: quote.total || 0,
         valid_until: quote.valid_until || '',
-        terms: quote.terms || '',
-        warranty_terms: quote.warranty_terms || '',
-        notes: quote.notes || '',
+        terms: quote.terms || termsDefaults.terms,
+        warranty_terms: quote.warranty_terms || termsDefaults.warranty_terms,
+        notes: quote.notes || termsDefaults.legal_notes,
         special_requests: quote.special_requests || '',
         payment_terms_selection: Array.isArray(quote.payment_terms_selection) ? quote.payment_terms_selection : [],
       });
     }
-  }, [quote, variations]);
+  }, [quote, variations, termsDefaults, termsDefaultsLoading]);
 
   const updateQuoteMutation = useMutation({
     mutationFn: async (data) => {
+      // Save only the wording that differs from the company texts, so a quote
+      // left on the standard terms keeps following הגדרות ← טקסטים ותנאים.
+      const customTerms = customDocumentTerms(
+        { terms: data.terms, warranty_terms: data.warranty_terms, legal_notes: data.notes },
+        termsDefaults,
+      );
+
       const updateData = {
         ...data,
+        terms: customTerms.terms,
+        warranty_terms: customTerms.warranty_terms,
+        // A quote's general terms block lives in `notes`.
+        notes: customTerms.legal_notes,
         items: data.items.map(item => ({
           product_id: item.product_id || '',
           variation_id: item.variation_id || '',
