@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { useHiddenStatuses } from '@/hooks/useHiddenStatuses';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { useStatusColors } from '@/hooks/useStatusColors';
+import { readLegacyLocalStatusColors, clearLegacyLocalStatusColors } from '@/lib/statusColorPolicy';
 import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
 import { STATUS_COLOR_PRESETS, getStatusColorPreset } from '@/constants/statusColors';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -503,8 +504,26 @@ function StatusColorPicker({ value, onChange }) {
 function StatusManagement() {
   const { hiddenStatuses, isLoading, setHiddenStatuses, isPending } = useHiddenStatuses();
   const { customStatuses, addStatus, removeStatus } = useCustomStatuses();
-  const { statusColors, setStatusColor } = useStatusColors();
+  const { statusColors, setStatusColor, replaceStatusColors, isSaving } = useStatusColors();
   const [newStatusLabel, setNewStatusLabel] = useState('');
+
+  // Colours used to live in this browser. If this admin has local picks and the
+  // company map is still empty, offer to publish them — explicitly, on a click.
+  // Doing it silently on load would mean one person's old browser state
+  // becoming everyone's colours without anyone deciding to.
+  const [legacyLocal] = useState(readLegacyLocalStatusColors);
+  const legacyCount = Object.keys(legacyLocal).length;
+  const canUploadLegacy = legacyCount > 0 && Object.keys(statusColors).length === 0;
+
+  const uploadLegacy = () => {
+    replaceStatusColors(legacyLocal, {
+      onSuccess: () => {
+        clearLegacyLocalStatusColors();
+        toast.success(`${legacyCount} צבעים הועלו — הם עכשיו של כל הצוות`);
+      },
+      onError: (err) => toast.error(`ההעלאה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`),
+    });
+  };
 
   const handleAddStatus = (e) => {
     e?.preventDefault?.();
@@ -569,6 +588,18 @@ function StatusManagement() {
                 הוסף סטטוס
               </Button>
             </form>
+
+            {canUploadLegacy ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-sm text-amber-900">
+                  נמצאו {legacyCount} צבעים ששמורים בדפדפן הזה בלבד. הצבעים עכשיו משותפים לכל הצוות —
+                  אפשר להעלות אותם פעם אחת.
+                </p>
+                <Button size="sm" onClick={uploadLegacy} disabled={isSaving} className="flex-shrink-0">
+                  העלה לצוות
+                </Button>
+              </div>
+            ) : null}
 
             <div className="space-y-1">
               {[
