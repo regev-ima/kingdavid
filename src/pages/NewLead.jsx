@@ -24,6 +24,7 @@ import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone } from '@/utils/phoneUtils';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessSalesWorkspace, isAdmin as isAdminUser } from '@/lib/rbac';
+import { LEAD_SOURCE_OPTIONS } from '@/constants/leadOptions';
 
 export default function NewLead({ asDialog = false, dialogPhone = null, onDialogClose = null }) {
   const navigate = useNavigate();
@@ -242,11 +243,13 @@ export default function NewLead({ asDialog = false, dialogPhone = null, onDialog
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="store">חנות</SelectItem>
-                    <SelectItem value="callcenter">מוקד טלפוני</SelectItem>
-                    <SelectItem value="digital">דיגיטל</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                    <SelectItem value="referral">הפניה</SelectItem>
+                    {/* Read from the shared list rather than repeated here.
+                        This copy had already drifted — it was missing "אתר",
+                        so a lead typed into this form could never carry the
+                        source that the order dialog beside it offers. */}
+                    {LEAD_SOURCE_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

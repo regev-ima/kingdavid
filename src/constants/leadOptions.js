@@ -140,6 +140,11 @@ export const LEAD_SOURCE_OPTIONS = [
   { value: 'digital', label: 'דיגיטל' },
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'referral', label: 'הפניה' },
+  // Distinct from 'הפניה' on purpose: a referral is a new person someone
+  // recommended, a returning customer is one we have already sold to. 408 leads
+  // already carry the words "לקוח חוזר" typed by hand into the free-text
+  // source, so the option formalises something the floor was doing anyway.
+  { value: 'returning_customer', label: 'לקוח חוזר' },
   { value: 'website', label: 'אתר' },
 ];
 
