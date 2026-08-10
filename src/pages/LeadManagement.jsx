@@ -48,6 +48,24 @@ const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,facebook_a
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
+// PostgREST answers with at most `db-max-rows` (1000 on Supabase) no matter
+// what limit the client asks for, and it says nothing about having truncated.
+// Asking for 5000 open tasks therefore returned the first 1000 — 879 leads out
+// of 1936 — and the tile reported 879 with no sign that anything was cut.
+// Paging until a short page arrives is the only way to know we have them all.
+// The page cap is a runaway guard, and hitting it is logged rather than
+// silently swallowed: a wrong number that announces itself can be fixed.
+async function fetchAllRows(entity, filters, sort, columns, { pageSize = 1000, maxPages = 30 } = {}) {
+  const rows = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const batch = await entity.filter(filters, sort, pageSize, page * pageSize, columns);
+    rows.push(...batch);
+    if (batch.length < pageSize) return rows;
+  }
+  console.warn(`[LeadManagement] stopped paging at ${maxPages * pageSize} rows — the tile counts are a floor, not a total.`);
+  return rows;
+}
+
 // The full calendar DAY containing `now`, anchored to Israel wall-clock time
 // regardless of the viewer's device timezone: 00:00:00 → next day 00:00:00.
 // Returned as UTC ISO strings so the boundaries can be handed straight to an
@@ -488,12 +506,19 @@ export default function LeadManagement() {
       const leadIds = (rows) => [...new Set(rows.map((row) => row.lead_id).filter(Boolean))];
 
       const [quotes, openTasks] = await Promise.all([
-        base44.entities.Quote.filter(
+        fetchAllRows(
+          base44.entities.Quote,
           wrap([{ status: { $in: ['draft', 'sent'] } }, ...(scopedRep ? [{ created_by_rep: scopedRep }] : [])]),
-          '-created_date', 5000,
+          '-created_date',
+          'lead_id',
         ).catch(() => []),
-        base44.entities.SalesTask.filter(
-          wrap([{ task_status: 'not_completed' }, ...mine]), 'due_date', 5000,
+        // due_date rides along because the "משימות להיום" set is cut from the
+        // same rows — one trip instead of two.
+        fetchAllRows(
+          base44.entities.SalesTask,
+          wrap([{ task_status: 'not_completed' }, ...mine]),
+          'due_date',
+          'lead_id,due_date',
         ).catch(() => []),
       ]);
 
@@ -523,15 +548,24 @@ export default function LeadManagement() {
       const conditions = [{ status: 'deal_closed' }];
       if (scopedRep) conditions.push({ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] });
       if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
-      const closed = await base44.entities.Lead.filter(
+      const closed = await fetchAllRows(
+        base44.entities.Lead,
         conditions.length === 1 ? conditions[0] : { $and: conditions },
-        '-effective_sort_date', 500, undefined, 'id',
+        '-effective_sort_date',
+        'id',
       );
       const ids = closed.map((lead) => lead.id).filter(Boolean);
       if (ids.length === 0) return { count: 0, total: 0 };
-      const orders = await base44.entities.Order
-        .filter({ lead_id: { $in: ids } }, '-created_date', 1000)
-        .catch(() => []);
+      // Chunked because the id set becomes a URL: `lead_id=in.(uuid,…)` past a
+      // few hundred ids is a query string the server refuses outright.
+      const CHUNK = 150;
+      const batches = [];
+      for (let start = 0; start < ids.length; start += CHUNK) {
+        batches.push(ids.slice(start, start + CHUNK));
+      }
+      const orders = (await Promise.all(batches.map((batch) => base44.entities.Order
+        .filter({ lead_id: { $in: batch } }, '-created_date', 1000)
+        .catch(() => [])))).flat();
       // The amount column has drifted across imports, so read whichever one is
       // present instead of trusting a single name.
       const total = orders.reduce((sum, order) => sum

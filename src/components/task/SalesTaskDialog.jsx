@@ -14,7 +14,7 @@ import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, User
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
-import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
+import { cancelOpenTasksForStatus } from '@/lib/dealClose';
 import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS, statusOpensAutoTask, isMeetingStatus } from '@/constants/leadOptions';
@@ -252,6 +252,9 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     mutationFn: async ({ taskData, leadId, newStatus, originalStatus }) => {
       if (leadId && newStatus && newStatus !== originalStatus) {
         await base44.entities.Lead.update(leadId, { status: newStatus });
+        // Sweep first, create second — otherwise the task being created here
+        // would be swept by the status that created it.
+        await cancelOpenTasksForStatus(leadId, newStatus);
       }
       return base44.entities.SalesTask.create(taskData);
     },
@@ -338,8 +341,12 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
         queryClient.invalidateQueries({ queryKey: ['leads'] });
       }
 
-      if (dealJustClosed) {
-        await cancelOpenTasksForClosedDeal(leadId, editingTask.id);
+      // Changing the lead's status here sweeps the tasks that status no
+      // longer justifies. Previously only a closed deal did this, so setting a
+      // lead to "שמע מחיר ולא מעוניין" from this very dialog left its own task
+      // open — the status said the lead was done, the task said it wasn't.
+      if (editingTask.status && editingTask.status !== originalLeadStatus) {
+        await cancelOpenTasksForStatus(leadId, editingTask.status, editingTask.id);
       }
 
       // Create next task if requested

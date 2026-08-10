@@ -308,11 +308,22 @@ export default function LeadListTable({
     },
     {
       header: isTasksView ? 'תאריך יצירה' : 'תאריך פעילות',
-      width: '120px',
+      // Wider than the date alone needs: the time sits beside it, and a column
+      // that wraps "14:32" onto its own line reads as a second date.
+      width: '140px',
       render: (row) => {
         try {
           const d = isTasksView ? row.created_date : (row.effective_sort_date || row.created_date);
-          return d ? <span className="text-xs text-muted-foreground">{format(new Date(d), 'dd/MM/yyyy')}</span> : '—';
+          if (!d) return '—';
+          const at = new Date(d);
+          return (
+            <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+              <span className="text-xs text-muted-foreground">{format(at, 'dd/MM/yyyy')}</span>
+              {/* Smaller and lighter: the hour answers "when in the day", which
+                  is a follow-up question to the date, not competition for it. */}
+              <span className="text-[10px] text-muted-foreground/70 tabular-nums">{format(at, 'HH:mm')}</span>
+            </span>
+          );
         } catch { return '—'; }
       },
     },

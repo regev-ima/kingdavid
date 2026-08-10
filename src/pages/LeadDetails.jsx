@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { cancelOpenTasksForClosedDeal } from '@/lib/dealClose';
+import { cancelOpenTasksForStatus } from '@/lib/dealClose';
 import StatusBadge from '@/components/shared/StatusBadge';
 import LeadOverview from '@/components/lead/LeadOverview';
 import { getRepDisplayName } from '@/lib/repDisplay';
@@ -267,8 +267,12 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       // dropdown, jump straight into the New Order form with the
       // customer pre-filled — same flow as the CompleteTaskDialog
       // 'deal_closed' outcome, just reached from a different surface.
+      // Any status change sweeps the tasks it no longer justifies; only a
+      // closed deal also jumps to the order form.
+      if (variables?.status && variables.status !== lead?.status) {
+        cancelOpenTasksForStatus(leadId, variables.status).catch(() => {});
+      }
       if (variables?.status === 'deal_closed' && lead?.status !== 'deal_closed') {
-        cancelOpenTasksForClosedDeal(leadId).catch(() => {});
         navigate(`${createPageUrl('NewOrder')}?leadId=${leadId}`);
       }
     },
