@@ -38,6 +38,7 @@ import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
 import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import { formatSourceLabel, ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
+import SourceBadge from '@/components/shared/SourceBadge';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { parseWorkbenchDate } from '@/lib/leadWorkbench';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
@@ -502,7 +503,7 @@ export default function LeadOverview({
             <dt className="text-xs text-muted-foreground/70 mb-1.5">מקור הגעה</dt>
             <dd className="m-0 text-sm font-medium flex items-center justify-center gap-1.5 min-w-0">
               <Globe className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-              <span className="truncate">{sourceLabel || '—'}</span>
+              <SourceBadge source={lead?.source} />
             </dd>
             {adLabel ? (
               <p className="m-0 mt-1 text-[11px] text-muted-foreground/70 truncate" title={`מודעה: ${adLabel}`}>

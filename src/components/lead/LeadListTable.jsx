@@ -12,7 +12,8 @@ import { Phone, Users, FileText, ShoppingCart, MessageCircle } from 'lucide-reac
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
-import { ALL_TASK_TYPE_LABELS, formatSourceLabel, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import { ALL_TASK_TYPE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
+import SourceBadge from '@/components/shared/SourceBadge';
 import { formatIsraeliPhone as formatPhone } from '@/utils/phoneUtils';
 import { isTaskDueNow } from '@/lib/salesTaskWorkbench';
 import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
@@ -215,9 +216,7 @@ export default function LeadListTable({
       header: isTasksView ? 'מקור הגעה' : 'מקור',
       width: '120px',
       render: (row) => (
-        <p className="text-xs text-muted-foreground truncate" title={formatSourceLabel(row.source)}>
-          {formatSourceLabel(row.source) || '—'}
-        </p>
+        <SourceBadge source={row.source} />
       ),
     },
     ...(isTasksView ? [] : [{
