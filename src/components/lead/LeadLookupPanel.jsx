@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';
+import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
+import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 import { Search, Phone, ArrowLeft, UserPlus, Users } from 'lucide-react';
 import { SOURCE_LABELS } from '@/constants/leadOptions';
 import {
@@ -59,7 +61,7 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
       const safe = debouncedQuery.replace(/[",()]/g, '');
       let q = supabase
         .from('leads')
-        .select('id, full_name, phone, email, status, source, rep1, rep2, pending_rep_email, unique_id, created_date, effective_sort_date, utm_source, utm_campaign')
+        .select('id, full_name, phone, email, status, source, rep1, rep2, pending_rep_email, contact_id, unique_id, created_date, effective_sort_date, utm_source, utm_campaign')
         .order('effective_sort_date', { ascending: false, nullsFirst: false })
         .limit(30);
       if (isPhoneShapedQuery(safe)) {
@@ -73,6 +75,11 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
       return data || [];
     },
   });
+
+  // "ליד כפול" — which of these results belong to someone who already enquired
+  // before. Looking a person up is exactly when a rep needs to know that: the
+  // answer to "is this a new customer?" is on this screen or nowhere.
+  const repeatEnquiries = useRepeatEnquiries(results);
 
   const hasQuery = debouncedQuery.length >= 2;
   const showEmpty = hasQuery && !isLoading && results.length === 0;
@@ -144,7 +151,12 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
           </div>
         ) : (
           results.map((lead) => (
-            <LeadResultCard key={lead.id} lead={lead} onOpen={() => handleOpen(lead.id)} />
+            <LeadResultCard
+              key={lead.id}
+              lead={lead}
+              repeatOrdinal={repeatEnquiries.get(lead.id)}
+              onOpen={() => handleOpen(lead.id)}
+            />
           ))
         )}
       </div>
@@ -152,7 +164,7 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
   );
 }
 
-function LeadResultCard({ lead, onOpen }) {
+function LeadResultCard({ lead, repeatOrdinal, onOpen }) {
   const ownerEmail = lead.rep1 || lead.pending_rep_email || lead.rep2 || null;
   const sourceLabel = lead.source ? (SOURCE_LABELS[lead.source] || lead.source) : null;
   const callHref = lead.phone ? `tel:${lead.phone}` : null;
@@ -167,6 +179,7 @@ function LeadResultCard({ lead, onOpen }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-base font-bold text-foreground truncate">{lead.full_name || 'לא צוין שם'}</p>
+            <RepeatEnquiryBadge ordinal={repeatOrdinal} />
             {lead.status ? <StatusBadge status={lead.status} /> : null}
           </div>
           <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
