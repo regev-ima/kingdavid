@@ -1,10 +1,21 @@
-// Maps task outcomes to lead-status transitions and the next task that
-// should automatically appear. Consumed by CompleteTaskDialog and by the
-// quick-action buttons in Leads.jsx / LeadDetails.
+// The outcomes a task can be closed with, and the next task each one suggests.
+// Consumed by CompleteTaskDialog.
 //
-// Whether the `nextTask` on an outcome actually fires is NOT decided here —
-// it's decided by the status the lead lands in, via outcomeOpensNextTask()
-// below. See AUTO_TASK_STATUSES in constants/leadOptions.
+// Closing a task does NOT touch the lead's status. It used to: "ענה — מעוניין"
+// wrote 'hot_lead', "לא ענה" walked the no-answer ladder, and so on. But the
+// rep had already put the lead where it belongs — a lead sitting in "מעוניין
+// מאוד" got flipped to "ליד רותח" for the crime of having its task closed, and
+// the rep's own judgement was overwritten by a button that was only ever asked
+// "what happened on this call?".
+//
+// The two questions are separate. This dialog answers "what happened"; the
+// status is the rep's answer to "where is this lead now", and they set it on
+// the lead card. ("ענה — לא מעוניין" was already carved out this way for the
+// same reason; this is the rest of the list catching up.)
+//
+// Whether the `nextTask` on an outcome actually fires is decided by the status
+// the lead is IN, via outcomeOpensNextTask() below. See AUTO_TASK_STATUSES in
+// constants/leadOptions.
 
 import { statusOpensAutoTask } from '@/constants/leadOptions';
 //
@@ -12,27 +23,11 @@ import { statusOpensAutoTask } from '@/constants/leadOptions';
 //   id            — stable identifier
 //   label         — Hebrew text shown on the button
 //   tone          — color hint: 'success' | 'warn' | 'danger' | 'neutral' | 'whatsapp'
-//   newLeadStatus — either a literal status string or (currentStatus) => string.
-//                   Use the function form to preserve special states
-//                   (e.g. an after-quote followup should stay after-quote).
-//                   Returning null/undefined keeps the current status.
 //   nextTask      — optional next task config:
 //     - task_type:    one of call | meeting | quote_preparation | close_order
 //     - askForDateTime: true  → CompleteTaskDialog shows a picker
 //     - delayHours / delayDays → automatic offset from now
 //     - summary:      default text for the new task
-
-const incrementNoAnswer = (currentStatus) => {
-  const match = /^no_answer_(\d+)$/.exec(currentStatus || '');
-  if (match) {
-    const n = Math.min(5, parseInt(match[1], 10) + 1);
-    return `no_answer_${n}`;
-  }
-  return 'no_answer_1';
-};
-
-const keepFollowupTier = (currentStatus) =>
-  currentStatus === 'followup_after_quote' ? 'followup_after_quote' : 'followup_before_quote';
 
 export const TASK_COMPLETION_FLOWS = {
   call: [
@@ -40,7 +35,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'answered_interested',
       label: 'ענה — מעוניין',
       tone: 'success',
-      newLeadStatus: 'hot_lead',
       nextTask: {
         task_type: 'quote_preparation',
         delayHours: 24,
@@ -51,7 +45,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'answered_callback',
       label: 'ענה — חוזר אליי',
       tone: 'warn',
-      newLeadStatus: keepFollowupTier,
       nextTask: {
         task_type: 'call',
         askForDateTime: true,
@@ -60,24 +53,13 @@ export const TASK_COMPLETION_FLOWS = {
     },
     {
       id: 'answered_not_interested',
-      // Deliberately changes NO status. It used to close the lead as
-      // 'heard_price_not_interested' ("שמע מחיר ולא מעוניין"), which on a first
-      // call is usually a fact that never happened — no price was quoted — and
-      // it's a terminal status, so the lead silently left the work queue and
-      // landed in the "dropped after hearing the price" numbers.
-      //
-      // "Not interested" on a call says what the customer said, not why, and
-      // the rep is the one who knows which closing status fits. They set it
-      // from the lead card; this button just closes the task.
       label: 'ענה — לא מעוניין',
       tone: 'danger',
-      newLeadStatus: null,
     },
     {
       id: 'no_answer',
       label: 'לא ענה',
       tone: 'neutral',
-      newLeadStatus: incrementNoAnswer,
       nextTask: {
         task_type: 'call',
         delayHours: 24,
@@ -88,7 +70,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'sent_whatsapp',
       label: 'שלחתי וואטסאפ',
       tone: 'whatsapp',
-      newLeadStatus: 'no_answer_whatsapp_sent',
       nextTask: {
         task_type: 'call',
         delayHours: 24,
@@ -102,13 +83,11 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'deal_closed',
       label: 'סגרנו עסקה 🎉',
       tone: 'success',
-      newLeadStatus: 'deal_closed',
     },
     {
       id: 'send_quote',
       label: 'צריך לשלוח הצעה',
       tone: 'success',
-      newLeadStatus: 'followup_after_quote',
       nextTask: {
         task_type: 'quote_preparation',
         delayHours: 24,
@@ -119,7 +98,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'callback_after_meeting',
       label: 'הלקוח חוזר אליי',
       tone: 'warn',
-      newLeadStatus: keepFollowupTier,
       nextTask: {
         task_type: 'call',
         askForDateTime: true,
@@ -130,13 +108,11 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'not_relevant',
       label: 'לא רלוונטי',
       tone: 'danger',
-      newLeadStatus: 'not_relevant_no_explanation',
     },
     {
       id: 'no_show',
       label: 'לא הגיע',
       tone: 'neutral',
-      newLeadStatus: null,
       nextTask: {
         task_type: 'call',
         delayHours: 24,
@@ -150,7 +126,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'sent_to_customer',
       label: 'שלחתי ללקוח',
       tone: 'success',
-      newLeadStatus: 'followup_after_quote',
       nextTask: {
         task_type: 'call',
         delayDays: 3,
@@ -161,7 +136,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'negotiating',
       label: 'דחה — משא ומתן',
       tone: 'warn',
-      newLeadStatus: 'followup_after_quote',
       nextTask: {
         task_type: 'call',
         delayHours: 24,
@@ -172,7 +146,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'lost',
       label: 'לקוח לא מעוניין',
       tone: 'danger',
-      newLeadStatus: 'heard_price_not_interested',
     },
   ],
 
@@ -181,13 +154,11 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'closed',
       label: 'נסגר ✓',
       tone: 'success',
-      newLeadStatus: 'deal_closed',
     },
     {
       id: 'postponed',
       label: 'דחה למועד אחר',
       tone: 'warn',
-      newLeadStatus: 'followup_after_quote',
       nextTask: {
         task_type: 'call',
         askForDateTime: true,
@@ -198,7 +169,6 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'cancelled',
       label: 'לא יסגור',
       tone: 'danger',
-      newLeadStatus: 'not_relevant_no_explanation',
     },
   ],
 };
@@ -212,30 +182,20 @@ export const TONE_CLASSES = {
   whatsapp: 'border-green-300 bg-green-50 hover:bg-green-100 text-green-800',
 };
 
-// Resolve a (currentStatus) => newStatus function or static string.
-export function resolveOutcomeStatus(outcome, currentStatus) {
-  if (typeof outcome.newLeadStatus === 'function') {
-    return outcome.newLeadStatus(currentStatus);
-  }
-  return outcome.newLeadStatus ?? null;
-}
-
 /**
- * Should closing a task with this outcome open the next one?
+ * Should closing a task with this outcome pre-arm the next one?
  *
- * Only when the lead ENDS UP in a status that schedules itself — follow-up
+ * Only when the lead is in a status that schedules itself — follow-up
  * before/after quote, or a meeting. Every other outcome closes the task and
- * stops: "לא ענה" no longer mints another call, "ענה — מעוניין" no longer
- * mints a quote task. The rep opens what they need.
+ * stops: "לא ענה" doesn't mint another call, "ענה — מעוניין" doesn't mint a
+ * quote task. The rep opens what they need, from the toggle in the dialog.
  *
- * An outcome that leaves the status alone (`newLeadStatus: null`) is judged on
- * the status the lead already has, so a no-show on a lead sitting in follow-up
- * still gets its reminder.
+ * Judged on the status the lead already has, which is now the only status
+ * there is — closing a task no longer moves it.
  */
 export function outcomeOpensNextTask(outcome, currentStatus) {
   if (!outcome?.nextTask) return false;
-  const next = resolveOutcomeStatus(outcome, currentStatus);
-  return statusOpensAutoTask(next ?? currentStatus);
+  return statusOpensAutoTask(currentStatus);
 }
 
 // Compute the due-date ISO string for the auto-created follow-up task.
