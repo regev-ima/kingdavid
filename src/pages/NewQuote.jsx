@@ -26,10 +26,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock, Truck, PackageCheck, Sparkles, Info } from "lucide-react";
-import {
-  isDeliveryRelatedExtra, summarizeItems, filterDeliveryExtras, recommendDeliveryExtras,
-} from '@/lib/deliveryExtras';
+import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock, Truck, PackageCheck } from "lucide-react";
+import { isDeliveryRelatedExtra, summarizeItems, recommendDeliveryExtras } from '@/lib/deliveryExtras';
+import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
@@ -479,6 +478,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     setFormData(prev => ({ ...prev, extras: newExtras, ...totals }));
   };
 
+  const toggleRecommendedExtra = (extraCharge) => {
+    const idx = formData.extras.findIndex((ex) => ex.extra_charge_id === extraCharge.id);
+    if (idx >= 0) removeExtra(idx);
+    else addExtra(extraCharge.id);
+  };
+
   // Choosing self pickup drops any delivery/assembly row already selected —
   // quoting a delivery charge on an order the customer collects himself is the
   // error this flag exists to prevent.
@@ -509,9 +514,13 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // quote and the order it becomes can no longer price the delivery
   // differently. Memoised: they run on every items keystroke otherwise.
   const itemProfile = useMemo(() => summarizeItems(formData.items, products), [formData.items, products]);
-  const filteredExtraCharges = useMemo(
-    () => filterDeliveryExtras(extraCharges, { ...itemProfile, selfPickup: formData.is_self_pickup }),
-    [extraCharges, itemProfile, formData.is_self_pickup],
+  // Delivery rows aren't offered at all once the customer collects the order.
+  // Same list the order form's dropdown shows — the count-gating that used to
+  // narrow this lives in the recommendation, which is where a bed count should
+  // decide something.
+  const selectableExtraCharges = useMemo(
+    () => (formData.is_self_pickup ? extraCharges.filter((ec) => !isDeliveryRelatedExtra(ec.name)) : extraCharges),
+    [extraCharges, formData.is_self_pickup],
   );
   const recommendation = useMemo(
     () => recommendDeliveryExtras(extraCharges, itemProfile, { selfPickup: formData.is_self_pickup }),
@@ -990,8 +999,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>תוספות להובלה</CardTitle>
-                <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
+                <CardTitle>אופן המסירה</CardTitle>
+                <p className="text-sm text-muted-foreground">משלוח או איסוף עצמי — הבחירה קובעת אילו תוספות רלוונטיות</p>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Delivery or self pickup — the answer decides whether any of
@@ -1027,58 +1036,20 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                   </div>
                 )}
 
-                {/* What the products imply, said out loud. The rows themselves
-                    are already selected below — this is the sentence that tells
-                    the rep a price was decided for them, and on what basis. */}
-                {!formData.is_self_pickup && recommendation.extras.length > 0 ? (
-                  <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3">
-                    <p className="text-xs font-medium text-primary flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      זוהו תוספות הובלה והרכבה מתאימות לפי הפריטים שבהצעה — לחיצה על שורה מסירה אותה
-                      {recommendation.fallbackUsed ? ' (התאמה כללית, כדאי לוודא)' : ''}
-                    </p>
-                  </div>
-                ) : !formData.is_self_pickup && needsDelivery ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
-                    <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                    לא נמצאה תוספת הובלה מתאימה לפריטים שבהצעה, יש לבחור ידנית.
-                  </div>
-                ) : null}
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {filteredExtraCharges.map(ec => {
-                    const selected = formData.extras.find(ex => ex.extra_charge_id === ec.id);
-                    const isSelected = !!selected;
-                    return (
-                      <button
-                        key={ec.id}
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            const idx = formData.extras.findIndex(ex => ex.extra_charge_id === ec.id);
-                            if (idx >= 0) removeExtra(idx);
-                          } else {
-                            addExtra(ec.id);
-                          }
-                        }}
-                        className={`relative p-4 border rounded-xl text-center transition-all duration-200 ${isSelected ? 'border-primary/40 bg-primary/[0.04] shadow-[0_0_0_1px_rgba(79,70,229,0.15)]' : 'border-border bg-white hover:border-primary/20 hover:bg-muted/30'}`}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                            <Check className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                        <div className="font-medium text-sm text-foreground">{ec.name}</div>
-                        <div className={`text-lg font-bold mt-1.5 ${isSelected ? 'text-primary' : 'text-foreground'}`}>₪{ec.cost.toLocaleString()}</div>
-                        {selected?.auto_added ? (
-                          <div className="mt-1.5 text-[10px] font-medium text-primary">נוסף אוטומטית</div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
               </CardContent>
         </Card>
+
+        <DeliveryExtrasCard
+          extras={formData.extras}
+          selectableExtraCharges={selectableExtraCharges}
+          recommendation={recommendation}
+          isSelfPickup={formData.is_self_pickup}
+          needsDelivery={needsDelivery}
+          selfPickupNote="איסוף עצמי — תוספות הובלה והרכבה אינן רלוונטיות ואינן מוצעות להצעה זו."
+          onAdd={addExtra}
+          onRemove={removeExtra}
+          onToggleRecommended={toggleRecommendedExtra}
+        />
 
         <Card>
           <CardHeader>

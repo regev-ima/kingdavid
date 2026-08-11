@@ -19,10 +19,9 @@ import {
 } from "@/components/ui/select";
 
 
-import { ArrowRight, Save, Loader2, Check, Truck, PackageCheck, Sparkles } from "lucide-react";
-import {
-  isDeliveryRelatedExtra, summarizeItems, filterDeliveryExtras, recommendDeliveryExtras,
-} from '@/lib/deliveryExtras';
+import { ArrowRight, Save, Loader2, Check, Truck, PackageCheck } from "lucide-react";
+import { isDeliveryRelatedExtra, summarizeItems, recommendDeliveryExtras } from '@/lib/deliveryExtras';
+import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
@@ -301,6 +300,12 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     });
   };
 
+  const toggleRecommendedExtra = (extraCharge) => {
+    const idx = formData.extras.findIndex((ex) => ex.extra_charge_id === extraCharge.id);
+    if (idx >= 0) removeExtra(idx);
+    else addExtra(extraCharge.id);
+  };
+
   const removeExtra = (index) => {
     const newExtras = formData.extras.filter((_, i) => i !== index);
     const totals = calculateTotals(formData.items, newExtras);
@@ -355,14 +360,17 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
   // charge appearing in it on open would change a number they have seen. The
   // match is offered; adding it is the rep's click.
   const itemProfile = useMemo(() => summarizeItems(formData.items, products), [formData.items, products]);
-  const filteredExtraCharges = useMemo(
-    () => filterDeliveryExtras(extraCharges, { ...itemProfile, selfPickup: formData.is_self_pickup }),
-    [extraCharges, itemProfile, formData.is_self_pickup],
+  // Same list the order form's dropdown shows: everything, minus the delivery
+  // rows once the customer collects it himself.
+  const selectableExtraCharges = useMemo(
+    () => (formData.is_self_pickup ? extraCharges.filter((ec) => !isDeliveryRelatedExtra(ec.name)) : extraCharges),
+    [extraCharges, formData.is_self_pickup],
   );
   const recommendation = useMemo(
     () => recommendDeliveryExtras(extraCharges, itemProfile, { selfPickup: formData.is_self_pickup }),
     [extraCharges, itemProfile, formData.is_self_pickup],
   );
+  const needsDelivery = itemProfile.bedCount > 0 || itemProfile.mattressCount > 0;
 
   if (isLoadingUser || quoteLoading) {
     return (
@@ -757,55 +765,19 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
 
         {currentStep === 3 && (
           <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>תוספות להובלה</CardTitle>
-                <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* The match for what's on the quote, offered rather than
-                    applied: this quote may already be in the customer's hands,
-                    so nothing is added without the rep's click. */}
-                {!formData.is_self_pickup && recommendation.extras.length > 0 ? (
-                  <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3">
-                    <p className="text-xs font-medium text-primary flex items-center gap-1.5">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      מתאים לפריטים שבהצעה: {recommendation.extras.map((ec) => ec.name).join(' · ')}
-                      {recommendation.fallbackUsed ? ' (התאמה כללית, כדאי לוודא)' : ''}
-                    </p>
-                  </div>
-                ) : null}
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {filteredExtraCharges.map(ec => {
-                    const isSelected = formData.extras.some(ex => ex.extra_charge_id === ec.id);
-                    return (
-                      <button
-                        key={ec.id}
-                        type="button"
-                        onClick={() => {
-                          if (isSelected) {
-                            const idx = formData.extras.findIndex(ex => ex.extra_charge_id === ec.id);
-                            if (idx >= 0) removeExtra(idx);
-                          } else {
-                            addExtra(ec.id);
-                          }
-                        }}
-                        className={`relative p-4 border rounded-xl text-center transition-all duration-200 ${isSelected ? 'border-primary/40 bg-primary/[0.04] shadow-[0_0_0_1px_rgba(79,70,229,0.15)]' : 'border-border bg-white hover:border-primary/20 hover:bg-muted/30'}`}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                            <Check className="w-3 h-3 text-white" />
-                          </div>
-                        )}
-                        <div className="font-medium text-sm text-foreground">{ec.name}</div>
-                        <div className={`text-lg font-bold mt-1.5 ${isSelected ? 'text-primary' : 'text-foreground'}`}>₪{ec.cost.toLocaleString()}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+            <DeliveryExtrasCard
+              extras={formData.extras}
+              selectableExtraCharges={selectableExtraCharges}
+              recommendation={recommendation}
+              isSelfPickup={formData.is_self_pickup}
+              needsDelivery={needsDelivery}
+              recommendOnly
+              recommendOnlyLabel="מתאים לפריטים שבהצעה (לא נוסף אוטומטית — ההצעה כבר תומחרה ללקוח)"
+              selfPickupNote="איסוף עצמי — תוספות הובלה והרכבה אינן רלוונטיות ואינן מוצעות להצעה זו."
+              onAdd={addExtra}
+              onRemove={removeExtra}
+              onToggleRecommended={toggleRecommendedExtra}
+            />
 
         <Card>
           <CardHeader>
