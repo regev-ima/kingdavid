@@ -97,20 +97,35 @@ export function permissionForPage(pageName) {
 }
 
 /**
- * Where to send somebody who lands on a page they may not open.
+ * Home, in preference order.
  *
- * Not a hard-coded home: the fallback has to be a page they can actually
- * reach, or the redirect bounces. Callers pass a predicate so this stays free
- * of any dependency on how "allowed" is decided.
+ * `mainPage` is מרכז שליטה for everybody, which is right until somebody cannot
+ * open it — a rep, a factory user, or a manager whose access level was lowered.
+ * Landing those people on "אין לך גישה" every time they click the logo or open
+ * the app would be absurd, so the home page is resolved per user instead of
+ * hard-coded.
+ *
+ * Ordered by workspace, most specific first: each role's own screen is tried
+ * before the shared ones, so a bookkeeper lands on הנהלת חשבונות rather than
+ * on הזמנות, which she can also technically reach. Settings is last because
+ * everybody can open it — it is the guaranteed floor, not a good landing page.
  */
-export const FALLBACK_PAGES = [
+export const HOME_PAGE_ORDER = [
   'LeadManagement',
-  'Orders',
   'FactoryDashboard',
   'Bookkeeping',
+  'Orders',
   'Settings',
 ];
 
+/**
+ * The first page in HOME_PAGE_ORDER that `isAllowed` accepts.
+ *
+ * Pass the strong test — "may this user actually use this page?" — not "was it
+ * explicitly blocked". A factory user is not *blocked* from לידים; they simply
+ * have no business there, and sending them to a screen that renders empty is
+ * not a home page.
+ */
 export function firstReachablePage(isAllowed) {
-  return FALLBACK_PAGES.find((page) => isAllowed(PAGE_PERMISSIONS[page])) || 'Settings';
+  return HOME_PAGE_ORDER.find((page) => isAllowed(PAGE_PERMISSIONS[page])) || 'Settings';
 }
