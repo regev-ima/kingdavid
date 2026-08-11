@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, User, FileText, ShoppingCart, Headphones, UserPlus } from "lucide-react";
+import { Search, User, FileText, ShoppingCart, Headphones, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
@@ -23,18 +23,56 @@ import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 // server-side search via the entities helper's $or + $regex translation.
 
 
+// The search term SURVIVES closing the dialog. Looking a customer up is rarely
+// one lookup: a rep types a phone number, opens the lead, comes back to check
+// the order under the same number — and used to find the box empty and have to
+// type all ten digits again.
+//
+// It lives in sessionStorage, not in component state, because component state
+// does not survive the trip. Every route in App.jsx renders its OWN
+// LayoutWrapper, so navigating from the leads screen to an order unmounts the
+// Layout — and GlobalSearch with it — taking any useState with it. That is
+// exactly the journey this is meant to survive, so the term has to outlive the
+// component. sessionStorage also carries it across a reload and drops it when
+// the tab closes, which is the right lifetime for "until I delete it".
+const SEARCH_TERM_KEY = 'globalSearchTerm';
+
+function readStoredTerm() {
+  try {
+    return sessionStorage.getItem(SEARCH_TERM_KEY) || '';
+  } catch {
+    // Private mode / storage disabled — the search still works, it just forgets.
+    return '';
+  }
+}
+
+function writeStoredTerm(value) {
+  try {
+    if (value) sessionStorage.setItem(SEARCH_TERM_KEY, value);
+    else sessionStorage.removeItem(SEARCH_TERM_KEY);
+  } catch {
+    /* ignore — see readStoredTerm */
+  }
+}
+
 export default function GlobalSearch({ isOpen, onClose, user }) {
   const { openLead } = useLeadModal();
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [query, setQueryState] = useState(readStoredTerm);
+  const [debouncedQuery, setDebouncedQuery] = useState(() => readStoredTerm().trim());
+  const inputRef = useRef(null);
 
-  // Reset the input every time the dialog re-opens so an old term doesn't
-  // resurface stale results.
+  const setQuery = (value) => {
+    setQueryState(value);
+    writeStoredTerm(value);
+  };
+
+  // Opening the dialog selects what's there, so typing a different number just
+  // replaces it — nobody pays a delete keystroke for the term being kept.
   useEffect(() => {
-    if (!isOpen) {
-      setQuery('');
-      setDebouncedQuery('');
-    }
+    if (!isOpen) return undefined;
+    // After Radix has finished moving focus into the dialog.
+    const t = setTimeout(() => inputRef.current?.select(), 0);
+    return () => clearTimeout(t);
   }, [isOpen]);
 
   useEffect(() => {
@@ -122,12 +160,24 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
         <div className="relative mb-4">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
           <Input
+            ref={inputRef}
             placeholder="חפש לפי שם, טלפון, מספר הזמנה..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pr-10 text-lg py-6"
+            className="pr-10 pl-10 text-lg py-6"
             autoFocus
           />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => { setQuery(''); setDebouncedQuery(''); inputRef.current?.focus(); }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-6 w-6 grid place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="נקה חיפוש"
+              aria-label="נקה חיפוש"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
 
         <div className="overflow-y-auto flex-1 space-y-4">
