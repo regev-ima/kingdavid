@@ -32,7 +32,7 @@ import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
 import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
 import useOrderAutoSend from '@/hooks/use-order-autosend';
-import { sendOrderToCustomerWhatsApp } from '@/lib/orderWhatsAppAutoSend';
+import { sendOrderToCustomerWhatsApp, orderIsPaidEnoughToSend } from '@/lib/orderWhatsAppAutoSend';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -505,11 +505,17 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       return order;
     },
     onSuccess: (order) => {
-      // Send the order to the customer on WhatsApp, when the company has that
-      // turned on. Deliberately NOT awaited: the order is saved, the rep should
-      // move on, and the send reports itself when it lands. Every branch below
-      // returns, so this has to fire before them.
-      if (autoSendWhatsApp) {
+      // Send the order to the customer on WhatsApp — when the company has that
+      // turned on AND money has actually been collected. An unpaid order stays
+      // put and says nothing: the rep knows they took no payment, and a toast
+      // per order explaining why nothing was sent is noise. Card orders land
+      // here unpaid (Hyp clears after the order exists), so they wait for the
+      // manual button too.
+      //
+      // Deliberately NOT awaited: the order is saved, the rep should move on,
+      // and the send reports itself when it lands. Every branch below returns,
+      // so this has to fire before them.
+      if (autoSendWhatsApp && orderIsPaidEnoughToSend(order)) {
         const toastId = toast.loading('שולח את ההזמנה ללקוח בוואטסאפ...');
         sendOrderToCustomerWhatsApp(order, {
           currentUser: effectiveUser,

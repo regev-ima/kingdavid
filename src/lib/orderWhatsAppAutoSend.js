@@ -15,6 +15,12 @@
 //     for the whole company without a deploy — it messages real customers, and
 //     that needs a switch someone can reach.
 //
+// Only orders money has changed hands on go out by themselves — paid in full
+// or a deposit. An order written with nothing collected yet is not a document
+// the customer is waiting for, and a card order is unpaid at the moment it is
+// created (Hyp clears afterwards), so it is not sent either: the rep sends it
+// from the order screen once the charge goes through.
+//
 // The message is a template from the 'orders' category, so the wording is the
 // company's and identical for every rep, with {{נציג}} resolving to whoever
 // the message is sent FROM.
@@ -71,6 +77,13 @@ export async function saveOrderAutoSendSetting(enabled, updatedBy) {
   return base44.entities.AppSettings.create({ key: ORDER_AUTOSEND_SETTING_KEY, ...payload });
 }
 
+// Money changed hands: paid in full, or a deposit. Anything else — including a
+// card order, which is still 'unpaid' the moment it is created — waits for the
+// rep to send it by hand.
+export function orderIsPaidEnoughToSend(order) {
+  return order?.payment_status === 'paid' || order?.payment_status === 'deposit_paid';
+}
+
 function fallbackCaption(firstName) {
   return `היי${firstName ? ` ${firstName}` : ''}, מצורפת ההזמנה שלך מקינג דוד 🙏`;
 }
@@ -89,6 +102,7 @@ function fallbackCaption(firstName) {
  */
 export async function sendOrderToCustomerWhatsApp(order, { currentUser, isAdmin = false } = {}) {
   if (!order?.id) return { sent: false, reason: 'no_order' };
+  if (!orderIsPaidEnoughToSend(order)) return { sent: false, reason: 'not_paid' };
 
   const tail = phoneTail(order.customer_phone);
   if (!tail) return { sent: false, reason: 'no_phone' };
