@@ -274,6 +274,24 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     onError: (err) => toast({ title: 'עדכון הליד נכשל', description: err?.message || 'שגיאה לא צפויה', variant: 'destructive' }),
   });
 
+  // Notes have their own save path rather than reusing updateLeadMutation:
+  // that one closes the edit mode on success, which would throw away whatever
+  // the rep had typed into the other fields the moment they blurred the notes
+  // box. Nothing else about a lead changes here, so nothing else needs to.
+  const handleSaveNotes = async (notes) => {
+    try {
+      await base44.entities.Lead.update(leadId, { notes });
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['leadActivityLogs', leadId] });
+    } catch (err) {
+      toast({
+        title: 'שמירת ההערות נכשלה',
+        description: err?.message || 'שגיאה לא צפויה',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const convertToCustomerMutation = useMutation({
     mutationFn: async () => {
       // Check if customer already exists
@@ -642,6 +660,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         onBack={isModal ? onClose : () => navigate(createPageUrl('Leads'))}
         onCall={handleClickToCall}
         onOpenStatusTask={openLastTask}
+        onSaveNotes={handleSaveNotes}
         onAssignRep1={handleQuickAssignRep1}
         onAssignRep2={handleQuickAssignRep2}
         onRemoveRep={handleRemoveRep}
