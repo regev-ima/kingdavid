@@ -35,6 +35,8 @@ const STATUS_TAB_LABELS = {
   delivered: 'נמסרו',
 };
 
+// Everything except the rep filter, whose options are the reps who actually
+// have orders in view — see activeFilterOptions below.
 const filterOptions = [
   {
     key: 'payment_status',
@@ -80,6 +82,15 @@ const filterOptions = [
   },
 ];
 
+// The rep emails on an order, lowercased so a filter value matches whatever
+// casing the row was written with. Both slots count — a second rep on the order
+// worked the sale too, and a manager filtering by them expects to see it.
+function orderRepKeys(order) {
+  return [order?.rep1, order?.rep2]
+    .filter(Boolean)
+    .map((email) => String(email).toLowerCase());
+}
+
 // Reverse-map an incoming start/end back to a preset key. The control
 // center's "כניסה לדשבורד" drill lands here as /Orders?startDate&endDate,
 // so this lets the range picker show "היום" / "החודש" instead of a raw
@@ -103,7 +114,7 @@ export default function Orders() {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
   const initialTab = new URLSearchParams(window.location.search).get('tab');
   const [activeTab, setActiveTab] = useState(['all', 'pending_payment', 'paid', 'in_production', 'ready_delivery', 'delivered'].includes(initialTab) ? initialTab : 'all');
-  const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all', source: 'all' });
+  const [filters, setFilters] = useState({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all', source: 'all', rep: 'all' });
   const [showNewOrder, setShowNewOrder] = useState(false);
   // Order pending deletion (admin only) — null when the dialog is closed.
   const [orderToDelete, setOrderToDelete] = useState(null);
@@ -145,6 +156,14 @@ export default function Orders() {
     queryKey: ['orders'],
     queryFn: () => base44.entities.Order.list('-created_date'),
     staleTime: 60000,
+    enabled: canAccessSales,
+  });
+
+  // Names for the rep filter. Same cache key the rest of the app uses.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60_000,
     enabled: canAccessSales,
   });
 
@@ -215,6 +234,40 @@ export default function Orders() {
   if (filters.source && filters.source !== 'all') {
     filteredOrders = filteredOrders.filter(o => o.source === filters.source);
   }
+  if (filters.rep && filters.rep !== 'all') {
+    // Either slot counts: a second rep on the order worked the sale too.
+    filteredOrders = filteredOrders.filter((o) => orderRepKeys(o).includes(filters.rep));
+  }
+
+  // The rep filter's options are the reps who actually have orders in the
+  // current view — not the whole staff list. Two things fall out of that for
+  // free: the dropdown never offers a rep whose selection would empty the
+  // table, and a sales user (who only ever sees their own orders) gets no rep
+  // filter at all, because there is only ever one name in their view.
+  const repOptions = useMemo(() => {
+    const nameByEmail = new Map(
+      users.filter((u) => u?.email).map((u) => [String(u.email).toLowerCase(), u.full_name || u.email]),
+    );
+    const seen = new Map();
+    for (const order of rangeOrders) {
+      for (const key of orderRepKeys(order)) {
+        if (!seen.has(key)) seen.set(key, nameByEmail.get(key) || key);
+      }
+    }
+    return [...seen.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'he'));
+  }, [rangeOrders, users]);
+
+  // Kept on screen while a rep is selected even if the view narrowed down to
+  // that one rep — a filter that hides its own control is a filter nobody can
+  // turn off.
+  const showRepFilter = repOptions.length > 1 || (filters.rep && filters.rep !== 'all');
+  const activeFilterOptions = useMemo(() => (
+    showRepFilter
+      ? [...filterOptions, { key: 'rep', label: 'נציג', allLabel: 'כל הנציגים', options: repOptions }]
+      : filterOptions
+  ), [showRepFilter, repOptions]);
 
   const columns = [
     {
@@ -419,10 +472,10 @@ export default function Orders() {
       ) : null}
 
       <FilterBar
-        filters={filterOptions}
+        filters={activeFilterOptions}
         values={filters}
         onChange={(key, value) => setFilters(prev => ({ ...prev, [key]: value }))}
-        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all', source: 'all' }); setActiveTab('all'); }}
+        onClear={() => { setFilters({ search: '', payment_status: 'all', production_status: 'all', delivery_status: 'all', cancelled: 'all', source: 'all', rep: 'all' }); setActiveTab('all'); }}
         searchPlaceholder="חפש לפי מספר הזמנה, שם או טלפון..."
       />
 
