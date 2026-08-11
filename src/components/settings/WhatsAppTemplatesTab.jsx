@@ -198,9 +198,9 @@ export default function WhatsAppTemplatesTab() {
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">שליחת הזמנה אוטומטית בוואטסאפ</p>
           <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-            הזמנה שנוצרת ו<span className="font-medium">שולם עליה</span> (במלואה או מקדמה) נשלחת ללקוח
-            בוואטסאפ עם ה-PDF, בלי שהנציג לוחץ. הזמנה שלא שולם עליה כלום — כולל תשלום באשראי,
-            שנסלק אחרי שההזמנה כבר נוצרה — נשלחת ידנית מכפתור "שלח בוואטסאפ".
+            הזמנה ש<span className="font-medium">שולם עליה</span> (במלואה או מקדמה) נשלחת ללקוח
+            בוואטסאפ עם ה-PDF, בלי שהנציג לוחץ — ברגע היצירה, ובתשלום אשראי ברגע שהסליקה מאושרת.
+            הזמנה שלא שולם עליה כלום נשלחת ידנית מכפתור "שלח בוואטסאפ".
             הנוסח נלקח מהתבנית הראשונה בקטגוריית <span className="font-medium">הזמנות</span>,
             ו-<code dir="ltr">{'{{נציג}}'}</code> הוא הנציג ששולח.
             {autoSendEnabled ? '' : ' כרגע כבוי — הנציגים שולחים מכפתור "שלח בוואטסאפ" שבהזמנה.'}
