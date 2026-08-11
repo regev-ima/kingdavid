@@ -33,12 +33,22 @@ function compareEnquiries(a, b) {
 }
 
 /**
- * Map of leadId → ordinal (2 = second enquiry from this person, 3 = third …).
- * The first enquiry of each contact is absent from the map: it isn't a
- * "פנייה נוספת", it's the original.
+ * Map of leadId → `{ ordinal, total }` for every lead of a contact who appears
+ * more than once. `ordinal` is which enquiry this row is (1 = the first one
+ * that came in), `total` is how many that person has.
+ *
+ * EVERY row of a duplicated contact is in the map, including the first. The
+ * marker used to skip it, on the reasoning that the original isn't a repeat —
+ * true, and useless in a list. A rep scrolling past two rows of the same person
+ * sees whichever one is in front of them, and if that happens to be the earlier
+ * row it carried no warning at all: two identical-looking leads, one silently
+ * flagged, one not. What the rep needs to know is "this person is in here more
+ * than once", and that is true of every row involved.
+ *
+ * A contact with a single lead is absent — nothing to warn about.
  *
  * `rows` must be every lead of the contacts you care about — pass a partial
- * set and the ordinals are wrong.
+ * set and the counts are wrong.
  */
 export function buildRepeatEnquiryMap(rows) {
   const byContact = new Map();
@@ -54,14 +64,15 @@ export function buildRepeatEnquiryMap(rows) {
     if (list.length < 2) continue;
     list.sort(compareEnquiries);
     list.forEach((row, index) => {
-      if (index > 0) ordinals.set(row.id, index + 1);
+      ordinals.set(row.id, { ordinal: index + 1, total: list.length });
     });
   }
   return ordinals;
 }
 
 /**
- * Repeat-enquiry ordinals for a page of leads, in one batched query.
+ * Repeat-enquiry entries (`{ ordinal, total }`) for a page of leads, in one
+ * batched query.
  * Returns an empty map while loading, for leads with no contact, and in an
  * environment where `contact_id` hasn't been migrated in yet — the badge is
  * an extra, and it must never take a lead list down with it.
