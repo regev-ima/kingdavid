@@ -36,6 +36,7 @@ import {
 import {
   TASK_COMPLETION_FLOWS,
   TONE_CLASSES,
+  resolveOutcomeStatus,
   outcomeOpensNextTask,
 } from '@/lib/taskCompletionFlow';
 
@@ -49,7 +50,8 @@ import {
 //      outcome and the rep had no override.
 //   3. Optionally add a closing note that's appended to the task summary.
 //   4. On save: close the current task and create the configured follow-up
-//      (if any). The lead's STATUS is not touched — see taskCompletionFlow.js.
+//      (if any). The lead's STATUS is left alone, except for the no-answer
+//      ladder — see the note at the top of taskCompletionFlow.js.
 
 const TASK_TYPE_OPTIONS = [
   { value: 'call', label: 'שיחה', Icon: Phone, color: 'text-blue-600' },
@@ -145,12 +147,20 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
         throw new Error('יש לבחור תאריך ושעה למשימת ההמשך');
       }
       const currentLeadStatus = task.status || task.lead?.status || null;
+      // null for every outcome but "לא ענה": the rep set the status, and "what
+      // happened on this call" is not an answer to "where is this lead now".
+      const nextLeadStatus = resolveOutcomeStatus(selectedOutcome, currentLeadStatus);
 
-      // 1. Close the current task. The lead's status is deliberately untouched:
-      // the rep set it, and "what happened on this call" is not an answer to
-      // "where is this lead now". The status snapshot on the task is left as it
-      // was for the same reason.
-      const taskUpdate = { task_status: 'completed' };
+      // 1. Walk the no-answer ladder, when that's the outcome.
+      if (task.lead_id && nextLeadStatus && nextLeadStatus !== currentLeadStatus) {
+        await base44.entities.Lead.update(task.lead_id, { status: nextLeadStatus });
+      }
+
+      // 2. Close the current task.
+      const taskUpdate = {
+        task_status: 'completed',
+        ...(nextLeadStatus ? { status: nextLeadStatus } : {}),
+      };
       if (notes.trim()) {
         const previous = task.summary || '';
         taskUpdate.summary = previous
@@ -159,12 +169,13 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
       }
       await base44.entities.SalesTask.update(task.id, taskUpdate);
 
-      // No task sweep here either. Cancelling the lead's other open tasks was
-      // the follow-on of a status change that no longer happens — with the
-      // status unmoved, nothing has been orphaned, and sweeping would quietly
-      // cancel a second task the rep still means to do.
+      // No task sweep. Cancelling the lead's other open tasks was the
+      // follow-on of a status change that, for all but the ladder, no longer
+      // happens — and one more failed call attempt orphans nothing, so
+      // sweeping there would only cancel a second task the rep still means to
+      // do.
 
-      // 2. Create the rep-configured follow-up task (when enabled).
+      // 3. Create the rep-configured follow-up task (when enabled).
       if (followUpEnabled && followUpDueDate) {
         await base44.entities.SalesTask.create({
           lead_id: task.lead_id,
@@ -172,7 +183,7 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
           rep2: task.rep2,
           task_type: followUpType,
           task_status: 'not_completed',
-          status: currentLeadStatus || null,
+          status: nextLeadStatus || currentLeadStatus || null,
           due_date: followUpDueDate,
           work_start_date: new Date().toISOString(),
           summary: followUpSummary || '',

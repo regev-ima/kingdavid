@@ -13,16 +13,35 @@
 // the lead card. ("ענה — לא מעוניין" was already carved out this way for the
 // same reason; this is the rest of the list catching up.)
 //
+// ONE exception survives, and it is not a judgement call: "לא ענה" walks the
+// no-answer ladder (no_answer_1 → 2 → … → 5). That status is a COUNT of failed
+// attempts, not an opinion about the lead — the rep cannot be asked to keep it
+// by hand, and the whole ladder is worthless if it stops counting.
+//
 // Whether the `nextTask` on an outcome actually fires is decided by the status
 // the lead is IN, via outcomeOpensNextTask() below. See AUTO_TASK_STATUSES in
 // constants/leadOptions.
 
 import { statusOpensAutoTask } from '@/constants/leadOptions';
+
+// no_answer_3 → no_answer_4, capped at 5. A lead with no ladder status yet
+// starts at 1.
+const incrementNoAnswer = (currentStatus) => {
+  const match = /^no_answer_(\d+)$/.exec(currentStatus || '');
+  if (match) {
+    const n = Math.min(5, parseInt(match[1], 10) + 1);
+    return `no_answer_${n}`;
+  }
+  return 'no_answer_1';
+};
 //
 // Each outcome has:
 //   id            — stable identifier
 //   label         — Hebrew text shown on the button
 //   tone          — color hint: 'success' | 'warn' | 'danger' | 'neutral' | 'whatsapp'
+//   newLeadStatus — optional. A literal status, or (currentStatus) => status.
+//                   Absent on almost every outcome by design (see above); only
+//                   the no-answer ladder still moves a lead by itself.
 //   nextTask      — optional next task config:
 //     - task_type:    one of call | meeting | quote_preparation | close_order
 //     - askForDateTime: true  → CompleteTaskDialog shows a picker
@@ -60,6 +79,9 @@ export const TASK_COMPLETION_FLOWS = {
       id: 'no_answer',
       label: 'לא ענה',
       tone: 'neutral',
+      // The ladder — the one status this dialog still writes. See the note at
+      // the top of the file.
+      newLeadStatus: incrementNoAnswer,
       nextTask: {
         task_type: 'call',
         delayHours: 24,
@@ -182,6 +204,16 @@ export const TONE_CLASSES = {
   whatsapp: 'border-green-300 bg-green-50 hover:bg-green-100 text-green-800',
 };
 
+// Resolve a (currentStatus) => newStatus function or static string. Returns
+// null for the outcomes that leave the lead's status alone, which is most of
+// them.
+export function resolveOutcomeStatus(outcome, currentStatus) {
+  if (typeof outcome?.newLeadStatus === 'function') {
+    return outcome.newLeadStatus(currentStatus);
+  }
+  return outcome?.newLeadStatus ?? null;
+}
+
 /**
  * Should closing a task with this outcome pre-arm the next one?
  *
@@ -190,12 +222,12 @@ export const TONE_CLASSES = {
  * stops: "לא ענה" doesn't mint another call, "ענה — מעוניין" doesn't mint a
  * quote task. The rep opens what they need, from the toggle in the dialog.
  *
- * Judged on the status the lead already has, which is now the only status
- * there is — closing a task no longer moves it.
+ * Judged on the status the lead ends up in — which for every outcome but the
+ * no-answer ladder is simply the status it already had.
  */
 export function outcomeOpensNextTask(outcome, currentStatus) {
   if (!outcome?.nextTask) return false;
-  return statusOpensAutoTask(currentStatus);
+  return statusOpensAutoTask(resolveOutcomeStatus(outcome, currentStatus) ?? currentStatus);
 }
 
 // Compute the due-date ISO string for the auto-created follow-up task.
