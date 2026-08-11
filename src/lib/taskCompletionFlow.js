@@ -21,7 +21,6 @@ import { statusOpensAutoTask } from '@/constants/leadOptions';
 //     - askForDateTime: true  → CompleteTaskDialog shows a picker
 //     - delayHours / delayDays → automatic offset from now
 //     - summary:      default text for the new task
-//   redirectTo    — optional URL key, e.g. 'NewOrder' for the deal-closed case
 
 const incrementNoAnswer = (currentStatus) => {
   const match = /^no_answer_(\d+)$/.exec(currentStatus || '');
@@ -104,7 +103,6 @@ export const TASK_COMPLETION_FLOWS = {
       label: 'סגרנו עסקה 🎉',
       tone: 'success',
       newLeadStatus: 'deal_closed',
-      redirectTo: 'NewOrder',
     },
     {
       id: 'send_quote',
@@ -184,7 +182,6 @@ export const TASK_COMPLETION_FLOWS = {
       label: 'נסגר ✓',
       tone: 'success',
       newLeadStatus: 'deal_closed',
-      redirectTo: 'NewOrder',
     },
     {
       id: 'postponed',

@@ -1,7 +1,6 @@
 import { base44 } from '@/api/base44Client';
 import { statusOpensAutoTask } from '@/constants/leadOptions';
 
-const CANCEL_NOTE = 'בוטלה אוטומטית – העסקה נסגרה';
 const IDLE_NOTE = 'בוטלה אוטומטית – הסטטוס של הליד אינו מצריך משימה פתוחה';
 
 // An open task is a commitment to do something on a date. Three lead statuses
@@ -13,35 +12,23 @@ const IDLE_NOTE = 'בוטלה אוטומטית – הסטטוס של הליד א
 // So the rule that opens a task now also closes one. Whenever a lead's status
 // changes, this sweeps the tasks the new status no longer justifies.
 //
+// 'deal_closed' is deliberately NOT one of them. It used to be the first status
+// this sweep was written for, and it was wrong: a closed deal is the start of
+// the work, not the end of it. The customer who just bought is the one coming
+// in on Sunday to choose a fabric, and the meeting the rep booked for that is a
+// real appointment with a real person — closing the deal does not un-book it.
+// Marking "נסגרה עסקה" now marks the lead closed and touches nothing else.
+//
 // `exceptTaskId` skips a specific task — callers in the middle of saving that
 // same task pass it so the sweep doesn't race their own update.
 export async function cancelOpenTasksForStatus(leadId, newStatus, exceptTaskId = null) {
   if (!leadId || !newStatus) return;
-  if (statusOpensAutoTask(newStatus)) return;
-  await sweepOpenTasks(
-    leadId,
-    newStatus,
-    newStatus === 'deal_closed' ? CANCEL_NOTE : IDLE_NOTE,
-    exceptTaskId,
-  );
+  if (newStatus === 'deal_closed' || statusOpensAutoTask(newStatus)) return;
+  await sweepOpenTasks(leadId, newStatus, IDLE_NOTE, exceptTaskId);
 }
 
-// Called when a lead's status transitions to 'deal_closed'. Cancels every
-// still-open SalesTask linked to that lead — once the deal is closed,
-// remaining follow-ups (callbacks, quote preps, etc.) are moot and
-// otherwise clutter the rep's "להיום" / "באיחור" buckets forever.
-//
 // Tasks are set to `task_status: 'cancelled'` (not `'completed'`) so the
 // "סיימתי היום" KPI stays honest — the rep didn't actually do them.
-//
-// `exceptTaskId` skips a specific task — used by callers that are
-// themselves in the middle of saving that task (CompleteTaskDialog,
-// EditSalesTaskDialog) and don't want the sweep to race against their
-// own update.
-export async function cancelOpenTasksForClosedDeal(leadId, exceptTaskId = null) {
-  return sweepOpenTasks(leadId, 'deal_closed', CANCEL_NOTE, exceptTaskId);
-}
-
 async function sweepOpenTasks(leadId, newStatus, note, exceptTaskId) {
   if (!leadId) return;
   let openTasks;
