@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import QuotePdfGenerator from '@/components/quotes/QuotePdfGenerator';
@@ -19,9 +19,10 @@ import {
 } from "@/components/ui/select";
 
 
-import { ArrowRight, Save, Loader2, Check, Truck, PackageCheck } from "lucide-react";
-import { isDeliveryRelatedExtra } from '@/lib/deliveryExtras';
-import { hasBedType } from '@/utils/bedType';
+import { ArrowRight, Save, Loader2, Check, Truck, PackageCheck, Sparkles } from "lucide-react";
+import {
+  isDeliveryRelatedExtra, summarizeItems, filterDeliveryExtras, recommendDeliveryExtras,
+} from '@/lib/deliveryExtras';
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
@@ -343,6 +344,26 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
 
   const leadsById = buildLeadsById(lead ? [lead] : []);
 
+  // ── Delivery & assembly ─────────────────────────────────────────────────
+  // Same rules as the new-quote form and the order form, from the one module
+  // they all read (lib/deliveryExtras) — EditQuote used to carry its own copy
+  // of them, "kept in sync intentionally", which is a promise a comment cannot
+  // keep.
+  //
+  // Unlike the new-quote form nothing is added by itself here: this quote
+  // already exists and may already be in the customer's hands, so a delivery
+  // charge appearing in it on open would change a number they have seen. The
+  // match is offered; adding it is the rep's click.
+  const itemProfile = useMemo(() => summarizeItems(formData.items, products), [formData.items, products]);
+  const filteredExtraCharges = useMemo(
+    () => filterDeliveryExtras(extraCharges, { ...itemProfile, selfPickup: formData.is_self_pickup }),
+    [extraCharges, itemProfile, formData.is_self_pickup],
+  );
+  const recommendation = useMemo(
+    () => recommendDeliveryExtras(extraCharges, itemProfile, { selfPickup: formData.is_self_pickup }),
+    [extraCharges, itemProfile, formData.is_self_pickup],
+  );
+
   if (isLoadingUser || quoteLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -513,38 +534,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
       </div>
     );
   }
-
-  const mattressCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (product?.category === 'mattress' ? (item.quantity || 0) : 0);
-  }, 0);
-
-  // Sum quantity of bed-type line items so we can hide delivery options that
-  // don't match the exact bed count on the quote. See NewQuote.jsx for the
-  // shape of the rules — kept in sync intentionally.
-  const bedCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (hasBedType(product) ? (item.quantity || 0) : 0);
-  }, 0);
-
-  const filteredExtraCharges = extraCharges.filter(ec => {
-    // Self pickup: nothing delivery-shaped is on offer.
-    if (formData.is_self_pickup && isDeliveryRelatedExtra(ec.name)) return false;
-    if (ec.name === 'שירותי מנוף') return false;
-    if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
-
-    const multiBedMatch = ec.name.match(/ל[- ]?(\d+) מיטות/);
-    if (multiBedMatch) return bedCount === parseInt(multiBedMatch[1], 10);
-    if (ec.name.includes('מיטות')) return bedCount >= 2;
-    if (ec.name.includes('מיטה')) return bedCount === 1;
-
-    const multiMattressMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
-    if (multiMattressMatch) return mattressCount === parseInt(multiMattressMatch[1], 10);
-    if (ec.name === 'הובלה למזרן' || ec.name === 'הובלה מזרן') {
-      return mattressCount >= 1 && bedCount === 0;
-    }
-    return true;
-  });
 
   return (
     <div className={isModal ? 'space-y-6 p-6' : 'max-w-6xl mx-auto space-y-6'}>
@@ -773,7 +762,20 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                 <CardTitle>תוספות להובלה</CardTitle>
                 <p className="text-sm text-muted-foreground">בחר תוספות עבור ההובלה וההרכבה</p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* The match for what's on the quote, offered rather than
+                    applied: this quote may already be in the customer's hands,
+                    so nothing is added without the rep's click. */}
+                {!formData.is_self_pickup && recommendation.extras.length > 0 ? (
+                  <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3">
+                    <p className="text-xs font-medium text-primary flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      מתאים לפריטים שבהצעה: {recommendation.extras.map((ec) => ec.name).join(' · ')}
+                      {recommendation.fallbackUsed ? ' (התאמה כללית, כדאי לוודא)' : ''}
+                    </p>
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {filteredExtraCharges.map(ec => {
                     const isSelected = formData.extras.some(ex => ex.extra_charge_id === ec.id);
