@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, Sparkles, Info, CreditCard, Truck, PackageCheck } from "lucide-react";
+import { ArrowRight, Save, Loader2, Trash2, User, UserCheck, X, Check, Wallet, Plus, CreditCard, Truck, PackageCheck } from "lucide-react";
 import AddressAutocomplete from '@/components/shared/AddressAutocomplete';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
 import QuoteTotalsSummary from '@/components/quote/QuoteTotalsSummary';
@@ -30,6 +30,7 @@ import useDocumentTermsDefaults from '@/hooks/use-document-terms';
 import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } from '@/components/payment/OrderPaymentDialog';
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
+import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -1139,102 +1140,20 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
         {currentStep === 3 && (
         <>
-        <Card className="mt-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>תוספות</CardTitle>
-            <Select onValueChange={addExtra}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="הוסף תוספת" />
-              </SelectTrigger>
-              <SelectContent>
-                {selectableExtraCharges.map(ec => (
-                  <SelectItem key={ec.id} value={ec.id}>
-                    {ec.name} - ₪{ec.cost.toLocaleString()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Delivery & assembly, matched to what's on the order. One click
-                each; the row we picked ourselves says so on its badge. */}
-            {formData.is_self_pickup ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
-                <PackageCheck className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                איסוף עצמי — תוספות הובלה והרכבה אינן רלוונטיות ואינן מוצעות להזמנה זו.
-              </div>
-            ) : recommendation.extras.length > 0 ? (
-              <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3 space-y-2">
-                <p className="text-xs font-medium text-primary flex items-center gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {fromQuote
-                    ? 'מומלץ להזמנה (לא נוסף אוטומטית — ההצעה כבר תומחרה ללקוח)'
-                    : 'זוהו תוספות הובלה והרכבה מתאימות'}
-                  {recommendation.fallbackUsed ? ' — התאמה כללית, כדאי לוודא' : ''}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {recommendation.extras.map((ec) => {
-                    const selected = formData.extras.some((ex) => ex.extra_charge_id === ec.id);
-                    return (
-                      <Button
-                        key={ec.id}
-                        type="button"
-                        variant={selected ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-8 text-xs"
-                        onClick={() => toggleRecommendedExtra(ec)}
-                      >
-                        {selected ? <Check className="h-3 w-3 me-1" /> : <Plus className="h-3 w-3 me-1" />}
-                        {ec.name} — ₪{Number(ec.cost || 0).toLocaleString()}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : needsDelivery ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
-                <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-                לא נמצאה תוספת הובלה מתאימה, יש לבחור ידנית.
-              </div>
-            ) : null}
-
-            {formData.extras.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">לא נוספו תוספות</p>
-            ) : (
-              <div className="space-y-3">
-                {formData.extras.map((extra, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium flex items-center gap-2 flex-wrap">
-                        {extra.name}
-                        {extra.auto_added ? (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary ring-1 ring-primary/20">
-                            נוסף אוטומטית
-                          </span>
-                        ) : null}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold text-lg">₪{extra.cost.toLocaleString()}</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeExtra(index)}
-                        className="text-red-500"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              מנוף ותוספת קומה אף פעם לא נוספים אוטומטית — יש לסכם אותם מול הלקוח ולהוסיף ידנית.
-            </p>
-          </CardContent>
-        </Card>
+        <DeliveryExtrasCard
+          className="mt-6"
+          extras={formData.extras}
+          selectableExtraCharges={selectableExtraCharges}
+          recommendation={recommendation}
+          isSelfPickup={formData.is_self_pickup}
+          needsDelivery={needsDelivery}
+          recommendOnly={fromQuote}
+          recommendOnlyLabel="מומלץ להזמנה (לא נוסף אוטומטית — ההצעה כבר תומחרה ללקוח)"
+          selfPickupNote="איסוף עצמי — תוספות הובלה והרכבה אינן רלוונטיות ואינן מוצעות להזמנה זו."
+          onAdd={addExtra}
+          onRemove={removeExtra}
+          onToggleRecommended={toggleRecommendedExtra}
+        />
 
         {/* Payments taken now, saved together with the order. */}
         <Card className="mt-6">
