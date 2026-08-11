@@ -187,17 +187,54 @@ export default function Orders() {
       })
     : scopedOrders;
 
+  // Everything the manager narrowed the screen to — EXCEPT the status
+  // selection, which is what the cubes themselves set.
+  //
+  // The cubes are computed from this set, so filtering by rep or by day moves
+  // them: "סכום מכירות" under a rep filter is that rep's sales, not the floor's.
+  // Leaving the status selection out is what keeps the cubes usable as
+  // navigation — fold it in and clicking "שולמו" would collapse every other
+  // cube to zero, including the one you'd click to get back.
+  const contextOrders = useMemo(() => {
+    let rows = rangeOrders;
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      rows = rows.filter(o =>
+        o.order_number?.toLowerCase().includes(searchLower) ||
+        o.customer_name?.toLowerCase().includes(searchLower) ||
+        o.customer_phone?.includes(filters.search)
+      );
+    }
+    if (filters.payment_status && filters.payment_status !== 'all') {
+      rows = rows.filter(o => o.payment_status === filters.payment_status);
+    }
+    if (filters.production_status && filters.production_status !== 'all') {
+      rows = rows.filter(o => o.production_status === filters.production_status);
+    }
+    if (filters.delivery_status && filters.delivery_status !== 'all') {
+      rows = rows.filter(o => o.delivery_status === filters.delivery_status);
+    }
+    if (filters.source && filters.source !== 'all') {
+      rows = rows.filter(o => o.source === filters.source);
+    }
+    if (filters.rep && filters.rep !== 'all') {
+      // Either slot counts: a second rep on the order worked the sale too.
+      rows = rows.filter((o) => orderRepKeys(o).includes(filters.rep));
+    }
+    return rows;
+  }, [rangeOrders, filters]);
+
   // The snapshot cubes are money and pipeline figures, so a cancelled order has
   // no business in them. The LIST is a different question — see the 'cancelled'
   // filter below; by default it hides them, but they are one click away and
   // never deleted.
-  const liveRangeOrders = excludeCancelled(rangeOrders);
+  const liveContextOrders = excludeCancelled(contextOrders);
 
   let filteredOrders = filters.cancelled === 'only'
-    ? rangeOrders.filter(isCancelledOrder)
+    ? contextOrders.filter(isCancelledOrder)
     : filters.cancelled === 'include'
-      ? rangeOrders
-      : liveRangeOrders;
+      ? contextOrders
+      : liveContextOrders;
 
   // Status quick-filter. For managers this is driven entirely by the cube
   // clicks (the old tab strip is gone); reps still get the tab strip. Either
@@ -212,31 +249,6 @@ export default function Orders() {
     filteredOrders = filteredOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered');
   } else if (activeTab === 'delivered') {
     filteredOrders = filteredOrders.filter(o => o.delivery_status === 'delivered');
-  }
-
-  if (filters.search) {
-    const searchLower = filters.search.toLowerCase();
-    filteredOrders = filteredOrders.filter(o =>
-      o.order_number?.toLowerCase().includes(searchLower) ||
-      o.customer_name?.toLowerCase().includes(searchLower) ||
-      o.customer_phone?.includes(filters.search)
-    );
-  }
-  if (filters.payment_status && filters.payment_status !== 'all') {
-    filteredOrders = filteredOrders.filter(o => o.payment_status === filters.payment_status);
-  }
-  if (filters.production_status && filters.production_status !== 'all') {
-    filteredOrders = filteredOrders.filter(o => o.production_status === filters.production_status);
-  }
-  if (filters.delivery_status && filters.delivery_status !== 'all') {
-    filteredOrders = filteredOrders.filter(o => o.delivery_status === filters.delivery_status);
-  }
-  if (filters.source && filters.source !== 'all') {
-    filteredOrders = filteredOrders.filter(o => o.source === filters.source);
-  }
-  if (filters.rep && filters.rep !== 'all') {
-    // Either slot counts: a second rep on the order worked the sale too.
-    filteredOrders = filteredOrders.filter((o) => orderRepKeys(o).includes(filters.rep));
   }
 
   // The rep filter's options are the reps who actually have orders in the
@@ -358,19 +370,20 @@ export default function Orders() {
     );
   }
 
-  const pendingPaymentCount = liveRangeOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
-  const inProductionCount = liveRangeOrders.filter(o => o.production_status === 'in_production').length;
-  const readyDeliveryCount = liveRangeOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
-  const paidCount = liveRangeOrders.filter(o => o.payment_status === 'paid').length;
-  const deliveredCount = liveRangeOrders.filter(o => o.delivery_status === 'delivered').length;
-  const revenueTotal = liveRangeOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+  const pendingPaymentCount = liveContextOrders.filter(o => o.payment_status === 'unpaid' || o.payment_status === 'deposit_paid').length;
+  const inProductionCount = liveContextOrders.filter(o => o.production_status === 'in_production').length;
+  const readyDeliveryCount = liveContextOrders.filter(o => o.production_status === 'ready' && o.delivery_status !== 'delivered').length;
+  const paidCount = liveContextOrders.filter(o => o.payment_status === 'paid').length;
+  const deliveredCount = liveContextOrders.filter(o => o.delivery_status === 'delivered').length;
+  const revenueTotal = liveContextOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
 
-  // Snapshot cubes derive from rangeOrders (same source as the list), so each
-  // cube number is exactly the row count its click produces.
+  // Snapshot cubes derive from contextOrders — the same rows the list shows
+  // before the cube selection — so each cube number is exactly the row count
+  // its click produces, under whatever the manager filtered to.
   const snapshot = {
-    ordersCount: liveRangeOrders.length,
+    ordersCount: liveContextOrders.length,
     revenue: revenueTotal,
-    avgOrder: liveRangeOrders.length ? Math.round(revenueTotal / liveRangeOrders.length) : 0,
+    avgOrder: liveContextOrders.length ? Math.round(revenueTotal / liveContextOrders.length) : 0,
     unpaidOrders: pendingPaymentCount,
     paidOrders: paidCount,
     inProduction: inProductionCount,
@@ -441,7 +454,7 @@ export default function Orders() {
       {!isManager ? (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="flex flex-col sm:flex-row bg-card border h-auto gap-1 p-1.5 rounded-lg shadow-card">
-            <TabsTrigger value="all" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">כל ההזמנות ({liveRangeOrders.length})</TabsTrigger>
+            <TabsTrigger value="all" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">כל ההזמנות ({liveContextOrders.length})</TabsTrigger>
             <TabsTrigger value="pending_payment" className="w-full sm:w-auto text-sm h-9 rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               ממתין לתשלום ({pendingPaymentCount})
             </TabsTrigger>
