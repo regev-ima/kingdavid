@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, UserPlus, Download, ExternalLink, Search, UserCheck, X, Lock } from "lucide-react";
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { cancelOpenTasksForStatus } from '@/lib/dealClose';
@@ -109,7 +109,6 @@ const blankTask = (preSelectedLead, repEmail) => ({
 export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelectedLead = null, effectiveUser: effectiveUserProp }) {
   const isCreate = !task;
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const { openLead } = useLeadModal();
   const { hiddenStatuses } = useHiddenStatuses();
   const { evaluate: evaluateClosure } = useClosureChecker();
@@ -322,16 +321,6 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
 
     setValidationError('');
 
-    // When the rep flips this task's lead-status snapshot to "נסגרה
-    // עסקה", we (a) cancel every other open task for the lead — the
-    // deal is done, follow-ups are moot — and (b) jump to NewOrder
-    // pre-filled, matching the LeadDetails / QuoteDetails / Complete-
-    // TaskDialog flows.
-    const dealJustClosed =
-      editingTask.status === 'deal_closed' &&
-      originalLeadStatus !== 'deal_closed' &&
-      !!editingTask.lead_id;
-
     try {
       // Always update the Lead entity status to match
       const leadId = editingTask.lead_id;
@@ -392,16 +381,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
       updateData.rep2 = editingTask.rep2 ?? null;
     }
 
-    updateTaskMutation.mutate(
-      { id: editingTask.id, data: updateData },
-      {
-        onSuccess: () => {
-          if (dealJustClosed) {
-            navigate(`${createPageUrl('NewOrder')}?leadId=${editingTask.lead_id}`);
-          }
-        },
-      },
-    );
+    updateTaskMutation.mutate({ id: editingTask.id, data: updateData });
   };
 
   const confirmFollowup = async () => {

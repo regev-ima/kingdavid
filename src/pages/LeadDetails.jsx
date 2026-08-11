@@ -263,17 +263,12 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       queryClient.invalidateQueries(['lead', leadId]);
       queryClient.invalidateQueries(['leadActivityLogs', leadId]);
       setIsEditing(false);
-      // When the rep flips the lead to "נסגרה עסקה" via the status
-      // dropdown, jump straight into the New Order form with the
-      // customer pre-filled — same flow as the CompleteTaskDialog
-      // 'deal_closed' outcome, just reached from a different surface.
-      // Any status change sweeps the tasks it no longer justifies; only a
-      // closed deal also jumps to the order form.
+      // A status change sweeps the tasks the new status no longer justifies.
+      // Closing a deal does nothing beyond marking it closed — no jump to the
+      // order form, no tasks cancelled; the rep writes the order when they're
+      // ready, and the appointment they booked stays booked.
       if (variables?.status && variables.status !== lead?.status) {
         cancelOpenTasksForStatus(leadId, variables.status).catch(() => {});
-      }
-      if (variables?.status === 'deal_closed' && lead?.status !== 'deal_closed') {
-        navigate(`${createPageUrl('NewOrder')}?leadId=${leadId}`);
       }
     },
     onError: (err) => toast({ title: 'עדכון הליד נכשל', description: err?.message || 'שגיאה לא צפויה', variant: 'destructive' }),

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
@@ -34,7 +33,6 @@ import {
   Paperclip,
   ShoppingCart,
 } from 'lucide-react';
-import { createPageUrl } from '@/utils';
 import {
   TASK_COMPLETION_FLOWS,
   TONE_CLASSES,
@@ -53,8 +51,7 @@ import { cancelOpenTasksForStatus } from '@/lib/dealClose';
 //      outcome and the rep had no override.
 //   3. Optionally add a closing note that's appended to the task summary.
 //   4. On save: close the current task, update the lead status, create
-//      the configured follow-up (if any), and redirect to NewOrder when
-//      the outcome closes the deal.
+//      the configured follow-up (if any).
 
 const TASK_TYPE_OPTIONS = [
   { value: 'call', label: 'שיחה', Icon: Phone, color: 'text-blue-600' },
@@ -88,7 +85,6 @@ const defaultFollowUpDate = () => {
 };
 
 export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [selectedOutcome, setSelectedOutcome] = useState(null);
@@ -200,9 +196,8 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
         });
       }
 
-      return { redirectTo: selectedOutcome.redirectTo };
     },
-    onSuccess: ({ redirectTo }) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salesTasks-counts'] });
       queryClient.invalidateQueries({ queryKey: ['salesTasks-tab'] });
       queryClient.invalidateQueries({ queryKey: ['leads-for-paginated-tasks'] });
@@ -213,11 +208,6 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
       toast.success('המשימה הושלמה');
       onCompleted?.();
       onClose();
-      if (redirectTo === 'NewOrder' && task?.lead_id) {
-        // NewOrder reads `?leadId=` (camelCase); the earlier `?lead_id=`
-        // form was silently ignored and the form didn't pre-fill.
-        navigate(`${createPageUrl('NewOrder')}?leadId=${task.lead_id}`);
-      }
     },
     onError: (err) => {
       toast.error(err?.message || 'שמירה נכשלה');
