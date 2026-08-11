@@ -31,6 +31,8 @@ import OrderPaymentDialog, { PAYMENT_METHODS, calcPaymentStatus, sumPayments } f
 import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
 import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
+import useOrderAutoSend from '@/hooks/use-order-autosend';
+import { sendOrderToCustomerWhatsApp } from '@/lib/orderWhatsAppAutoSend';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
@@ -59,6 +61,7 @@ const TERM_ACTION = {
 export default function NewOrder({ asDialog = false, dialogLeadId = null, dialogQuoteId = null, onDialogClose = null }) {
   const navigate = useNavigate();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
+  const { enabled: autoSendWhatsApp } = useOrderAutoSend();
   const urlParams = new URLSearchParams(window.location.search);
   // In dialog mode (opened inline from a lead) the ids come as props instead
   // of the URL, and on success we close the dialog rather than navigate away.
@@ -502,6 +505,31 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       return order;
     },
     onSuccess: (order) => {
+      // Send the order to the customer on WhatsApp, when the company has that
+      // turned on. Deliberately NOT awaited: the order is saved, the rep should
+      // move on, and the send reports itself when it lands. Every branch below
+      // returns, so this has to fire before them.
+      if (autoSendWhatsApp) {
+        const toastId = toast.loading('שולח את ההזמנה ללקוח בוואטסאפ...');
+        sendOrderToCustomerWhatsApp(order, {
+          currentUser: effectiveUser,
+          isAdmin: isAdmin(effectiveUser),
+        }).then((result) => {
+          if (result.sent) {
+            toast.success('ההזמנה נשלחה ללקוח בוואטסאפ ✓', { id: toastId });
+          } else if (result.reason === 'no_phone') {
+            toast.warning('אין מספר טלפון ללקוח — ההזמנה לא נשלחה בוואטסאפ', { id: toastId });
+          } else {
+            // Named, not swallowed: the rep has to know the customer is still
+            // waiting, and where the manual button is.
+            toast.error('שליחת ההזמנה בוואטסאפ נכשלה — אפשר לשלוח ידנית ממסך ההזמנה', {
+              id: toastId,
+              duration: 10000,
+            });
+          }
+        });
+      }
+
       // "בחרתי אשראי" has to end in an actual charge. The order exists now, so
       // hyp-sign has its order_id — open the Hyp iframe right here instead of
       // dumping the rep on the order page to find the payment button.
