@@ -23,18 +23,51 @@ import { isPhoneShapedQuery } from "@/utils/phoneUtils";
 // server-side search via the entities helper's $or + $regex translation.
 
 
+// The search term SURVIVES closing the dialog. Looking a customer up is rarely
+// one lookup: a rep types a phone number, opens the lead, comes back to check
+// the order under the same number — and used to find the box empty and have to
+// type all ten digits again.
+//
+// It lives in sessionStorage, not in component state, because component state
+// does not survive the trip. Every route in App.jsx renders its OWN
+// LayoutWrapper, so navigating from the leads screen to an order unmounts the
+// Layout — and GlobalSearch with it — taking any useState with it. That is
+// exactly the journey this is meant to survive, so the term has to outlive the
+// component. sessionStorage also carries it across a reload and drops it when
+// the tab closes, which is the right lifetime for "until I delete it".
+const SEARCH_TERM_KEY = 'globalSearchTerm';
+
+function readStoredTerm() {
+  try {
+    return sessionStorage.getItem(SEARCH_TERM_KEY) || '';
+  } catch {
+    // Private mode / storage disabled — the search still works, it just forgets.
+    return '';
+  }
+}
+
+function writeStoredTerm(value) {
+  try {
+    if (value) sessionStorage.setItem(SEARCH_TERM_KEY, value);
+    else sessionStorage.removeItem(SEARCH_TERM_KEY);
+  } catch {
+    /* ignore — see readStoredTerm */
+  }
+}
+
 export default function GlobalSearch({ isOpen, onClose, user }) {
   const { openLead } = useLeadModal();
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [query, setQueryState] = useState(readStoredTerm);
+  const [debouncedQuery, setDebouncedQuery] = useState(() => readStoredTerm().trim());
   const inputRef = useRef(null);
 
-  // The search term SURVIVES closing the dialog. Looking a customer up is
-  // rarely one lookup: a rep types a phone number, opens the lead, comes back
-  // to check the order under the same number — and used to find the box empty
-  // and have to type all ten digits again. It stays until they clear it (the ×
-  // in the field), and opening the dialog selects what's there, so typing a
-  // different number still just replaces it.
+  const setQuery = (value) => {
+    setQueryState(value);
+    writeStoredTerm(value);
+  };
+
+  // Opening the dialog selects what's there, so typing a different number just
+  // replaces it — nobody pays a delete keystroke for the term being kept.
   useEffect(() => {
     if (!isOpen) return undefined;
     // After Radix has finished moving focus into the dialog.
