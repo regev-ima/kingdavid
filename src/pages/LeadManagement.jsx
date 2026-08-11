@@ -30,6 +30,7 @@ import { useLeadVisibilityPolicy } from '@/hooks/useLeadVisibilityPolicy';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
 import { leadPhoneFilter, probePhoneKey } from '@/lib/phoneLookup';
+import { excludeCancelled } from '@/lib/cancelOrder';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import LeadQuickActions from '@/components/lead/LeadQuickActions';
 
@@ -154,7 +155,7 @@ function handlingStatusTone(value) {
 // Tiles whose bucket lives in another table: nothing on `leads` says "has an
 // open quote", so those scopes resolve to a set of lead ids first and the list
 // filters on those.
-const RELATED_SCOPES = ['open_quotes', 'tasks_today', 'tasks_open'];
+const RELATED_SCOPES = ['open_quotes', 'tasks_today', 'tasks_open', 'won'];
 
 function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds }) {
   const conditions = [];
@@ -180,9 +181,6 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
   } else if (scope === 'handling') {
     // בטיפול — past the new_lead stage and not yet closed.
     conditions.push({ status: { $nin: HANDLING_EXCLUDED_STATUSES } });
-  } else if (scope === 'won') {
-    // סה״כ מכירות — the deals that closed inside the range.
-    conditions.push({ status: 'deal_closed' });
   } else if (RELATED_SCOPES.includes(scope)) {
     // An empty set has to return nothing rather than everything, so the
     // impossible id is deliberate.
@@ -558,42 +556,41 @@ export default function LeadManagement() {
     },
   }).data || { open_quotes: [], tasks_open: [], tasks_today: [] };
 
-  // Money closed in the selected range. The COUNT comes from the leads that
-  // closed — the number already scoped to the viewing rep — and the shekels
-  // come from the orders attached to exactly those leads, so the count and the
-  // sum can never describe two different sets.
-  const { data: sales = { count: 0, total: 0 } } = useQuery({
+  // Sales in the selected range — read off the ORDERS, which are the sales.
+  //
+  // This used to count leads sitting at status 'deal_closed' and then sum the
+  // orders hanging off them. Two different things were being called one: a lead
+  // is marked closed by hand, and reps mark it when the customer says yes, days
+  // before anyone writes the order — while an order that came in without a lead
+  // (a walk-in, a returning customer) was a sale nobody counted. The status is a
+  // pipeline state; the order is the sale. So the tile now counts orders created
+  // in the range and sums their totals, and the two numbers on it come from the
+  // same rows.
+  //
+  // Cancelled orders are dropped: a sale that fell through is not revenue. Same
+  // rule the הזמנות screen applies to its own money cubes.
+  const { data: sales = { count: 0, total: 0, leadIds: [] } } = useQuery({
     queryKey: ['leadMgmt-sales', scopedRep, fromIso, toIso],
     enabled: !!effectiveUser && !!userEmail && repResolved,
     staleTime: 60_000,
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      const conditions = [{ status: 'deal_closed' }];
+      const conditions = [];
       if (scopedRep) conditions.push({ $or: [{ rep1: scopedRep }, { rep2: scopedRep }] });
-      if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
-      const closed = await fetchAllRows(
-        base44.entities.Lead,
-        conditions.length === 1 ? conditions[0] : { $and: conditions },
-        '-effective_sort_date',
-        'id',
+      if (fromIso && toIso) conditions.push({ created_date: { $gte: fromIso, $lte: toIso } });
+      const orders = await fetchAllRows(
+        base44.entities.Order,
+        conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { $and: conditions },
+        '-created_date',
+        'id,lead_id,total,cancelled_at',
       );
-      const ids = closed.map((lead) => lead.id).filter(Boolean);
-      if (ids.length === 0) return { count: 0, total: 0 };
-      // Chunked because the id set becomes a URL: `lead_id=in.(uuid,…)` past a
-      // few hundred ids is a query string the server refuses outright.
-      const CHUNK = 150;
-      const batches = [];
-      for (let start = 0; start < ids.length; start += CHUNK) {
-        batches.push(ids.slice(start, start + CHUNK));
-      }
-      const orders = (await Promise.all(batches.map((batch) => base44.entities.Order
-        .filter({ lead_id: { $in: batch } }, '-created_date', 1000)
-        .catch(() => [])))).flat();
-      // The amount column has drifted across imports, so read whichever one is
-      // present instead of trusting a single name.
-      const total = orders.reduce((sum, order) => sum
-        + Number(order?.total_amount ?? order?.total ?? order?.final_amount ?? order?.total_price ?? 0), 0);
-      return { count: closed.length, total };
+      const live = excludeCancelled(orders);
+      const total = live.reduce((sum, order) => sum + Number(order?.total ?? 0), 0);
+      // The leads behind those orders, for the drill-down. Fewer rows than
+      // orders when one customer ordered twice in the range — the tile counts
+      // sales, the list shows the people who made them.
+      const leadIds = [...new Set(live.map((order) => order.lead_id).filter(Boolean))];
+      return { count: live.length, total, leadIds };
     },
   });
 
@@ -683,7 +680,9 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   // Lead list + filtered count.
   // ───────────────────────────────────────────────────────────────
-  const relatedLeadIds = relatedScopeSets[scope] || [];
+  // "סה״כ מכירות" drills into the leads behind the orders the tile counted, so
+  // its id set comes from the sales query rather than from relatedScopeSets.
+  const relatedLeadIds = (scope === 'won' ? sales.leadIds : relatedScopeSets[scope]) || [];
   // Only the ids for the page being shown go into the query. `{ id: { $in: … } }`
   // becomes `id=in.(uuid,uuid,…)` on a GET, so a scope holding 879 leads built a
   // ~33KB URL that the server refused — and the refusal rendered as an empty
@@ -1619,7 +1618,7 @@ function ActiveFilterSummary({
     open_quotes: 'הצעות מחיר פתוחות',
     tasks_today: 'משימות',
     tasks_open: 'נותרו לטיפול',
-    won: 'נסגרה עסקה',
+    won: 'מכירות',
   };
   const statusLabel = filters.status !== 'all'
     ? (LEAD_STATUS_OPTIONS.find((s) => s.value === filters.status)?.label
