@@ -323,6 +323,7 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
           contactName={order.customer_name}
           fileName={`הזמנה-${order.order_number}.pdf`}
           currentUser={effectiveUser}
+          templateCategory="orders"
           ownerUserId={users.find((u) => u.email?.toLowerCase() === (order.rep1 || '').toLowerCase())?.id}
           ensurePdfUrl={() => OrderPdfGenerator(order)}
         />

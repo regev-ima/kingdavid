@@ -22,9 +22,13 @@ import {
   Loader2, Plus, Pencil, Trash2, MessageSquareText, Sparkles, Zap,
 } from 'lucide-react';
 
+// Must stay in step with the CHECK on whatsapp_templates.category — see
+// migration 20260811000001_whatsapp_orders_category.sql. A value that isn't in
+// the constraint is rejected on save.
 const CATEGORIES = [
   { value: 'general', label: 'כללי' },
   { value: 'sales', label: 'מכירות' },
+  { value: 'orders', label: 'הזמנות' },
   { value: 'availability', label: 'זמינות' },
   { value: 'service', label: 'שירות' },
 ];

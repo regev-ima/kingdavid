@@ -12,8 +12,17 @@ import { phoneTail } from './useWhatsAppContext';
 import { resolveTemplate, sendErrorMessage } from './whatsappHelpers';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
 
-function fallbackCaption(firstName) {
-  return `היי${firstName ? ` ${firstName}` : ''}, מצורפת הצעת המחיר שלך מקינג דוד 🙏`;
+// Used only when the category has no active template at all. It has to name
+// the right document: an order sent under "מצורפת הצעת המחיר שלך" tells the
+// customer their signed order is still a proposal.
+const FALLBACK_DOCUMENT = {
+  orders: 'ההזמנה שלך',
+  sales: 'הצעת המחיר שלך',
+};
+
+function fallbackCaption(firstName, category) {
+  const document = FALLBACK_DOCUMENT[category] || 'המסמך';
+  return `היי${firstName ? ` ${firstName}` : ''}, מצורפת ${document} מקינג דוד 🙏`;
 }
 
 // "Send in WhatsApp" for a generated PDF (quote / order) — used from
@@ -84,7 +93,7 @@ export default function WhatsAppSendPdfButton({
         repPhone: sender?.phone || '',
       }));
     } else {
-      setCaption(fallbackCaption(firstName));
+      setCaption(fallbackCaption(firstName, templateCategory));
     }
   }, [open, templates, templateCategory, contactName, currentUser, sendingAsOther, ownerUser]);
 

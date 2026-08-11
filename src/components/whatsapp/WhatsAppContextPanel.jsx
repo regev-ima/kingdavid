@@ -171,7 +171,7 @@ export default function WhatsAppContextPanel({ phone, name, context, isLoading, 
                     contactName={displayName}
                     fileName={`הזמנה-${o.order_number || o.id?.slice(0, 6)}.pdf`}
                     currentUser={currentUser}
-                    templateCategory="sales"
+                    templateCategory="orders"
                     label="שלח"
                     size="sm"
                     variant="outline"
