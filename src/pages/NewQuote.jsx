@@ -26,9 +26,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock, Truck, PackageCheck } from "lucide-react";
-import { isDeliveryRelatedExtra } from '@/lib/deliveryExtras';
-import { hasBedType } from '@/utils/bedType';
+import { ArrowRight, Save, Loader2, Check, X, Download, MessageCircle, Mail, FileText, ExternalLink, CreditCard, Shield, Lock, Truck, PackageCheck, Sparkles, Info } from "lucide-react";
+import {
+  isDeliveryRelatedExtra, summarizeItems, filterDeliveryExtras, recommendDeliveryExtras,
+} from '@/lib/deliveryExtras';
 import { format } from '@/lib/safe-date-fns';
 import UpsellPanel from '@/components/upsell/UpsellPanel';
 import ProductItemsEditor from '@/components/quote/ProductItemsEditor';
@@ -113,6 +114,10 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   // The DB side is covered by the pg_trgm GIN index added in
   // 20260428000001_phone_trigram_indexes.sql so ILIKE '%tail%' is no
   // longer a full table scan.
+  // Delivery/assembly rows the rep took off. Without this the auto-detection
+  // puts the row straight back on the next keystroke, and removing it becomes
+  // impossible.
+  const [dismissedExtraIds, setDismissedExtraIds] = useState([]);
   const [debouncedPhone, setDebouncedPhone] = useState('');
   const [linkedRecord, setLinkedRecord] = useState(null); // { kind, id, full_name }
   useEffect(() => {
@@ -447,12 +452,15 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   const addExtra = (extraChargeId) => {
     const extraCharge = extraCharges.find(ec => ec.id === extraChargeId);
     if (!extraCharge) return;
-    
+
+    // Adding it back by hand clears the "I removed this" memory.
+    setDismissedExtraIds((prev) => prev.filter((id) => id !== extraCharge.id));
     setFormData(prev => {
-      const newExtras = [...prev.extras, { 
+      if (prev.extras.some((ex) => ex.extra_charge_id === extraCharge.id)) return prev;
+      const newExtras = [...prev.extras, {
         extra_charge_id: extraCharge.id,
-        name: extraCharge.name, 
-        cost: extraCharge.cost 
+        name: extraCharge.name,
+        cost: extraCharge.cost
       }];
       const totals = calculateTotals(prev.items, newExtras);
       return { ...prev, extras: newExtras, ...totals };
@@ -460,6 +468,12 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   };
 
   const removeExtra = (index) => {
+    const removed = formData.extras[index];
+    // Remember the removal so the auto-detection doesn't put it straight back
+    // on the next items change.
+    if (removed?.extra_charge_id) {
+      setDismissedExtraIds((prev) => (prev.includes(removed.extra_charge_id) ? prev : [...prev, removed.extra_charge_id]));
+    }
     const newExtras = formData.extras.filter((_, i) => i !== index);
     const totals = calculateTotals(formData.items, newExtras);
     setFormData(prev => ({ ...prev, extras: newExtras, ...totals }));
@@ -486,6 +500,47 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
       return { ...prev, is_self_pickup: true, extras: kept, ...calculateTotals(prev.items, kept) };
     });
   };
+
+  // ── Delivery & assembly auto-detection ──────────────────────────────────
+  // What's on the quote (beds / mattresses / single vs. double) and which
+  // extra_charges row that implies. Both rules used to live here as a private
+  // copy that had already drifted from the order form's; they now come from
+  // lib/deliveryExtras, which is the same module the order form reads — so a
+  // quote and the order it becomes can no longer price the delivery
+  // differently. Memoised: they run on every items keystroke otherwise.
+  const itemProfile = useMemo(() => summarizeItems(formData.items, products), [formData.items, products]);
+  const filteredExtraCharges = useMemo(
+    () => filterDeliveryExtras(extraCharges, { ...itemProfile, selfPickup: formData.is_self_pickup }),
+    [extraCharges, itemProfile, formData.is_self_pickup],
+  );
+  const recommendation = useMemo(
+    () => recommendDeliveryExtras(extraCharges, itemProfile, { selfPickup: formData.is_self_pickup }),
+    [extraCharges, itemProfile, formData.is_self_pickup],
+  );
+  const recommendedIds = useMemo(() => recommendation.extras.map((ec) => ec.id), [recommendation]);
+  const recommendedKey = recommendedIds.join('|');
+  const needsDelivery = itemProfile.bedCount > 0 || itemProfile.mattressCount > 0;
+
+  // Add the matching delivery/assembly rows the moment the products are known,
+  // and drop an auto-added row again when the items change out from under it.
+  // Anything the rep picked by hand is never touched, and a row they removed
+  // stays removed — dismissedExtraIds is what keeps the detection from putting
+  // it straight back on the next keystroke.
+  useEffect(() => {
+    setFormData((prev) => {
+      const keep = prev.extras.filter((ex) => !ex.auto_added || recommendedIds.includes(ex.extra_charge_id));
+      const toAdd = recommendation.extras
+        .filter((ec) => !dismissedExtraIds.includes(ec.id) && !keep.some((ex) => ex.extra_charge_id === ec.id))
+        .map((ec) => ({ extra_charge_id: ec.id, name: ec.name, cost: ec.cost, auto_added: true }));
+      const nextExtras = [...keep, ...toAdd];
+      const unchanged = nextExtras.length === prev.extras.length
+        && nextExtras.every((ex, i) => ex.extra_charge_id === prev.extras[i].extra_charge_id);
+      if (unchanged) return prev;
+      return { ...prev, extras: nextExtras, ...calculateTotals(prev.items, nextExtras) };
+    });
+    // recommendedKey stands in for recommendation.extras — same ids, same work,
+    // and it keeps the effect from re-firing on every unrelated render.
+  }, [recommendedKey, dismissedExtraIds]);
 
   if (isLoadingUser) {
     return <div className="text-center py-12">טוען...</div>;
@@ -538,44 +593,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // Save directly — no summary/confirm screen.
     createQuoteMutation.mutate(formData);
   };
-
-  const mattressCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (product?.category === 'mattress' ? (item.quantity || 0) : 0);
-  }, 0);
-
-  // Sum quantity of bed-type line items, not just "is there one" — the
-  // delivery extras come in flavors keyed to an exact bed count
-  // ("ל-2 מיטות" vs. singular "מיטה") and we need to hide the ones that
-  // don't match what's actually on the quote.
-  const bedCount = formData.items.reduce((count, item) => {
-    const product = products.find(p => p.id === item.product_id);
-    return count + (hasBedType(product) ? (item.quantity || 0) : 0);
-  }, 0);
-
-  const filteredExtraCharges = extraCharges.filter(ec => {
-    // Self pickup: nothing delivery-shaped is on offer.
-    if (formData.is_self_pickup && isDeliveryRelatedExtra(ec.name)) return false;
-    if (ec.name === 'שירותי מנוף') return false;
-    if (ec.name.includes('מחויב במנוף') || ec.name.includes('כל מיטה החל מקומה')) return false;
-
-    // Bed-count gating. Order matters: try the explicit count first,
-    // then fall through to the plural/singular heuristic. Note that "מיטה"
-    // is NOT a substring of "מיטות" (different ending letters in Hebrew),
-    // so a plain `includes('מיטה')` doesn't accidentally match the plural.
-    const multiBedMatch = ec.name.match(/ל[- ]?(\d+) מיטות/);
-    if (multiBedMatch) return bedCount === parseInt(multiBedMatch[1], 10);
-    if (ec.name.includes('מיטות')) return bedCount >= 2;
-    if (ec.name.includes('מיטה')) return bedCount === 1;
-
-    // Mattress-count gating.
-    const multiMattressMatch = ec.name.match(/הובלה ל[- ]?(\d+) מזרנים/);
-    if (multiMattressMatch) return mattressCount === parseInt(multiMattressMatch[1], 10);
-    if (ec.name === 'הובלה למזרן' || ec.name === 'הובלה מזרן') {
-      return mattressCount >= 1 && bedCount === 0;
-    }
-    return true;
-  });
 
   // Loading screen while saving quote — fixed min height so switching from the
   // form to this view doesn't make the dialog jump/expand.
@@ -944,8 +961,18 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               </CardContent>
             </Card>
 
-            {/* Totals */}
-            <QuoteTotalsSummary items={formData.items} extras={formData.extras} total={formData.total} />
+            {/* Products only. The delivery extra is now auto-detected the
+                moment an item is added — a step before the screen that owns
+                it — so passing the real extras here would fold a charge into
+                this total that the rep has not seen yet and cannot reconcile
+                against the price they just set on the line.
+
+                Passing no `total` is what keeps the two honest: summaryRows
+                works the figure out from the items and extras it was handed,
+                so the amount here is exactly the products. The delivery joins
+                the total on step 3, beside the row that states it and the
+                control that removes it. Same rule as the order form. */}
+            <QuoteTotalsSummary items={formData.items} extras={[]} />
 
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (
@@ -1000,9 +1027,28 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                   </div>
                 )}
 
+                {/* What the products imply, said out loud. The rows themselves
+                    are already selected below — this is the sentence that tells
+                    the rep a price was decided for them, and on what basis. */}
+                {!formData.is_self_pickup && recommendation.extras.length > 0 ? (
+                  <div className="rounded-lg border border-primary/20 bg-primary/[0.03] p-3">
+                    <p className="text-xs font-medium text-primary flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      זוהו תוספות הובלה והרכבה מתאימות לפי הפריטים שבהצעה — לחיצה על שורה מסירה אותה
+                      {recommendation.fallbackUsed ? ' (התאמה כללית, כדאי לוודא)' : ''}
+                    </p>
+                  </div>
+                ) : !formData.is_self_pickup && needsDelivery ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-800">
+                    <Info className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                    לא נמצאה תוספת הובלה מתאימה לפריטים שבהצעה, יש לבחור ידנית.
+                  </div>
+                ) : null}
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {filteredExtraCharges.map(ec => {
-                    const isSelected = formData.extras.some(ex => ex.extra_charge_id === ec.id);
+                    const selected = formData.extras.find(ex => ex.extra_charge_id === ec.id);
+                    const isSelected = !!selected;
                     return (
                       <button
                         key={ec.id}
@@ -1024,6 +1070,9 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                         )}
                         <div className="font-medium text-sm text-foreground">{ec.name}</div>
                         <div className={`text-lg font-bold mt-1.5 ${isSelected ? 'text-primary' : 'text-foreground'}`}>₪{ec.cost.toLocaleString()}</div>
+                        {selected?.auto_added ? (
+                          <div className="mt-1.5 text-[10px] font-medium text-primary">נוסף אוטומטית</div>
+                        ) : null}
                       </button>
                     );
                   })}
