@@ -16,6 +16,7 @@ const TEMPLATE_CATEGORIES = [
   { value: 'all', label: 'הכל' },
   { value: 'general', label: 'כללי' },
   { value: 'sales', label: 'מכירות' },
+  { value: 'orders', label: 'הזמנות' },
   { value: 'availability', label: 'זמינות' },
   { value: 'service', label: 'שירות' },
 ];
