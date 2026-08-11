@@ -39,7 +39,6 @@ import {
   resolveOutcomeStatus,
   outcomeOpensNextTask,
 } from '@/lib/taskCompletionFlow';
-import { cancelOpenTasksForStatus } from '@/lib/dealClose';
 
 // The "מה קרה?" dialog. Opens after a rep clicks "סיים משימה" on a task.
 // Flow:
@@ -50,8 +49,9 @@ import { cancelOpenTasksForStatus } from '@/lib/dealClose';
 //      (type, due date, summary). Previously this was hardcoded per
 //      outcome and the rep had no override.
 //   3. Optionally add a closing note that's appended to the task summary.
-//   4. On save: close the current task, update the lead status, create
-//      the configured follow-up (if any).
+//   4. On save: close the current task and create the configured follow-up
+//      (if any). The lead's STATUS is left alone, except for the no-answer
+//      ladder — see the note at the top of taskCompletionFlow.js.
 
 const TASK_TYPE_OPTIONS = [
   { value: 'call', label: 'שיחה', Icon: Phone, color: 'text-blue-600' },
@@ -147,9 +147,11 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
         throw new Error('יש לבחור תאריך ושעה למשימת ההמשך');
       }
       const currentLeadStatus = task.status || task.lead?.status || null;
+      // null for every outcome but "לא ענה": the rep set the status, and "what
+      // happened on this call" is not an answer to "where is this lead now".
       const nextLeadStatus = resolveOutcomeStatus(selectedOutcome, currentLeadStatus);
 
-      // 1. Update the lead's status (when the outcome dictates one).
+      // 1. Walk the no-answer ladder, when that's the outcome.
       if (task.lead_id && nextLeadStatus && nextLeadStatus !== currentLeadStatus) {
         await base44.entities.Lead.update(task.lead_id, { status: nextLeadStatus });
       }
@@ -167,19 +169,11 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
       }
       await base44.entities.SalesTask.update(task.id, taskUpdate);
 
-      // 2.5 Sweep the lead's other open tasks whenever the status it lands in
-      // no longer justifies one — not just on a closed deal. A lead marked
-      // "לא מעוניין" used to keep every follow-up it had, and those reminders
-      // sat in "באיחור" forever. Runs BEFORE step 3 so a follow-up the rep
-      // deliberately scheduled below is never swept by it, and passes
-      // exceptTaskId so it can't race the update just made above.
-      if (task.lead_id) {
-        await cancelOpenTasksForStatus(
-          task.lead_id,
-          nextLeadStatus || currentLeadStatus,
-          task.id,
-        );
-      }
+      // No task sweep. Cancelling the lead's other open tasks was the
+      // follow-on of a status change that, for all but the ladder, no longer
+      // happens — and one more failed call attempt orphans nothing, so
+      // sweeping there would only cancel a second task the rep still means to
+      // do.
 
       // 3. Create the rep-configured follow-up task (when enabled).
       if (followUpEnabled && followUpDueDate) {
