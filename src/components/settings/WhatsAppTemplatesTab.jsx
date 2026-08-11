@@ -13,6 +13,9 @@ import {
 } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { buildImproveMessagePrompt } from '@/components/whatsapp/whatsappHelpers';
+import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
+import useOrderAutoSend from '@/hooks/use-order-autosend';
+import { saveOrderAutoSendSetting, ORDER_AUTOSEND_QUERY_KEY } from '@/lib/orderWhatsAppAutoSend';
 import {
   AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
   AlertDialogFooter, AlertDialogTitle, AlertDialogDescription,
@@ -50,7 +53,19 @@ function validateShortcut(value) {
 // the composer.
 export default function WhatsAppTemplatesTab() {
   const queryClient = useQueryClient();
+  const { effectiveUser } = useEffectiveCurrentUser();
   const [categoryFilter, setCategoryFilter] = useState('all');
+
+  // Auto-send is company-wide policy, stored beside the other app_settings.
+  const { enabled: autoSendEnabled } = useOrderAutoSend();
+  const autoSendMutation = useMutation({
+    mutationFn: (enabled) => saveOrderAutoSendSetting(enabled, effectiveUser?.email),
+    onSuccess: (_res, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ORDER_AUTOSEND_QUERY_KEY });
+      toast.success(enabled ? 'הזמנה חדשה תישלח ללקוח בוואטסאפ' : 'שליחה אוטומטית כובתה');
+    },
+    onError: (err) => toast.error(`שמירת ההגדרה נכשלה: ${err?.message || 'שגיאה'}`),
+  });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -175,6 +190,28 @@ export default function WhatsAppTemplatesTab() {
           תבניות הודעה זמינות לכל הנציגים בקומפוזר הוואטסאפ — דרך כפתור התבניות או קיצור מקלדת
           (הקלדת <code dir="ltr">/קיצור</code> ורווח מרחיבה אוטומטית לגוף התבנית).
         </p>
+      </div>
+
+      {/* The one switch that stops orders going out by themselves. It lives
+          here because the message it sends is a template on this screen. */}
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">שליחת הזמנה אוטומטית בוואטסאפ</p>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+            הזמנה שנוצרת ו<span className="font-medium">שולם עליה</span> (במלואה או מקדמה) נשלחת ללקוח
+            בוואטסאפ עם ה-PDF, בלי שהנציג לוחץ. הזמנה שלא שולם עליה כלום — כולל תשלום באשראי,
+            שנסלק אחרי שההזמנה כבר נוצרה — נשלחת ידנית מכפתור "שלח בוואטסאפ".
+            הנוסח נלקח מהתבנית הראשונה בקטגוריית <span className="font-medium">הזמנות</span>,
+            ו-<code dir="ltr">{'{{נציג}}'}</code> הוא הנציג ששולח.
+            {autoSendEnabled ? '' : ' כרגע כבוי — הנציגים שולחים מכפתור "שלח בוואטסאפ" שבהזמנה.'}
+          </p>
+        </div>
+        <Switch
+          checked={autoSendEnabled}
+          disabled={autoSendMutation.isPending}
+          onCheckedChange={(checked) => autoSendMutation.mutate(checked)}
+          aria-label="שליחת הזמנה אוטומטית בוואטסאפ"
+        />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
