@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +24,7 @@ import {
   Loader2,
   MessageCircle,
   MessageSquare,
+  StickyNote,
   MoreVertical,
   Pencil,
   Phone,
@@ -339,9 +341,33 @@ export default function LeadOverview({
   onOpenTask,
   onCompleteTask,
   onOpenServiceSection,
+  onSaveNotes,
   children,
 }) {
   const [copied, setCopied] = useState(false);
+
+  // Free-text notes on the lead. They live under פרטי שיווק because that is
+  // where the rep reads "who is this and where did they come from" — and what
+  // they scribbled about the call belongs to the same question. Saved on its
+  // own, so writing a note never depends on the edit mode being open.
+  const [notesDraft, setNotesDraft] = useState(lead?.notes || '');
+  const [notesSaving, setNotesSaving] = useState(false);
+  // Follow the lead when it changes underneath (another screen, a refetch) —
+  // but never while the rep has unsaved words in the box.
+  useEffect(() => {
+    setNotesDraft((draft) => (draft === '' || draft === lead?.notes ? (lead?.notes || '') : draft));
+  }, [lead?.id, lead?.notes]);
+  const notesDirty = (notesDraft || '') !== (lead?.notes || '');
+
+  const saveNotes = async () => {
+    if (!onSaveNotes || !notesDirty) return;
+    setNotesSaving(true);
+    try {
+      await onSaveNotes(notesDraft);
+    } finally {
+      setNotesSaving(false);
+    }
+  };
 
   const sourceLabel = formatSourceLabel(lead?.source);
   // The specific ad that produced the enquiry. Not every integration fills
@@ -620,6 +646,43 @@ export default function LeadOverview({
                 </li>
               ))}
             </ul>
+
+            <div className="px-4 pb-4 pt-1 border-t border-border/50">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground/80">
+                  <StickyNote className="h-3.5 w-3.5" />
+                  הערות
+                </span>
+                {canEdit && notesDirty ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    disabled={notesSaving}
+                    onClick={saveNotes}
+                  >
+                    {notesSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    שמור
+                  </Button>
+                ) : null}
+              </div>
+              {canEdit ? (
+                <Textarea
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  // Clicking away saves, so a note is never lost to a closed
+                  // popup. The button stays for the rep who wants to be told.
+                  onBlur={saveNotes}
+                  rows={3}
+                  placeholder="מה חשוב לזכור על הליד הזה..."
+                  className="resize-none text-sm"
+                />
+              ) : (
+                <p className="text-sm whitespace-pre-wrap text-foreground/90">
+                  {lead?.notes || <span className="text-muted-foreground/70">—</span>}
+                </p>
+              )}
+            </div>
           </section>
 
           <NextTaskCard
