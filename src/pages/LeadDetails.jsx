@@ -233,7 +233,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   // came in before? OtherEnquiriesCard lists the siblings further down the
   // page; the header just needs the one-glance marker.
   const leadForRepeatLookup = useMemo(() => (lead ? [lead] : []), [lead]);
-  const repeatEnquiryOrdinal = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
+  const repeatEnquiry = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
 
   // Sync form data when lead loads or updates (for real-time status changes)
   const leadUpdatedDate = lead?.updated_date;
@@ -636,7 +636,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
         canEdit={canEdit}
         canEditRep1={canEditLeadRep1}
         canEditRep2={canEditLeadRep2}
-        repeatEnquiryOrdinal={repeatEnquiryOrdinal}
+        repeatEnquiry={repeatEnquiry}
         openServiceTicketsCount={openServiceTicketsCount}
         leadAge={lead.created_date ? formatLeadAge(lead.created_date) : ''}
         onBack={isModal ? onClose : () => navigate(createPageUrl('Leads'))}
