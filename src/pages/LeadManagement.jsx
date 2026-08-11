@@ -45,7 +45,11 @@ const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
 // selection / opening the lead). The leads row is wide (notes, addresses,
 // marketing fields, …); fetching just these keeps each page light so clicking
 // between categories feels instant. The lead modal refetches the full row by id.
-const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,facebook_ad_name,first_action_at,effective_sort_date,created_date';
+// contact_id earns its place: it is what the duplicate-lead warning is computed
+// from. Leaving it out is why that warning never appeared on this screen — the
+// rows arrived without a contact, useRepeatEnquiries had nothing to group by,
+// and the marker silently rendered nothing on every row.
+const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,contact_id,facebook_ad_name,first_action_at,effective_sort_date,created_date';
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
