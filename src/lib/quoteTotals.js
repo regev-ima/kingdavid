@@ -13,6 +13,8 @@
  *   • Extras (תוספות — הובלה / הרכבה) are stored VAT-INCLUSIVE, so VAT is
  *     never recomputed on top of them.
  *   • Everything rounds to agorot, and only where a person will read it.
+ *   • Nothing prints a stored price raw — see lineDisplayInclVat for the
+ *     customer-facing form of a line.
  */
 
 export const VAT_RATE = 0.18;
@@ -83,6 +85,43 @@ export function calculateDocumentTotals(items = [], extras = []) {
   const vat_amount = round2(total - subtotal);
 
   return { subtotal, discount_total: round2(a.itemsDiscountPreVat), vat_amount, total };
+}
+
+/**
+ * A line as the CUSTOMER reads it — every figure VAT-inclusive, and the row
+ * adding up: unit × qty − discount = total.
+ *
+ * Line prices are stored pre-VAT, so every screen multiplies by 1.18 before
+ * showing them. The printed documents did not, which is why an order read
+ * ₪6,390 on paper and ₪7,540.20 on the screen for the same bed. Both now ask
+ * this.
+ *
+ * Rounding happens once, here, at the last moment: a rep who typed ₪690
+ * incl-VAT had 584.745762… stored, and rounding that before multiplying is
+ * what turns it back into ₪690.01.
+ *
+ * `discountIncl` is derived as gross − total rather than from the percent, so
+ * the three printed numbers reconcile exactly whatever the percent rounds to.
+ */
+export function lineDisplayInclVat(item) {
+  const addons = (item?.selected_addons || []).reduce((sum, a) => sum + (a?.price || 0), 0);
+  const grossPreVat = lineGrossPreVat(item);
+  const netPreVat = Number.isFinite(Number(item?.total))
+    ? Number(item.total)
+    : grossPreVat - lineDiscountPreVat(item);
+
+  const unitIncl = round2(((item?.unit_price || 0) + addons) * VAT_MULTIPLIER);
+  const grossIncl = round2(grossPreVat * VAT_MULTIPLIER);
+  const totalIncl = round2(netPreVat * VAT_MULTIPLIER);
+
+  return {
+    qty: item?.quantity || 1,
+    unitIncl,
+    grossIncl,
+    totalIncl,
+    discountIncl: round2(grossIncl - totalIncl),
+    discountPercent: Number(item?.discount_percent) || 0,
+  };
 }
 
 /**

@@ -4,6 +4,7 @@ import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, resolveDocumentTerms } from "@/constants/documentTerms";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
 import { renderPagesToPdf, uploadPdfBlob, withMountedPages } from "@/lib/pdfPages";
+import { lineDisplayInclVat, summaryRows } from "@/lib/quoteTotals";
 
 /**
  * KING DAVID - Premium PDF Quote Generator
@@ -110,8 +111,9 @@ export const buildQuotePdfBlob = async (quoteData) => {
 
   const rows = [
     ...items.map((item, idx) => {
-      const addonsTotal = (item?.selected_addons || []).reduce((sum, addon) => sum + normalizeNumber(addon?.price), 0);
-      const totalUnitPrice = normalizeNumber(item?.unit_price) + addonsTotal;
+      // VAT-inclusive, like every screen — see lineDisplayInclVat. Add-ons fold
+      // into the unit price in there.
+      const line = lineDisplayInclVat(item);
       const hasAddons = (item?.selected_addons || []).length > 0;
       const hasSize = item?.length_cm && item?.width_cm;
       
@@ -146,13 +148,20 @@ export const buildQuotePdfBlob = async (quoteData) => {
         idx: idx + 1,
         name: safe(item?.name),
         sku: safe(item?.sku),
-        price: money(totalUnitPrice),
+        price: money(line.unitIncl),
         qty: safe(item?.quantity ?? 1),
         qtyNum: normalizeNumber(item?.quantity ?? 1),
+        discount: line.discountIncl > 0 ? `-${money(line.discountIncl)}` : "—",
+        discountPercent: line.discountIncl > 0 && line.discountPercent
+          ? `${normalizeNumber(line.discountPercent).toLocaleString('he-IL', { maximumFractionDigits: 2 })}%`
+          : "",
+        lineTotal: money(line.totalIncl),
         hasExtraInfo: extraInfo.length > 0,
         extraInfoText: extraInfo.join(' | ')
       };
     }),
+    // Extras are stored VAT-INCLUSIVE (see lib/quoteTotals) — the one thing on
+    // this table that must NOT be multiplied.
     ...extras.map((extra, j) => ({
       idx: items.length + j + 1,
       name: safe(extra?.name),
@@ -160,15 +169,19 @@ export const buildQuotePdfBlob = async (quoteData) => {
       price: money(extra?.cost),
       qty: "1",
       qtyNum: 1,
+      discount: "—",
+      discountPercent: "",
+      lineTotal: money(extra?.cost),
       hasAddons: false,
       addonsText: ""
     })),
   ];
 
-  const subtotal = normalizeNumber(quoteData.subtotal);
-  const discount = normalizeNumber(quoteData.discount_total);
-  const vat = normalizeNumber(quoteData.vat_amount);
-  const total = normalizeNumber(quoteData.total);
+  // The breakdown the quote screen shows, from the same function — printed and
+  // on-screen can't state two different discounts. The stored subtotal column
+  // is deliberately not printed: it is already NET of the discount, so showing
+  // it above a discount line asked the customer to subtract twice.
+  const breakdown = summaryRows(items, extras, quoteData.total);
 
   const htmlContent = `
   <div dir="rtl" style="font-family: Heebo, Assistant, Arial, sans-serif; background:#F6F8FC; padding:18px;">
@@ -321,6 +334,7 @@ export const buildQuotePdfBlob = async (quoteData) => {
         font-size: 12px;
       }
       .discount { color:#B42318; }
+      .th-sub { font-size:8px; font-weight:400; opacity:.75; margin-top:1px; }
 
       .sig {
         border: 1px solid #E8ECF4;
@@ -474,8 +488,10 @@ export const buildQuotePdfBlob = async (quoteData) => {
               <th class="center" style="width:42px;">#</th>
               <th>שם פריט</th>
               <th class="center" style="width:110px;">קוד</th>
-              <th class="center" style="width:90px;">מחיר לפני מע״מ</th>
-              <th class="center" style="width:70px;">כמות</th>
+              <th class="center" style="width:96px;">מחיר יחידה<div class="th-sub">כולל מע״מ</div></th>
+              <th class="center" style="width:60px;">כמות</th>
+              <th class="center" style="width:90px;">הנחה</th>
+              <th class="center" style="width:96px;">סה״כ<div class="th-sub">כולל מע״מ</div></th>
             </tr>
           </thead>
           <tbody>
@@ -493,6 +509,11 @@ export const buildQuotePdfBlob = async (quoteData) => {
                   <td class="center muted">${r.sku}</td>
                   <td class="center">${r.price}</td>
                   <td class="center${r.qtyNum >= 2 ? ' highlight' : ''}">${r.qty}</td>
+                  <td class="center${r.discount !== "—" ? ' discount' : ' muted'}">
+                    ${r.discount}
+                    ${r.discountPercent ? `<div class="th-sub">${r.discountPercent}</div>` : ''}
+                  </td>
+                  <td class="center">${r.lineTotal}</td>
                 </tr>
               `
                     )
@@ -502,6 +523,8 @@ export const buildQuotePdfBlob = async (quoteData) => {
                   <td class="center">1</td>
                   <td>—</td>
                   <td class="center muted">—</td>
+                  <td class="center">—</td>
+                  <td class="center">—</td>
                   <td class="center">—</td>
                   <td class="center">—</td>
                 </tr>
@@ -518,14 +541,15 @@ export const buildQuotePdfBlob = async (quoteData) => {
           </div>
 
           <div class="totals">
-            <div class="line"><span class="label">סכום ביניים לפני מע״מ</span><span>${money(subtotal)}</span></div>
+            <div class="line"><span class="label">סכום לפני מע״מ</span><span>${money(breakdown.itemsGrossPreVat)}</span></div>
+            <div class="line"><span class="label">מע״מ (18%)</span><span>${money(breakdown.grossVat)}</span></div>
+            <div class="line"><span class="label">סה״כ כולל מע״מ</span><span>${money(breakdown.grossInclVat)}</span></div>
             ${
-              discount > 0
-                ? `<div class="line"><span class="label discount">הנחה</span><span class="discount">-${money(discount)}</span></div>`
+              breakdown.discInclVat > 0
+                ? `<div class="line"><span class="label discount">הנחה כולל מע״מ</span><span class="discount">-${money(breakdown.discInclVat)}</span></div>`
                 : ""
             }
-            <div class="line"><span class="label">מע״מ</span><span>${money(vat)}</span></div>
-            <div class="line total"><span class="label">סה״כ לתשלום</span><span>${money(total)}</span></div>
+            <div class="line total"><span class="label">סכום לתשלום</span><span>${money(breakdown.toPay)}</span></div>
           </div>
         </div>
 

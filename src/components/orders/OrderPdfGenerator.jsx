@@ -6,6 +6,7 @@ import { SOURCE_LABELS } from "@/constants/leadOptions";
 import { formatInstallments } from "@/lib/installments";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
 import { renderPagesToPdf, uploadPdfBlob, withMountedPages } from "@/lib/pdfPages";
+import { lineDisplayInclVat, summaryRows } from "@/lib/quoteTotals";
 
 const PAYMENT_METHOD_LABELS = {
   cash: "מזומן",
@@ -134,11 +135,8 @@ export const buildOrderPdfBlob = async (orderData) => {
   // the delivery fee. Same merge the quote PDF does.
   const extras = Array.isArray(orderData.extras) ? orderData.extras : [];
   const itemRows = items.map((item, idx) => {
-    const addonsTotal = (item?.selected_addons || []).reduce(
-      (sum, addon) => sum + normalizeNumber(addon?.price),
-      0,
-    );
-    const totalUnitPrice = normalizeNumber(item?.unit_price) + addonsTotal;
+    // Add-ons fold into the unit price inside lineDisplayInclVat; nothing here
+    // needs their sum any more.
     const hasAddons = (item?.selected_addons || []).length > 0;
     const hasSize = item?.length_cm && item?.width_cm;
     const extraInfo = [];
@@ -174,19 +172,30 @@ export const buildOrderPdfBlob = async (orderData) => {
         extraInfo.push(`בד: ${fabricParts.join(' · ')}`);
       }
     }
+    // Every printed figure VAT-inclusive, like the screen — see
+    // lineDisplayInclVat. The stored numbers are pre-VAT and printing them raw
+    // is what made the same bed read ₪6,390 here and ₪7,540.20 on the screen.
+    const line = lineDisplayInclVat(item);
     return {
       idx: idx + 1,
       name: esc(item?.name),
       sku: esc(item?.sku),
-      unitPrice: money(totalUnitPrice),
+      unitPrice: money(line.unitIncl),
       qty: safe(item?.quantity ?? 1),
       qtyNum: normalizeNumber(item?.quantity ?? 1),
-      lineTotal: money(item?.total),
+      discount: line.discountIncl > 0 ? `-${money(line.discountIncl)}` : "—",
+      discountPercent: line.discountIncl > 0 && line.discountPercent
+        ? `${normalizeNumber(line.discountPercent).toLocaleString('he-IL', { maximumFractionDigits: 2 })}%`
+        : "",
+      lineTotal: money(line.totalIncl),
       extraInfoText: extraInfo.length ? esc(extraInfo.join(" | ")) : "",
     };
   });
   const rows = [
     ...itemRows,
+    // Extras are stored VAT-INCLUSIVE (see lib/quoteTotals), so they are the one
+    // thing on this table that must NOT be multiplied — doing so would bill the
+    // delivery's VAT twice.
     ...extras.map((extra, j) => ({
       idx: items.length + j + 1,
       name: esc(extra?.name),
@@ -194,14 +203,19 @@ export const buildOrderPdfBlob = async (orderData) => {
       unitPrice: money(extra?.cost),
       qty: "1",
       qtyNum: 1,
+      discount: "—",
+      discountPercent: "",
       lineTotal: money(extra?.cost),
       extraInfoText: "",
     })),
   ];
 
-  const subtotal = normalizeNumber(orderData.subtotal);
-  const discount = normalizeNumber(orderData.discount_total);
-  const vat = normalizeNumber(orderData.vat_amount);
+  // The same breakdown the order screen shows, from the same function — so the
+  // printed document and the screen can't state two different discounts. The
+  // stored subtotal/discount/vat columns are deliberately not printed: subtotal
+  // is already NET of the discount, so printing it above a discount line asked
+  // the customer to subtract something that had been subtracted already.
+  const breakdown = summaryRows(items, extras, orderData.total);
   const total = normalizeNumber(orderData.total);
 
   const payments = Array.isArray(orderData.payments) ? orderData.payments : [];
@@ -300,6 +314,7 @@ export const buildOrderPdfBlob = async (orderData) => {
       .totals .line .label { color:#667085; font-weight:900; }
       .totals .line.total { border-top:1px dashed #D8DEEA; margin-top:6px; padding-top:10px; font-size:12px; }
       .discount { color:#B42318; }
+      .th-sub { font-size:8px; font-weight:400; opacity:.75; margin-top:1px; }
       .paymentBlock { margin-top:12px; border:1px solid #E8ECF4; border-radius:14px; background:#fff; overflow:hidden; }
       .paymentHeader { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:#F8FAFC; border-bottom:1px solid #E8ECF4; }
       .paymentHeader .ttl { font-size:12px; font-weight:900; color:#0B1220; }
@@ -441,9 +456,10 @@ export const buildOrderPdfBlob = async (orderData) => {
               <th class="center" style="width:42px;">#</th>
               <th>שם פריט</th>
               <th class="center" style="width:110px;">קוד</th>
-              <th class="center" style="width:90px;">מחיר יחידה</th>
-              <th class="center" style="width:70px;">כמות</th>
-              <th class="center" style="width:90px;">סה״כ</th>
+              <th class="center" style="width:96px;">מחיר יחידה<div class="th-sub">כולל מע״מ</div></th>
+              <th class="center" style="width:60px;">כמות</th>
+              <th class="center" style="width:90px;">הנחה</th>
+              <th class="center" style="width:96px;">סה״כ<div class="th-sub">כולל מע״מ</div></th>
             </tr>
           </thead>
           <tbody>
@@ -465,6 +481,10 @@ export const buildOrderPdfBlob = async (orderData) => {
                   <td class="center muted">${r.sku || "—"}</td>
                   <td class="center">${r.unitPrice}</td>
                   <td class="center${r.qtyNum >= 2 ? " highlight" : ""}">${r.qty}</td>
+                  <td class="center${r.discountPercent || r.discount !== "—" ? " discount" : " muted"}">
+                    ${r.discount}
+                    ${r.discountPercent ? `<div class="th-sub">${r.discountPercent}</div>` : ""}
+                  </td>
                   <td class="center">${r.lineTotal}</td>
                 </tr>`,
                     )
@@ -474,6 +494,7 @@ export const buildOrderPdfBlob = async (orderData) => {
                   <td class="center">1</td>
                   <td>—</td>
                   <td class="center muted">—</td>
+                  <td class="center">—</td>
                   <td class="center">—</td>
                   <td class="center">—</td>
                   <td class="center">—</td>
@@ -517,14 +538,15 @@ export const buildOrderPdfBlob = async (orderData) => {
           </div>
 
           <div class="totals">
-            <div class="line"><span class="label">סכום ביניים לפני מע״מ</span><span>${money(subtotal)}</span></div>
+            <div class="line"><span class="label">סכום לפני מע״מ</span><span>${money(breakdown.itemsGrossPreVat)}</span></div>
+            <div class="line"><span class="label">מע״מ (18%)</span><span>${money(breakdown.grossVat)}</span></div>
+            <div class="line"><span class="label">סה״כ כולל מע״מ</span><span>${money(breakdown.grossInclVat)}</span></div>
             ${
-              discount > 0
-                ? `<div class="line"><span class="label discount">הנחה</span><span class="discount">-${money(discount)}</span></div>`
+              breakdown.discInclVat > 0
+                ? `<div class="line"><span class="label discount">הנחה כולל מע״מ</span><span class="discount">-${money(breakdown.discInclVat)}</span></div>`
                 : ""
             }
-            <div class="line"><span class="label">מע״מ</span><span>${money(vat)}</span></div>
-            <div class="line total"><span class="label">סה״כ לתשלום</span><span>${money(total)}</span></div>
+            <div class="line total"><span class="label">סכום לתשלום</span><span>${money(breakdown.toPay)}</span></div>
           </div>
         </div>
 
