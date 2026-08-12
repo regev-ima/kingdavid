@@ -1,15 +1,17 @@
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getIconById } from "./ProfileAvatarPicker";
+import { useRepIdentities } from "@/hooks/useRepIdentities";
 
 export default function UserAvatar({ user, size = "md", className = "" }) {
   const sizeClasses = {
+    xs: "h-6 w-6 text-[10px]",
     sm: "h-8 w-8 text-xs",
     md: "h-10 w-10 text-sm",
     lg: "h-16 w-16 text-xl",
   };
 
   const iconSizes = {
+    xs: "text-sm",
     sm: "text-base",
     md: "text-lg",
     lg: "text-2xl",
@@ -19,25 +21,20 @@ export default function UserAvatar({ user, size = "md", className = "" }) {
     ? user.full_name.split(' ').map(n => n[0]).join('').slice(0, 2)
     : 'U';
 
-  const currentIcon = user?.profile_icon ? getIconById(user.profile_icon) : null;
-
-  const colors = [
-    'bg-indigo-50 text-indigo-700',
-    'bg-violet-50 text-violet-700',
-    'bg-emerald-50 text-emerald-700',
-    'bg-amber-50 text-amber-700',
-    'bg-rose-50 text-rose-700',
-  ];
-  const colorIndex = user?.full_name ? user.full_name.charCodeAt(0) % colors.length : 0;
+  // The rep's assigned colour + icon — unique across the team, so the same
+  // person looks the same on every screen and no two people look alike. A rep
+  // who uploaded a real photo keeps it; a photo is already unmistakably theirs.
+  const { identityFor } = useRepIdentities();
+  const identity = identityFor(user);
 
   return (
-    <Avatar className={`${sizeClasses[size]} ${className}`}>
+    <Avatar className={`${sizeClasses[size] || sizeClasses.md} ${className}`}>
       {user?.profile_image_url ? (
         <AvatarImage src={user.profile_image_url} alt={user?.full_name} />
       ) : null}
-      <AvatarFallback className={`font-semibold ${currentIcon ? currentIcon.bg : colors[colorIndex]}`}>
-        {currentIcon ? (
-          <span className={iconSizes[size]}>{currentIcon.emoji}</span>
+      <AvatarFallback className={`font-semibold ${identity.chip}`}>
+        {identity.emoji ? (
+          <span className={iconSizes[size] || iconSizes.md}>{identity.emoji}</span>
         ) : initials}
       </AvatarFallback>
     </Avatar>
