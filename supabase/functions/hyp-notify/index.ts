@@ -218,6 +218,13 @@ Deno.serve(async (req) => {
       hyp_l4digit: l4digit,
       hyp_payments_count: paymentsCount,
       hyp_user_id: idNumber,
+      // Hyp's whole reply, kept verbatim — the same thing we already keep on a
+      // failed attempt. It costs a few fields and it ends the guessing: the
+      // instalment split shown on the order is derived from amount + count
+      // (see lib/installments), and the only way to learn whether Hyp reports
+      // the real figures is to have a multi-instalment charge on record to
+      // look at. Prefer Hyp's numbers over ours the moment they turn up here.
+      hyp_params: Object.fromEntries(params),
     };
 
     const updatedPayments = [...existingPayments, paymentEntry];
