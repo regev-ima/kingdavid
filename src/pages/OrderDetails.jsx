@@ -69,6 +69,7 @@ import DocumentTermsCard from '@/components/shared/DocumentTermsCard';
 import useDocumentTermsDefaults from '@/hooks/use-document-terms';
 import { orderTermsFields, resolveDocumentTerms } from '@/constants/documentTerms';
 import { SOURCE_LABELS } from '@/constants/leadOptions';
+import { formatInstallments } from '@/lib/installments';
 
 // Line prices are stored pre-VAT; show the customer incl-VAT, two decimals.
 const VAT = 1.18;
@@ -673,7 +674,14 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                                 </span>
                               )}
                               {payment.hyp_payments_count > 0 && (
-                                <span>תשלומים: {payment.hyp_payments_count}</span>
+                                <span>
+                                  תשלומים: {payment.hyp_payments_count}
+                                  {/* The split itself, not just the count — it's
+                                      what a customer asks for on the phone. */}
+                                  {formatInstallments(payment.amount, payment.hyp_payments_count)
+                                    ? ` · ${formatInstallments(payment.amount, payment.hyp_payments_count)}`
+                                    : ''}
+                                </span>
                               )}
                             </div>
                           )}

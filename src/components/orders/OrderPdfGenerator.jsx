@@ -3,6 +3,7 @@ import { format } from "@/lib/safe-date-fns";
 import { bedConfigFieldLines } from "@/lib/bedConfig";
 import { DOCUMENT_TERMS_LABELS, orderTermsFields, resolveDocumentTerms } from "@/constants/documentTerms";
 import { SOURCE_LABELS } from "@/constants/leadOptions";
+import { formatInstallments } from "@/lib/installments";
 import { fetchDocumentTermsSetting } from "@/lib/documentTermsSettings";
 import { renderPagesToPdf, uploadPdfBlob, withMountedPages } from "@/lib/pdfPages";
 
@@ -236,13 +237,21 @@ export const buildOrderPdfBlob = async (orderData) => {
       // wasn't a Hyp charge at all — the row is still one payment, so the
       // column prints 1 rather than a dash.
       const installments = normalizeNumber(p?.hyp_payments_count);
+      // The count alone ("12") is the number nobody asks for. The split under
+      // it — "221 ועוד 11 תשלומים של 219" — is what the customer is holding
+      // the page to read. Derived from the amount and the count; see
+      // lib/installments for why that derivation is sound here.
+      const breakdown = esc(formatInstallments(p?.amount, installments));
       return `
         <tr>
           <td class="center">${i + 1}</td>
           <td class="center">${date}</td>
           <td>${method}</td>
           <td class="muted">${ref}</td>
-          <td class="center">${installments > 0 ? installments : "1"}</td>
+          <td class="center">
+            ${installments > 0 ? installments : "1"}
+            ${breakdown ? `<div class="muted" style="font-size:9px; line-height:1.35; margin-top:2px; white-space:nowrap;">${breakdown}</div>` : ""}
+          </td>
           <td class="center">${money(p?.amount)}</td>
         </tr>`;
     })
@@ -549,7 +558,7 @@ export const buildOrderPdfBlob = async (orderData) => {
                     <th class="center" style="width:90px;">תאריך</th>
                     <th>אמצעי תשלום</th>
                     <th>אסמכתא</th>
-                    <th class="center" style="width:74px;">תשלומים</th>
+                    <th class="center" style="width:132px;">תשלומים</th>
                     <th class="center" style="width:90px;">סכום</th>
                   </tr>
                 </thead>
