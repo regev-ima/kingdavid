@@ -33,6 +33,7 @@ import { leadPhoneFilter, probePhoneKey } from '@/lib/phoneLookup';
 import { excludeCancelled } from '@/lib/cancelOrder';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
 import LeadQuickActions from '@/components/lead/LeadQuickActions';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // State for this page lives mostly in the URL so navigation back from a
 // lead-details page restores exactly where the manager left off (filters,
@@ -1223,7 +1224,7 @@ export default function LeadManagement() {
               <SelectContent>
                 <SelectItem value="all">כל הנציגים</SelectItem>
                 {repsForPanel.map((r) => (
-                  <SelectItem key={r.email} value={r.email}>{r.full_name || r.email}</SelectItem>
+                  <RepSelectItem key={r.email} rep={r} />
                 ))}
               </SelectContent>
             </Select>
@@ -1322,7 +1323,7 @@ export default function LeadManagement() {
               </SelectTrigger>
               <SelectContent>
                 {repsForPanel.map((r) => (
-                  <SelectItem key={r.email} value={r.email}>{r.full_name || r.email}</SelectItem>
+                  <RepSelectItem key={r.email} rep={r} />
                 ))}
               </SelectContent>
             </Select>

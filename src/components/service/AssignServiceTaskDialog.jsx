@@ -5,10 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import { Loader2, LifeBuoy } from 'lucide-react';
 import { toast } from 'sonner';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // Service-manager action: hand a service ticket to a rep as a follow-up task.
 // The task is a SalesTask with task_type='service' so it surfaces in that
@@ -122,7 +123,7 @@ export default function AssignServiceTaskDialog({ open, onOpenChange, ticket, cu
               <SelectTrigger><SelectValue placeholder="בחר נציג..." /></SelectTrigger>
               <SelectContent>
                 {salesUsers.map((u) => (
-                  <SelectItem key={u.id} value={u.email}>{u.full_name || u.email}</SelectItem>
+                  <RepSelectItem key={u.id} rep={u} />
                 ))}
               </SelectContent>
             </Select>

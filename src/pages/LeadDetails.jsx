@@ -55,6 +55,7 @@ import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from 
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 import { useContactLeadIds } from '@/hooks/use-contact-lead-ids';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // What the customer actually bought, in one line — "מזרן עילית 1345 ×2 · בסיס
 // מתכוונן". A total alone answers how much they spent, which is never the
@@ -1197,7 +1198,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
                 <SelectTrigger className="h-10"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
                 <SelectContent>
                   {salesReps.map((rep) => (
-                    <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                    <RepSelectItem key={rep.id} rep={rep} />
                   ))}
                 </SelectContent>
               </Select>

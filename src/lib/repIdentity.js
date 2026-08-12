@@ -88,49 +88,84 @@ export function fallbackIdentity(user) {
   return REP_PALETTE[Math.abs(hash) % REP_PALETTE.length];
 }
 
+// A rep pinned to a palette slot by an admin (users.avatar_slot). Anything
+// outside the palette is treated as unpinned rather than clamped — a stale
+// number from a larger palette should fall back to "assign me one" instead of
+// silently pointing at whoever now sits at that index.
+function pinnedSlot(user) {
+  const raw = user?.avatar_slot;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n < REP_PALETTE.length ? n : null;
+}
+
 /**
  * Assign every user in the roster a colour + icon nobody else has.
  *
- * Two passes, because a rep may have picked an icon for themselves in
- * Settings and an explicit choice should survive:
- *   1. Claim the icons reps chose by hand — first one in join order wins a
- *      contested icon, so the choice is honoured without breaking uniqueness.
- *   2. Hand out palette slots in join order. The colour always comes from the
- *      slot (which is why no two reps can share one); the icon comes from the
- *      slot too, unless this rep claimed one by hand or the slot's icon was
- *      claimed by someone else — then it takes the next unclaimed icon.
+ * Three passes, because two kinds of explicit choice have to survive:
+ *   1. Pinned slots (an admin picked this rep's identity in the rep dialog).
+ *      A pin takes the whole slot — colour and icon — and the rest of the
+ *      assignment works around it. Two rows pinned to the same slot can only
+ *      happen if the unique index was bypassed; first in join order keeps it.
+ *   2. Icons reps chose for themselves in Settings, for anyone not pinned.
+ *      First in join order wins a contested icon.
+ *   3. Everyone left takes the next FREE slot in join order. The colour always
+ *      comes from the slot, which is what makes two reps sharing one
+ *      impossible; the icon comes from the slot too unless it was claimed
+ *      above, in which case the next unclaimed icon fills in.
  *
  * @returns {{ byEmail: Map, byName: Map, identityFor: (user) => object }}
  */
 export function buildRepIdentities(users = []) {
   const roster = (Array.isArray(users) ? users : []).filter(Boolean).slice().sort(rosterOrder);
 
-  const claimed = new Set();
+  // ── 1. Pins ──
+  const takenSlots = new Set();
+  const pinByIndex = new Map();
+  roster.forEach((user, index) => {
+    const slot = pinnedSlot(user);
+    if (slot === null || takenSlots.has(slot)) return;
+    takenSlots.add(slot);
+    pinByIndex.set(index, slot);
+  });
+
+  const claimedIcons = new Set([...takenSlots].map((slot) => REP_PALETTE[slot].emoji));
+
+  // ── 2. Self-picked icons, for the unpinned ──
   const handPicked = new Map();
   roster.forEach((user, index) => {
+    if (pinByIndex.has(index)) return;
     const icon = user?.profile_icon ? getIconById(user.profile_icon) : null;
-    if (!icon || claimed.has(icon.emoji)) return;
-    claimed.add(icon.emoji);
+    if (!icon || claimedIcons.has(icon.emoji)) return;
+    claimedIcons.add(icon.emoji);
     handPicked.set(index, icon.emoji);
   });
 
-  const spare = REP_PALETTE.map((entry) => entry.emoji).filter((emoji) => !claimed.has(emoji));
-  let spareCursor = 0;
-  const nextSpare = () => {
-    const emoji = spare[spareCursor % Math.max(1, spare.length)];
-    spareCursor += 1;
+  // ── 3. The rest, from the free slots ──
+  const freeSlots = REP_PALETTE.map((_, i) => i).filter((i) => !takenSlots.has(i));
+  let slotCursor = 0;
+  const nextFreeSlot = () => {
+    const slot = freeSlots.length ? freeSlots[slotCursor % freeSlots.length] : 0;
+    slotCursor += 1;
+    return slot;
+  };
+  const spareIcons = REP_PALETTE.map((entry) => entry.emoji).filter((emoji) => !claimedIcons.has(emoji));
+  let iconCursor = 0;
+  const nextSpareIcon = () => {
+    const emoji = spareIcons.length ? spareIcons[iconCursor % spareIcons.length] : REP_PALETTE[0].emoji;
+    iconCursor += 1;
     return emoji;
   };
 
   const byEmail = new Map();
   const byName = new Map();
   roster.forEach((user, index) => {
-    const slot = REP_PALETTE[index % REP_PALETTE.length];
-    let emoji = handPicked.get(index);
+    const pin = pinByIndex.get(index);
+    const slot = REP_PALETTE[pin ?? nextFreeSlot()];
+    let emoji = pin != null ? slot.emoji : handPicked.get(index);
     if (!emoji) {
-      // The slot's own icon, unless someone hand-picked it first.
-      emoji = claimed.has(slot.emoji) ? nextSpare() : slot.emoji;
-      claimed.add(emoji);
+      emoji = claimedIcons.has(slot.emoji) ? nextSpareIcon() : slot.emoji;
+      claimedIcons.add(emoji);
     }
     const identity = { ...slot, emoji };
     if (user.email) byEmail.set(norm(user.email), identity);
@@ -139,12 +174,43 @@ export function buildRepIdentities(users = []) {
     if (user.full_name && !byName.has(norm(user.full_name))) byName.set(norm(user.full_name), identity);
   });
 
+  // The roster map first, ALWAYS — it is the only view that knows what everyone
+  // else got. Reading a row's own pin here instead would hand two rows pinned to
+  // the same slot the same identity, which is the one thing this file exists to
+  // prevent; the map has already resolved that contest. The raw pin is only a
+  // fallback for someone the roster doesn't cover.
   const identityFor = (user) => {
     if (!user) return REP_PALETTE[0];
-    return byEmail.get(norm(user.email))
-      || byName.get(norm(user.full_name))
-      || fallbackIdentity(user);
+    const known = byEmail.get(norm(user.email)) || byName.get(norm(user.full_name));
+    if (known) return known;
+    const pin = pinnedSlot(user);
+    return pin !== null ? REP_PALETTE[pin] : fallbackIdentity(user);
   };
 
   return { byEmail, byName, identityFor };
+}
+
+/**
+ * Which palette slot each rep currently occupies, so the picker can grey out
+ * the ones already taken and say who has them. Pinned or auto-assigned alike —
+ * the point is that nobody is offered a face someone else is wearing.
+ *
+ * @returns {Map<number, { email: string, full_name: string, pinned: boolean }>}
+ */
+export function slotOwners(users = []) {
+  const roster = (Array.isArray(users) ? users : []).filter(Boolean);
+  const { byEmail } = buildRepIdentities(roster);
+  const bySlotId = new Map(REP_PALETTE.map((entry, i) => [entry.id, i]));
+  const owners = new Map();
+  roster.forEach((user) => {
+    const identity = user.email ? byEmail.get(norm(user.email)) : null;
+    const slot = identity ? bySlotId.get(identity.id) : null;
+    if (slot == null || owners.has(slot)) return;
+    owners.set(slot, {
+      email: user.email,
+      full_name: user.full_name || user.email,
+      pinned: pinnedSlot(user) !== null,
+    });
+  });
+  return owners;
 }

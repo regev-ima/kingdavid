@@ -41,6 +41,7 @@ import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { buildLeadsById, canEditCustomer, canEditPrimaryRep, canEditSecondaryRep } from '@/lib/rbac';
 import { isSameRep, reconcileRepSlots, repsExcludingPrimary } from '@/lib/repSlots';
 import { createCustomerAuditLog } from '@/utils/auditLog';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 export default function CustomerDetails() {
   const { openLead } = useLeadModal();
@@ -575,7 +576,7 @@ export default function CustomerDetails() {
                         <SelectContent>
                           <SelectItem value={null}>ללא שיוך</SelectItem>
                           {salesReps.map((rep) =>
-                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                            <RepSelectItem key={rep.id} rep={rep} />
                           )}
                         </SelectContent>
                       </Select>
@@ -591,7 +592,7 @@ export default function CustomerDetails() {
                         <SelectContent>
                           <SelectItem value={null}>ללא</SelectItem>
                           {repsExcludingPrimary(salesReps, formData.account_manager || customer.account_manager).map((rep) =>
-                            <SelectItem key={rep.id} value={rep.email}>{rep.full_name}</SelectItem>
+                            <RepSelectItem key={rep.id} rep={rep} />
                           )}
                         </SelectContent>
                       </Select>

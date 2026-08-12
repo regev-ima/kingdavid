@@ -49,10 +49,17 @@ const SelectScrollDownButton = React.forwardRef(({ className, ...props }, ref) =
 SelectScrollDownButton.displayName =
   SelectPrimitive.ScrollDownButton.displayName
 
-const SelectContent = React.forwardRef(({ className, children, position = "popper", ...props }, ref) => (
+// `dir` defaults to rtl because the content is PORTALED to document.body — it
+// lands outside the `dir="rtl"` wrapper the pages put around themselves, so it
+// was inheriting the document's ltr and every dropdown rendered its options
+// flush LEFT with the checkmark stranded across an empty gap. The trigger, which
+// isn't portaled, was rtl all along; only the open menu disagreed. A caller that
+// genuinely wants an ltr menu can still pass dir="ltr".
+const SelectContent = React.forwardRef(({ className, children, position = "popper", dir = "rtl", ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
+      dir={dir}
       className={cn(
         "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-elevated data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         position === "popper" &&

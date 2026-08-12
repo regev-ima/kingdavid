@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Filter, RotateCcw } from "lucide-react";
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 const DATE_PRESETS = [
   { value: 'today', label: 'היום' },
@@ -138,9 +139,7 @@ export default function GlobalFilters({ filters, onChange, users = [] }) {
             <SelectContent>
               <SelectItem value="all">כל הנציגים</SelectItem>
               {salesReps.map(rep => (
-                <SelectItem key={rep.id} value={rep.email}>
-                  {rep.full_name}
-                </SelectItem>
+                <RepSelectItem key={rep.id} rep={rep} />
               ))}
             </SelectContent>
           </Select>
