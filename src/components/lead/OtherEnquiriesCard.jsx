@@ -52,7 +52,7 @@ export default function OtherEnquiriesCard({ lead }) {
 
   return (
     <section className="rounded-2xl border border-indigo-200 bg-card shadow-card overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3.5">
+      <div className="flex items-center gap-2 px-4 py-3">
         <span className="inline-flex items-center gap-2 text-sm font-bold text-indigo-700 min-w-0">
           <History className="h-4 w-4 flex-shrink-0" />
           פניות נוספות מאותו אדם
@@ -62,14 +62,14 @@ export default function OtherEnquiriesCard({ lead }) {
         </span>
       </div>
 
-      <ul className="list-none m-0 p-0 max-h-[240px] overflow-y-auto">
+      <ul className="list-none m-0 p-0 max-h-[200px] overflow-y-auto">
         {siblings.map((enquiry) => {
           const when = parseDbTimestamp(enquiry.effective_sort_date || enquiry.created_date);
           return (
             <li key={enquiry.id} className="border-t border-border/50 first:border-t-0">
               <Link
                 to={`${createPageUrl('LeadDetails')}?id=${enquiry.id}`}
-                className="flex items-center gap-2 px-4 py-2.5 hover:bg-indigo-50/60 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 hover:bg-indigo-50/60 transition-colors"
               >
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 flex-wrap">

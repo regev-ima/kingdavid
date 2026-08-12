@@ -174,20 +174,21 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
   if (!task) {
     return (
       <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
           <span className="inline-flex items-center gap-2 text-sm font-bold">
             <ClipboardCheck className="h-4 w-4 text-primary" />
             משימה הבאה
           </span>
         </div>
-        <div className="px-4 pb-4">
-          <div className="rounded-xl bg-muted/50 px-4 py-5 text-center">
-            <p className="text-sm text-muted-foreground">אין משימות פתוחות לליד הזה.</p>
-            <Button variant="outline" size="sm" className="mt-3 h-8 gap-1.5 bg-card" onClick={onAddTask}>
-              <Plus className="h-3.5 w-3.5" />
-              משימה חדשה
-            </Button>
-          </div>
+        {/* Nothing to do is one line, not a panel. The empty state used to be
+            a 150px tinted box for a sentence and a button, and three cards
+            doing that at once pushed the lead's real content off-screen. */}
+        <div className="px-4 pb-3 -mt-1 flex items-center justify-between gap-2">
+          <span className="text-[13px] text-muted-foreground">אין משימות פתוחות לליד הזה.</span>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1 bg-card flex-shrink-0" onClick={onAddTask}>
+            <Plus className="h-3.5 w-3.5" />
+            משימה חדשה
+          </Button>
         </div>
       </section>
     );
@@ -638,25 +639,28 @@ export default function LeadOverview({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           <div className="space-y-4">
             <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-              <div className="px-4 py-3.5">
+              <div className="px-4 py-3">
                 <span className="inline-flex items-center gap-2 text-sm font-bold">
                   <Target className="h-4 w-4 text-primary" />
                   פרטי שיווק
                 </span>
               </div>
-              <ul className="list-none m-0 px-4 pb-4">
+              {/* Five reference values a rep glances at, not a table they read.
+                  They were laid out like paragraphs — 44px a row, five rows —
+                  and pushed the rest of the lead off the screen for it. */}
+              <ul className="list-none m-0 px-4 pb-3">
                 {marketingRows.map((row) => (
                   <li
                     key={row.k}
-                    className="flex items-center justify-between gap-4 py-3 text-sm border-t first:border-t-0 border-border/50"
+                    className="flex items-center justify-between gap-4 py-1.5 text-[13px] border-t first:border-t-0 border-border/50"
                   >
-                    <span className="text-[13px] text-muted-foreground/70 flex-none">{row.k}</span>
+                    <span className="text-[12px] text-muted-foreground/70 flex-none">{row.k}</span>
                     <span className="min-w-0 truncate text-start" title={row.v || ''}>{row.v || '—'}</span>
                   </li>
                 ))}
               </ul>
 
-              <div className="px-4 pb-4 pt-1 border-t border-border/50">
+              <div className="px-4 pb-3 pt-1 border-t border-border/50">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground/80">
                     <StickyNote className="h-3.5 w-3.5" />
@@ -682,9 +686,9 @@ export default function LeadOverview({
                     // Clicking away saves, so a note is never lost to a closed
                     // popup. The button stays for the rep who wants to be told.
                     onBlur={saveNotes}
-                    rows={3}
+                    rows={2}
                     placeholder="מה חשוב לזכור על הליד הזה..."
-                    className="resize-none text-sm"
+                    className="resize-none text-[13px]"
                   />
                 ) : (
                   <p className="text-sm whitespace-pre-wrap text-foreground/90">
@@ -709,7 +713,7 @@ export default function LeadOverview({
               a one-line strip at the foot of the page. */}
           <div className="space-y-4">
             <LeadContactLogCard
-              leadId={lead?.id}
+              lead={lead}
               users={users}
               onAddCommunication={onAddCommunication}
             />

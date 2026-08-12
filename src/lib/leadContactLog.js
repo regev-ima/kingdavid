@@ -66,6 +66,7 @@ export function normalizeCallLog(row) {
   return {
     logKey: `call-${row.id}`,
     id: row.id,
+    lead_id: row.lead_id || null,
     source: 'phone',
     type: 'call',
     direction: row.call_direction || null,
@@ -86,6 +87,7 @@ export function normalizeCommunicationLog(row) {
   return {
     logKey: `comm-${row.id}`,
     id: row.id,
+    lead_id: row.lead_id || null,
     source: 'manual',
     type: row.type || 'call',
     direction: row.direction || null,

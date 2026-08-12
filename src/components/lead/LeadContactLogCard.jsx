@@ -57,17 +57,37 @@ function entryVisual(entry) {
 
 const DIRECTION_LABELS = { inbound: 'נכנסת', outbound: 'יוצאת' };
 
-export default function LeadContactLogCard({ leadId, users = [], onAddCommunication }) {
+export default function LeadContactLogCard({ lead, users = [], onAddCommunication }) {
+  const leadId = lead?.id || null;
+  const contactId = lead?.contact_id || null;
+
   const { data: entries = [], isLoading } = useQuery({
-    queryKey: ['lead-contact-log', leadId],
+    queryKey: ['lead-contact-log', leadId, contactId],
     enabled: !!leadId,
     staleTime: 60_000,
     queryFn: async () => {
-      const [calls, comms] = await Promise.all([
-        base44.entities.CallLog.filter({ lead_id: leadId }),
-        base44.entities.CommunicationLog.filter({ lead_id: leadId }),
+      // Scoped to the PERSON, not to this lead row.
+      //
+      // A repeat enquiry gets its own lead row, and the Voicenter sync hangs a
+      // call on whichever row its phone number matched first — `allLeads.find`,
+      // so an older enquiry usually wins. Asked per-row, this card then shows
+      // "no calls yet" on the enquiry the rep is holding while the call sits on
+      // a sibling they'd have to go find. The question is "when did we last
+      // speak to him", and him is the contact.
+      let leadIds = [leadId];
+      if (contactId) {
+        const rows = await base44.entities.Lead.filter({ contact_id: contactId });
+        if (Array.isArray(rows)) {
+          leadIds = [...new Set([leadId, ...rows.map((r) => r?.id).filter(Boolean)])];
+        }
+      }
+
+      const [callBatches, commBatches] = await Promise.all([
+        Promise.all(leadIds.map((id) => base44.entities.CallLog.filter({ lead_id: id }))),
+        Promise.all(leadIds.map((id) => base44.entities.CommunicationLog.filter({ lead_id: id }))),
       ]);
-      return buildContactLog(calls, comms);
+
+      return buildContactLog(callBatches.flat(), commBatches.flat());
     },
   });
 
@@ -75,7 +95,7 @@ export default function LeadContactLogCard({ leadId, users = [], onAddCommunicat
 
   return (
     <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
         <span className="inline-flex items-center gap-2 text-sm font-bold min-w-0">
           <Phone className="h-4 w-4 text-primary flex-shrink-0" />
           שיחות ותקשורת
@@ -107,24 +127,25 @@ export default function LeadContactLogCard({ leadId, users = [], onAddCommunicat
       </div>
 
       {isLoading ? (
-        <p className="px-4 pb-4 m-0 text-xs text-muted-foreground">טוען…</p>
+        <p className="px-4 pb-3 m-0 text-xs text-muted-foreground">טוען…</p>
       ) : entries.length === 0 ? (
-        <div className="px-4 pb-4">
-          <div className="rounded-xl bg-muted/50 px-4 py-5 text-center">
-            <p className="text-sm text-muted-foreground m-0">עוד לא תועדה שיחה עם הלקוח.</p>
-            {onAddCommunication ? (
-              <Button variant="outline" size="sm" className="mt-3 h-8 gap-1.5 bg-card" onClick={onAddCommunication}>
-                <Plus className="h-3.5 w-3.5" />
-                הוסף תקשורת
-              </Button>
-            ) : null}
-          </div>
+        /* One line, not a panel. "Nothing here yet" is the most common state
+           on a fresh lead, and it has no business taking 150px of a screen the
+           rep is trying to read in one go. */
+        <div className="px-4 pb-3 -mt-1 flex items-center justify-between gap-2">
+          <span className="text-[13px] text-muted-foreground">עוד לא תועדה שיחה עם הלקוח.</span>
+          {onAddCommunication ? (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 bg-card flex-shrink-0" onClick={onAddCommunication}>
+              <Plus className="h-3.5 w-3.5" />
+              הוסף תקשורת
+            </Button>
+          ) : null}
         </div>
       ) : (
         /* Bounded and scrolled inside its own box: a lead worked for two months
            can carry dozens of calls, and the card is a fact about the lead, not
            the page. */
-        <ul className="list-none m-0 p-0 max-h-[264px] overflow-y-auto">
+        <ul className="list-none m-0 p-0 max-h-[240px] overflow-y-auto">
           {entries.map((entry) => {
             const { label, icon: Icon, tone } = entryVisual(entry);
             const direction = DIRECTION_LABELS[entry.direction] || '';
@@ -136,9 +157,12 @@ export default function LeadContactLogCard({ leadId, users = [], onAddCommunicat
             // The one line of context under the header: what the rep wrote if
             // they wrote anything, otherwise who handled it.
             const secondary = String(entry.subject || entry.content || '').trim() || rep;
+            // Same person, different enquiry. Worth saying out loud — it tells
+            // the rep the conversation happened, and that it isn't filed here.
+            const fromOtherEnquiry = !!entry.lead_id && !!leadId && entry.lead_id !== leadId;
 
             return (
-              <li key={entry.logKey} className="border-t border-border/50 first:border-t-0 px-4 py-2.5">
+              <li key={entry.logKey} className="border-t border-border/50 first:border-t-0 px-4 py-2">
                 <div className="flex items-start gap-2.5">
                   <span className={`h-7 w-7 rounded-full grid place-items-center flex-none ${tone}`}>
                     <Icon className="h-3.5 w-3.5" />
@@ -150,6 +174,14 @@ export default function LeadContactLogCard({ leadId, users = [], onAddCommunicat
                       {when ? <span className="text-muted-foreground/70 tabular-nums">{when}</span> : null}
                       {duration ? (
                         <span className="text-muted-foreground/70 tabular-nums">· {duration}</span>
+                      ) : null}
+                      {fromOtherEnquiry ? (
+                        <span
+                          className="inline-flex items-center rounded px-1.5 h-[16px] text-[10px] font-medium bg-indigo-50 text-indigo-700"
+                          title="השיחה רשומה על פנייה אחרת של אותו אדם"
+                        >
+                          פנייה אחרת
+                        </span>
                       ) : null}
                     </div>
                     {secondary ? (
