@@ -628,71 +628,72 @@ export default function LeadOverview({
         </div>
 
         {/* Two columns. Marketing is first in the DOM, so in RTL it lands on
-            the RIGHT — the side the mockup puts it on. */}
+            the RIGHT — the side the mockup puts it on.
+
+            The split is by height, not by topic: marketing carries five UTM
+            rows and the notes box, so it alone is nearly as tall as the two
+            history cards stacked. Pairing it with the next task on the right
+            and putting the two histories on the left leaves the columns close
+            enough in height that neither ends in a band of empty card. */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-            <div className="px-4 py-3.5">
-              <span className="inline-flex items-center gap-2 text-sm font-bold">
-                <Target className="h-4 w-4 text-primary" />
-                פרטי שיווק
-              </span>
-            </div>
-            <ul className="list-none m-0 px-4 pb-4">
-              {marketingRows.map((row) => (
-                <li
-                  key={row.k}
-                  className="flex items-center justify-between gap-4 py-3 text-sm border-t first:border-t-0 border-border/50"
-                >
-                  <span className="text-[13px] text-muted-foreground/70 flex-none">{row.k}</span>
-                  <span className="min-w-0 truncate text-start" title={row.v || ''}>{row.v || '—'}</span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="px-4 pb-4 pt-1 border-t border-border/50">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground/80">
-                  <StickyNote className="h-3.5 w-3.5" />
-                  הערות
-                </span>
-                {canEdit && notesDirty ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 text-xs gap-1.5"
-                    disabled={notesSaving}
-                    onClick={saveNotes}
-                  >
-                    {notesSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                    שמור
-                  </Button>
-                ) : null}
-              </div>
-              {canEdit ? (
-                <Textarea
-                  value={notesDraft}
-                  onChange={(e) => setNotesDraft(e.target.value)}
-                  // Clicking away saves, so a note is never lost to a closed
-                  // popup. The button stays for the rep who wants to be told.
-                  onBlur={saveNotes}
-                  rows={3}
-                  placeholder="מה חשוב לזכור על הליד הזה..."
-                  className="resize-none text-sm"
-                />
-              ) : (
-                <p className="text-sm whitespace-pre-wrap text-foreground/90">
-                  {lead?.notes || <span className="text-muted-foreground/70">—</span>}
-                </p>
-              )}
-            </div>
-          </section>
-
-          {/* What to do next, who we already spoke to, and whether we've met
-              this person before — the three things a rep reads on the way to
-              picking up the phone, stacked in that order. The contact log and
-              the previous enquiries used to be nowhere and at the foot of the
-              page respectively. */}
           <div className="space-y-4">
+            <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
+              <div className="px-4 py-3.5">
+                <span className="inline-flex items-center gap-2 text-sm font-bold">
+                  <Target className="h-4 w-4 text-primary" />
+                  פרטי שיווק
+                </span>
+              </div>
+              <ul className="list-none m-0 px-4 pb-4">
+                {marketingRows.map((row) => (
+                  <li
+                    key={row.k}
+                    className="flex items-center justify-between gap-4 py-3 text-sm border-t first:border-t-0 border-border/50"
+                  >
+                    <span className="text-[13px] text-muted-foreground/70 flex-none">{row.k}</span>
+                    <span className="min-w-0 truncate text-start" title={row.v || ''}>{row.v || '—'}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="px-4 pb-4 pt-1 border-t border-border/50">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground/80">
+                    <StickyNote className="h-3.5 w-3.5" />
+                    הערות
+                  </span>
+                  {canEdit && notesDirty ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      disabled={notesSaving}
+                      onClick={saveNotes}
+                    >
+                      {notesSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      שמור
+                    </Button>
+                  ) : null}
+                </div>
+                {canEdit ? (
+                  <Textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    // Clicking away saves, so a note is never lost to a closed
+                    // popup. The button stays for the rep who wants to be told.
+                    onBlur={saveNotes}
+                    rows={3}
+                    placeholder="מה חשוב לזכור על הליד הזה..."
+                    className="resize-none text-sm"
+                  />
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap text-foreground/90">
+                    {lead?.notes || <span className="text-muted-foreground/70">—</span>}
+                  </p>
+                )}
+              </div>
+            </section>
+
             <NextTaskCard
               queue={queue}
               salesReps={salesReps}
@@ -700,7 +701,13 @@ export default function LeadOverview({
               onCompleteTask={onCompleteTask}
               onAddTask={onAddTask}
             />
+          </div>
 
+          {/* Who we already spoke to, and whether we've met this person
+              before. Both used to be unanswerable from here — the contact log
+              was nowhere on the screen at all, and the previous enquiries were
+              a one-line strip at the foot of the page. */}
+          <div className="space-y-4">
             <LeadContactLogCard
               leadId={lead?.id}
               users={users}
