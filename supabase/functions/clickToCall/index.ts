@@ -16,7 +16,14 @@ Deno.serve(async (req) => {
     }
 
     const voicenterApiKey = Deno.env.get('VOICENTER_API_KEY');
-    const url = `http://46.224.211.60/ForwardDialer/click2call.aspx?phone=${user.voicenter_extension}&target=${customerPhone}&code=${voicenterApiKey}&action=call&record=True`;
+    // Voicenter builds every click2call from two legs: leg 1 is `phone` (the
+    // rep's extension), leg 2 is `target` (the customer, dialed only once leg 1
+    // is answered). Without `phoneautoanswer` the desk phone beside the rep
+    // rings and they have to lift the handset before the customer is dialed.
+    // `phoneautoanswer=true` makes leg 1 answer itself — the headset/speaker
+    // opens and the dial goes straight out. Defaults to false when omitted, and
+    // is ignored on extensions whose device doesn't support auto-answer.
+    const url = `http://46.224.211.60/ForwardDialer/click2call.aspx?phone=${user.voicenter_extension}&target=${customerPhone}&code=${voicenterApiKey}&action=call&record=True&phoneautoanswer=true`;
 
     const response = await fetch(url, {
       method: 'GET',
