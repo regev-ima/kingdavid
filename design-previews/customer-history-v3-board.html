@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>היסטוריית לקוח — וריאציה 3: לוח מחוונים</title>
+<style>
+  :root {
+    --bg: hsl(240 20% 99%); --page: hsl(240 14% 96%); --card: hsl(0 0% 100%);
+    --fg: hsl(230 25% 15%); --fg-muted: hsl(230 9% 46%); --fg-faint: hsl(230 8% 62%);
+    --border: hsl(230 16% 91%); --border-soft: hsl(230 16% 94%); --inset: hsl(240 14% 97%);
+    --primary: hsl(234 72% 56%); --primary-soft: hsl(234 80% 96%);
+    --green: hsl(150 62% 34%); --green-soft: hsl(150 62% 94%);
+    --amber: hsl(32 85% 42%); --amber-soft: hsl(38 92% 93%);
+    --blue: hsl(216 85% 50%); --blue-soft: hsl(216 92% 94%);
+    --violet: hsl(262 62% 54%); --violet-soft: hsl(262 80% 95%);
+    --rose: hsl(348 70% 48%); --rose-soft: hsl(348 85% 95%);
+    --shadow: 0 1px 2px rgb(16 24 40 / .04), 0 1px 3px rgb(16 24 40 / .06);
+    --shadow-pop: 0 24px 64px -16px rgb(16 24 40 / .26);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: hsl(230 18% 12%); --page: hsl(230 18% 8%); --card: hsl(230 16% 15%);
+      --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+      --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+      --primary: hsl(234 82% 72%); --primary-soft: hsl(234 40% 24%);
+      --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 20%);
+      --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 21%);
+      --blue: hsl(216 88% 72%); --blue-soft: hsl(216 40% 23%);
+      --violet: hsl(262 80% 76%); --violet-soft: hsl(262 30% 25%);
+      --rose: hsl(348 85% 72%); --rose-soft: hsl(348 30% 25%);
+      --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: hsl(230 18% 12%); --page: hsl(230 18% 8%); --card: hsl(230 16% 15%);
+    --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+    --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+    --primary: hsl(234 82% 72%); --primary-soft: hsl(234 40% 24%);
+    --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 20%);
+    --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 21%);
+    --blue: hsl(216 88% 72%); --blue-soft: hsl(216 40% 23%);
+    --violet: hsl(262 80% 76%); --violet-soft: hsl(262 30% 25%);
+    --rose: hsl(348 85% 72%); --rose-soft: hsl(348 30% 25%);
+    --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 60px; direction: rtl; background: var(--page); color: var(--fg);
+    font-family: 'Heebo','Assistant','Rubik','Noto Sans Hebrew',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; }
+  .note { font-size: 12px; color: var(--fg-faint); margin: 0 4px 14px; }
+  .note b { color: var(--fg); font-weight: 600; }
+  svg.ic { width: 1em; height: 1em; flex: none; }
+
+  .modal {
+    background: var(--border-soft); border: 1px solid var(--border); border-radius: 18px;
+    box-shadow: var(--shadow-pop); overflow: hidden;
+    display: grid; gap: 1px;
+  }
+
+  /* ── Header ────────────────────────────────────────────────────────── */
+  .head { background: var(--bg); display: flex; align-items: center; gap: 11px; padding: 13px 18px; flex-wrap: wrap; }
+  .avatar {
+    flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--primary-soft);
+    color: var(--primary); display: grid; place-items: center; font-size: 15px; font-weight: 700;
+  }
+  .head h1 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+  .head .meta { font-size: 12px; color: var(--fg-faint); }
+  .head .phone { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+  .head .end { margin-inline-start: auto; display: flex; align-items: center; gap: 7px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px; border-radius: 7px;
+    padding: 3px 9px; font-size: 11.5px; font-weight: 600;
+  }
+  .tag.gold { background: hsl(45 90% 93%); color: hsl(38 80% 32%); }
+  .tag.live { background: var(--rose-soft); color: var(--rose); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.gold { background: hsl(42 35% 21%); color: hsl(44 90% 68%); } }
+  :root[data-theme="dark"] .tag.gold { background: hsl(42 35% 21%); color: hsl(44 90% 68%); }
+  .gh { border: 0; background: transparent; color: var(--fg-faint); cursor: pointer;
+    width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; font-size: 15px; }
+  .gh:hover { background: var(--inset); color: var(--fg); }
+
+  /* ── KPI rail ──────────────────────────────────────────────────────── */
+  .kpis { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border-soft); }
+  .kpi { background: var(--bg); padding: 12px 14px; min-width: 0; }
+  /* All three lines are spans inside a span — each needs to be blockified by
+     hand, or the label and the sub-label run together as one line of text. */
+  .kpi .n {
+    display: block; font-size: 22px; font-weight: 800; letter-spacing: -.03em; line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi .l { display: block; font-size: 11px; color: var(--fg-faint); line-height: 1.35; }
+  .kpi .d { display: block; font-size: 10.5px; color: var(--fg-faint); opacity: .8; margin-top: 3px; line-height: 1.35; }
+  .kpi.hero .n { color: var(--green); font-size: 25px; }
+  .kpi.alert .n { color: var(--rose); }
+
+  /* ── Board ─────────────────────────────────────────────────────────── */
+  .board { display: grid; grid-template-columns: 1fr 1fr 320px; gap: 1px; background: var(--border-soft); }
+  .panel { background: var(--bg); padding: 13px 16px 14px; min-width: 0; }
+  .panel h3 {
+    margin: 0 0 9px; font-size: 11.5px; font-weight: 700; color: var(--fg-muted);
+    display: flex; align-items: center; gap: 6px; letter-spacing: .01em;
+  }
+  .panel h3 .ic { color: var(--fg-faint); }
+  .panel h3 .n { margin-inline-start: auto; font-weight: 600; color: var(--fg-faint); }
+
+  .r { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 12.5px; min-width: 0; }
+  .r + .r { border-top: 1px solid var(--border-soft); }
+  .r .d { font-size: 11px; color: var(--fg-faint); font-variant-numeric: tabular-nums; flex: none; width: 54px; }
+  .r .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .r .t b { font-weight: 600; }
+  .r .a, .r .pillx { margin-inline-start: auto; }
+  .r .a { flex: none; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .a.ok { color: var(--green); } .a.no { color: var(--fg-faint); } .a.warn { color: var(--rose); }
+  .pillx {
+    display: inline-flex; align-items: center; border-radius: 5px; padding: 1px 6px;
+    font-size: 10.5px; font-weight: 600; flex: none;
+  }
+  .px-green { background: var(--green-soft); color: var(--green); }
+  .px-grey  { background: var(--inset); color: var(--fg-faint); }
+  .px-rose  { background: var(--rose-soft); color: var(--rose); }
+  .px-amber { background: var(--amber-soft); color: var(--amber); }
+
+  /* Side column: the only thing that is open, then the mix of contact */
+  .side { background: var(--bg); padding: 13px 16px 14px; display: flex; flex-direction: column; gap: 14px; }
+  .now {
+    border: 1px solid color-mix(in srgb, var(--rose) 30%, transparent);
+    background: var(--rose-soft); border-radius: 11px; padding: 11px 12px;
+  }
+  .now .k { font-size: 11px; font-weight: 700; color: var(--rose); display: flex; align-items: center; gap: 5px; }
+  .now .h { font-size: 14px; font-weight: 700; margin-top: 5px; }
+  .now .s { font-size: 12px; color: var(--fg-muted); margin-top: 3px; }
+  .now .acts { display: flex; gap: 6px; margin-top: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;
+    height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--fg); font: inherit; font-size: 12.5px; font-weight: 500; flex: 1;
+  }
+  .btn:hover { filter: brightness(.97); }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+  :root[data-theme="dark"] .btn-primary { color: hsl(230 18% 12%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-primary { color: hsl(230 18% 12%); } }
+
+  .mix { display: grid; gap: 7px; }
+  .mixrow { display: grid; grid-template-columns: 62px 1fr 30px; align-items: center; gap: 8px; font-size: 12px; }
+  .mixrow .lb { color: var(--fg-muted); }
+  .mixrow .tr { height: 7px; border-radius: 999px; background: var(--inset); overflow: hidden; }
+  .mixrow .fl { height: 100%; border-radius: 999px; }
+  .mixrow .vv { text-align: start; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+
+  /* ── Heat strip: 30 months, one cell each ──────────────────────────── */
+  .heat { background: var(--bg); padding: 12px 18px 15px; }
+  .heat-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .heat-head h3 { margin: 0; font-size: 11.5px; font-weight: 700; color: var(--fg-muted); }
+  .heat-head .s { font-size: 11px; color: var(--fg-faint); }
+  .heat-head .lg { margin-inline-start: auto; display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--fg-faint); }
+  .heat-head .lg i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; background: var(--blue); }
+  .cells { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; }
+  .cell {
+    height: 26px; border-radius: 4px; background: var(--inset); position: relative; cursor: pointer;
+  }
+  .cell[data-lvl="1"] { background: color-mix(in srgb, var(--blue) 18%, var(--inset)); }
+  .cell[data-lvl="2"] { background: color-mix(in srgb, var(--blue) 38%, var(--inset)); }
+  .cell[data-lvl="3"] { background: color-mix(in srgb, var(--blue) 62%, var(--inset)); }
+  .cell[data-lvl="4"] { background: var(--blue); }
+  /* A month that produced money is marked under the cell — the eye finds the
+     two paydays in the strip without reading a single date. */
+  .cell.buy::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -5px; height: 3px;
+    border-radius: 2px; background: var(--green);
+  }
+  .cell.svc::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -5px; height: 3px;
+    border-radius: 2px; background: var(--amber);
+  }
+  .cell.live { outline: 2px solid var(--rose); outline-offset: 1px; }
+  .axis { display: grid; grid-template-columns: repeat(30, 1fr); margin-top: 9px; font-size: 10px; color: var(--fg-faint); }
+  .axis span { grid-row: 1; text-align: center; white-space: nowrap; }
+
+  @media (max-width: 1000px) {
+    .board { grid-template-columns: 1fr 1fr; }
+    .side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+    .side > * { flex: 1 1 260px; }
+    .kpis { grid-template-columns: repeat(4, 1fr); }
+  }
+  @media (max-width: 620px) {
+    .board { grid-template-columns: 1fr; }
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .cells, .axis { grid-template-columns: repeat(15, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="note"><b>וריאציה 3 — לוח מחוונים.</b> אפס גלילה. המספרים למעלה, ארבעת הפנקסים באמצע, מה שפתוח עכשיו בצד, ובתחתית מפת חום של 30 חודשים — כל חודש תא אחד, וכהות התא היא כמות הפעילות. הכל נמצא במסך אחד בגודל קבוע.</p>
+
+  <div class="modal">
+
+    <!-- Header -->
+    <div class="head">
+      <span class="avatar">ז</span>
+      <span>
+        <h1>זהבה כהן</h1>
+        <span class="meta">רמת גן · <span class="phone">052-822-3351</span> · zehava.c@gmail.com</span>
+      </span>
+      <span class="tag gold">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 4.5 3L12 4l4.5 5L21 6l-1.7 12H4.7Z"/></svg>
+        לקוחה חוזרת
+      </span>
+      <span class="tag live">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        פנייה פתוחה
+      </span>
+      <span class="end">
+        <span class="meta">נציג: מתן לוי</span>
+        <button class="gh" type="button" aria-label="עוד">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>
+        </button>
+        <button class="gh" type="button" aria-label="סגור">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </span>
+    </div>
+
+    <!-- KPI rail -->
+    <div class="kpis">
+      <span class="kpi hero"><span class="n">₪24,880</span><span class="l">סה״כ רכישות</span><span class="d">ממוצע ₪12,440</span></span>
+      <span class="kpi"><span class="n">2</span><span class="l">הזמנות</span><span class="d">שתיהן סופקו בזמן</span></span>
+      <span class="kpi"><span class="n">50%</span><span class="l">אחוז סגירת הצעות</span><span class="d">2 מתוך 4</span></span>
+      <span class="kpi"><span class="n">4</span><span class="l">פניות</span><span class="d">אחת פתוחה</span></span>
+      <span class="kpi"><span class="n">31</span><span class="l">אינטראקציות</span><span class="d">74% מענה</span></span>
+      <span class="kpi"><span class="n">2ש׳ 5ח׳</span><span class="l">אצלנו</span><span class="d">מ‑14/03/2024</span></span>
+      <span class="kpi alert"><span class="n">1</span><span class="l">משימה באיחור</span><span class="d">מאתמול 09:44</span></span>
+    </div>
+
+    <!-- Board -->
+    <div class="board">
+
+      <div class="panel">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+          הזמנות <span class="n">2 · ₪24,880</span>
+        </h3>
+        <div class="r"><span class="d">02/03/26</span><span class="t"><b>#7194</b> ספה תלת „מילאנו״ + שידה</span><span class="a ok">₪11,480</span></div>
+        <div class="r"><span class="d">19/03/26</span><span class="t">↳ סופקה, רמת גן קומה 3</span><span class="pillx px-green">בזמן</span></div>
+        <div class="r"><span class="d">21/03/24</span><span class="t"><b>#4821</b> מיטת „אושן״ 160×200 + 2 מזרנים</span><span class="a ok">₪13,400</span></div>
+        <div class="r"><span class="d">04/04/24</span><span class="t">↳ סופקה והורכבה</span><span class="pillx px-green">בזמן</span></div>
+
+        <h3 style="margin-top:14px">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.8 2.8 0 0 1-4-4Z"/></svg>
+          שירות <span class="n">1 · סגור</span>
+        </h3>
+        <div class="r"><span class="d">12/04/24</span><span class="t"><b>#312</b> חריקה במסגרת · אחריות</span><span class="pillx px-amber">6 ימים</span></div>
+      </div>
+
+      <div class="panel">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+          הצעות מחיר <span class="n">4</span>
+        </h3>
+        <div class="r"><span class="d">28/02/26</span><span class="t"><b>Q-2261</b> ספה מילאנו</span><span class="a ok">₪11,480</span></div>
+        <div class="r"><span class="d">19/03/24</span><span class="t"><b>Q-1180</b> אושן + מזרנים</span><span class="a ok">₪13,400</span></div>
+        <div class="r"><span class="d">16/03/24</span><span class="t"><b>Q-1147</b> אושן ללא מזרנים</span><span class="pillx px-grey">פגה</span></div>
+        <div class="r"><span class="d">15/03/24</span><span class="t"><b>Q-1102</b> דגם קלאסיק</span><span class="pillx px-grey">פגה</span></div>
+
+        <h3 style="margin-top:14px">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          פניות <span class="n">4</span>
+        </h3>
+        <div class="r"><span class="d">12/08/26</span><span class="t">טאבולה · מחפשת מוצרים שלא קיימים</span><span class="pillx px-rose">פתוחה</span></div>
+        <div class="r"><span class="d">22/02/26</span><span class="t">לקוח חוזר · הגיעה לסניף</span><span class="pillx px-green">עסקה</span></div>
+        <div class="r"><span class="d">03/05/24</span><span class="t">בירור אספקה</span><span class="pillx px-grey">טופל</span></div>
+        <div class="r"><span class="d">14/03/24</span><span class="t">פייסבוק · „מבצע 160×200״</span><span class="pillx px-green">עסקה</span></div>
+      </div>
+
+      <!-- Side -->
+      <div class="side">
+        <div class="now">
+          <span class="k">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            פתוח עכשיו — משימה באיחור
+          </span>
+          <span class="h">שיחה · מתן לוי</span>
+          <span class="s">נקבעה ל‑12/08 09:44 · הפנייה נפתחה היום 04:54 מטאבולה, סטטוס „מחפשת מוצרים שלא קיימים בחברה״.</span>
+          <span class="acts">
+            <button class="btn btn-primary" type="button">חייג</button>
+            <button class="btn" type="button">וואטסאפ</button>
+            <button class="btn" type="button">בוצע</button>
+          </span>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 9px; font-size:11.5px; font-weight:700; color:var(--fg-muted)">תמהיל התקשורת · 31 מגעים</h3>
+          <div class="mix">
+            <span class="mixrow"><span class="lb">שיחות</span><span class="tr"><span class="fl" style="width:58%; background:var(--blue)"></span></span><span class="vv">18</span></span>
+            <span class="mixrow"><span class="lb">וואטסאפ</span><span class="tr"><span class="fl" style="width:29%; background:var(--green)"></span></span><span class="vv">9</span></span>
+            <span class="mixrow"><span class="lb">מיילים</span><span class="tr"><span class="fl" style="width:10%; background:var(--violet)"></span></span><span class="vv">3</span></span>
+            <span class="mixrow"><span class="lb">פגישות</span><span class="tr"><span class="fl" style="width:3%; background:var(--amber)"></span></span><span class="vv">1</span></span>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 9px; font-size:11.5px; font-weight:700; color:var(--fg-muted)">שינויים אחרונים</h3>
+          <div class="r"><span class="d">09:44</span><span class="t">נפתחה משימת שיחה</span></div>
+          <div class="r"><span class="d">09:25</span><span class="t">שויכה למתן לוי</span></div>
+          <div class="r"><span class="d">04:54</span><span class="t">הפנייה נוצרה · UTM Term: Elite</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Heat strip -->
+    <div class="heat">
+      <div class="heat-head">
+        <h3>30 חודשי קשר</h3>
+        <span class="s">כל תא = חודש · כהות = כמות פעילות · פס ירוק = חודש שבו נכנס כסף</span>
+        <span class="lg">פחות <i style="background:var(--inset)"></i><i style="background:color-mix(in srgb, var(--blue) 18%, var(--inset))"></i><i style="background:color-mix(in srgb, var(--blue) 38%, var(--inset))"></i><i style="background:color-mix(in srgb, var(--blue) 62%, var(--inset))"></i><i></i> יותר</span>
+      </div>
+      <div class="cells">
+        <span class="cell buy" data-lvl="4" title="מרץ 2024 · 11 מגעים · הזמנה #4821 ₪13,400"></span>
+        <span class="cell svc" data-lvl="3" title="אפריל 2024 · 7 מגעים · אספקה + קריאת שירות #312"></span>
+        <span class="cell" data-lvl="2" title="מאי 2024 · 3 מגעים · בירור אספקה"></span>
+        <span class="cell" data-lvl="1" title="יוני 2024 · מגע אחד"></span>
+        <span class="cell" data-lvl="0" title="יולי 2024 · אין פעילות"></span>
+        <span class="cell" data-lvl="1" title="אוגוסט 2024 · מגע אחד"></span>
+        <span class="cell" data-lvl="0" title="ספטמבר 2024"></span>
+        <span class="cell" data-lvl="0" title="אוקטובר 2024"></span>
+        <span class="cell" data-lvl="1" title="נובמבר 2024 · דיוור"></span>
+        <span class="cell" data-lvl="0" title="דצמבר 2024"></span>
+        <span class="cell" data-lvl="0" title="ינואר 2025"></span>
+        <span class="cell" data-lvl="0" title="פברואר 2025"></span>
+        <span class="cell" data-lvl="1" title="מרץ 2025 · דיוור"></span>
+        <span class="cell" data-lvl="0" title="אפריל 2025"></span>
+        <span class="cell" data-lvl="0" title="מאי 2025"></span>
+        <span class="cell" data-lvl="0" title="יוני 2025"></span>
+        <span class="cell" data-lvl="0" title="יולי 2025"></span>
+        <span class="cell" data-lvl="1" title="אוגוסט 2025 · דיוור"></span>
+        <span class="cell" data-lvl="0" title="ספטמבר 2025"></span>
+        <span class="cell" data-lvl="0" title="אוקטובר 2025"></span>
+        <span class="cell" data-lvl="0" title="נובמבר 2025"></span>
+        <span class="cell" data-lvl="1" title="דצמבר 2025 · דיוור"></span>
+        <span class="cell" data-lvl="0" title="ינואר 2026"></span>
+        <span class="cell" data-lvl="3" title="פברואר 2026 · 8 מגעים · פנייה חוזרת + הצעה Q-2261"></span>
+        <span class="cell buy" data-lvl="4" title="מרץ 2026 · 9 מגעים · הזמנה #7194 ₪11,480 + אספקה"></span>
+        <span class="cell" data-lvl="1" title="אפריל 2026 · שיחת שביעות רצון"></span>
+        <span class="cell" data-lvl="0" title="מאי 2026"></span>
+        <span class="cell" data-lvl="0" title="יוני 2026"></span>
+        <span class="cell" data-lvl="0" title="יולי 2026"></span>
+        <span class="cell live" data-lvl="2" title="אוגוסט 2026 · פנייה חדשה פתוחה"></span>
+      </div>
+      <div class="axis">
+        <span style="grid-column: 1 / span 10">2024</span>
+        <span style="grid-column: 11 / span 12">2025</span>
+        <span style="grid-column: 23 / span 8">2026</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

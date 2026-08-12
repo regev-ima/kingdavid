@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>היסטוריית לקוח — וריאציה 2: ציר חיים</title>
+<style>
+  :root {
+    --bg: hsl(240 20% 99%); --page: hsl(240 14% 96%); --card: hsl(0 0% 100%);
+    --fg: hsl(230 25% 15%); --fg-muted: hsl(230 9% 46%); --fg-faint: hsl(230 8% 62%);
+    --border: hsl(230 16% 91%); --border-soft: hsl(230 16% 94%); --inset: hsl(240 14% 97%);
+    --primary: hsl(234 72% 56%); --primary-soft: hsl(234 80% 96%);
+    --green: hsl(150 62% 34%); --green-soft: hsl(150 62% 94%);
+    --amber: hsl(32 85% 42%); --amber-soft: hsl(38 92% 93%);
+    --blue: hsl(216 85% 50%); --blue-soft: hsl(216 92% 94%);
+    --violet: hsl(262 62% 54%); --violet-soft: hsl(262 80% 95%);
+    --rose: hsl(348 70% 48%); --rose-soft: hsl(348 85% 95%);
+    --shadow: 0 1px 2px rgb(16 24 40 / .04), 0 1px 3px rgb(16 24 40 / .06);
+    --shadow-pop: 0 24px 64px -16px rgb(16 24 40 / .26);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: hsl(230 18% 12%); --page: hsl(230 18% 8%); --card: hsl(230 16% 15%);
+      --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+      --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+      --primary: hsl(234 82% 72%); --primary-soft: hsl(234 40% 24%);
+      --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 20%);
+      --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 21%);
+      --blue: hsl(216 88% 72%); --blue-soft: hsl(216 40% 23%);
+      --violet: hsl(262 80% 76%); --violet-soft: hsl(262 30% 25%);
+      --rose: hsl(348 85% 72%); --rose-soft: hsl(348 30% 25%);
+      --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: hsl(230 18% 12%); --page: hsl(230 18% 8%); --card: hsl(230 16% 15%);
+    --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+    --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+    --primary: hsl(234 82% 72%); --primary-soft: hsl(234 40% 24%);
+    --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 20%);
+    --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 21%);
+    --blue: hsl(216 88% 72%); --blue-soft: hsl(216 40% 23%);
+    --violet: hsl(262 80% 76%); --violet-soft: hsl(262 30% 25%);
+    --rose: hsl(348 85% 72%); --rose-soft: hsl(348 30% 25%);
+    --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 60px; direction: rtl; background: var(--page); color: var(--fg);
+    font-family: 'Heebo','Assistant','Rubik','Noto Sans Hebrew',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .note { font-size: 12px; color: var(--fg-faint); margin: 0 4px 14px; }
+  .note b { color: var(--fg); font-weight: 600; }
+  svg.ic { width: 1em; height: 1em; flex: none; }
+
+  .modal {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 20px;
+    box-shadow: var(--shadow-pop); overflow: hidden;
+  }
+
+  /* ── Identity + figures on ONE line ────────────────────────────────── */
+  .head {
+    display: flex; align-items: center; gap: 12px; padding: 15px 20px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .avatar {
+    flex: none; width: 38px; height: 38px; border-radius: 999px; background: var(--primary-soft);
+    color: var(--primary); display: grid; place-items: center; font-size: 16px; font-weight: 700;
+  }
+  .head h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+  .meta { font-size: 12.5px; color: var(--fg-faint); }
+  .phone { font-size: 13.5px; color: var(--fg-muted); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
+    padding: 2px 9px; font-size: 11.5px; font-weight: 600; background: hsl(45 90% 93%); color: hsl(38 80% 32%);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag { background: hsl(42 35% 21%); color: hsl(44 90% 68%); } }
+  :root[data-theme="dark"] .tag { background: hsl(42 35% 21%); color: hsl(44 90% 68%); }
+  .head .end { margin-inline-start: auto; display: flex; align-items: center; gap: 16px; }
+  .ltv { text-align: center; }
+  .ltv .n { display: block; font-size: 19px; font-weight: 800; color: var(--green); letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .ltv .l { font-size: 11px; color: var(--fg-faint); }
+
+  /* ── The lifeline ──────────────────────────────────────────────────── */
+  .life { padding: 18px 20px 8px; }
+  .life-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .life-head h2 { margin: 0; font-size: 13px; font-weight: 700; }
+  .life-head .s { font-size: 12px; color: var(--fg-faint); }
+  .life-head .legend { margin-inline-start: auto; display: flex; gap: 12px; font-size: 11.5px; color: var(--fg-faint); }
+  .life-head .legend i { width: 8px; height: 8px; border-radius: 999px; display: inline-block; margin-inline-end: 4px; }
+
+  .chart { position: relative; }
+  /* Year bands sit behind every lane, so a gap in the relationship is visible
+     as empty space inside a labelled year rather than as unexplained blank. */
+  .years {
+    display: grid; grid-template-columns: 92px 1fr; align-items: center;
+    font-size: 11px; color: var(--fg-faint); margin-bottom: 4px;
+  }
+  .years .plot { position: relative; height: 18px; }
+  .years .yr {
+    position: absolute; top: 0; height: 18px; display: grid; place-items: center;
+    font-weight: 600; letter-spacing: .02em;
+  }
+  .years .yr + .yr { border-inline-end: 1px solid var(--border); }
+
+  .lane {
+    display: grid; grid-template-columns: 92px 1fr; align-items: center;
+    min-height: 40px;
+  }
+  .lane + .lane { border-top: 1px solid var(--border-soft); }
+  .lane > .lbl {
+    font-size: 11.5px; color: var(--fg-muted); font-weight: 600;
+    display: flex; align-items: center; gap: 6px; padding-inline-end: 12px;
+  }
+  .lane > .lbl .c { font-size: 10.5px; color: var(--fg-faint); font-weight: 500; }
+  .plot { position: relative; height: 40px; }
+  /* Year separators, repeated on every lane so the eye can drop a vertical
+     line anywhere and still know which year it is standing in. */
+  .plot::before, .plot::after {
+    content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border-soft);
+  }
+  .plot::before { right: 33.3%; }
+  .plot::after  { right: 73.3%; }
+
+  .mk { position: absolute; top: 50%; transform: translate(50%, -50%); }
+  .pin {
+    width: 15px; height: 15px; border-radius: 999px; display: grid; place-items: center;
+    font-size: 8px; color: #fff; box-shadow: 0 0 0 3px var(--bg); cursor: pointer;
+  }
+  .pin.blue { background: var(--blue); } .pin.green { background: var(--green); }
+  .pin.violet { background: var(--violet); } .pin.amber { background: var(--amber); }
+  .pin.rose { background: var(--rose); }
+  .pin.hollow { background: var(--bg); border: 2px solid var(--fg-faint); color: var(--fg-muted); font-weight: 700; }
+  :root[data-theme="dark"] .pin { color: hsl(230 18% 12%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pin { color: hsl(230 18% 12%); } }
+  /* …but the hollow pin's ground is the page, not the accent, so it keeps the
+     body ink in both themes — re-stated after the blanket rule above. */
+  :root[data-theme="dark"] .pin.hollow { color: var(--fg-muted); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pin.hollow { color: var(--fg-muted); } }
+
+  /* An order is a bar whose height reads as its size — the two purchases are
+     comparable at a glance without reading either number. */
+  .bar {
+    position: absolute; bottom: 6px; transform: translateX(50%);
+    width: 10px; border-radius: 3px; background: var(--green);
+  }
+  .bar .v {
+    position: absolute; bottom: calc(100% + 3px); right: 50%; transform: translateX(50%);
+    font-size: 10.5px; font-weight: 700; color: var(--green); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Communication density: one tick per contact, height = length of the talk. */
+  .tick {
+    position: absolute; bottom: 9px; width: 3px; border-radius: 2px; z-index: 1;
+    background: var(--blue); opacity: .55; transform: translateX(50%);
+  }
+  .now {
+    position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--rose);
+    transform: translateX(50%); border-radius: 2px;
+  }
+  .now::after {
+    content: "היום"; position: absolute; top: -17px; right: 50%; transform: translateX(50%);
+    font-size: 10px; font-weight: 700; color: var(--rose); background: var(--rose-soft);
+    border-radius: 999px; padding: 1px 6px; white-space: nowrap;
+  }
+  .quiet {
+    position: absolute; top: 50%; transform: translateY(-50%); height: 22px; z-index: 0;
+    border-radius: 6px; background: repeating-linear-gradient(-45deg, var(--inset) 0 5px, transparent 5px 10px);
+    border: 1px dashed var(--border); display: grid; place-items: center;
+  }
+  .quiet span {
+    background: var(--bg); padding: 0 7px; border-radius: 4px;
+    font-size: 10.5px; color: var(--fg-faint); white-space: nowrap;
+  }
+
+  /* ── Under the ribbon: the four ledgers, tight ─────────────────────── */
+  .grid {
+    display: grid; grid-template-columns: 1.22fr 1fr 1fr 1.04fr; gap: 1px;
+    background: var(--border-soft); border-top: 1px solid var(--border); margin-top: 10px;
+  }
+  .col { background: var(--bg); padding: 14px 16px; min-width: 0; }
+  .col h3 {
+    margin: 0 0 10px; font-size: 11.5px; font-weight: 700; color: var(--fg-muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .col h3 .n { margin-inline-start: auto; color: var(--fg-faint); font-weight: 600; }
+  .row {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline;
+    gap: 8px; padding: 5px 0; font-size: 12.5px; border-bottom: 1px solid var(--border-soft);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .d { font-size: 11px; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+  .row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .t:first-child { grid-column: 1 / 3; }
+  .row .a { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: start; }
+  .a.ok { color: var(--green); } .a.no { color: var(--fg-faint); } .a.warn { color: var(--rose); }
+
+  /* ── Now-strip: the only open thing ────────────────────────────────── */
+  .open {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 13px 20px; border-top: 1px solid var(--border);
+    background: var(--rose-soft); color: var(--fg);
+  }
+  .open .k { font-size: 11.5px; font-weight: 700; color: var(--rose); display: inline-flex; align-items: center; gap: 6px; }
+  .open .v { font-size: 13.5px; }
+  .open .v b { font-weight: 700; }
+  .open .btns { margin-inline-start: auto; display: flex; gap: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer;
+    height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--card); color: var(--fg); font: inherit; font-size: 13px; font-weight: 500;
+  }
+  .btn:hover { filter: brightness(.97); }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+  :root[data-theme="dark"] .btn-primary { color: hsl(230 18% 12%); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-primary { color: hsl(230 18% 12%); } }
+
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) {
+    .grid { grid-template-columns: 1fr; }
+    .lane, .years { grid-template-columns: 68px 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="note"><b>וריאציה 2 — ציר חיים.</b> כל הקשר עם הלקוחה פרוס על ציר זמן אחד, בחמישה מסלולים. גובה העמודה = גודל ההזמנה, צפיפות הקווים = כמה דיברנו, והשטח הריק הוא בדיוק תקופת השקט. בשנייה אחת רואים את <b>הצורה</b> של הקשר, לא רק את הרשימה.</p>
+
+  <div class="modal">
+
+    <!-- Identity -->
+    <div class="head">
+      <span class="avatar">ז</span>
+      <span>
+        <h1>זהבה כהן</h1>
+        <span class="meta">רמת גן · מתן לוי · <span class="phone">052-822-3351</span></span>
+      </span>
+      <span class="tag">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 4.5 3L12 4l4.5 5L21 6l-1.7 12H4.7Z"/></svg>
+        לקוחה חוזרת
+      </span>
+      <span class="end">
+        <span class="ltv"><span class="n">₪24,880</span><span class="l">סה״כ רכישות</span></span>
+        <span class="ltv"><span class="n" style="color:var(--fg)">2</span><span class="l">הזמנות</span></span>
+        <span class="ltv"><span class="n" style="color:var(--fg)">31</span><span class="l">אינטראקציות</span></span>
+        <span class="ltv"><span class="n" style="color:var(--fg)">2ש׳ 5ח׳</span><span class="l">אצלנו</span></span>
+      </span>
+    </div>
+
+    <!-- Lifeline -->
+    <div class="life">
+      <div class="life-head">
+        <h2>ציר החיים של הלקוחה</h2>
+        <span class="s">מרץ 2024 → אוגוסט 2026</span>
+        <span class="legend">
+          <span><i style="background:var(--green)"></i>הזמנה</span>
+          <span><i style="background:var(--violet)"></i>הצעה</span>
+          <span><i style="background:var(--blue)"></i>תקשורת</span>
+          <span><i style="background:var(--amber)"></i>שירות</span>
+        </span>
+      </div>
+
+      <div class="chart">
+        <div class="years">
+          <span></span>
+          <span class="plot" style="height:18px">
+            <span class="yr" style="right:0; width:33.3%">2024</span>
+            <span class="yr" style="right:33.3%; width:40%">2025</span>
+            <span class="yr" style="right:73.3%; width:26.7%">2026</span>
+          </span>
+        </div>
+
+        <!-- Enquiries -->
+        <div class="lane">
+          <span class="lbl">פניות <span class="c">4</span></span>
+          <span class="plot">
+            <span class="mk" style="right:1.5%"><span class="pin blue" title="14/03/2024 · פייסבוק">1</span></span>
+            <span class="mk" style="right:5.8%"><span class="pin hollow" title="03/05/2024 · בירור אספקה">2</span></span>
+            <span class="mk" style="right:79%"><span class="pin blue" title="22/02/2026 · לקוח חוזר">3</span></span>
+            <span class="mk" style="right:98%"><span class="pin rose" title="12/08/2026 · טאבולה — פתוח">4</span></span>
+            <span class="now" style="right:98%"></span>
+          </span>
+        </div>
+
+        <!-- Communication density -->
+        <div class="lane">
+          <span class="lbl">תקשורת <span class="c">31</span></span>
+          <span class="plot">
+            <span class="tick" style="right:1.2%;  height:14px"></span>
+            <span class="tick" style="right:1.9%;  height:20px"></span>
+            <span class="tick" style="right:2.4%;  height:11px"></span>
+            <span class="tick" style="right:3.0%;  height:17px"></span>
+            <span class="tick" style="right:3.6%;  height:9px"></span>
+            <span class="tick" style="right:4.4%;  height:13px"></span>
+            <span class="tick" style="right:5.2%;  height:22px"></span>
+            <span class="tick" style="right:5.9%;  height:10px"></span>
+            <span class="tick" style="right:6.6%;  height:15px"></span>
+            <span class="tick" style="right:7.4%;  height:8px"></span>
+            <span class="tick" style="right:9.1%;  height:12px"></span>
+            <span class="tick" style="right:11.5%; height:9px"></span>
+            <span class="tick" style="right:16.2%; height:8px"></span>
+            <span class="tick" style="right:24.0%; height:10px"></span>
+            <span class="tick" style="right:31.5%; height:8px"></span>
+            <span class="tick" style="right:44.0%; height:9px"></span>
+            <span class="tick" style="right:58.0%; height:8px"></span>
+            <span class="tick" style="right:70.0%; height:11px"></span>
+            <span class="tick" style="right:78.6%; height:18px"></span>
+            <span class="tick" style="right:79.2%; height:23px"></span>
+            <span class="tick" style="right:79.8%; height:14px"></span>
+            <span class="tick" style="right:80.4%; height:19px"></span>
+            <span class="tick" style="right:81.0%; height:12px"></span>
+            <span class="tick" style="right:81.7%; height:16px"></span>
+            <span class="tick" style="right:82.4%; height:10px"></span>
+            <span class="tick" style="right:83.2%; height:13px"></span>
+            <span class="tick" style="right:97.4%; height:15px"></span>
+            <span class="tick" style="right:98%;   height:21px; opacity:1"></span>
+            <span class="quiet" style="right:7%; width:71%"><span>21 חודשים ללא רכישה · 5 דיוורים בלבד</span></span>
+          </span>
+        </div>
+
+        <!-- Quotes -->
+        <div class="lane">
+          <span class="lbl">הצעות <span class="c">4</span></span>
+          <span class="plot">
+            <span class="mk" style="right:1.2%"><span class="pin hollow" title="Q-1102 · 15/03/2024 · פגה">✕</span></span>
+            <span class="mk" style="right:3.0%"><span class="pin hollow" title="Q-1147 · 16/03/2024 · פגה">✕</span></span>
+            <span class="mk" style="right:4.8%"><span class="pin violet" title="Q-1180 · 19/03/2024 · התקבלה · ₪13,400">✓</span></span>
+            <span class="mk" style="right:79.7%"><span class="pin violet" title="Q-2261 · התקבלה · ₪11,480">✓</span></span>
+          </span>
+        </div>
+
+        <!-- Orders -->
+        <div class="lane">
+          <span class="lbl">הזמנות <span class="c">2</span></span>
+          <span class="plot">
+            <span class="bar" style="right:2.2%; height:26px"><span class="v">₪13,400</span></span>
+            <span class="bar" style="right:80.2%; height:22px"><span class="v">₪11,480</span></span>
+          </span>
+        </div>
+
+        <!-- Service -->
+        <div class="lane">
+          <span class="lbl">שירות <span class="c">1</span></span>
+          <span class="plot">
+            <span class="mk" style="right:4.6%"><span class="pin amber" title="#312 · חריקה במסגרת · נסגר תוך 6 ימים">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:9px;height:9px"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.8 2.8 0 0 1-4-4Z"/></svg>
+            </span></span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ledgers -->
+    <div class="grid">
+      <div class="col">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
+          הזמנות <span class="n">₪24,880</span>
+        </h3>
+        <div class="row"><span class="d">02/03/26</span><span class="t">#7194 · ספה מילאנו</span><span class="a ok">₪11,480</span></div>
+        <div class="row"><span class="d">21/03/24</span><span class="t">#4821 · מיטת אושן</span><span class="a ok">₪13,400</span></div>
+      </div>
+
+      <div class="col">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>
+          הצעות <span class="n">2 מתוך 4 נסגרו</span>
+        </h3>
+        <div class="row"><span class="d">28/02/26</span><span class="t">Q-2261</span><span class="a ok">התקבלה</span></div>
+        <div class="row"><span class="d">19/03/24</span><span class="t">Q-1180</span><span class="a ok">התקבלה</span></div>
+        <div class="row"><span class="d">16/03/24</span><span class="t">Q-1147</span><span class="a no">פגה</span></div>
+        <div class="row"><span class="d">15/03/24</span><span class="t">Q-1102</span><span class="a no">פגה</span></div>
+      </div>
+
+      <div class="col">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          פניות <span class="n">4</span>
+        </h3>
+        <div class="row"><span class="d">12/08/26</span><span class="t">טאבולה</span><span class="a warn">פתוחה</span></div>
+        <div class="row"><span class="d">22/02/26</span><span class="t">לקוח חוזר</span><span class="a ok">עסקה</span></div>
+        <div class="row"><span class="d">03/05/24</span><span class="t">בירור אספקה</span><span class="a no">טופל</span></div>
+        <div class="row"><span class="d">14/03/24</span><span class="t">פייסבוק</span><span class="a ok">עסקה</span></div>
+      </div>
+
+      <div class="col">
+        <h3>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.8 2.8 0 0 1-4-4Z"/></svg>
+          שירות ותקשורת
+        </h3>
+        <div class="row"><span class="d">12/04/24</span><span class="t">קריאה #312</span><span class="a ok">נסגרה ב‑6 ימים</span></div>
+        <div class="row"><span class="t">18 שיחות · 9 וואטסאפ</span><span class="a no">31</span></div>
+        <div class="row"><span class="t">3 מיילים · פגישה אחת</span><span class="a no">בסניף</span></div>
+        <div class="row"><span class="t">אחוז מענה</span><span class="a ok">74%</span></div>
+      </div>
+    </div>
+
+    <!-- The one open thing -->
+    <div class="open">
+      <span class="k">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        פתוח עכשיו
+      </span>
+      <span class="v">פנייה מ‑12/08 · <b>מחפשת מוצרים שלא קיימים בחברה</b> · משימת שיחה <b>באיחור</b> מאתמול 09:44</span>
+      <span class="btns">
+        <button class="btn btn-primary" type="button">חייג</button>
+        <button class="btn" type="button">וואטסאפ</button>
+        <button class="btn" type="button">סמן כבוצע</button>
+      </span>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
