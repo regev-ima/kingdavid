@@ -116,6 +116,35 @@ const AuthenticatedApp = () => {
   );
 };
 
+/**
+ * Everything that isn't an explicit public route — with one rescue.
+ *
+ * Hyp does not reliably redirect to the URL we sign. hyp-sign sends a clean
+ * `${origin}/HypReturn`, and a declined card came back at `/l/HypReturn` — an
+ * extra segment from somewhere between our sign request and their redirect.
+ * The exact `path="/HypReturn"` route above doesn't match that, so the browser
+ * landed on the 404 page: HypReturn never ran, never read Hyp's CCode, never
+ * posted the result to the payment dialog. The rep watched a payment window
+ * turn into "Page Not Found" with no idea whether the card had been charged.
+ *
+ * Money is not the place to insist on an exact string match. Any path whose
+ * last segment is HypReturn is Hyp coming back to us, whatever it prefixed.
+ */
+function CatchAllRoute() {
+  const location = useLocation();
+  const lastSegment = location.pathname.split('/').filter(Boolean).pop() || '';
+
+  if (lastSegment.toLowerCase() === 'hypreturn') {
+    return (
+      <Suspense fallback={null}>
+        <LazyHypReturn />
+      </Suspense>
+    );
+  }
+
+  return <AuthenticatedApp />;
+}
+
 function App() {
   return (
     <AuthProvider>
@@ -140,7 +169,7 @@ function App() {
                 <LazyServiceRequestPublic />
               </Suspense>
             } />
-            <Route path="*" element={<AuthenticatedApp />} />
+            <Route path="*" element={<CatchAllRoute />} />
           </Routes>
         </Router>
         <SonnerToaster />
