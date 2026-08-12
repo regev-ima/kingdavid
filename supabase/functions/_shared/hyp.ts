@@ -68,6 +68,60 @@ export function readIdNumber(source: FieldSource): string {
 }
 
 /**
+ * Record a charge attempt that did not end in money on the order.
+ *
+ * Called from both hyp-notify (server-to-server) and hyp-verify (browser), so
+ * an attempt is captured whichever channel hears about it first — and captured
+ * once, keyed on Hyp's transaction Id the same way payments are.
+ *
+ * `status` is the honest distinction the rep needs:
+ *   'declined' — Hyp told us it failed. The card was not charged.
+ *   'unknown'  — we could not establish what happened. Needs checking.
+ *
+ * Writes to orders.payment_attempts, never to orders.payments: that array is
+ * summed to decide what the order still owes, and an attempt is not money.
+ *
+ * Never throws. A payment flow must not fail because its audit trail did.
+ */
+export async function recordPaymentAttempt(
+  supabase: any,
+  order: { id: string; payment_attempts?: unknown },
+  attempt: {
+    hyp_transaction_id?: string | null;
+    hyp_attempt_id?: string | null;
+    status: 'declined' | 'unknown';
+    ccode?: string | null;
+    amount?: number | null;
+    source: string;
+    recorded_by?: string | null;
+    hyp_params?: Record<string, unknown> | null;
+  },
+): Promise<void> {
+  try {
+    const existing: Array<Record<string, unknown>> =
+      Array.isArray(order?.payment_attempts) ? order.payment_attempts : [];
+
+    // Same idempotency rule as payments: Hyp retries its notify, and the
+    // browser calls verify for the same transaction. One attempt, one row.
+    const transactionId = attempt.hyp_transaction_id || '';
+    if (transactionId && existing.some((a) => a?.hyp_transaction_id === transactionId)) return;
+
+    const row = {
+      ...attempt,
+      hyp_transaction_id: transactionId || null,
+      recorded_at: new Date().toISOString(),
+    };
+
+    const error = await updateOrderWithSchemaFallback(supabase, order.id, {
+      payment_attempts: [...existing, row],
+    });
+    if (error) console.error('[hyp] failed to record payment attempt', error);
+  } catch (err) {
+    console.error('[hyp] recordPaymentAttempt threw', err);
+  }
+}
+
+/**
  * Update an order, dropping a column the table doesn't have yet and retrying.
  *
  * These two functions record money. If `customer_id_number` reaches production

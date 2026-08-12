@@ -1,0 +1,44 @@
+name: Payment attempts — apply migration
+
+# Adds orders.payment_attempts, where a declined or unresolved Hyp charge is
+# recorded. Until it exists the hyp-* functions degrade gracefully — they call
+# updateOrderWithSchemaFallback, which drops a column the schema doesn't have
+# yet and retries — so the payment itself is never lost waiting on this.
+# Idempotent (ADD COLUMN IF NOT EXISTS / CREATE INDEX IF NOT EXISTS).
+# Same pattern as app-policies-migrate.yml.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/20260812000001_order_payment_attempts.sql'
+      - '.github/workflows/payment-attempts-migrate.yml'
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply payment_attempts migration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF secrets"; exit 1
+          fi
+          f=supabase/migrations/20260812000001_order_payment_attempts.sql
+          payload=$(jq -Rs '{query: .}' "$f")
+          code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          echo "Management API HTTP $code"
+          cat /tmp/resp.json || true
+          echo
+          test "$code" -lt 400

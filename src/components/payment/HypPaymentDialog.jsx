@@ -75,12 +75,17 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             onPaid?.({ ...data, ...verifyResult });
             // Only a confirmed, recorded payment auto-closes the dialog.
             setTimeout(() => onOpenChange(false), 1200);
-          } else {
-            // Charge may have gone through at Hyp but we couldn't record it.
-            // Keep the dialog open so the rep sees the reason and can retry
-            // or record the payment manually — don't silently close.
+          } else if (verifyResult?.declined) {
             setError(
-              `Hyp לא אישר את העסקה אוטומטית (CCode=${verifyResult?.ccode || data.ccode || '-'}). אם החיוב עבר, ניתן לרשום אותו ידנית בכרטיס "ניהול תשלומים".`,
+              `הכרטיס לא עבר — החיוב לא בוצע. קוד השגיאה של Hyp: ${verifyResult.ccode || data.ccode || '-'}. אפשר לנסות שוב או בכרטיס אחר.`,
+            );
+          } else {
+            // The one genuinely ambiguous outcome. hyp-verify has already
+            // filed it on the order as "דורש בירור", so the rep isn't the only
+            // place this is remembered — but they still need telling now, and
+            // told plainly that a retry could double-charge.
+            setError(
+              `לא הצלחנו לאמת מול Hyp אם החיוב עבר (CCode=${verifyResult?.ccode || data.ccode || '-'}). נרשם על ההזמנה כ"דורש בירור" — בדוק מול Hyp לפני שתחייב שוב.`,
             );
           }
         } catch (err) {
@@ -91,11 +96,38 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
         }
       } else if (data.status === 'success') {
         // Hyp said success but didn't give us an Id — can't verify or record.
+        // Still send it: hyp-verify files it as unresolved so the order carries
+        // the question instead of the rep carrying it in their head.
+        try {
+          await base44.functions.invoke('hyp-verify', {
+            order_id: order?.id,
+            hyp_params: data.all_params || null,
+            amount: signedAmountRef.current || undefined,
+          });
+        } catch {
+          // Recording is best-effort; the message below is what matters here.
+        }
         setError(
-          `Hyp דיווח על הצלחה אך לא החזיר מזהה עסקה. אם החיוב עבר, ניתן לרשום אותו ידנית בכרטיס "ניהול תשלומים".`,
+          `Hyp דיווח על הצלחה אך לא החזיר מזהה עסקה. נרשם על ההזמנה כ"דורש בירור" — בדוק מול Hyp אם החיוב עבר לפני שתחייב שוב.`,
         );
       } else {
-        setError(`Hyp דחה את התשלום (CCode=${data.ccode || '-'}). ניתן לנסות שוב.`);
+        // A decline is a fact, not an unknown: the card was not charged. Sent
+        // to hyp-verify anyway — not to verify anything, but so the attempt is
+        // written to the order instead of disappearing with this dialog.
+        try {
+          await base44.functions.invoke('hyp-verify', {
+            order_id: order?.id,
+            transaction_id: data.transaction_id || undefined,
+            hyp_params: data.all_params || null,
+            ccode: data.ccode || undefined,
+            amount: signedAmountRef.current || undefined,
+          });
+        } catch (err) {
+          console.error('[HypPaymentDialog] failed to record declined attempt:', err);
+        }
+        setError(
+          `הכרטיס לא עבר — החיוב לא בוצע. קוד השגיאה של Hyp: ${data.ccode || '-'}. אפשר לנסות שוב או בכרטיס אחר.`,
+        );
       }
     };
     window.addEventListener('message', handler);

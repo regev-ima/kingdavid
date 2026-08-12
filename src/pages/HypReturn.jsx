@@ -71,9 +71,12 @@ export default function HypReturn() {
       ) : status === 'failed' ? (
         <>
           <XCircle className="h-12 w-12 text-red-500" />
-          <p className="font-medium">התשלום נכשל</p>
+          <p className="font-medium">הכרטיס לא עבר</p>
+          <p className="text-sm text-muted-foreground">החיוב לא בוצע. אפשר לנסות שוב או בכרטיס אחר.</p>
           {ccode && (
-            <p className="text-xs text-muted-foreground">קוד שגיאה: {ccode}</p>
+            <p className="text-xs text-muted-foreground">
+              קוד השגיאה של Hyp: <span className="font-semibold text-foreground" dir="ltr">{ccode}</span>
+            </p>
           )}
         </>
       ) : (
@@ -82,9 +85,16 @@ export default function HypReturn() {
           <p className="text-sm text-muted-foreground">מעבד תשלום…</p>
         </>
       )}
+      {/* Open on a failure, folded away on a success. Hyp's own reply is the
+          only description of what went wrong that we have — we don't hold their
+          table of CCode meanings — so on the one screen where somebody is
+          asking "why", it shouldn't be behind a click. */}
       {Object.keys(allParams).length > 0 && (
-        <details className="mt-3 text-[10px] text-muted-foreground/70 max-w-xs">
-          <summary className="cursor-pointer">פרטי טכניים</summary>
+        <details
+          open={status === 'failed'}
+          className="mt-3 text-[10px] text-muted-foreground/70 max-w-xs w-full"
+        >
+          <summary className="cursor-pointer">מה Hyp החזיר</summary>
           <pre className="text-start whitespace-pre-wrap break-all" dir="ltr">
             {JSON.stringify(allParams, null, 2)}
           </pre>

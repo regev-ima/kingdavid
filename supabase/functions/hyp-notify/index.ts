@@ -1,5 +1,10 @@
 import { createServiceClient } from '../_shared/supabase.ts';
-import { readIdNumber, readPaymentsCount, updateOrderWithSchemaFallback } from '../_shared/hyp.ts';
+import {
+  readIdNumber,
+  readPaymentsCount,
+  recordPaymentAttempt,
+  updateOrderWithSchemaFallback,
+} from '../_shared/hyp.ts';
 
 // Server-to-server callback from Hyp. The notify URL configured in the Hyp
 // dashboard points to this function. Hyp POSTs (or in some configurations
@@ -103,15 +108,6 @@ Deno.serve(async (req) => {
       Amount: amount,
     });
 
-    if (ccode !== '0') {
-      console.log('hyp-notify: non-success CCode, nothing to apply');
-      return ok();
-    }
-    if (!orderParam || !transactionId || !Number.isFinite(amount) || amount <= 0) {
-      console.warn('hyp-notify: missing required fields');
-      return ok();
-    }
-
     // Order param shape from hyp-sign: "<order_uuid>__<timestampBase36>".
     const orderId = orderParam.split('__')[0];
     if (!orderId) {
@@ -119,13 +115,69 @@ Deno.serve(async (req) => {
       return ok();
     }
 
-    const verified = await verifyTransactionWithHyp(params);
-    if (!verified) {
-      console.warn('hyp-notify: Hyp verify failed, refusing to apply payment', { orderId, transactionId });
+    const supabase = createServiceClient();
+
+    // A declined card used to end here — "non-success CCode, nothing to apply"
+    // — and vanish. This is the reliable channel: Hyp posts it server to
+    // server, so it arrives even when the browser closed, 404'd on the return
+    // URL, or lost the network. It is the one place a failure is guaranteed to
+    // be heard, so it is the one place worth writing it down.
+    if (ccode !== '0') {
+      const { data: failedOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (failedOrder) {
+        await recordPaymentAttempt(supabase, failedOrder, {
+          hyp_transaction_id: transactionId || null,
+          hyp_attempt_id: orderParam,
+          status: 'declined',
+          ccode,
+          amount: Number.isFinite(amount) && amount > 0 ? amount : null,
+          source: 'hyp-notify',
+          recorded_by: 'hyp-notify',
+          hyp_params: Object.fromEntries(params),
+        });
+      }
+      console.log('hyp-notify: declined attempt recorded', { orderId, transactionId, ccode });
       return ok();
     }
 
-    const supabase = createServiceClient();
+    if (!orderParam || !transactionId || !Number.isFinite(amount) || amount <= 0) {
+      console.warn('hyp-notify: missing required fields');
+      return ok();
+    }
+
+    const verified = await verifyTransactionWithHyp(params);
+    if (!verified) {
+      // Hyp said CCode=0 but our confirmation call didn't agree. Refusing to
+      // book the money is right — but staying silent about it was not: this is
+      // the exact state a rep needs flagged, because the card may well have
+      // been charged.
+      const { data: unresolvedOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (unresolvedOrder) {
+        await recordPaymentAttempt(supabase, unresolvedOrder, {
+          hyp_transaction_id: transactionId,
+          hyp_attempt_id: orderParam,
+          status: 'unknown',
+          ccode,
+          amount,
+          source: 'hyp-notify',
+          recorded_by: 'hyp-notify',
+          hyp_params: Object.fromEntries(params),
+        });
+      }
+      console.warn('hyp-notify: Hyp verify failed, payment not applied — logged as unresolved', { orderId, transactionId });
+      return ok();
+    }
+
     // `*` rather than a column list: naming customer_id_number explicitly would
     // make the whole lookup — and with it the payment — fail on a database that
     // hasn't run the migration yet.

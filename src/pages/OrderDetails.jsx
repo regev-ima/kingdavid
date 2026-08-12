@@ -703,6 +703,78 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                 </div>
               )}
 
+              {/* Failed / unresolved card attempts.
+                  Deliberately its own block, below the money and visually
+                  apart from it: a declined card is not a payment, and the sums
+                  above must never see it. Before this existed, an attempt left
+                  no trace at all — the rep saw an error in the payment window,
+                  the window closed, and there was nothing to look up. */}
+              {(order.payment_attempts || []).length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <Label className="text-xs text-muted-foreground">ניסיונות חיוב שלא הושלמו</Label>
+                  <div className="space-y-2">
+                    {[...order.payment_attempts]
+                      .sort((a, b) => new Date(b?.recorded_at || 0) - new Date(a?.recorded_at || 0))
+                      .map((attempt, idx) => {
+                        const unresolved = attempt?.status === 'unknown';
+                        return (
+                          <div
+                            key={attempt?.hyp_transaction_id || idx}
+                            className={`p-2.5 rounded-lg text-sm border ${
+                              unresolved
+                                ? 'border-amber-300 bg-amber-50'
+                                : 'border-border bg-muted/40'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`font-semibold ${unresolved ? 'text-amber-700' : 'text-muted-foreground'}`}>
+                                {unresolved ? 'דורש בירור' : 'הכרטיס לא עבר'}
+                              </span>
+                              {attempt?.amount ? (
+                                <span className="text-xs text-muted-foreground">
+                                  ₪{Number(attempt.amount).toLocaleString()}
+                                </span>
+                              ) : null}
+                              {attempt?.recorded_at ? (
+                                <span className="text-xs text-muted-foreground tabular-nums">
+                                  {format(new Date(attempt.recorded_at), 'dd/MM/yyyy HH:mm')}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {unresolved ? (
+                              <p className="text-[11px] text-amber-800 mt-1 mb-0">
+                                לא הצלחנו לאמת מול Hyp אם החיוב עבר. בדוק מולם לפני חיוב חוזר.
+                              </p>
+                            ) : null}
+
+                            <div className="text-[11px] text-muted-foreground/80 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                              {attempt?.ccode ? (
+                                <span>קוד Hyp: <span dir="ltr">{attempt.ccode}</span></span>
+                              ) : null}
+                              {attempt?.hyp_transaction_id ? (
+                                <span>מס׳ עסקה: <span dir="ltr">{attempt.hyp_transaction_id}</span></span>
+                              ) : null}
+                            </div>
+
+                            {/* Hyp's untouched reply. We don't hold their table of
+                                CCode meanings, so this is the only description of
+                                what happened that exists. */}
+                            {attempt?.hyp_params && Object.keys(attempt.hyp_params).length > 0 ? (
+                              <details className="mt-1 text-[10px] text-muted-foreground/70">
+                                <summary className="cursor-pointer">מה Hyp החזיר</summary>
+                                <pre className="text-start whitespace-pre-wrap break-all mt-1" dir="ltr">
+                                  {JSON.stringify(attempt.hyp_params, null, 2)}
+                                </pre>
+                              </details>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               {/* Add Payment — the same dialog the new-order screen opens. */}
               <div className="space-y-2">
                 <Button

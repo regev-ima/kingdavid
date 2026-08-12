@@ -1,14 +1,28 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
-import { readIdNumber, readPaymentsCount, updateOrderWithSchemaFallback } from '../_shared/hyp.ts';
+import {
+  readIdNumber,
+  readPaymentsCount,
+  recordPaymentAttempt,
+  updateOrderWithSchemaFallback,
+} from '../_shared/hyp.ts';
 
 // Client-triggered companion to hyp-notify. After the iframe returns to
-// HypReturn with a Hyp transaction Id, the dialog calls this function to
-// confirm with Hyp's own VERIFY endpoint that the transaction really
-// happened — we never trust the browser's postMessage on its own.
+// HypReturn, the dialog calls this function with whatever Hyp said, and this
+// is where the outcome is decided and written down.
 //
-// Both this and hyp-notify write to orders.payments idempotently on
-// hyp_transaction_id, so it's fine if both fire for the same charge: the
-// second one is a no-op.
+// Three outcomes, and all three now leave a record:
+//   CCode=0 and confirmed  → a payment on orders.payments
+//   CCode≠0                → a declined attempt on orders.payment_attempts
+//   anything else          → an unresolved attempt on orders.payment_attempts
+//
+// The last two used to return {verified:false} and write nothing at all, which
+// is how "I got an error and I don't know if the card went through" became
+// unanswerable: nothing in the system remembered that an attempt had happened.
+//
+// This and hyp-notify both write, idempotently on hyp_transaction_id, so it's
+// fine if both fire for the same charge — the second is a no-op. hyp-notify is
+// the reliable one (server to server, no browser involved); this one is the
+// fast one (the rep is still looking at the screen).
 
 function calcPaymentStatus(payments: Array<{ amount?: number }>, total: number): string {
   const totalPaid = (payments || []).reduce((sum, p) => sum + (Number(p?.amount) || 0), 0);
@@ -86,9 +100,71 @@ Deno.serve(async (req) => {
     const hypParams: Record<string, string> =
       (body?.hyp_params && typeof body.hyp_params === 'object') ? body.hyp_params : {};
 
-    if (!orderId || !transactionId) {
+    if (!orderId) {
       return Response.json(
-        { error: 'Missing order_id or transaction_id' },
+        { error: 'Missing order_id' },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const supabase = createServiceClient();
+
+    // The dialog now calls this for a declined card too, not only a successful
+    // one. Hyp already told us it failed — there is nothing left to verify, and
+    // everything left to write down. Recorded here as well as in hyp-notify
+    // because whichever channel hears about it first should be the one that
+    // keeps it, and both are idempotent on the transaction id.
+    const declaredCCode = String(getObjCi(hypParams, 'CCode') ?? body?.ccode ?? '');
+    if (declaredCCode && declaredCCode !== '0') {
+      const { data: declinedOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (declinedOrder) {
+        await recordPaymentAttempt(supabase, declinedOrder, {
+          hyp_transaction_id: transactionId ? String(transactionId) : null,
+          hyp_attempt_id: String(getObjCi(hypParams, 'Order') ?? ''),
+          status: 'declined',
+          ccode: declaredCCode,
+          amount: Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : null,
+          source: 'hyp-verify',
+          recorded_by: user.email || 'hyp-verify',
+          hyp_params: hypParams,
+        });
+      }
+
+      return Response.json(
+        { verified: false, declined: true, ccode: declaredCCode, iframe_params: hypParams },
+        { status: 200, headers: corsHeaders },
+      );
+    }
+
+    if (!transactionId) {
+      // Hyp reported success without an id — we cannot confirm it and cannot
+      // record it as money. Flag it so somebody checks rather than shrugs.
+      const { data: idlessOrder } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (idlessOrder) {
+        await recordPaymentAttempt(supabase, idlessOrder, {
+          hyp_transaction_id: null,
+          hyp_attempt_id: String(getObjCi(hypParams, 'Order') ?? ''),
+          status: 'unknown',
+          ccode: declaredCCode || null,
+          amount: Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : null,
+          source: 'hyp-verify',
+          recorded_by: user.email || 'hyp-verify',
+          hyp_params: hypParams,
+        });
+      }
+
+      return Response.json(
+        { error: 'Missing transaction_id', unresolved: true },
         { status: 400, headers: corsHeaders },
       );
     }
@@ -176,9 +252,34 @@ Deno.serve(async (req) => {
         iframeAmount,
       });
       if (iframeCCode !== '0') {
+        // Neither channel gave us a clear answer: Hyp's verify didn't confirm
+        // it and the redirect carried no CCode=0 either. This is the genuinely
+        // ambiguous state — the card may or may not have been charged — and
+        // it's the one that has to leave a trace, because it's the one a human
+        // must resolve.
+        const { data: unresolvedOrder } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .maybeSingle();
+
+        if (unresolvedOrder) {
+          await recordPaymentAttempt(supabase, unresolvedOrder, {
+            hyp_transaction_id: String(transactionId),
+            hyp_attempt_id: String(getObjCi(hypParams, 'Order') ?? ''),
+            status: 'unknown',
+            ccode: iframeCCode || externalCCode || null,
+            amount: Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : null,
+            source: 'hyp-verify',
+            recorded_by: user.email || 'hyp-verify',
+            hyp_params: { ...hypParams, _hyp_verify_reply: JSON.stringify(externalReplyObj ?? null) },
+          });
+        }
+
         return Response.json(
           {
             verified: false,
+            unresolved: true,
             ccode: iframeCCode || externalCCode,
             source: 'iframe_redirect',
             hyp_reply: externalReplyObj,
@@ -203,7 +304,6 @@ Deno.serve(async (req) => {
       idNumber = readIdNumber(hypParams);
     }
 
-    const supabase = createServiceClient();
     const { data: order, error: orderErr } = await supabase
       .from('orders')
       .select('*')
