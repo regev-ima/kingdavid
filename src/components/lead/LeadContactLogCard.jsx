@@ -17,6 +17,7 @@ import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { hebrewTimeAgo } from '@/lib/hebrewDuration';
 import { buildContactLog, contactOutcomeLabel, formatCallDuration } from '@/lib/leadContactLog';
+import { useContactLeadIds } from '@/hooks/use-contact-lead-ids';
 
 /**
  * "מתי דיברו איתו" — every conversation with this lead, newest first.
@@ -59,34 +60,22 @@ const DIRECTION_LABELS = { inbound: 'נכנסת', outbound: 'יוצאת' };
 
 export default function LeadContactLogCard({ lead, users = [], onAddCommunication }) {
   const leadId = lead?.id || null;
-  const contactId = lead?.contact_id || null;
+  // Scoped to the PERSON, not to this lead row: the Voicenter sync hangs a
+  // call on whichever row its phone number matched first (`allLeads.find`), so
+  // an older enquiry usually wins. Asked per-row, this card said "no calls
+  // yet" on the enquiry the rep was holding while the call sat on a sibling
+  // they'd have to go find.
+  const contactLeadIds = useContactLeadIds(lead);
 
   const { data: entries = [], isLoading } = useQuery({
-    queryKey: ['lead-contact-log', leadId, contactId],
-    enabled: !!leadId,
+    queryKey: ['lead-contact-log', leadId, contactLeadIds.join('|')],
+    enabled: !!leadId && contactLeadIds.length > 0,
     staleTime: 60_000,
     queryFn: async () => {
-      // Scoped to the PERSON, not to this lead row.
-      //
-      // A repeat enquiry gets its own lead row, and the Voicenter sync hangs a
-      // call on whichever row its phone number matched first — `allLeads.find`,
-      // so an older enquiry usually wins. Asked per-row, this card then shows
-      // "no calls yet" on the enquiry the rep is holding while the call sits on
-      // a sibling they'd have to go find. The question is "when did we last
-      // speak to him", and him is the contact.
-      let leadIds = [leadId];
-      if (contactId) {
-        const rows = await base44.entities.Lead.filter({ contact_id: contactId });
-        if (Array.isArray(rows)) {
-          leadIds = [...new Set([leadId, ...rows.map((r) => r?.id).filter(Boolean)])];
-        }
-      }
-
       const [callBatches, commBatches] = await Promise.all([
-        Promise.all(leadIds.map((id) => base44.entities.CallLog.filter({ lead_id: id }))),
-        Promise.all(leadIds.map((id) => base44.entities.CommunicationLog.filter({ lead_id: id }))),
+        Promise.all(contactLeadIds.map((id) => base44.entities.CallLog.filter({ lead_id: id }))),
+        Promise.all(contactLeadIds.map((id) => base44.entities.CommunicationLog.filter({ lead_id: id }))),
       ]);
-
       return buildContactLog(callBatches.flat(), commBatches.flat());
     },
   });

@@ -204,7 +204,7 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
 
   return (
     <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
         <span className="inline-flex items-center gap-2 text-sm font-bold">
           <ClipboardCheck className="h-4 w-4 text-primary" />
           משימה הבאה
@@ -216,73 +216,52 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
         ) : null}
       </div>
 
-      <div className="px-4 pb-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => onOpenTask?.(task)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onOpenTask?.(task);
-            }
-          }}
-          className="rounded-xl bg-muted/50 p-4 cursor-pointer transition-colors hover:bg-muted"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <h4 className="m-0 text-[15px] font-bold min-w-0">{title}</h4>
-            {notes ? (
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 flex-shrink-0">
-                <MessageSquare className="h-3.5 w-3.5" />
-                הערות
-              </span>
-            ) : null}
-          </div>
-
-          {notes ? (
-            <p className="mt-2 mb-0 text-[13.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap">{notes}</p>
-          ) : null}
-
-          <div className="mt-4 flex items-center gap-2.5 flex-wrap text-[13px] text-muted-foreground tabular-nums">
-            {dueDate ? (
-              <>
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  {formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM/yyyy')}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
+      {/* One row: what to do, when and whose, and the button that closes it.
+          This was a tinted panel with the title, the notes, a meta line and
+          the button each on their own row — 280px to say one sentence. The
+          notes ride in the row's tooltip and open in full with the task, which
+          is one click away and where a rep goes to act on them anyway. */}
+      <div className="px-4 pb-3 -mt-1">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenTask?.(task)}
+            title={notes ? `${title}\n\n${notes}` : title}
+            className="min-w-0 flex-1 text-start rounded-lg px-2 py-1 -mx-2 hover:bg-muted transition-colors"
+          >
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[13.5px] font-bold truncate">{title}</span>
+              {notes ? (
+                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+              ) : null}
+            </span>
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums truncate">
+              <CalendarDays className="h-3 w-3 flex-shrink-0" />
+              {dueDate ? formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM/yyyy') : 'ללא תאריך יעד'}
+              {dueDate ? (
+                <>
+                  <Clock className="h-3 w-3 flex-shrink-0" />
                   {formatInTimeZone(dueDate, 'Asia/Jerusalem', 'HH:mm')}
-                </span>
-              </>
-            ) : (
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                ללא תאריך יעד
-              </span>
-            )}
-            {owner ? (
-              <>
-                <span className="text-border" aria-hidden="true">|</span>
-                <span>{owner}</span>
-              </>
-            ) : null}
-          </div>
+                </>
+              ) : null}
+              {owner ? (
+                <>
+                  <span className="text-border" aria-hidden="true">|</span>
+                  <span className="truncate">{owner}</span>
+                </>
+              ) : null}
+            </span>
+          </button>
 
-          <div className="mt-4 flex">
-            <Button
-              variant="outline"
-              size="sm"
-              className="ms-auto h-9 gap-2 border-emerald-200 bg-card text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCompleteTask?.(task);
-              }}
-            >
-              <Check className="h-3.5 w-3.5" />
-              סמן כבוצע
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 flex-shrink-0 border-emerald-200 bg-card text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+            onClick={() => onCompleteTask?.(task)}
+          >
+            <Check className="h-3.5 w-3.5" />
+            סמן כבוצע
+          </Button>
         </div>
 
         {rest.length > 0 ? (

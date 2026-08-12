@@ -53,6 +53,8 @@ import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 import { isSameRep, reconcileRepSlots } from '@/lib/repSlots';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
+import { useContactLeadIds } from '@/hooks/use-contact-lead-ids';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
@@ -170,6 +172,30 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     () => [...new Set(orders.map((order) => order?.id).filter(Boolean))],
     [orders]
   );
+
+  // "Has this person bought from us before?" — a question about the customer,
+  // not about this lead row. A returning buyer's previous order hangs off the
+  // enquiry they placed it from, which by definition is an earlier one, so a
+  // per-row query answers "no orders" for exactly the customer worth knowing
+  // about. Same scoping the contact log uses.
+  const contactLeadIds = useContactLeadIds(lead);
+  const { data: contactOrders = [] } = useQuery({
+    queryKey: ['lead-contact-orders', leadId, contactLeadIds.join('|')],
+    enabled: !!leadId && canViewCurrentLead && contactLeadIds.length > 0,
+    staleTime: 120000,
+    queryFn: async () => {
+      const batches = await Promise.all(
+        contactLeadIds.map((id) => base44.entities.Order.filter({ lead_id: id }))
+      );
+      const deduped = new Map();
+      batches.flat().forEach((order) => {
+        if (order?.id) deduped.set(order.id, order);
+      });
+      return [...deduped.values()].sort(
+        (a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0)
+      );
+    },
+  });
 
   const { data: serviceTickets = [] } = useQuery({
     queryKey: ['lead-service-tickets', leadId, linkedOrderIds.join('|')],
@@ -855,6 +881,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               </span>
             </TabsTrigger>
             <TabsTrigger
+              value="orders"
+              onClick={() => setOpenSection((current) => (current === 'orders' ? '' : 'orders'))} className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
+              הזמנות
+              <span className="ms-1.5 inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none bg-muted-foreground/15 text-muted-foreground group-data-[state=active]:bg-primary group-data-[state=active]:text-primary-foreground">
+                {contactOrders.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger
               value="service"
               onClick={() => setOpenSection((current) => (current === 'service' ? '' : 'service'))} className="group data-[state=active]:bg-card data-[state=active]:shadow-sm rounded-md px-3.5 py-1.5 text-sm">
               שירות
@@ -908,6 +942,70 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
             </CardContent>
           </Card>
 
+          </TabsContent>
+
+          {/* Orders — "has this person bought from us before?". Scoped to the
+              contact, so a returning customer's previous order shows up here
+              even though it hangs off the enquiry they placed it from. An
+              order from another enquiry says so on its row. */}
+          <TabsContent value="orders" className="mt-4 space-y-4">
+          <Card className="rounded-xl border-border shadow-card overflow-hidden">
+            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+                הזמנות ({contactOrders.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {contactOrders.length === 0 ? (
+                <div className="py-4 flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">אין הזמנות ללקוח הזה.</span>
+                  <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)}>
+                    <ShoppingBag className="h-3.5 w-3.5 me-1" />
+                    הזמנה חדשה
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {contactOrders.map((order) => {
+                    const fromOtherEnquiry = order.lead_id && order.lead_id !== leadId;
+                    return (
+                      <Link
+                        key={order.id}
+                        to={createPageUrl('OrderDetails') + `?id=${order.id}`}
+                        className="block p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-medium">#{order.order_number}</span>
+                          <div className="flex items-center gap-2">
+                            {fromOtherEnquiry ? (
+                              <span
+                                className="inline-flex items-center rounded px-1.5 h-[18px] text-[10px] font-medium bg-indigo-50 text-indigo-700"
+                                title="ההזמנה רשומה על פנייה אחרת של אותו אדם"
+                              >
+                                פנייה אחרת
+                              </span>
+                            ) : null}
+                            <StatusBadge status={order.status} />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mt-1">
+                          <p className="text-lg font-bold text-primary m-0">
+                            ₪{order.total?.toLocaleString()}
+                          </p>
+                          {order.created_date ? (
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {formatInTimeZone(order.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy')}
+                            </span>
+                          ) : null}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
           </TabsContent>
 
           {/* Service — its own tab now. It shares nothing with quotes except
