@@ -1,0 +1,441 @@
+<title>פופאפ ליד — גרסה 8</title>
+<style>
+  :root {
+    --bg: hsl(240 20% 99%); --page: hsl(240 14% 96%); --card: hsl(0 0% 100%);
+    --fg: hsl(230 25% 15%); --fg-muted: hsl(230 9% 46%); --fg-faint: hsl(230 8% 62%);
+    --border: hsl(230 16% 91%); --border-soft: hsl(230 16% 94%); --inset: hsl(240 14% 97%);
+    --primary: hsl(234 72% 56%); --primary-fg: hsl(0 0% 100%); --primary-soft: hsl(234 80% 95%);
+    --green: hsl(150 62% 36%); --green-soft: hsl(150 62% 96%); --green-ring: hsl(150 45% 80%);
+    --amber: hsl(32 85% 45%); --amber-soft: hsl(38 92% 95%);
+    --blue: hsl(216 85% 52%); --blue-soft: hsl(216 92% 96%);
+    --rose: hsl(350 70% 46%); --rose-soft: hsl(350 90% 96%);
+    --indigo: hsl(243 60% 52%); --indigo-soft: hsl(243 80% 96%); --indigo-ring: hsl(243 55% 85%);
+    --purple: hsl(272 55% 50%); --purple-soft: hsl(272 80% 96%);
+    --shadow: 0 1px 2px rgb(16 24 40 / .04), 0 1px 3px rgb(16 24 40 / .06);
+    --shadow-pop: 0 24px 64px -16px rgb(16 24 40 / .28);
+    --r-sm: 8px; --r: 10px; --r-lg: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: hsl(230 18% 11%); --page: hsl(230 18% 8%); --card: hsl(230 16% 14%);
+      --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+      --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+      --primary: hsl(234 82% 70%); --primary-fg: hsl(230 18% 11%); --primary-soft: hsl(234 40% 24%);
+      --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 18%); --green-ring: hsl(150 30% 32%);
+      --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 19%);
+      --blue: hsl(216 88% 70%); --blue-soft: hsl(216 40% 21%);
+      --rose: hsl(350 85% 72%); --rose-soft: hsl(350 35% 21%);
+      --indigo: hsl(243 85% 76%); --indigo-soft: hsl(243 35% 23%); --indigo-ring: hsl(243 30% 36%);
+      --purple: hsl(272 75% 76%); --purple-soft: hsl(272 32% 23%);
+      --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: hsl(230 18% 11%); --page: hsl(230 18% 8%); --card: hsl(230 16% 14%);
+    --fg: hsl(230 20% 95%); --fg-muted: hsl(230 10% 68%); --fg-faint: hsl(230 8% 52%);
+    --border: hsl(230 12% 24%); --border-soft: hsl(230 12% 20%); --inset: hsl(230 14% 18%);
+    --primary: hsl(234 82% 70%); --primary-fg: hsl(230 18% 11%); --primary-soft: hsl(234 40% 24%);
+    --green: hsl(150 55% 62%); --green-soft: hsl(150 30% 18%); --green-ring: hsl(150 30% 32%);
+    --amber: hsl(38 88% 68%); --amber-soft: hsl(36 35% 19%);
+    --blue: hsl(216 88% 70%); --blue-soft: hsl(216 40% 21%);
+    --rose: hsl(350 85% 72%); --rose-soft: hsl(350 35% 21%);
+    --indigo: hsl(243 85% 76%); --indigo-soft: hsl(243 35% 23%); --indigo-ring: hsl(243 30% 36%);
+    --purple: hsl(272 75% 76%); --purple-soft: hsl(272 32% 23%);
+    --shadow: 0 1px 3px rgb(0 0 0 / .5); --shadow-pop: 0 24px 64px -16px rgb(0 0 0 / .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 22px 18px 60px; direction: rtl;
+    background: var(--page); color: var(--fg);
+    font-family: 'Heebo','Assistant','Rubik','Noto Sans Hebrew',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  .note { font-size: 12.5px; color: var(--fg-muted); margin: 0 4px 12px; }
+  .note b { color: var(--fg); font-weight: 600; }
+  h2.sec { font-size: 14px; margin: 30px 4px 10px; font-weight: 700; }
+  h2.sec span { font-weight: 400; color: var(--fg-faint); font-size: 12.5px; }
+
+  /* The modal, with a ruler marking where a 900px-tall viewport cuts off. */
+  .stage { position: relative; }
+  .fold {
+    position: absolute; inset-inline: -6px; top: 900px; height: 0;
+    border-top: 2px dashed hsl(350 70% 55% / .65); z-index: 5; pointer-events: none;
+  }
+  .fold::after {
+    content: 'קצה מסך — 900px'; position: absolute; inset-inline-start: 0; top: -20px;
+    font-size: 11px; font-weight: 600; color: hsl(350 70% 48%);
+    background: var(--page); padding: 0 6px;
+  }
+  .modal {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 20px; box-shadow: var(--shadow-pop); overflow: hidden;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  .head { display: flex; align-items: center; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--border); background: var(--card); }
+  .iconbtn { flex: none; width: 38px; height: 38px; border-radius: var(--r); border: 1px solid var(--border); background: var(--card); color: var(--fg-muted); display: grid; place-items: center; cursor: pointer; }
+  .avatar { flex: none; width: 42px; height: 42px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; font-size: 17px; font-weight: 700; }
+  .head h1 { margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -.02em; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 7px; padding: 3px 8px; font-size: 11.5px; font-weight: 600; }
+  .chip-sla { background: var(--rose-soft); color: var(--rose); }
+  .chip-dup { background: var(--amber-soft); color: var(--amber); }
+  .phone { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .phone .num { direction: ltr; unicode-bidi: isolate; }
+  .head-end { margin-inline-start: auto; display: flex; align-items: center; gap: 9px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; height: 38px; padding: 0 13px; border-radius: var(--r); border: 1px solid var(--border); background: var(--card); color: var(--fg); font: inherit; font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .btn .ic { color: var(--primary); }
+
+  /* ── Body / facts / actions ─────────────────────────────── */
+  .body { padding: 14px 18px; display: grid; gap: 14px; }
+  .facts { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); }
+  .fact { padding: 11px 12px; text-align: center; min-width: 0; }
+  .fact + .fact { border-inline-start: 1px solid var(--border-soft); }
+  .fact dt { font-size: 11.5px; color: var(--fg-faint); margin: 0 0 5px; }
+  .fact dd { margin: 0; font-size: 13.5px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; }
+  .fact .sub { margin: 3px 0 0; font-size: 10.5px; color: var(--fg-faint); }
+  .actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; }
+  .actions .btn { height: 42px; border-radius: 11px; justify-content: center; }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); font-weight: 600; }
+  .btn-primary .ic { color: currentColor; }
+  .btn-wa { border-color: var(--green-ring); color: var(--green); }
+  .btn-wa .ic { color: currentColor; }
+
+  /* ── Columns ────────────────────────────────────────────── */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+  .stack { display: grid; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; }
+  .card-title { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+  .card-title .ic { color: var(--primary); }
+  .count-pill { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 700; background: color-mix(in srgb, var(--fg-muted) 15%, transparent); color: var(--fg-muted); }
+  .head-note { font-size: 11px; color: var(--fg-muted); }
+  .ghosticon { border: 0; background: transparent; color: var(--fg-faint); cursor: pointer; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; }
+
+  /* one-line empty state — the big change in this version */
+  .empty-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 16px 12px; margin-top: -4px; }
+  .empty-line span { font-size: 13px; color: var(--fg-muted); }
+  .btn-xs { height: 28px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--card); color: var(--fg); display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; cursor: pointer; flex: none; }
+
+  /* marketing — tighter rows */
+  .kv { list-style: none; margin: 0; padding: 0 16px 12px; }
+  .kv li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 0; font-size: 13px; }
+  .kv li + li { border-top: 1px solid var(--border-soft); }
+  .kv .k { color: var(--fg-faint); font-size: 12px; flex: none; }
+  .kv .v { text-align: start; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .notes-box { border-top: 1px solid var(--border-soft); padding: 11px 16px 12px; }
+  .notes-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--fg-muted); font-weight: 500; }
+  .notes-area { margin-top: 6px; width: 100%; height: 52px; resize: none; border: 1px solid var(--border); border-radius: var(--r); background: var(--card); color: var(--fg); font: inherit; font-size: 13px; padding: 7px 10px; }
+
+  /* next task */
+  .task { background: var(--inset); border-radius: 11px; padding: 13px; margin: 0 16px 14px; }
+  .task h4 { margin: 0; font-size: 14.5px; font-weight: 700; }
+  .task p { margin: 6px 0 0; font-size: 13px; color: var(--fg-muted); }
+  .task-meta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .task-meta .g { display: inline-flex; align-items: center; gap: 5px; }
+  .task-meta .sep { color: var(--border); }
+  .btn-done { margin-top: 12px; margin-inline-start: auto; height: 34px; border-radius: var(--r); border: 1px solid var(--green-ring); background: var(--card); color: var(--green); display: flex; align-items: center; gap: 7px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; width: fit-content; }
+
+  /* contact log + enquiries lists */
+  .log { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+  .log-calls { max-height: 240px; }
+  .log-enq { max-height: 200px; }
+  .log > li { padding: 8px 16px; }
+  .log > li + li { border-top: 1px solid var(--border-soft); }
+  .row { display: flex; align-items: flex-start; gap: 9px; }
+  .bubble { flex: none; width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; }
+  .b-blue { background: var(--blue-soft); color: var(--blue); }
+  .b-rose { background: var(--rose-soft); color: var(--rose); }
+  .b-green { background: var(--green-soft); color: var(--green); }
+  .b-purple { background: var(--purple-soft); color: var(--purple); }
+  .row-main { min-width: 0; flex: 1; }
+  .row-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+  .row-line .dim { color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+  .row-sub { margin: 1px 0 0; font-size: 11px; color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { flex: none; display: inline-flex; align-items: center; gap: 5px; border-radius: var(--r-sm); padding: 2px 9px; font-size: 11.5px; font-weight: 500; }
+  .badge .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .bg-green { background: var(--green-soft); color: var(--green); }
+  .bg-gray { background: var(--inset); color: var(--fg-muted); }
+  .bg-blue { background: var(--blue-soft); color: var(--blue); }
+  .bg-amber { background: var(--amber-soft); color: var(--amber); }
+  .bg-indigo { background: var(--indigo-soft); color: var(--indigo); }
+  .btn-rec { margin-top: 5px; margin-inline-start: 37px; height: 28px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--card); color: var(--fg); display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; cursor: pointer; }
+  .card-enq { border-color: var(--indigo-ring); }
+  .card-enq .card-title { color: var(--indigo); }
+  .card-enq .count-pill { background: var(--indigo-soft); color: var(--indigo); }
+  .enq-link { display: flex; align-items: center; gap: 9px; text-decoration: none; color: inherit; margin: -8px -16px; padding: 8px 16px; }
+  .enq-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .enq-date { display: block; margin-top: 3px; font-size: 11px; color: var(--fg-faint); font-variant-numeric: tabular-nums; }
+
+  /* activity track */
+  .act { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+  .act-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 12px 16px; }
+  .act-head h3 { margin: 0; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; }
+  .act-head .c { font-size: 12.5px; color: var(--fg-muted); text-align: center; }
+  .act-head .x { justify-self: end; color: var(--fg-faint); }
+  svg { display: block; }
+</style>
+
+<div class="wrap">
+  <p class="note">
+    <b>גרסה 8 — הכל נכנס למסך אחד.</b>
+    מה שהוקטן: שורות ה-UTM מ-44px ל-28px, תיבת ההערות משלוש שורות לשתיים, וכל מצב "ריק" הפך משטח מלבני בגובה 150px
+    לשורה אחת. הקו האדום מסמן איפה מסך בגובה 900px נגמר.
+  </p>
+
+  <h2 class="sec">1. הליד שראית — Orly Russo <span>· בלי שיחות, בלי משימות, שתי פניות קודמות</span></h2>
+  <div class="stage">
+    <div class="fold"></div>
+    <div class="modal">
+      <div class="head">
+        <button class="iconbtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>
+        <span class="avatar">O</span>
+        <h1>Orly Russo</h1>
+        <span class="chip chip-sla">⚠ שעה אחת ו-14 דקות</span>
+        <span class="chip chip-dup">⚠ ליד כפול</span>
+        <span class="phone"><span class="num">0505368222</span></span>
+        <span class="head-end">
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>ערוך ליד</button>
+          <button class="iconbtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+        </span>
+      </div>
+
+      <div class="body">
+        <dl class="facts">
+          <div class="fact"><dt>סטטוס</dt><dd><span class="badge bg-amber"><span class="dot"></span>ליד חדש</span></dd></div>
+          <div class="fact"><dt>מקור הגעה</dt><dd><span class="badge bg-gray"><span class="dot"></span>גוגל</span></dd></div>
+          <div class="fact"><dt>תאריך כניסה</dt><dd><span>12/08/2026 09:15</span></dd><p class="sub">גיל הליד: פחות מיום</p></div>
+          <div class="fact"><dt>נציג אחראי</dt><dd><span style="color:var(--fg-faint)">לא משויך</span></dd></div>
+          <div class="fact"><dt>נציג שני</dt><dd><span style="color:var(--fg-faint)">לא משויך</span></dd></div>
+        </dl>
+
+        <div class="actions">
+          <button class="btn btn-primary"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>חיוג</button>
+          <button class="btn btn-wa"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg>צ'אט וואטסאפ</button>
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>משימה חדשה</button>
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/></svg>הצעה חדשה</button>
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>הזמנה חדשה</button>
+          <button class="btn">עוד פעולות<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+        </div>
+
+        <div class="cols">
+          <!-- ימין -->
+          <div class="stack">
+            <section class="card">
+              <div class="card-head"><span class="card-title"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>פרטי שיווק</span></div>
+              <ul class="kv">
+                <li><span class="k">UTM Source</span><span class="v">Google ads</span></li>
+                <li><span class="k">UTM Medium</span><span class="v">cpc</span></li>
+                <li><span class="k">UTM Campaign</span><span class="v">—</span></li>
+                <li><span class="k">UTM Content</span><span class="v">744550961914</span></li>
+                <li><span class="k">UTM Term</span><span class="v">—</span></li>
+              </ul>
+              <div class="notes-box">
+                <span class="notes-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l6-6V5a2 2 0 0 0-2-2Z"/><path d="M14 21v-5a1 1 0 0 1 1-1h5"/></svg>הערות</span>
+                <textarea class="notes-area" placeholder="מה חשוב לזכור על הליד הזה..."></textarea>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><span class="card-title"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>משימה הבאה</span></div>
+              <div class="empty-line">
+                <span>אין משימות פתוחות לליד הזה.</span>
+                <button class="btn-xs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>משימה חדשה</button>
+              </div>
+            </section>
+          </div>
+
+          <!-- שמאל -->
+          <div class="stack">
+            <section class="card">
+              <div class="card-head">
+                <span class="card-title"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>שיחות ותקשורת</span>
+                <button class="ghosticon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+              </div>
+              <div class="empty-line">
+                <span>עוד לא תועדה שיחה עם הלקוח.</span>
+                <button class="btn-xs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>הוסף תקשורת</button>
+              </div>
+            </section>
+
+            <section class="card card-enq">
+              <div class="card-head"><span class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>פניות נוספות מאותו אדם<span class="count-pill">2</span></span></div>
+              <ul class="log log-enq">
+                <li><a class="enq-link" href="#"><span class="row-main"><span class="enq-badges"><span class="badge bg-amber"><span class="dot"></span>ליד חדש</span><span class="badge bg-gray"><span class="dot"></span>פייסבוק</span></span><span class="enq-date">11/08/2026</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--indigo);flex:none"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a></li>
+                <li><a class="enq-link" href="#"><span class="row-main"><span class="enq-badges"><span class="badge bg-amber"><span class="dot"></span>ללא מענה 1</span><span class="badge bg-gray"><span class="dot"></span>פייסבוק</span></span><span class="enq-date">25/01/2026</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--indigo);flex:none"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+
+        <div class="act">
+          <div class="act-head">
+            <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>פעילות הליד</h3>
+            <p class="c">2 פעילויות אחרונות</p>
+            <span class="x"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">2. אותו מסך על ליד שעבדו עליו <span>· 5 תיעודי תקשורת, 3 פניות קודמות, משימה פתוחה</span></h2>
+  <div class="stage">
+    <div class="fold"></div>
+    <div class="modal">
+      <div class="head">
+        <button class="iconbtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>
+        <span class="avatar">י</span>
+        <h1>יוחנן</h1>
+        <span class="chip chip-dup">⚠ ליד כפול</span>
+        <span class="phone"><span class="num">0549290149</span></span>
+        <span class="head-end">
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>ערוך ליד</button>
+          <button class="iconbtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+        </span>
+      </div>
+
+      <div class="body">
+        <dl class="facts">
+          <div class="fact"><dt>סטטוס</dt><dd><span class="badge bg-indigo"><span class="dot"></span>פולאפ - אחרי הצעת מחיר</span></dd></div>
+          <div class="fact"><dt>מקור הגעה</dt><dd><span class="badge bg-gray"><span class="dot"></span>גוגל</span></dd></div>
+          <div class="fact"><dt>תאריך כניסה</dt><dd><span>12/08/2026 07:46</span></dd><p class="sub">גיל הליד: פחות מיום</p></div>
+          <div class="fact"><dt>נציג אחראי</dt><dd><span>יצחק</span></dd></div>
+          <div class="fact"><dt>נציג שני</dt><dd><span style="color:var(--fg-faint)">לא משויך</span></dd></div>
+        </dl>
+
+        <div class="actions">
+          <button class="btn btn-primary"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>חיוג</button>
+          <button class="btn btn-wa"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg>צ'אט וואטסאפ</button>
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>משימה חדשה</button>
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/></svg>הצעה חדשה</button>
+          <button class="btn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>הזמנה חדשה</button>
+          <button class="btn">עוד פעולות<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+        </div>
+
+        <div class="cols">
+          <div class="stack">
+            <section class="card">
+              <div class="card-head"><span class="card-title"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>פרטי שיווק</span></div>
+              <ul class="kv">
+                <li><span class="k">UTM Source</span><span class="v">google_ads</span></li>
+                <li><span class="k">UTM Medium</span><span class="v">cpc</span></li>
+                <li><span class="k">UTM Campaign</span><span class="v">—</span></li>
+                <li><span class="k">UTM Content</span><span class="v">—</span></li>
+                <li><span class="k">UTM Term</span><span class="v">—</span></li>
+              </ul>
+              <div class="notes-box">
+                <span class="notes-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l6-6V5a2 2 0 0 0-2-2Z"/><path d="M14 21v-5a1 1 0 0 1 1-1h5"/></svg>הערות</span>
+                <textarea class="notes-area" placeholder="מה חשוב לזכור על הליד הזה..."></textarea>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="card-head"><span class="card-title"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>משימה הבאה</span></div>
+              <div class="task">
+                <h4>90/200 עילית 1345 מוודא מידה ומזמין</h4>
+                <div class="task-meta">
+                  <span class="g"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>18/08/2026</span>
+                  <span class="g"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>18:00</span>
+                  <span class="sep">|</span><span>יצחק</span>
+                </div>
+                <button class="btn-done"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>סמן כבוצע</button>
+              </div>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="card">
+              <div class="card-head">
+                <span class="card-title"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>שיחות ותקשורת<span class="count-pill">5</span></span>
+                <span style="display:flex;align-items:center;gap:5px">
+                  <span class="head-note">אחרונה לפני 3 שעות</span>
+                  <button class="ghosticon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+                </span>
+              </div>
+              <ul class="log log-calls">
+                <li>
+                  <div class="row">
+                    <span class="bubble b-blue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/><path d="M15 3h6v6"/><path d="m21 3-7 7"/></svg></span>
+                    <span class="row-main">
+                      <span class="row-line"><span style="font-weight:500">שיחה יוצאת</span><span class="dim">12/08/2026 09:42</span><span class="dim">· 2:14</span></span>
+                      <p class="row-sub">יצחק כהן</p>
+                    </span>
+                    <span class="badge bg-green"><span class="dot"></span>מעוניין</span>
+                  </div>
+                  <button class="btn-rec"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>נגן הקלטה</button>
+                </li>
+                <li>
+                  <div class="row">
+                    <span class="bubble b-rose"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/><path d="m22 2-6 6M16 2l6 6"/></svg></span>
+                    <span class="row-main">
+                      <span class="row-line"><span style="font-weight:500">שיחה יוצאת</span><span class="dim">12/08/2026 08:15</span><span class="dim">· 0:08</span></span>
+                      <p class="row-sub">יצחק כהן</p>
+                    </span>
+                    <span class="badge bg-gray"><span class="dot"></span>לא ענה</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="row">
+                    <span class="bubble b-green"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z"/></svg></span>
+                    <span class="row-main">
+                      <span class="row-line"><span style="font-weight:500">וואטסאפ יוצא</span><span class="dim">11/08/2026 17:30</span></span>
+                      <p class="row-sub">שלחתי מפרט של עילית 1345</p>
+                    </span>
+                    <span class="badge bg-blue"><span class="dot"></span>נשלח</span>
+                  </div>
+                </li>
+                <li>
+                  <div class="row">
+                    <span class="bubble b-blue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/><path d="M16 8 22 2"/><path d="M16 2h6v6"/></svg></span>
+                    <span class="row-main">
+                      <span class="row-line"><span style="font-weight:500">שיחה נכנסת</span><span class="dim">10/08/2026 12:04</span><span class="dim">· 5:41</span><span style="display:inline-flex;align-items:center;height:16px;padding:0 6px;border-radius:4px;font-size:10px;font-weight:500;background:var(--indigo-soft);color:var(--indigo)" title="השיחה רשומה על פנייה אחרת של אותו אדם">פנייה אחרת</span></span>
+                      <p class="row-sub">יצחק כהן</p>
+                    </span>
+                    <span class="badge bg-amber"><span class="dot"></span>נייטרלי</span>
+                  </div>
+                  <button class="btn-rec"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>נגן הקלטה</button>
+                </li>
+                <li>
+                  <div class="row">
+                    <span class="bubble b-purple"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>
+                    <span class="row-main">
+                      <span class="row-line"><span style="font-weight:500">אימייל יוצא</span><span class="dim">09/08/2026 10:12</span></span>
+                      <p class="row-sub">הצעת מחיר — עילית 1345</p>
+                    </span>
+                    <span class="badge bg-blue"><span class="dot"></span>נשלח</span>
+                  </div>
+                </li>
+              </ul>
+            </section>
+
+            <section class="card card-enq">
+              <div class="card-head"><span class="card-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>פניות נוספות מאותו אדם<span class="count-pill">3</span></span></div>
+              <ul class="log log-enq">
+                <li><a class="enq-link" href="#"><span class="row-main"><span class="enq-badges"><span class="badge bg-indigo"><span class="dot"></span>פולאפ - אחרי הצעת מחיר</span><span class="badge bg-gray"><span class="dot"></span>גוגל</span></span><span class="enq-date">16/01/2026</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--indigo);flex:none"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a></li>
+                <li><a class="enq-link" href="#"><span class="row-main"><span class="enq-badges"><span class="badge bg-gray"><span class="dot"></span>אבוד</span><span class="badge bg-gray"><span class="dot"></span>פייסבוק</span></span><span class="enq-date">02/11/2025</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--indigo);flex:none"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a></li>
+                <li><a class="enq-link" href="#"><span class="row-main"><span class="enq-badges"><span class="badge bg-green"><span class="dot"></span>נסגר</span><span class="badge bg-gray"><span class="dot"></span>גוגל</span></span><span class="enq-date">14/06/2025</span></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--indigo);flex:none"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></a></li>
+              </ul>
+            </section>
+          </div>
+        </div>
+
+        <div class="act">
+          <div class="act-head">
+            <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>פעילות הליד</h3>
+            <p class="c">3 פעילויות אחרונות</p>
+            <span class="x"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:26px">
+    <b>שיחות נשלפות לפי איש הקשר, לא לפי שורת הליד.</b>
+    סנכרון Voicenter תולה שיחה על <b>ליד אחד</b> — הראשון שמספר הטלפון שלו התאים — ואצל אדם עם כמה פניות זו
+    לרוב הפנייה הישנה. לכן הכרטיס שולף את השיחות של כל הפניות של אותו אדם; שורה שרשומה על פנייה אחרת מסומנת
+    ב"פנייה אחרת", כדי שיהיה ברור שהשיחה קרתה — רק לא מתויקת כאן.
+</p>
+</div>

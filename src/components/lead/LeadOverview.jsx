@@ -38,6 +38,8 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import SLABadge from '@/components/sla/SLABadge';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
+import LeadContactLogCard from '@/components/lead/LeadContactLogCard';
+import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
 import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import { formatSourceLabel, ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
 import SourceBadge from '@/components/shared/SourceBadge';
@@ -172,20 +174,21 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
   if (!task) {
     return (
       <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-        <div className="flex items-center justify-between gap-2 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
           <span className="inline-flex items-center gap-2 text-sm font-bold">
             <ClipboardCheck className="h-4 w-4 text-primary" />
             משימה הבאה
           </span>
         </div>
-        <div className="px-4 pb-4">
-          <div className="rounded-xl bg-muted/50 px-4 py-5 text-center">
-            <p className="text-sm text-muted-foreground">אין משימות פתוחות לליד הזה.</p>
-            <Button variant="outline" size="sm" className="mt-3 h-8 gap-1.5 bg-card" onClick={onAddTask}>
-              <Plus className="h-3.5 w-3.5" />
-              משימה חדשה
-            </Button>
-          </div>
+        {/* Nothing to do is one line, not a panel. The empty state used to be
+            a 150px tinted box for a sentence and a button, and three cards
+            doing that at once pushed the lead's real content off-screen. */}
+        <div className="px-4 pb-3 -mt-1 flex items-center justify-between gap-2">
+          <span className="text-[13px] text-muted-foreground">אין משימות פתוחות לליד הזה.</span>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1 bg-card flex-shrink-0" onClick={onAddTask}>
+            <Plus className="h-3.5 w-3.5" />
+            משימה חדשה
+          </Button>
         </div>
       </section>
     );
@@ -201,7 +204,7 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
 
   return (
     <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
         <span className="inline-flex items-center gap-2 text-sm font-bold">
           <ClipboardCheck className="h-4 w-4 text-primary" />
           משימה הבאה
@@ -213,73 +216,53 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
         ) : null}
       </div>
 
-      <div className="px-4 pb-4">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => onOpenTask?.(task)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onOpenTask?.(task);
-            }
-          }}
-          className="rounded-xl bg-muted/50 p-4 cursor-pointer transition-colors hover:bg-muted"
-        >
-          <div className="flex items-start justify-between gap-2">
-            <h4 className="m-0 text-[15px] font-bold min-w-0">{title}</h4>
+      {/* One row: what to do, when and whose, and the button that closes it.
+          This was a tinted panel with the title, the notes, a meta line and
+          the button each on their own row — 280px to say one sentence. The
+          notes ride in the row's tooltip and open in full with the task, which
+          is one click away and where a rep goes to act on them anyway. */}
+      <div className="px-4 pb-3 -mt-1">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenTask?.(task)}
+            title={notes ? `${title}\n\n${notes}` : title}
+            className="min-w-0 flex-1 text-start rounded-lg px-2 py-1 -mx-2 hover:bg-muted transition-colors"
+          >
+            <span className="block text-[13.5px] font-bold truncate">{title}</span>
             {notes ? (
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 flex-shrink-0">
-                <MessageSquare className="h-3.5 w-3.5" />
-                הערות
+              <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground/90 min-w-0">
+                <MessageSquare className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{notes}</span>
               </span>
             ) : null}
-          </div>
-
-          {notes ? (
-            <p className="mt-2 mb-0 text-[13.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap">{notes}</p>
-          ) : null}
-
-          <div className="mt-4 flex items-center gap-2.5 flex-wrap text-[13px] text-muted-foreground tabular-nums">
-            {dueDate ? (
-              <>
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  {formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM/yyyy')}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5" />
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums truncate">
+              <CalendarDays className="h-3 w-3 flex-shrink-0" />
+              {dueDate ? formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM/yyyy') : 'ללא תאריך יעד'}
+              {dueDate ? (
+                <>
+                  <Clock className="h-3 w-3 flex-shrink-0" />
                   {formatInTimeZone(dueDate, 'Asia/Jerusalem', 'HH:mm')}
-                </span>
-              </>
-            ) : (
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5" />
-                ללא תאריך יעד
-              </span>
-            )}
-            {owner ? (
-              <>
-                <span className="text-border" aria-hidden="true">|</span>
-                <span>{owner}</span>
-              </>
-            ) : null}
-          </div>
+                </>
+              ) : null}
+              {owner ? (
+                <>
+                  <span className="text-border" aria-hidden="true">|</span>
+                  <span className="truncate">{owner}</span>
+                </>
+              ) : null}
+            </span>
+          </button>
 
-          <div className="mt-4 flex">
-            <Button
-              variant="outline"
-              size="sm"
-              className="ms-auto h-9 gap-2 border-emerald-200 bg-card text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCompleteTask?.(task);
-              }}
-            >
-              <Check className="h-3.5 w-3.5" />
-              סמן כבוצע
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 flex-shrink-0 border-emerald-200 bg-card text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+            onClick={() => onCompleteTask?.(task)}
+          >
+            <Check className="h-3.5 w-3.5" />
+            סמן כבוצע
+          </Button>
         </div>
 
         {rest.length > 0 ? (
@@ -626,72 +609,97 @@ export default function LeadOverview({
         </div>
 
         {/* Two columns. Marketing is first in the DOM, so in RTL it lands on
-            the RIGHT — the side the mockup puts it on. */}
+            the RIGHT — the side the mockup puts it on.
+
+            The split is by height, not by topic: marketing carries five UTM
+            rows and the notes box, so it alone is nearly as tall as the two
+            history cards stacked. Pairing it with the next task on the right
+            and putting the two histories on the left leaves the columns close
+            enough in height that neither ends in a band of empty card. */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-            <div className="px-4 py-3.5">
-              <span className="inline-flex items-center gap-2 text-sm font-bold">
-                <Target className="h-4 w-4 text-primary" />
-                פרטי שיווק
-              </span>
-            </div>
-            <ul className="list-none m-0 px-4 pb-4">
-              {marketingRows.map((row) => (
-                <li
-                  key={row.k}
-                  className="flex items-center justify-between gap-4 py-3 text-sm border-t first:border-t-0 border-border/50"
-                >
-                  <span className="text-[13px] text-muted-foreground/70 flex-none">{row.k}</span>
-                  <span className="min-w-0 truncate text-start" title={row.v || ''}>{row.v || '—'}</span>
-                </li>
-              ))}
-            </ul>
-
-            <div className="px-4 pb-4 pt-1 border-t border-border/50">
-              <div className="flex items-center justify-between gap-2 mb-1.5">
-                <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground/80">
-                  <StickyNote className="h-3.5 w-3.5" />
-                  הערות
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
+              <div className="px-4 py-3">
+                <span className="inline-flex items-center gap-2 text-sm font-bold">
+                  <Target className="h-4 w-4 text-primary" />
+                  פרטי שיווק
                 </span>
-                {canEdit && notesDirty ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 text-xs gap-1.5"
-                    disabled={notesSaving}
-                    onClick={saveNotes}
-                  >
-                    {notesSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                    שמור
-                  </Button>
-                ) : null}
               </div>
-              {canEdit ? (
-                <Textarea
-                  value={notesDraft}
-                  onChange={(e) => setNotesDraft(e.target.value)}
-                  // Clicking away saves, so a note is never lost to a closed
-                  // popup. The button stays for the rep who wants to be told.
-                  onBlur={saveNotes}
-                  rows={3}
-                  placeholder="מה חשוב לזכור על הליד הזה..."
-                  className="resize-none text-sm"
-                />
-              ) : (
-                <p className="text-sm whitespace-pre-wrap text-foreground/90">
-                  {lead?.notes || <span className="text-muted-foreground/70">—</span>}
-                </p>
-              )}
-            </div>
-          </section>
+              {/* Five reference values a rep glances at, not a table they read.
+                  They were laid out like paragraphs — 44px a row, five rows —
+                  and pushed the rest of the lead off the screen for it. */}
+              <ul className="list-none m-0 px-4 pb-3">
+                {marketingRows.map((row) => (
+                  <li
+                    key={row.k}
+                    className="flex items-center justify-between gap-4 py-1.5 text-[13px] border-t first:border-t-0 border-border/50"
+                  >
+                    <span className="text-[12px] text-muted-foreground/70 flex-none">{row.k}</span>
+                    <span className="min-w-0 truncate text-start" title={row.v || ''}>{row.v || '—'}</span>
+                  </li>
+                ))}
+              </ul>
 
-          <NextTaskCard
-            queue={queue}
-            salesReps={salesReps}
-            onOpenTask={onOpenTask}
-            onCompleteTask={onCompleteTask}
-            onAddTask={onAddTask}
-          />
+              <div className="px-4 pb-3 pt-1 border-t border-border/50">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground/80">
+                    <StickyNote className="h-3.5 w-3.5" />
+                    הערות
+                  </span>
+                  {canEdit && notesDirty ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5"
+                      disabled={notesSaving}
+                      onClick={saveNotes}
+                    >
+                      {notesSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      שמור
+                    </Button>
+                  ) : null}
+                </div>
+                {canEdit ? (
+                  <Textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    // Clicking away saves, so a note is never lost to a closed
+                    // popup. The button stays for the rep who wants to be told.
+                    onBlur={saveNotes}
+                    rows={2}
+                    placeholder="מה חשוב לזכור על הליד הזה..."
+                    className="resize-none text-[13px]"
+                  />
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap text-foreground/90">
+                    {lead?.notes || <span className="text-muted-foreground/70">—</span>}
+                  </p>
+                )}
+              </div>
+            </section>
+
+            <NextTaskCard
+              queue={queue}
+              salesReps={salesReps}
+              onOpenTask={onOpenTask}
+              onCompleteTask={onCompleteTask}
+              onAddTask={onAddTask}
+            />
+          </div>
+
+          {/* Who we already spoke to, and whether we've met this person
+              before. Both used to be unanswerable from here — the contact log
+              was nowhere on the screen at all, and the previous enquiries were
+              a one-line strip at the foot of the page. */}
+          <div className="space-y-4">
+            <LeadContactLogCard
+              lead={lead}
+              users={users}
+              onAddCommunication={onAddCommunication}
+            />
+
+            <OtherEnquiriesCard lead={lead} />
+          </div>
         </div>
 
         {/* Activity — the collapsed track: three most recent events, "הצג
@@ -700,6 +708,7 @@ export default function LeadOverview({
           collapsible
           className="max-h-[560px]"
           leadId={lead?.id}
+          lead={lead}
           tasks={tasks}
           users={users}
           onOpenTask={onOpenTask}

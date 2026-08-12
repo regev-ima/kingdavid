@@ -20,11 +20,32 @@ const IDLE_NOTE = 'בוטלה אוטומטית – הסטטוס של הליד א
 // Marking "נסגרה עסקה" now marks the lead closed and touches nothing else.
 //
 // `exceptTaskId` skips a specific task — callers in the middle of saving that
-// same task pass it so the sweep doesn't race their own update.
+// same task pass it so the sweep doesn't race their own update. Those callers
+// own closing it themselves: see statusKeepsOpenTasks below.
 export async function cancelOpenTasksForStatus(leadId, newStatus, exceptTaskId = null) {
   if (!leadId || !newStatus) return;
-  if (newStatus === 'deal_closed' || statusOpensAutoTask(newStatus)) return;
+  if (statusKeepsOpenTasks(newStatus)) return;
   await sweepOpenTasks(leadId, newStatus, IDLE_NOTE, exceptTaskId);
+}
+
+/**
+ * Does landing in this status justify an open task on the lead?
+ *
+ * The same rule the sweep above runs on, exported so a caller writing a task
+ * in the same breath as the status can apply it to that task too. Without it
+ * the task the rep is saving is the one task the rule never reaches: the sweep
+ * skips it (exceptTaskId, so it doesn't race the save), and the save writes
+ * `not_completed` straight over the top — a lead marked "שמע מחיר ולא מעוניין"
+ * keeps a call task in באיחור forever, which is exactly what this module
+ * exists to prevent.
+ *
+ * Note this asks about the STATUS, not about whether the rep wants a task. A
+ * rep opening "משימה חדשה" on a dead lead on purpose is a different question,
+ * and callers answer it by only consulting this when the status is what just
+ * changed.
+ */
+export function statusKeepsOpenTasks(status) {
+  return status === 'deal_closed' || statusOpensAutoTask(status);
 }
 
 // Tasks are set to `task_status: 'cancelled'` (not `'completed'`) so the

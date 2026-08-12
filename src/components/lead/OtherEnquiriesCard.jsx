@@ -9,8 +9,8 @@ import { createPageUrl } from '@/utils';
 import SourceBadge from '@/components/shared/SourceBadge';
 
 /**
- * "This person has enquired before" — the other leads sharing this lead's
- * contact, as one line.
+ * "This person has enquired before" — every other lead sharing this lead's
+ * contact, one per row.
  *
  * Every lead is attached to a contact by normalized phone at the database
  * level, and a repeat enquiry deliberately creates its own lead row so the
@@ -18,10 +18,13 @@ import SourceBadge from '@/components/shared/SourceBadge';
  * a rep opening one of those rows had no way to see the others, and would work
  * a returning customer as a stranger.
  *
- * It used to be a full card — header, count badge, a bordered list — for what
- * is nearly always a single previous enquiry. Now it's one strip: the most
- * recent previous enquiry inline, and a link into it. Renders nothing at all
- * when the contact has no other leads, which is the common case.
+ * It was a single strip at the foot of the page showing only the most recent
+ * previous enquiry, with the others reduced to "ועוד 2" — a count with nothing
+ * behind it. The whole history was already being fetched; only one row of it
+ * was ever drawn. Now every enquiry is a row you can open, and the list scrolls
+ * inside its own box so a contact with eight enquiries doesn't stretch the
+ * column. Renders nothing at all when the contact has no other leads, which is
+ * the common case.
  */
 export default function OtherEnquiriesCard({ lead }) {
   const contactId = lead?.contact_id || null;
@@ -47,37 +50,44 @@ export default function OtherEnquiriesCard({ lead }) {
 
   if (!contactId || siblings.length === 0) return null;
 
-  const latest = siblings[0];
-  const when = parseDbTimestamp(latest.effective_sort_date || latest.created_date);
-
-  const rest = siblings.length - 1;
-
   return (
-    <div className="flex items-center gap-2.5 flex-wrap rounded-xl border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-[13px]">
-      <span className="inline-flex items-center gap-1.5 font-semibold text-indigo-700 flex-shrink-0">
-        <History className="h-3.5 w-3.5" />
-        פנייה נוספת מאותו אדם
-      </span>
-
-      <span className="inline-flex items-center gap-2 min-w-0 text-muted-foreground">
-        <StatusBadge status={latest.status} />
-        <SourceBadge source={latest.source} />
-        {when ? <span className="truncate">{format(when, 'dd/MM/yyyy')}</span> : null}
-      </span>
-
-      {rest > 0 ? (
-        <span className="text-[11px] text-indigo-700/70 flex-shrink-0">
-          ועוד {rest.toLocaleString('he-IL')}
+    <section className="rounded-2xl border border-indigo-200 bg-card shadow-card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3">
+        <span className="inline-flex items-center gap-2 text-sm font-bold text-indigo-700 min-w-0">
+          <History className="h-4 w-4 flex-shrink-0" />
+          פניות נוספות מאותו אדם
+          <span className="inline-flex items-center justify-center rounded-full px-1.5 min-w-[18px] h-[18px] text-[10px] font-bold leading-none bg-indigo-100 text-indigo-700">
+            {siblings.length}
+          </span>
         </span>
-      ) : null}
+      </div>
 
-      <Link
-        to={`${createPageUrl('LeadDetails')}?id=${latest.id}`}
-        className="inline-flex items-center gap-1 font-medium text-indigo-700 hover:underline flex-shrink-0 ms-auto"
-      >
-        פתח את הליד הקודם
-        <ArrowLeft className="h-3.5 w-3.5" />
-      </Link>
-    </div>
+      <ul className="list-none m-0 p-0 max-h-[200px] overflow-y-auto">
+        {siblings.map((enquiry) => {
+          const when = parseDbTimestamp(enquiry.effective_sort_date || enquiry.created_date);
+          return (
+            <li key={enquiry.id} className="border-t border-border/50 first:border-t-0">
+              <Link
+                to={`${createPageUrl('LeadDetails')}?id=${enquiry.id}`}
+                className="flex items-center gap-2 px-4 py-2 hover:bg-indigo-50/60 transition-colors"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 flex-wrap">
+                    <StatusBadge status={enquiry.status} />
+                    <SourceBadge source={enquiry.source} />
+                  </span>
+                  {when ? (
+                    <span className="block mt-1 text-[11px] text-muted-foreground/70 tabular-nums">
+                      {format(when, 'dd/MM/yyyy')}
+                    </span>
+                  ) : null}
+                </span>
+                <ArrowLeft className="h-3.5 w-3.5 text-indigo-600 flex-none" />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
