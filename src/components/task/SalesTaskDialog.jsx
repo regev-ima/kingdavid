@@ -14,7 +14,7 @@ import { Phone, FileText, Users, ShoppingCart, Plus, Clock, Tag, Megaphone, User
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
-import { cancelOpenTasksForStatus } from '@/lib/dealClose';
+import { cancelOpenTasksForStatus, statusKeepsOpenTasks } from '@/lib/dealClose';
 import { format, isValid, addHours, addDays, startOfDay } from '@/lib/safe-date-fns';
 import { he } from 'date-fns/locale';
 import { TASK_TYPE_OPTIONS, TASK_STATUS_OPTIONS, SOURCE_LABELS, statusOpensAutoTask, isMeetingStatus } from '@/constants/leadOptions';
@@ -286,6 +286,22 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     if (!editingTask.rep1) { setValidationError('יש לבחור נציג ראשי'); return; }
     setValidationError('');
     const now = new Date().toISOString();
+
+    // The lead screen changes a status by opening a task — so this save is
+    // often "here is what happened, and here is where the lead is now", not
+    // "remind me to do this". When the status the rep just picked is one that
+    // stops the lead, the task is a record of a call already made, and it's
+    // born completed: cancelOpenTasksForStatus is about to sweep every other
+    // open task on the lead for exactly that reason, and minting a fresh one
+    // in the same breath put a call-back on a lead that said "שמע מחיר ולא
+    // מעוניין" — straight into באיחור, where nobody will ever action it.
+    //
+    // Only when the status CHANGED here. A rep who opens "משימה חדשה" on an
+    // already-dead lead is deliberately scheduling something, and that's their
+    // call to make — see the note on statusKeepsOpenTasks.
+    const statusChanged = !!editingTask.status && editingTask.status !== originalLeadStatus;
+    const opensAsWork = !statusChanged || statusKeepsOpenTasks(editingTask.status);
+
     createTaskMutation.mutate({
       taskData: {
         lead_id: currentLeadId,
@@ -293,7 +309,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
         summary: editingTask.summary || '',
         rep1: editingTask.rep1 || effectiveUser?.email || '',
         rep2: isAdmin ? (editingTask.rep2 || '') : '',
-        task_status: 'not_completed',
+        task_status: opensAsWork ? 'not_completed' : 'completed',
         status: editingTask.status || null,
         work_start_date: now,
         due_date: editingTask.due_date || now,
@@ -311,7 +327,18 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
     // task_status is hidden from the form and managed by the automation
     // flows. Default it to 'not_completed' if somehow missing so a save
     // never silently no-ops behind a hidden validation error.
-    const task_status = editingTask.task_status || 'not_completed';
+    let task_status = editingTask.task_status || 'not_completed';
+
+    // Setting a status that stops the lead closes THIS task too. The sweep
+    // below is passed editingTask.id so it doesn't race this save — which left
+    // the task the rep is looking at as the one task the rule never reached:
+    // the lead read "שמע מחיר ולא מעוניין" while its own call task stayed open
+    // underneath. Completed, not cancelled — the rep made the call, and the
+    // summary they just wrote is the record of it.
+    const statusChanged = !!editingTask.status && editingTask.status !== originalLeadStatus;
+    if (statusChanged && task_status === 'not_completed' && !statusKeepsOpenTasks(editingTask.status)) {
+      task_status = 'completed';
+    }
 
     // Validate next task if form is showing
     if (showNextTaskForm) {
