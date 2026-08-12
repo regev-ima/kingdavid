@@ -49,11 +49,11 @@ ORDER BY table_name, column_name;
 -- `biggest_rise` MUST be 0.00. Anything positive: stop and tell me.
 
 SELECT count(*)                                                        AS priced_rows,
-       count(*) FILTER (WHERE floor(base_price * 1.18) <> round(base_price * 1.18, 2))
+       count(*) FILTER (WHERE floor(round(base_price * 1.18, 2)) <> round(base_price * 1.18, 2))
                                                                        AS rows_that_change,
-       round(min(floor(base_price * 1.18) - round(base_price * 1.18, 2)), 2) AS biggest_drop,
-       round(max(floor(base_price * 1.18) - round(base_price * 1.18, 2)), 2) AS biggest_rise,
-       round(sum(round(base_price * 1.18, 2) - floor(base_price * 1.18)), 2) AS total_shekels_given_up
+       round(min(floor(round(base_price * 1.18, 2)) - round(base_price * 1.18, 2)), 2) AS biggest_drop,
+       round(max(floor(round(base_price * 1.18, 2)) - round(base_price * 1.18, 2)), 2) AS biggest_rise,
+       round(sum(round(base_price * 1.18, 2) - floor(round(base_price * 1.18, 2))), 2) AS total_shekels_given_up
 FROM public.product_variations
 WHERE base_price > 0;
 
@@ -64,13 +64,13 @@ SELECT v.sku,
        p.name                                       AS product,
        v.base_price                                 AS stored_now,
        round(v.base_price * 1.18, 2)                AS customer_pays_now,
-       floor(v.base_price * 1.18)                   AS customer_would_pay,
-       round(floor(v.base_price * 1.18) / 1.18, 2)  AS stored_after,
-       round(floor(v.base_price * 1.18) - round(v.base_price * 1.18, 2), 2) AS change
+       floor(round(v.base_price * 1.18, 2))                   AS customer_would_pay,
+       round(floor(round(v.base_price * 1.18, 2)) / 1.18, 2)  AS stored_after,
+       round(floor(round(v.base_price * 1.18, 2)) - round(v.base_price * 1.18, 2), 2) AS change
 FROM public.product_variations v
 LEFT JOIN public.products p ON p.id = v.product_id
 WHERE v.base_price > 0
-  AND floor(v.base_price * 1.18) <> round(v.base_price * 1.18, 2)
+  AND floor(round(v.base_price * 1.18, 2)) <> round(v.base_price * 1.18, 2)
 ORDER BY change ASC
 LIMIT 20;
 
@@ -92,10 +92,10 @@ WHERE base_price > 0;
 -- ── 4. product_addons ───────────────────────────────────────────────────────
 
 SELECT count(*)                                                        AS priced_rows,
-       count(*) FILTER (WHERE floor(base_price * 1.18) <> round(base_price * 1.18, 2))
+       count(*) FILTER (WHERE floor(round(base_price * 1.18, 2)) <> round(base_price * 1.18, 2))
                                                                        AS rows_that_change,
-       round(min(floor(base_price * 1.18) - round(base_price * 1.18, 2)), 2) AS biggest_drop,
-       round(max(floor(base_price * 1.18) - round(base_price * 1.18, 2)), 2) AS biggest_rise
+       round(min(floor(round(base_price * 1.18, 2)) - round(base_price * 1.18, 2)), 2) AS biggest_drop,
+       round(max(floor(round(base_price * 1.18, 2)) - round(base_price * 1.18, 2)), 2) AS biggest_rise
 FROM public.product_addons
 WHERE base_price > 0;
 
@@ -103,10 +103,10 @@ WHERE base_price > 0;
 -- ── 5. product_addon_prices ─────────────────────────────────────────────────
 
 SELECT count(*)                                                        AS priced_rows,
-       count(*) FILTER (WHERE floor(price * 1.18) <> round(price * 1.18, 2))
+       count(*) FILTER (WHERE floor(round(price * 1.18, 2)) <> round(price * 1.18, 2))
                                                                        AS rows_that_change,
-       round(min(floor(price * 1.18) - round(price * 1.18, 2)), 2)     AS biggest_drop,
-       round(max(floor(price * 1.18) - round(price * 1.18, 2)), 2)     AS biggest_rise
+       round(min(floor(round(price * 1.18, 2)) - round(price * 1.18, 2)), 2)     AS biggest_drop,
+       round(max(floor(round(price * 1.18, 2)) - round(price * 1.18, 2)), 2)     AS biggest_rise
 FROM public.product_addon_prices
 WHERE price > 0;
 
@@ -114,9 +114,9 @@ WHERE price > 0;
 -- ── 6. product_size_prices ──────────────────────────────────────────────────
 
 SELECT count(*)                                                        AS priced_rows,
-       count(*) FILTER (WHERE floor(price * 1.18) <> round(price * 1.18, 2))
+       count(*) FILTER (WHERE floor(round(price * 1.18, 2)) <> round(price * 1.18, 2))
                                                                        AS rows_that_change,
-       round(min(floor(price * 1.18) - round(price * 1.18, 2)), 2)     AS biggest_drop,
-       round(max(floor(price * 1.18) - round(price * 1.18, 2)), 2)     AS biggest_rise
+       round(min(floor(round(price * 1.18, 2)) - round(price * 1.18, 2)), 2)     AS biggest_drop,
+       round(max(floor(round(price * 1.18, 2)) - round(price * 1.18, 2)), 2)     AS biggest_rise
 FROM public.product_size_prices
 WHERE price > 0;
