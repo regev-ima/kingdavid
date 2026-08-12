@@ -1,11 +1,13 @@
 import React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useRepIdentities } from "@/hooks/useRepIdentities";
+import { identityFromChoice } from "@/lib/repIdentity";
 
-// `identity` overrides the roster lookup — for previewing a pick that hasn't
-// been saved yet. Everywhere else, leave it off: the roster is what guarantees
-// no two reps look alike, and a caller passing its own identity opts out of that.
-export default function UserAvatar({ user, size = "md", className = "", identity: identityOverride }) {
+// `identityOverride` is a pending { colorId, iconId } pick — for previewing a
+// choice that hasn't been saved yet. Either half may be null, meaning "leave
+// that one as the roster assigned it". Everywhere else, leave it off: the
+// roster is what guarantees no two reps look alike.
+export default function UserAvatar({ user, size = "md", className = "", identityOverride }) {
   const sizeClasses = {
     xs: "h-6 w-6 text-[10px]",
     sm: "h-8 w-8 text-xs",
@@ -28,7 +30,8 @@ export default function UserAvatar({ user, size = "md", className = "", identity
   // person looks the same on every screen and no two people look alike. A rep
   // who uploaded a real photo keeps it; a photo is already unmistakably theirs.
   const { identityFor } = useRepIdentities();
-  const identity = identityOverride || identityFor(user);
+  const assigned = identityFor(user);
+  const identity = identityOverride ? identityFromChoice(identityOverride, assigned) : assigned;
 
   return (
     <Avatar className={`${sizeClasses[size] || sizeClasses.md} ${className}`}>
