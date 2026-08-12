@@ -21,7 +21,6 @@ import {
   Activity,
   Mail,
   StickyNote,
-  ChevronDown,
   ChevronUp,
 } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
@@ -274,57 +273,49 @@ export default function LeadUnifiedTimeline({
 
   if (collapsible && !expanded) {
     return (
+      /* Collapsed, this is a footnote: three things that recently happened, as
+         one row. It used to stack a header, a count and a 40px-bubble track
+         over three rows of its own — 130px of card to say what fits on a line,
+         on a screen that is trying not to scroll. The title, the track and the
+         way in now share the row. */
       <div className={`rounded-xl border border-border bg-card shadow-card overflow-hidden ${className}`}>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 py-3">
-          <h3 className="font-semibold text-sm flex items-center gap-2">
+        <div className="flex items-center gap-3 px-4 py-2">
+          <h3 className="font-semibold text-sm flex items-center gap-2 flex-none">
             <Activity className="h-4 w-4 text-primary" />
             פעילות הליד
           </h3>
-          <p className="text-xs text-muted-foreground text-center">
-            {isLoading ? 'טוען…' : `${track.length} פעילויות אחרונות`}
-          </p>
+
+          {isLoading ? (
+            <span className="text-xs text-muted-foreground">טוען…</span>
+          ) : track.length === 0 ? (
+            <span className="text-xs text-muted-foreground">אין פעילות עדיין.</span>
+          ) : (
+            <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
+              {track.map((event) => {
+                const { Icon, tone, label } = summarizeEvent(event);
+                return (
+                  <span key={event.id} className="inline-flex items-center gap-1.5 min-w-0 flex-none">
+                    <span className={`h-6 w-6 rounded-full grid place-items-center flex-none ${tone}`}>
+                      <Icon className="h-3 w-3" />
+                    </span>
+                    <span className="text-[12px] font-medium truncate">{label}</span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums flex-none">
+                      {formatInTimeZone(new Date(event.ts), 'Asia/Jerusalem', 'dd/MM HH:mm')}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="justify-self-end h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground grid place-items-center"
-            aria-label="הצג את כל הפעילות"
+            className="ms-auto flex-none h-7 px-2.5 rounded-lg border border-border bg-card text-xs hover:bg-muted transition-colors"
           >
-            <ChevronDown className="h-4 w-4" />
+            הצג הכל
           </button>
         </div>
-
-        {track.length === 0 ? (
-          <p className="px-4 pb-4 text-xs text-muted-foreground">אין פעילות עדיין.</p>
-        ) : (
-          <div className="flex items-center px-4 pb-4 gap-0">
-            {track.map((event) => {
-              const { Icon, tone, label } = summarizeEvent(event);
-              return (
-                <React.Fragment key={event.id}>
-                  <div className="flex items-center gap-3 flex-none">
-                    <span className={`h-10 w-10 rounded-full grid place-items-center flex-none ${tone}`}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="text-start">
-                      <span className="block text-[11px] text-muted-foreground tabular-nums">
-                        {formatInTimeZone(new Date(event.ts), 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm')}
-                      </span>
-                      <span className="block text-[13px] font-medium mt-0.5">{label}</span>
-                    </span>
-                  </div>
-                  <span className="flex-1 h-px bg-border min-w-[24px]" aria-hidden />
-                </React.Fragment>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setExpanded(true)}
-              className="flex-none h-9 px-3 rounded-lg border border-border bg-card text-sm hover:bg-muted transition-colors"
-            >
-              הצג הכל
-            </button>
-          </div>
-        )}
       </div>
     );
   }
