@@ -3,260 +3,346 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>היסטוריית לקוח — וריאציה 4: מסמך שקט</title>
+<title>מסך ליד — וריאציה 4: מסמך שקט</title>
 <style>
   :root {
-    --paper: hsl(40 30% 99%); --page: hsl(40 14% 94%);
+    --paper: hsl(40 30% 99%); --page: hsl(40 14% 94%); --inset: hsl(40 18% 96.5%);
     --ink: hsl(30 12% 13%); --ink-2: hsl(30 6% 42%); --ink-3: hsl(30 5% 60%);
-    --rule: hsl(30 12% 87%); --rule-soft: hsl(30 12% 92%);
-    --accent: hsl(150 45% 30%);
-    --alert: hsl(4 62% 46%);
+    --rule: hsl(30 12% 86%); --rule-soft: hsl(30 12% 92%);
+    --accent: hsl(150 45% 29%);
+    --alert: hsl(4 62% 45%);
+    --mark: hsl(243 45% 44%);
     --shadow-pop: 0 24px 64px -18px rgb(40 30 20 / .22);
+    /* One step down from the live screen — the same content in less height. */
+    --f-h1: 27px; --f-lg: 13px; --f-md: 12.5px; --f-sm: 11.5px; --f-xs: 10.5px; --f-2xs: 9.5px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --paper: hsl(30 8% 12%); --page: hsl(30 8% 8%);
+      --paper: hsl(30 8% 12%); --page: hsl(30 8% 8%); --inset: hsl(30 8% 15%);
       --ink: hsl(38 18% 92%); --ink-2: hsl(35 8% 64%); --ink-3: hsl(35 6% 48%);
       --rule: hsl(30 8% 24%); --rule-soft: hsl(30 8% 19%);
-      --accent: hsl(150 45% 62%); --alert: hsl(4 75% 68%);
+      --accent: hsl(150 45% 62%); --alert: hsl(4 75% 68%); --mark: hsl(243 70% 74%);
       --shadow-pop: 0 24px 64px -18px rgb(0 0 0 / .7);
     }
   }
   :root[data-theme="dark"] {
-    --paper: hsl(30 8% 12%); --page: hsl(30 8% 8%);
+    --paper: hsl(30 8% 12%); --page: hsl(30 8% 8%); --inset: hsl(30 8% 15%);
     --ink: hsl(38 18% 92%); --ink-2: hsl(35 8% 64%); --ink-3: hsl(35 6% 48%);
     --rule: hsl(30 8% 24%); --rule-soft: hsl(30 8% 19%);
-    --accent: hsl(150 45% 62%); --alert: hsl(4 75% 68%);
+    --accent: hsl(150 45% 62%); --alert: hsl(4 75% 68%); --mark: hsl(243 70% 74%);
     --shadow-pop: 0 24px 64px -18px rgb(0 0 0 / .7);
   }
 
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 24px 16px 60px; direction: rtl; background: var(--page); color: var(--ink);
+    margin: 0; padding: 20px 14px 50px; direction: rtl; background: var(--page); color: var(--ink);
     font-family: 'Heebo','Assistant','Rubik','Noto Sans Hebrew',system-ui,-apple-system,'Segoe UI',sans-serif;
-    font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+    font-size: var(--f-md); line-height: 1.5; -webkit-font-smoothing: antialiased;
     font-variant-numeric: tabular-nums;
   }
-  .wrap { max-width: 940px; margin: 0 auto; }
-  .note { font-size: 12px; color: var(--ink-3); margin: 0 4px 14px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .note { font-size: var(--f-sm); color: var(--ink-3); margin: 0 4px 12px; line-height: 1.6; }
   .note b { color: var(--ink); font-weight: 600; }
   svg.ic { width: 1em; height: 1em; flex: none; }
 
-  .sheet {
-    background: var(--paper); border-radius: 4px; box-shadow: var(--shadow-pop);
-    padding: 44px 52px 40px; position: relative;
-  }
-  .close {
-    position: absolute; top: 20px; left: 22px; border: 0; background: transparent;
-    color: var(--ink-3); cursor: pointer; width: 28px; height: 28px; font-size: 15px;
-    display: grid; place-items: center; border-radius: 6px;
-  }
-  .close:hover { color: var(--ink); }
+  .sheet { background: var(--paper); border-radius: 4px; box-shadow: var(--shadow-pop);
+    padding: 26px 34px 24px; position: relative; }
+  .corner { position: absolute; top: 14px; left: 16px; display: flex; gap: 2px; }
+  .corner button { border: 0; background: transparent; color: var(--ink-3); cursor: pointer;
+    width: 22px; height: 22px; font-size: 13px; display: grid; place-items: center; border-radius: 5px; }
+  .corner button:hover { color: var(--ink); background: var(--inset); }
 
-  /* ── Masthead ──────────────────────────────────────────────────────── */
-  .name {
-    margin: 0; font-size: 40px; font-weight: 300; letter-spacing: -.035em; line-height: 1.05;
-  }
-  .under {
-    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
-    margin-top: 9px; font-size: 13px; color: var(--ink-2);
-  }
+  /* ── Masthead ───────────────────────────────────────────────────────── */
+  .name { margin: 0; font-size: var(--f-h1); font-weight: 300; letter-spacing: -.035em; line-height: 1.05; }
+  .under { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 6px;
+    font-size: var(--f-sm); color: var(--ink-2); }
   .under .ph { direction: ltr; unicode-bidi: isolate; }
   .under .sep { color: var(--rule); }
+  .under .flag { color: var(--alert); font-weight: 600; }
+  .under .mk { color: var(--mark); font-weight: 600; }
+  .under .ok { color: var(--accent); font-weight: 600; }
 
-  /* The one-sentence summary. Everything below is the same facts, itemised —
-     a reader who stops here has already been told the whole story. */
-  .lede {
-    margin: 26px 0 0; padding: 20px 0; font-size: 17px; line-height: 1.75; font-weight: 300;
-    max-width: 68ch;
-    border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule);
-    letter-spacing: -.005em;
-  }
+  /* The whole lead in one sentence. Everything below is the same facts,
+     itemised — a reader who stops here has already been told the story. */
+  .lede { margin: 16px 0 0; padding: 13px 0; font-size: var(--f-lg); line-height: 1.72; font-weight: 300;
+    max-width: 74ch; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--rule); }
   .lede b { font-weight: 600; }
   .lede .money { font-weight: 600; color: var(--accent); }
   .lede .flag { color: var(--alert); font-weight: 600; }
 
-  /* ── Section grid ──────────────────────────────────────────────────── */
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 46px; }
-  section { padding-top: 26px; break-inside: avoid; }
-  section > h2 {
-    margin: 0 0 4px; font-size: 10.5px; font-weight: 700; color: var(--ink-3);
-    letter-spacing: .13em; text-transform: uppercase;
-    display: flex; align-items: baseline; gap: 10px;
-  }
-  section > h2 .tot { margin-inline-start: auto; letter-spacing: 0; text-transform: none; font-size: 11.5px; color: var(--ink-2); font-weight: 600; }
+  /* ── Facts + actions as two ruled lines, not two rows of boxes ──────── */
+  .facts { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 0; padding: 9px 0;
+    border-bottom: 1px solid var(--rule-soft); }
+  .f { padding: 0 12px; min-width: 0; }
+  .f:first-child { padding-inline-start: 0; }
+  .f + .f { border-inline-start: 1px solid var(--rule-soft); }
+  .f dt { font-size: var(--f-2xs); color: var(--ink-3); letter-spacing: .08em; margin: 0 0 2px; }
+  .f dd { margin: 0; font-size: var(--f-sm); font-weight: 600; display: flex; align-items: baseline;
+    gap: 5px; flex-wrap: wrap; min-width: 0; }
+  .f dd .caret { color: var(--ink-3); font-size: 8px; font-weight: 400; }
+  .f .sub { flex-basis: 100%; font-size: var(--f-2xs); color: var(--ink-3); font-weight: 400;
+    margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .f dd.hot { color: var(--alert); }
 
-  /* Dot-leader row: date … label … value. The leader is what lets the eye
-     jump straight across to the number without a table's ruled cells. */
-  .l {
-    display: flex; align-items: baseline; gap: 8px; padding: 7px 0;
-    border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;
-  }
+  .acts { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: var(--f-md); }
+  .acts a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule);
+    padding-bottom: 1px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .acts a:hover { border-bottom-color: var(--ink); }
+  .acts a:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+  .acts a.pri { font-weight: 700; border-bottom-color: var(--ink); }
+  .acts .sp { margin-inline-start: auto; color: var(--ink-3); font-size: var(--f-xs); }
+
+  /* ── Alert lines: a rule and a colour, no fill ──────────────────────── */
+  .line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 7px 0 7px 0;
+    border-bottom: 1px solid var(--rule-soft); font-size: var(--f-sm);
+    border-inline-start: 0; }
+  .line .k { font-weight: 700; font-size: var(--f-xs); letter-spacing: .06em; flex: none; }
+  .line.warn .k { color: var(--alert); }
+  .line.mark .k { color: var(--mark); display: inline-flex; align-items: center; gap: 5px; }
+  .line .go { margin-inline-start: auto; color: var(--mark); font-weight: 600; cursor: pointer; }
+  .line .act { color: var(--ink); border-bottom: 1px solid var(--rule); cursor: pointer; font-weight: 600; }
+
+  /* ── Sections ───────────────────────────────────────────────────────── */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
+  section { padding-top: 16px; }
+  section > h2 { margin: 0 0 3px; font-size: var(--f-2xs); font-weight: 700; color: var(--ink-3);
+    letter-spacing: .13em; display: flex; align-items: baseline; gap: 8px; }
+  section > h2 .tot { margin-inline-start: auto; letter-spacing: 0; font-size: var(--f-xs);
+    color: var(--ink-2); font-weight: 600; }
+
+  /* Dot-leader row: date … label … value. The leader lets the eye jump
+     straight to the number without a table's ruled cells. */
+  .l { display: flex; align-items: baseline; gap: 7px; padding: 4.5px 0;
+    border-bottom: 1px solid var(--rule-soft); font-size: var(--f-sm); }
   .l:last-child { border-bottom: 0; }
-  .l .d { color: var(--ink-3); font-size: 11.5px; flex: none; width: 62px; }
-  .l .t { flex: 0 1 auto; min-width: 0; max-width: 74%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .l .lead {
-    flex: 1; min-width: 12px; align-self: center; height: 1px;
-    border-bottom: 1px dotted var(--rule);
-  }
-  .l .v { flex: none; font-size: 13px; font-weight: 600; }
+  .l .d { color: var(--ink-3); font-size: var(--f-2xs); flex: none; width: 52px; }
+  .l .t { flex: 0 1 auto; min-width: 0; max-width: 76%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .l .lead { flex: 1; min-width: 10px; align-self: center; height: 1px; border-bottom: 1px dotted var(--rule); }
+  .l .v { flex: none; font-size: var(--f-xs); font-weight: 700; }
   .v.acc { color: var(--accent); }
   .v.dim { color: var(--ink-3); font-weight: 400; }
   .v.hot { color: var(--alert); }
-  .l .sub { display: block; font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
+  .l .sub { display: block; font-size: var(--f-2xs); color: var(--ink-3); font-weight: 400; }
+  .l.task { align-items: flex-start; }
+  .l .body { min-width: 0; flex: 1; }
+  .l .body p { margin: 2px 0 0; font-size: var(--f-xs); color: var(--ink-2); line-height: 1.5; }
+  .l .done { flex: none; font-size: var(--f-2xs); font-weight: 700; color: var(--accent);
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); cursor: pointer; }
+  .notebox { margin-top: 4px; border: 1px solid var(--rule); border-radius: 3px; background: var(--inset);
+    padding: 5px 7px; font-size: var(--f-sm); line-height: 1.55; }
 
-  /* ── Year ruler ────────────────────────────────────────────────────── */
-  .ruler { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--rule); }
-  .track { position: relative; height: 40px; }
-  .track .base { position: absolute; top: 20px; right: 0; left: 0; height: 1px; background: var(--rule); }
-  .track .yr {
-    position: absolute; top: 26px; font-size: 10.5px; color: var(--ink-3); letter-spacing: .06em;
-  }
-  .track .yr::before { content: ""; position: absolute; top: -7px; right: 0; width: 1px; height: 6px; background: var(--rule); }
-  .track .ev {
-    position: absolute; top: 14px; transform: translateX(50%);
-    width: 7px; height: 7px; border-radius: 999px; background: var(--ink-3);
-  }
-  .track .ev.big { top: 11px; width: 13px; height: 13px; background: var(--accent); }
-  .track .ev.now { top: 11px; width: 13px; height: 13px; background: var(--alert); }
-  .track .cap {
-    position: absolute; top: -6px; transform: translateX(50%);
-    font-size: 10.5px; color: var(--ink-2); white-space: nowrap;
-  }
+  /* ── Year ruler ─────────────────────────────────────────────────────── */
+  .ruler { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
+  .ruler h2 { margin: 0 0 8px; font-size: var(--f-2xs); font-weight: 700; color: var(--ink-3); letter-spacing: .13em; }
+  /* Four kinds of label want the same few pixels of x around March 2024, so
+     each gets its own horizontal band: lead numbers, then the line and its
+     dots, then the amounts, then the years. */
+  .track { position: relative; height: 56px; }
+  .track .base { position: absolute; top: 26px; right: 0; left: 0; height: 1px; background: var(--rule); }
+  .track .yr { position: absolute; top: 44px; font-size: var(--f-2xs); color: var(--ink-3); letter-spacing: .05em; }
+  .track .yr::before { content: ""; position: absolute; top: -5px; right: 0; width: 1px; height: 4px; background: var(--rule); }
+  .track .ev { position: absolute; top: 22px; transform: translateX(50%);
+    width: 6px; height: 6px; border-radius: 999px; background: var(--ink-3); }
+  .track .ev.big { top: 20px; width: 11px; height: 11px; background: var(--accent); }
+  .track .ev.now { top: 20px; width: 11px; height: 11px; background: var(--alert); }
+  /* Each sibling lead gets a tick above the line — the history is one story
+     even though the data is four Lead rows. */
+  .track .lead-t { position: absolute; top: 12px; width: 1px; height: 12px; background: var(--mark);
+    opacity: .55; transform: translateX(50%); }
+  .track .lead-t span { position: absolute; top: -12px; right: 50%; transform: translateX(50%);
+    font-size: var(--f-2xs); color: var(--mark); font-weight: 700; white-space: nowrap; }
+  .track .cap { position: absolute; top: 30px; transform: translateX(50%);
+    font-size: var(--f-2xs); color: var(--ink-2); white-space: nowrap; }
+  .track .cap.now-cap { color: var(--alert); font-weight: 700; }
 
-  /* ── Footer actions: text, not buttons ─────────────────────────────── */
-  .acts {
-    margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--ink);
-    display: flex; align-items: center; gap: 22px; flex-wrap: wrap; font-size: 13.5px;
-  }
-  .acts a {
-    color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule);
-    padding-bottom: 2px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
-  }
-  .acts a:hover { border-bottom-color: var(--ink); }
-  .acts a.pri { font-weight: 600; border-bottom-color: var(--ink); }
-  .acts .sp { margin-inline-start: auto; color: var(--ink-3); font-size: 12px; }
-
-  @media (max-width: 760px) {
-    .sheet { padding: 32px 24px 30px; }
+  @media (max-width: 820px) {
+    .sheet { padding: 22px 18px 20px; }
     .cols { grid-template-columns: 1fr; gap: 0; }
-    .name { font-size: 32px; }
-    .lede { font-size: 15.5px; }
-    .l .t { max-width: 50%; }
+    .l .t { max-width: 58%; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <p class="note"><b>וריאציה 4 — מסמך שקט.</b> בלי כרטיסים, בלי צללים, בלי מילוי צבע. רק טיפוגרפיה, קווי שיער ומספרים מיושרים. המשפט הפותח מספר את כל הסיפור, וכל מה שמתחתיו הוא אותו סיפור בפירוט. הכי „מינימליסטי״ במובן המילולי.</p>
+  <p class="note"><b>וריאציה 4 — מסמך שקט.</b> אותו מסך ליד בדיוק — כל השדות, כל שש הפעולות, כל הכרטיסים — רק בלי כרטיסים, בלי צללים ובלי מילוי צבע. רק טיפוגרפיה, קווי שיער ומספרים מיושרים. המשפט הפותח מספר את כל הסיפור, וכל מה שמתחתיו הוא אותו סיפור בפירוט. הכי מינימליסטי במובן המילולי, והכי צפוף במידע לגובה.</p>
 
   <div class="sheet">
-    <button class="close" type="button" aria-label="סגור">
-      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-    </button>
+    <div class="corner">
+      <button type="button" title="עוד — המר ללקוח">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="19" r="1.4" fill="currentColor"/></svg>
+      </button>
+      <button type="button" title="סגור">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
 
-    <!-- Masthead -->
+    <!-- ── Masthead ───────────────────────────────────────────────────── -->
     <h1 class="name">זהבה כהן</h1>
     <div class="under">
       <span class="ph">052-822-3351</span>
-      <span class="sep">·</span>
-      <span>zehava.c@gmail.com</span>
-      <span class="sep">·</span>
-      <span>רמת גן</span>
-      <span class="sep">·</span>
-      <span>נציג: מתן לוי</span>
+      <span class="sep">·</span><span class="ph">03-678-9012</span>
+      <span class="sep">·</span><span>zehava.c@gmail.com</span>
+      <span class="sep">·</span><span>רמת גן, הרצל 14</span>
+      <span class="sep">·</span><span class="mk">פנייה 4 מתוך 4</span>
+      <span class="sep">·</span><span class="ok">SLA 4:31 שעות</span>
+      <span class="sep">·</span><span class="flag">קריאת שירות פתוחה</span>
     </div>
 
-    <!-- The whole story in one sentence -->
+    <!-- The whole lead in one sentence -->
     <p class="lede">
-      לקוחה מ‑<b>14 במרץ 2024</b>, שנתיים וחמישה חודשים.
-      רכשה פעמיים בסך <span class="money">₪24,880</span> — מיטה ב‑2024 וספה ב‑2026 — קיבלה
-      <b>4 הצעות</b> וסגרה חצי מהן, פתחה <b>קריאת שירות אחת</b> שנסגרה תוך שישה ימים,
-      ודיברנו איתה <b>31 פעמים</b>. אחרי <b>21 חודשים ללא רכישה</b> היא חזרה מעצמה בפברואר 2026.
-      <span class="flag">כרגע פתוחה פנייה חדשה מהיום</span> — „מחפשת מוצרים שלא קיימים בחברה״ —
-      ומשימת השיחה עליה <span class="flag">באיחור מאתמול</span>.
+      פנייה שנפתחה <b>היום ב‑04:54</b> מטאבולה/אאוטבריין, בסטטוס „מחפש מוצרים שלא קיימים בחברה״ —
+      אבל זו <b>הפנייה הרביעית</b> של אותו אדם. הוא לקוח מ‑<b>14/03/2024</b>, רכש פעמיים בסך
+      <span class="money">₪24,880</span>, קיבל <b>4 הצעות</b> וסגר חצי מהן, פתח <b>קריאת שירות אחת</b>
+      שנסגרה תוך שישה ימים, ודיברנו איתו <b>31 פעמים</b>. אחרי <b>21 חודשים ללא רכישה</b> חזר מעצמו
+      בפברואר 2026. <span class="flag">משימת השיחה עליו באיחור מאתמול 09:44.</span>
     </p>
 
-    <!-- Itemised -->
+    <!-- ── Facts ──────────────────────────────────────────────────────── -->
+    <dl class="facts">
+      <div class="f"><dt>סטטוס</dt><dd class="hot">מחפש מוצרים שלא קיימים<span class="sub" style="color:var(--ink-3)">משתנה דרך משימה</span></dd></div>
+      <div class="f"><dt>מקור הגעה</dt><dd>טאבולה/אאוטבריין<span class="sub">מודעה: Elite — Mattress RMK</span></dd></div>
+      <div class="f"><dt>תאריך כניסה</dt><dd>12/08/2026 04:54<span class="sub">גיל הליד: פחות מיום · עודכן 09:44</span></dd></div>
+      <div class="f"><dt>נציג אחראי</dt><dd>מתן לוי<span class="caret">▾</span><span class="sub">סגר את שתי ההזמנות</span></dd></div>
+      <div class="f"><dt>נציג שני</dt><dd style="color:var(--ink-3);font-weight:400">לא משויך<span class="caret">▾</span></dd></div>
+    </dl>
+
+    <!-- ── Actions ────────────────────────────────────────────────────── -->
+    <div class="acts">
+      <a class="pri" tabindex="0">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.8 2Z"/></svg>
+        חיוג
+      </a>
+      <a tabindex="0">צ׳אט וואטסאפ</a>
+      <a tabindex="0">משימה חדשה</a>
+      <a tabindex="0">הצעה חדשה</a>
+      <a tabindex="0">הזמנה חדשה</a>
+      <a tabindex="0">הוסף תקשורת</a>
+      <a tabindex="0">ערוך ליד</a>
+      <span class="sp">42 אירועים · 4 פניות · עודכן היום 09:44</span>
+    </div>
+
+    <!-- ── The two things that want a decision ────────────────────────── -->
+    <div class="line warn">
+      <span class="k">נציג ממתין לשיוך</span>
+      <span>אורית בן־דוד — הפנייה עדיין ללא בעלים רשמי</span>
+      <span class="act" style="margin-inline-start:auto">שייך נציג זה כראשי</span>
+    </div>
+    <div class="line mark">
+      <span class="k">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>
+        3 פניות קודמות מאותו איש
+      </span>
+      <span>האחרונה 22/02/2026 · לקוח חוזר · נסגרה עסקה</span>
+      <span class="go">הצג את כולן ←</span>
+    </div>
+
+    <!-- ── Itemised ───────────────────────────────────────────────────── -->
     <div class="cols">
+
+      <section>
+        <h2>משימה הבאה <span class="tot" style="color:var(--alert)">באיחור</span></h2>
+        <div class="l task">
+          <span class="d">12/08 09:44</span>
+          <span class="body">
+            <b>שיחה</b> · מתן לוי
+            <p>לחזור אליה עם חלופות למזרן המתכוונן. לבדוק מול המלאי אם אושן פלוס זמין ב‑160×200.</p>
+          </span>
+          <span class="lead"></span>
+          <span class="done">סמן כבוצע</span>
+        </div>
+        <div class="l"><span class="d">14/08</span><span class="t">לשלוח קטלוג מזרנים מתכווננים</span><span class="lead"></span><span class="v dim">פתוחה</span></div>
+        <div class="l"><span class="d">ללא יעד</span><span class="t">מעקב אחרי החלטה</span><span class="lead"></span><span class="v dim">פתוחה</span></div>
+      </section>
+
+      <section>
+        <h2>פרטי שיווק</h2>
+        <div class="l"><span class="t">UTM Source</span><span class="lead"></span><span class="v dim">Outbrain</span></div>
+        <div class="l"><span class="t">UTM Medium</span><span class="lead"></span><span class="v dim">—</span></div>
+        <div class="l"><span class="t">UTM Campaign</span><span class="lead"></span><span class="v dim">—</span></div>
+        <div class="l"><span class="t">UTM Content</span><span class="lead"></span><span class="v dim">—</span></div>
+        <div class="l"><span class="t">UTM Term</span><span class="lead"></span><span class="v dim">Elite</span></div>
+      </section>
+
+      <section>
+        <h2>הצעות מחיר <span class="tot">4 · שתיים נסגרו · 50%</span></h2>
+        <div class="l"><span class="d">28/02/26</span><span class="t">Q‑2261 · ספה תלת „מילאנו״ + שידה</span><span class="lead"></span><span class="v acc">₪11,480</span></div>
+        <div class="l"><span class="d">19/03/24</span><span class="t">Q‑1180 · אושן 160×200 + 2 מזרנים</span><span class="lead"></span><span class="v acc">₪13,400</span></div>
+        <div class="l"><span class="d">16/03/24</span><span class="t">Q‑1147 · אושן ללא מזרנים</span><span class="lead"></span><span class="v dim">פג תוקף</span></div>
+        <div class="l"><span class="d">15/03/24</span><span class="t">Q‑1102 · דגם קלאסיק 140×190</span><span class="lead"></span><span class="v dim">פג תוקף</span></div>
+      </section>
 
       <section>
         <h2>הזמנות <span class="tot">2 · ₪24,880</span></h2>
         <div class="l">
           <span class="d">02/03/26</span>
           <span class="t">#7194 · ספה תלת „מילאנו״ + שידה<span class="sub">סופקה 19/03 · רמת גן, קומה 3 · בזמן</span></span>
-          <span class="lead"></span>
-          <span class="v acc">₪11,480</span>
+          <span class="lead"></span><span class="v acc">₪11,480</span>
         </div>
         <div class="l">
           <span class="d">21/03/24</span>
           <span class="t">#4821 · מיטת „אושן״ 160×200 + 2 מזרנים<span class="sub">סופקה והורכבה 04/04 · בזמן</span></span>
-          <span class="lead"></span>
-          <span class="v acc">₪13,400</span>
+          <span class="lead"></span><span class="v acc">₪13,400</span>
         </div>
       </section>
 
       <section>
-        <h2>הצעות מחיר <span class="tot">4 · שתיים נסגרו</span></h2>
-        <div class="l"><span class="d">28/02/26</span><span class="t">Q‑2261 · ספה מילאנו</span><span class="lead"></span><span class="v acc">התקבלה</span></div>
-        <div class="l"><span class="d">19/03/24</span><span class="t">Q‑1180 · אושן + מזרנים</span><span class="lead"></span><span class="v acc">התקבלה</span></div>
-        <div class="l"><span class="d">16/03/24</span><span class="t">Q‑1147 · אושן ללא מזרנים</span><span class="lead"></span><span class="v dim">פגה</span></div>
-        <div class="l"><span class="d">15/03/24</span><span class="t">Q‑1102 · דגם קלאסיק</span><span class="lead"></span><span class="v dim">פגה</span></div>
-      </section>
-
-      <section>
         <h2>פניות <span class="tot">4</span></h2>
-        <div class="l"><span class="d">12/08/26</span><span class="t">טאבולה/אאוטבריין · Elite<span class="sub">מחפשת מוצרים שלא קיימים בחברה</span></span><span class="lead"></span><span class="v hot">פתוחה</span></div>
+        <div class="l"><span class="d">12/08/26</span><span class="t">טאבולה/אאוטבריין · Elite<span class="sub">מחפש מוצרים שלא קיימים בחברה</span></span><span class="lead"></span><span class="v hot">פתוחה</span></div>
         <div class="l"><span class="d">22/02/26</span><span class="t">לקוח חוזר · הגיעה לסניף</span><span class="lead"></span><span class="v acc">נסגרה עסקה</span></div>
         <div class="l"><span class="d">03/05/24</span><span class="t">בירור אספקה</span><span class="lead"></span><span class="v dim">טופל</span></div>
         <div class="l"><span class="d">14/03/24</span><span class="t">פייסבוק · „מבצע 160×200״</span><span class="lead"></span><span class="v acc">נסגרה עסקה</span></div>
       </section>
 
       <section>
-        <h2>שירות ותקשורת <span class="tot">31 מגעים</span></h2>
+        <h2>שירות ותקשורת <span class="tot">31 מגעים · 74% מענה</span></h2>
         <div class="l"><span class="d">12/04/24</span><span class="t">קריאה #312 · חריקה במסגרת<span class="sub">אחריות · הוחלף בורג · נסגרה 18/04</span></span><span class="lead"></span><span class="v dim">6 ימים</span></div>
         <div class="l"><span class="t">שיחות</span><span class="lead"></span><span class="v dim">18</span></div>
         <div class="l"><span class="t">וואטסאפ</span><span class="lead"></span><span class="v dim">9</span></div>
         <div class="l"><span class="t">מיילים · פגישה בסניף</span><span class="lead"></span><span class="v dim">3 · 1</span></div>
-        <div class="l"><span class="t">אחוז מענה</span><span class="lead"></span><span class="v dim">74%</span></div>
+      </section>
+
+      <section>
+        <h2>פעילות הליד <span class="tot">הכל · תקשורת · משימות · שינויים</span></h2>
+        <div class="l"><span class="d">היום 09:44</span><span class="t">נפתחה משימת שיחה</span><span class="lead"></span><span class="v dim">מתן לוי</span></div>
+        <div class="l"><span class="d">היום 09:25</span><span class="t">שויכה למתן לוי</span><span class="lead"></span><span class="v dim">אוטומטי</span></div>
+        <div class="l"><span class="d">היום 04:54</span><span class="t">הפנייה נוצרה · UTM Term Elite</span><span class="lead"></span><span class="v dim">טאבולה</span></div>
+        <div class="l"><span class="d">19/03/26</span><span class="t">הזמנה #7194 סופקה</span><span class="lead"></span><span class="v dim">בזמן</span></div>
+        <div class="l"><span class="d">25/02/26</span><span class="t">שיחה יוצאת 8 דק׳ · נענה חיובי</span><span class="lead"></span><span class="v dim">מתן לוי</span></div>
+      </section>
+
+      <section>
+        <h2>הערות</h2>
+        <div class="notebox">שאלה על מזרן מתכוונן שלא במלאי. קנתה כאן פעמיים — כדאי להציע את אושן פלוס כתחליף לפני שסוגרים כלא רלוונטי.</div>
       </section>
 
     </div>
 
-    <!-- Year ruler -->
+    <!-- ── Year ruler ─────────────────────────────────────────────────── -->
     <div class="ruler">
+      <h2>ארבע הפניות על ציר אחד · מרץ 2024 → היום</h2>
       <div class="track">
         <span class="base"></span>
         <span class="yr" style="right:0">2024</span>
         <span class="yr" style="right:33.3%">2025</span>
         <span class="yr" style="right:73.3%">2026</span>
 
+        <span class="lead-t" style="right:1.5%"><span>1</span></span>
+        <span class="lead-t" style="right:5.8%"><span>2</span></span>
+        <span class="lead-t" style="right:79%"><span>3</span></span>
+        <span class="lead-t" style="right:98%"><span>4</span></span>
+
         <span class="cap" style="right:2.2%">₪13,400</span>
         <span class="ev big" style="right:2.2%"></span>
         <span class="ev" style="right:1.5%"></span>
         <span class="ev" style="right:4.6%"></span>
         <span class="ev" style="right:5.8%"></span>
-
         <span class="ev" style="right:79%"></span>
         <span class="cap" style="right:80.2%">₪11,480</span>
         <span class="ev big" style="right:80.2%"></span>
-
-        <span class="cap" style="right:98%; color:var(--alert)">היום</span>
+        <span class="cap now-cap" style="right:98%">היום</span>
         <span class="ev now" style="right:98%"></span>
       </div>
-    </div>
-
-    <!-- Actions as text -->
-    <div class="acts">
-      <a class="pri">
-        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.8 2Z"/></svg>
-        חייג
-      </a>
-      <a>וואטסאפ</a>
-      <a>הצעה חדשה</a>
-      <a>משימה חדשה</a>
-      <a>ערוך לקוח</a>
-      <span class="sp">42 אירועים · עודכן לאחרונה היום 09:44</span>
     </div>
 
   </div>
