@@ -56,6 +56,19 @@ import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 import { useContactLeadIds } from '@/hooks/use-contact-lead-ids';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 
+// What the customer actually bought, in one line — "מזרן עילית 1345 ×2 · בסיס
+// מתכוונן". A total alone answers how much they spent, which is never the
+// question a rep is asking when they open a returning customer's history; they
+// want to know what is already in the house. The row truncates and keeps the
+// full list in its tooltip.
+function summarizeOrderItems(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+  return items
+    .filter((item) => item?.name)
+    .map((item) => (Number(item.quantity) > 1 ? `${item.name} ×${item.quantity}` : item.name))
+    .join(' · ');
+}
+
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
   const { getEffectiveUser } = useImpersonation();
@@ -948,64 +961,66 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
               contact, so a returning customer's previous order shows up here
               even though it hangs off the enquiry they placed it from. An
               order from another enquiry says so on its row. */}
-          <TabsContent value="orders" className="mt-4 space-y-4">
-          <Card className="rounded-xl border-border shadow-card overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-muted/50 py-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-                הזמנות ({contactOrders.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {contactOrders.length === 0 ? (
-                <div className="py-4 flex items-center justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">אין הזמנות ללקוח הזה.</span>
-                  <Button size="sm" variant="outline" onClick={() => setShowOrderDialog(true)}>
-                    <ShoppingBag className="h-3.5 w-3.5 me-1" />
-                    הזמנה חדשה
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {contactOrders.map((order) => {
-                    const fromOtherEnquiry = order.lead_id && order.lead_id !== leadId;
-                    return (
-                      <Link
-                        key={order.id}
-                        to={createPageUrl('OrderDetails') + `?id=${order.id}`}
-                        className="block p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+          <TabsContent value="orders" className="mt-3">
+            {contactOrders.length === 0 ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2.5 text-sm">
+                <span className="text-muted-foreground">אין הזמנות ללקוח הזה.</span>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowOrderDialog(true)}>
+                  <ShoppingBag className="h-3.5 w-3.5" />
+                  הזמנה חדשה
+                </Button>
+              </div>
+            ) : (
+              /* A row per order, and the row says what they bought. The tab
+                 already carries the count, so there's no card header repeating
+                 it — a customer with five orders should read as five lines,
+                 not five panels. */
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                {contactOrders.map((order) => {
+                  const fromOtherEnquiry = order.lead_id && order.lead_id !== leadId;
+                  const bought = summarizeOrderItems(order);
+                  return (
+                    <Link
+                      key={order.id}
+                      to={createPageUrl('OrderDetails') + `?id=${order.id}`}
+                      className="flex items-center gap-2 px-3 py-2 border-t first:border-t-0 border-border/50 hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="text-[13px] font-medium flex-shrink-0">#{order.order_number}</span>
+
+                      <span
+                        className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground"
+                        title={bought || undefined}
                       >
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <span className="font-medium">#{order.order_number}</span>
-                          <div className="flex items-center gap-2">
-                            {fromOtherEnquiry ? (
-                              <span
-                                className="inline-flex items-center rounded px-1.5 h-[18px] text-[10px] font-medium bg-indigo-50 text-indigo-700"
-                                title="ההזמנה רשומה על פנייה אחרת של אותו אדם"
-                              >
-                                פנייה אחרת
-                              </span>
-                            ) : null}
-                            <StatusBadge status={order.status} />
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 mt-1">
-                          <p className="text-lg font-bold text-primary m-0">
-                            ₪{order.total?.toLocaleString()}
-                          </p>
-                          {order.created_date ? (
-                            <span className="text-xs text-muted-foreground tabular-nums">
-                              {formatInTimeZone(order.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy')}
-                            </span>
-                          ) : null}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                        {bought || '—'}
+                      </span>
+
+                      {fromOtherEnquiry ? (
+                        <span
+                          className="inline-flex items-center rounded px-1.5 h-[18px] text-[10px] font-medium bg-indigo-50 text-indigo-700 flex-shrink-0"
+                          title="ההזמנה רשומה על פנייה אחרת של אותו אדם"
+                        >
+                          פנייה אחרת
+                        </span>
+                      ) : null}
+
+                      {/* Only when there is one. An order with an empty status
+                          rendered as a blank grey pill — a badge saying nothing. */}
+                      {order.status ? <StatusBadge status={order.status} className="flex-shrink-0" /> : null}
+
+                      <span className="text-[13px] font-bold text-primary tabular-nums flex-shrink-0">
+                        ₪{order.total?.toLocaleString()}
+                      </span>
+
+                      {order.created_date ? (
+                        <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">
+                          {formatInTimeZone(order.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy')}
+                        </span>
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </TabsContent>
 
           {/* Service — its own tab now. It shares nothing with quotes except
