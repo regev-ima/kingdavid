@@ -62,26 +62,30 @@ export default function OtherEnquiriesCard({ lead }) {
         </span>
       </div>
 
-      <ul className="list-none m-0 p-0 max-h-[200px] overflow-y-auto">
+      {/* One line per enquiry — status, source and date side by side rather
+          than the date on a row of its own. Three previous enquiries used to
+          cost 250px to say three dates. Long status labels are clipped at the
+          row's edge instead of wrapping; the full label is in the row's title
+          and on the enquiry itself. */}
+      <ul className="list-none m-0 p-0 max-h-[168px] overflow-y-auto">
         {siblings.map((enquiry) => {
           const when = parseDbTimestamp(enquiry.effective_sort_date || enquiry.created_date);
           return (
             <li key={enquiry.id} className="border-t border-border/50 first:border-t-0">
               <Link
                 to={`${createPageUrl('LeadDetails')}?id=${enquiry.id}`}
-                className="flex items-center gap-2 px-4 py-2 hover:bg-indigo-50/60 transition-colors"
+                className="flex items-center gap-2 px-4 py-1.5 hover:bg-indigo-50/60 transition-colors"
+                title="פתח את הפנייה"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 flex-wrap">
-                    <StatusBadge status={enquiry.status} />
-                    <SourceBadge source={enquiry.source} />
-                  </span>
-                  {when ? (
-                    <span className="block mt-1 text-[11px] text-muted-foreground/70 tabular-nums">
-                      {format(when, 'dd/MM/yyyy')}
-                    </span>
-                  ) : null}
+                <span className="min-w-0 flex-1 flex items-center gap-1.5 overflow-hidden">
+                  <StatusBadge status={enquiry.status} className="flex-none whitespace-nowrap" />
+                  <SourceBadge source={enquiry.source} />
                 </span>
+                {when ? (
+                  <span className="text-[11px] text-muted-foreground/70 tabular-nums flex-none">
+                    {format(when, 'dd/MM/yyyy')}
+                  </span>
+                ) : null}
                 <ArrowLeft className="h-3.5 w-3.5 text-indigo-600 flex-none" />
               </Link>
             </li>
