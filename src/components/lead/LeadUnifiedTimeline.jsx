@@ -29,7 +29,12 @@ import { getRepDisplayName } from '@/lib/repDisplay';
 import StatusBadge from '@/components/shared/StatusBadge';
 import RecordingPlayer from '@/components/call/RecordingPlayer';
 import { ALL_TASK_TYPE_LABELS, LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
-import { buildContactLog, contactOutcomeLabel, formatCallDuration } from '@/lib/leadContactLog';
+import {
+  buildContactLog,
+  contactOutcomeLabel,
+  formatCallDuration,
+  phoneMatchVariants,
+} from '@/lib/leadContactLog';
 
 // ── shared text helpers (kept identical to the old LeadActivityTimeline so
 // historical entries read exactly the same) ───────────────────────────────
@@ -173,6 +178,8 @@ function summarizeEvent(event) {
 
 export default function LeadUnifiedTimeline({
   leadId,
+  // The lead itself, for the phone numbers the call matching needs.
+  lead,
   tasks = [],
   users = [],
   onOpenTask,
@@ -202,13 +209,29 @@ export default function LeadUnifiedTimeline({
   });
 
   // Calls the phone system saw — click-to-call and everything Voicenter's CDR
-  // sync matched back to this lead. This feed used to skip call_logs entirely,
-  // which meant the lead screen showed status changes and closed tasks but not
-  // a single actual conversation: "מתי דיברו איתו" had no answer anywhere on
-  // the page, not even after opening the full activity.
+  // sync recorded. This feed used to skip call_logs entirely, which meant the
+  // lead screen showed status changes and closed tasks but not a single actual
+  // conversation: "מתי דיברו איתו" had no answer anywhere on the page, not
+  // even after opening the full activity.
+  //
+  // Matched by phone as well as by lead_id, because the sync leaves lead_id
+  // null on most rows (it resolves leads with an in-memory .find() over a
+  // single page of them). The number on the row is the link that survived.
+  const phoneVariants = useMemo(
+    () => phoneMatchVariants(lead?.phone, lead?.phone_2),
+    [lead?.phone, lead?.phone_2],
+  );
   const { data: calls = [] } = useQuery({
-    queryKey: ['lead-call-logs', leadId],
-    queryFn: () => base44.entities.CallLog.filter({ lead_id: leadId }),
+    queryKey: ['lead-call-logs', leadId, phoneVariants.join('|')],
+    queryFn: async () => {
+      const batches = await Promise.all([
+        base44.entities.CallLog.filter({ lead_id: leadId }),
+        phoneVariants.length
+          ? base44.entities.CallLog.filter({ phone_number: { $in: phoneVariants } })
+          : [],
+      ]);
+      return batches.flat();
+    },
     enabled: !!leadId,
     staleTime: 60000,
   });

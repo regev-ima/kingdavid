@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import {
@@ -16,7 +17,12 @@ import RecordingPlayer from '@/components/call/RecordingPlayer';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import { hebrewTimeAgo } from '@/lib/hebrewDuration';
-import { buildContactLog, contactOutcomeLabel, formatCallDuration } from '@/lib/leadContactLog';
+import {
+  buildContactLog,
+  contactOutcomeLabel,
+  formatCallDuration,
+  phoneMatchVariants,
+} from '@/lib/leadContactLog';
 import { useContactLeadIds } from '@/hooks/use-contact-lead-ids';
 
 /**
@@ -66,17 +72,30 @@ export default function LeadContactLogCard({ lead, users = [], onAddCommunicatio
   // yet" on the enquiry the rep was holding while the call sat on a sibling
   // they'd have to go find.
   const contactLeadIds = useContactLeadIds(lead);
+  // …and by phone number, because most call_logs rows never got a lead_id at
+  // all: the sync attaches calls by loading every lead into memory and running
+  // .find() over it, which only sees the first page the database returns. The
+  // number on the row is the link that actually survived.
+  const phoneVariants = useMemo(
+    () => phoneMatchVariants(lead?.phone, lead?.phone_2),
+    [lead?.phone, lead?.phone_2],
+  );
 
   const { data: entries = [], isLoading } = useQuery({
-    queryKey: ['lead-contact-log', leadId, contactLeadIds.join('|')],
+    queryKey: ['lead-contact-log', leadId, contactLeadIds.join('|'), phoneVariants.join('|')],
     enabled: !!leadId && contactLeadIds.length > 0,
     staleTime: 60_000,
     queryFn: async () => {
-      const [callBatches, commBatches] = await Promise.all([
-        Promise.all(contactLeadIds.map((id) => base44.entities.CallLog.filter({ lead_id: id }))),
+      const [calls, comms] = await Promise.all([
+        Promise.all([
+          ...contactLeadIds.map((id) => base44.entities.CallLog.filter({ lead_id: id })),
+          phoneVariants.length
+            ? base44.entities.CallLog.filter({ phone_number: { $in: phoneVariants } })
+            : [],
+        ]),
         Promise.all(contactLeadIds.map((id) => base44.entities.CommunicationLog.filter({ lead_id: id }))),
       ]);
-      return buildContactLog(callBatches.flat(), commBatches.flat());
+      return buildContactLog(calls.flat(), comms.flat());
     },
   });
 

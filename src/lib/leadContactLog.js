@@ -47,6 +47,47 @@ export const CONTACT_OUTCOME_LABELS = {
 
 export const contactOutcomeLabel = (code) => CONTACT_OUTCOME_LABELS[code] || code || '';
 
+/**
+ * Every shape a customer's number appears in inside `call_logs.phone_number`.
+ *
+ * The sync writes whatever the CDR handed it, so the same person shows up as
+ * `0509025115` on one row and `972504034049` on the next. And `lead_id` is
+ * null on most rows — matching a call to a lead is done by loading every lead
+ * into memory and running `.find()` over it, which only ever sees the first
+ * page the database returns, so the call is written unattached and stays that
+ * way. The phone number, though, is right there on the row.
+ *
+ * So the lead screen matches on the number as well as on `lead_id`: it costs
+ * one more query and it recovers the entire history the failed attachment lost,
+ * without a migration and without waiting on a backfill.
+ *
+ * Takes any number of raw numbers (phone, phone_2) and returns the exact
+ * strings worth an equality match. Numbers stored with separators inside
+ * call_logs would still be missed — those need normalizing at the source.
+ */
+export function phoneMatchVariants(...phones) {
+  const variants = new Set();
+
+  for (const raw of phones) {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    if (digits.length < 9) continue;
+
+    let local;
+    if (digits.startsWith('972')) local = `0${digits.slice(3)}`;
+    else if (digits.startsWith('0')) local = digits;
+    else local = `0${digits}`;
+
+    const international = `972${local.slice(1)}`;
+
+    variants.add(local);
+    variants.add(international);
+    variants.add(`+${international}`);
+    variants.add(digits);
+  }
+
+  return [...variants];
+}
+
 // Call length as m:ss. Anything falsy is "no duration recorded", not 0:00 —
 // the caller decides whether to print it.
 export function formatCallDuration(seconds) {
@@ -112,12 +153,23 @@ export function normalizeCommunicationLog(row) {
  * `includeNotes` because there everything belongs.
  */
 export function buildContactLog(calls, comms, { includeNotes = false } = {}) {
-  const entries = [
-    ...(calls || []).filter((row) => row?.id).map(normalizeCallLog),
-    ...(comms || [])
-      .filter((row) => row?.id && (includeNotes || row.type !== 'note'))
-      .map(normalizeCommunicationLog),
-  ];
+  // Deduped by row: a call is fetched both by lead_id and by phone number, so
+  // the one call that IS properly attached comes back through both doors.
+  const entries = [];
+  const seen = new Set();
+
+  const push = (row, normalize) => {
+    if (!row?.id || seen.has(`${normalize.name}-${row.id}`)) return;
+    seen.add(`${normalize.name}-${row.id}`);
+    entries.push(normalize(row));
+  };
+
+  for (const row of calls || []) push(row, normalizeCallLog);
+  for (const row of comms || []) {
+    if (!includeNotes && row?.type === 'note') continue;
+    push(row, normalizeCommunicationLog);
+  }
+
   entries.sort((a, b) => b.ts - a.ts);
   return entries;
 }

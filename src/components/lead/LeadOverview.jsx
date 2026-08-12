@@ -708,6 +708,7 @@ export default function LeadOverview({
           collapsible
           className="max-h-[560px]"
           leadId={lead?.id}
+          lead={lead}
           tasks={tasks}
           users={users}
           onOpenTask={onOpenTask}
