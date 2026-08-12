@@ -7,6 +7,7 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import QuickActions from '@/components/shared/QuickActions';
+import UserAvatar from '@/components/shared/UserAvatar';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import { Phone, Users, FileText, ShoppingCart, MessageCircle, AlertCircle } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
@@ -93,6 +94,13 @@ export default function LeadListTable({
   // "פנייה נוספת" — which of the visible leads are a repeat enquiry from
   // someone who already came in before. One batched query for the page.
   const repeatEnquiries = useRepeatEnquiries(leads);
+
+  // Rep lookup for the נציג column, so its avatar gets the real user row
+  // (photo included) rather than a name-and-email stub.
+  const userByEmail = useMemo(
+    () => new Map((users || []).filter((u) => u?.email).map((u) => [u.email, u])),
+    [users],
+  );
 
   // The list arrives sorted by activity date, which says nothing about what
   // needs doing. A lead whose next task is due right now (±60 min) belongs at
@@ -240,7 +248,17 @@ export default function LeadListTable({
           );
         }
         const name = repNameByEmail.get(row.rep1) || row.rep1;
-        return <p className="text-sm truncate" title={name}>{name}</p>;
+        // The rep's own colour + icon, unique to them across the team, so a
+        // manager scanning the column recognises the owner before reading the
+        // name. Falls back to a synthetic user when the caller didn't pass a
+        // roster — the identity is keyed on the email either way.
+        const rep = userByEmail.get(row.rep1) || { email: row.rep1, full_name: name };
+        return (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <UserAvatar user={rep} size="xs" />
+            <span className="text-sm truncate" title={name}>{name}</span>
+          </div>
+        );
       },
     },
     {

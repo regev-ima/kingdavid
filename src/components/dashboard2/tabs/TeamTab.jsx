@@ -27,6 +27,7 @@ import { startOfDay, endOfDay, subDays } from '@/lib/safe-date-fns';
 import useDashboard2Data from '@/components/dashboard2/useDashboard2Data';
 import { getDemoData } from '@/components/dashboard2/demoData';
 import { TASK_STATUS_OPTIONS } from '@/constants/leadOptions';
+import UserAvatar from '@/components/shared/UserAvatar';
 
 // Time windows specific to the Team tab — independent of the global
 // Dashboard2 range picker. The product brief calls these out explicitly:
@@ -49,25 +50,10 @@ const PREV_LABEL_BY_ID = {
   '6m': 'חצי שנה קודמת',
 };
 
-const AVATAR_PALETTE = [
-  'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
-  'bg-violet-500', 'bg-cyan-500', 'bg-orange-500', 'bg-pink-500',
-  'bg-teal-500', 'bg-indigo-500',
-];
-
-function colorForRep(rep, idx) {
-  const key = rep?.email || rep?.full_name || String(idx);
-  let hash = 0;
-  for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) | 0;
-  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
-}
-
-function initialsFor(name = '') {
-  const parts = String(name).trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '–';
-  if (parts.length === 1) return parts[0].slice(0, 2);
-  return (parts[0][0] || '') + (parts[1][0] || '');
-}
+// Rep avatars come from UserAvatar, which draws the colour and icon the whole
+// team's assignment gave that rep (see lib/repIdentity). This tab used to hash
+// its own ten-colour palette, so the same person could be teal here and violet
+// on the leads screen — the point of an identity is that it doesn't move.
 
 function formatCurrency(value) {
   return `₪${Number(value || 0).toLocaleString()}`;
@@ -338,10 +324,8 @@ function aggregateTeam(reps) {
 // One rep "chip" at the top of the tab. Doubles as a filter selector —
 // clicking it scopes the detail panel below to that rep (or back to the
 // aggregate when "כל הצוות" is selected).
-function RepChip({ rep, idx, selected, onClick, isAggregate, trend }) {
+function RepChip({ rep, selected, onClick, isAggregate, trend }) {
   const tier = tierFor(rep.conversion);
-  const color = isAggregate ? 'bg-indigo-600' : colorForRep(rep, idx);
-  const initials = isAggregate ? 'כל' : initialsFor(rep.full_name || rep.email);
   return (
     <button
       type="button"
@@ -354,9 +338,13 @@ function RepChip({ rep, idx, selected, onClick, isAggregate, trend }) {
       title={rep.full_name || rep.email}
     >
       <span className="relative">
-        <span className={`h-8 w-8 rounded-full ${color} text-white text-xs font-bold flex items-center justify-center ring-2 ${selected ? 'ring-primary/40' : 'ring-white'}`}>
-          {initials}
-        </span>
+        {isAggregate ? (
+          <span className={`h-8 w-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center ring-2 ${selected ? 'ring-primary/40' : 'ring-white'}`}>
+            כל
+          </span>
+        ) : (
+          <UserAvatar user={rep} size="sm" className={`ring-2 ${selected ? 'ring-primary/40' : 'ring-white'}`} />
+        )}
         {!isAggregate ? (
           <span className={`absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full ${tier.dot} ring-2 ring-background`} />
         ) : null}
@@ -695,7 +683,6 @@ export default function TeamTab({ demoMode = false }) {
             <div className="flex gap-2 overflow-x-auto pb-1">
               <RepChip
                 rep={teamAgg}
-                idx={-1}
                 isAggregate
                 selected={selectedKey === '__team__'}
                 onClick={() => setSelectedKey('__team__')}
@@ -706,7 +693,6 @@ export default function TeamTab({ demoMode = false }) {
                   <RepChip
                     key={key}
                     rep={r}
-                    idx={idx}
                     selected={selectedKey === key}
                     trend={repTrends.get(key)}
                     onClick={() => setSelectedKey(key)}
@@ -723,9 +709,13 @@ export default function TeamTab({ demoMode = false }) {
         <CardHeader className="pb-2 border-b border-border/50">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span className={`h-10 w-10 rounded-full ${isAggregate ? 'bg-indigo-600' : colorForRep(selectedRep, 0)} text-white text-sm font-bold flex items-center justify-center`}>
-                {isAggregate ? 'כל' : initialsFor(selectedRep.full_name || selectedRep.email)}
-              </span>
+              {isAggregate ? (
+                <span className="h-10 w-10 rounded-full bg-indigo-600 text-white text-sm font-bold flex items-center justify-center">
+                  כל
+                </span>
+              ) : (
+                <UserAvatar user={selectedRep} size="md" />
+              )}
               <div>
                 <p className="text-base font-bold text-foreground">
                   {isAggregate ? 'כל הצוות' : (selectedRep.full_name || selectedRep.email || 'לא ידוע')}
