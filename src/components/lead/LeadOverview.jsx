@@ -229,12 +229,13 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
             title={notes ? `${title}\n\n${notes}` : title}
             className="min-w-0 flex-1 text-start rounded-lg px-2 py-1 -mx-2 hover:bg-muted transition-colors"
           >
-            <span className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[13.5px] font-bold truncate">{title}</span>
-              {notes ? (
-                <MessageSquare className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
-              ) : null}
-            </span>
+            <span className="block text-[13.5px] font-bold truncate">{title}</span>
+            {notes ? (
+              <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground/90 min-w-0">
+                <MessageSquare className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{notes}</span>
+              </span>
+            ) : null}
             <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums truncate">
               <CalendarDays className="h-3 w-3 flex-shrink-0" />
               {dueDate ? formatInTimeZone(dueDate, 'Asia/Jerusalem', 'dd/MM/yyyy') : 'ללא תאריך יעד'}
