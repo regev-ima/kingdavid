@@ -1,5 +1,6 @@
 import { createServiceClient } from '../_shared/supabase.ts';
 import {
+  readErrorMessage,
   readIdNumber,
   readPaymentsCount,
   recordPaymentAttempt,
@@ -135,6 +136,7 @@ Deno.serve(async (req) => {
           hyp_attempt_id: orderParam,
           status: 'declined',
           ccode,
+          err_msg: readErrorMessage(params) || null,
           amount: Number.isFinite(amount) && amount > 0 ? amount : null,
           source: 'hyp-notify',
           recorded_by: 'hyp-notify',
@@ -168,6 +170,7 @@ Deno.serve(async (req) => {
           hyp_attempt_id: orderParam,
           status: 'unknown',
           ccode,
+          err_msg: readErrorMessage(params) || null,
           amount,
           source: 'hyp-notify',
           recorded_by: 'hyp-notify',

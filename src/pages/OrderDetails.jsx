@@ -742,6 +742,13 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                               ) : null}
                             </div>
 
+                            {/* Hyp's own words for what went wrong — e.g.
+                                "דחה עסקה : cvv2/id (6) שגוי". More accurate
+                                than any table of code meanings we could keep. */}
+                            {attempt?.err_msg ? (
+                              <p className="text-[12px] text-foreground/90 mt-1 mb-0">{attempt.err_msg}</p>
+                            ) : null}
+
                             {unresolved ? (
                               <p className="text-[11px] text-amber-800 mt-1 mb-0">
                                 לא הצלחנו לאמת מול Hyp אם החיוב עבר. בדוק מולם לפני חיוב חוזר.

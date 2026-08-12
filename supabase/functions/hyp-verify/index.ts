@@ -1,5 +1,6 @@
 import { createServiceClient, getUser, getCorsHeaders } from '../_shared/supabase.ts';
 import {
+  readErrorMessage,
   readIdNumber,
   readPaymentsCount,
   recordPaymentAttempt,
@@ -128,6 +129,7 @@ Deno.serve(async (req) => {
           hyp_attempt_id: String(getObjCi(hypParams, 'Order') ?? ''),
           status: 'declined',
           ccode: declaredCCode,
+          err_msg: readErrorMessage(hypParams) || null,
           amount: Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : null,
           source: 'hyp-verify',
           recorded_by: user.email || 'hyp-verify',
@@ -136,7 +138,13 @@ Deno.serve(async (req) => {
       }
 
       return Response.json(
-        { verified: false, declined: true, ccode: declaredCCode, iframe_params: hypParams },
+        {
+          verified: false,
+          declined: true,
+          ccode: declaredCCode,
+          err_msg: readErrorMessage(hypParams),
+          iframe_params: hypParams,
+        },
         { status: 200, headers: corsHeaders },
       );
     }
@@ -156,6 +164,7 @@ Deno.serve(async (req) => {
           hyp_attempt_id: String(getObjCi(hypParams, 'Order') ?? ''),
           status: 'unknown',
           ccode: declaredCCode || null,
+          err_msg: readErrorMessage(hypParams) || null,
           amount: Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : null,
           source: 'hyp-verify',
           recorded_by: user.email || 'hyp-verify',
@@ -269,6 +278,7 @@ Deno.serve(async (req) => {
             hyp_attempt_id: String(getObjCi(hypParams, 'Order') ?? ''),
             status: 'unknown',
             ccode: iframeCCode || externalCCode || null,
+            err_msg: readErrorMessage(hypParams) || readErrorMessage(externalReplyObj) || null,
             amount: Number.isFinite(clientAmount) && clientAmount > 0 ? clientAmount : null,
             source: 'hyp-verify',
             recorded_by: user.email || 'hyp-verify',
@@ -281,6 +291,7 @@ Deno.serve(async (req) => {
             verified: false,
             unresolved: true,
             ccode: iframeCCode || externalCCode,
+            err_msg: readErrorMessage(hypParams) || readErrorMessage(externalReplyObj),
             source: 'iframe_redirect',
             hyp_reply: externalReplyObj,
             iframe_params: hypParams,

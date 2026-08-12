@@ -76,9 +76,10 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
             // Only a confirmed, recorded payment auto-closes the dialog.
             setTimeout(() => onOpenChange(false), 1200);
           } else if (verifyResult?.declined) {
-            setError(
-              `הכרטיס לא עבר — החיוב לא בוצע. קוד השגיאה של Hyp: ${verifyResult.ccode || data.ccode || '-'}. אפשר לנסות שוב או בכרטיס אחר.`,
-            );
+            const reason = verifyResult.err_msg || data.err_msg
+              || `קוד השגיאה של Hyp: ${verifyResult.ccode || data.ccode || '-'}`;
+            setError(`הכרטיס לא עבר — ${reason}. הניסיון נרשם על ההזמנה.`);
+            onPaid?.({ ...data, declined: true });
           } else {
             // The one genuinely ambiguous outcome. hyp-verify has already
             // filed it on the order as "דורש בירור", so the rep isn't the only
@@ -114,20 +115,29 @@ export default function HypPaymentDialog({ open, onOpenChange, order, onPaid }) 
         // A decline is a fact, not an unknown: the card was not charged. Sent
         // to hyp-verify anyway — not to verify anything, but so the attempt is
         // written to the order instead of disappearing with this dialog.
+        let recorded = false;
         try {
-          await base44.functions.invoke('hyp-verify', {
+          const result = await base44.functions.invoke('hyp-verify', {
             order_id: order?.id,
             transaction_id: data.transaction_id || undefined,
             hyp_params: data.all_params || null,
             ccode: data.ccode || undefined,
             amount: signedAmountRef.current || undefined,
           });
+          recorded = !!result?.declined;
         } catch (err) {
-          console.error('[HypPaymentDialog] failed to record declined attempt:', err);
+          console.error('[HypDialog] failed to record declined attempt:', err);
         }
+        // Hyp's own wording beats a code — and beats a table of code meanings
+        // we'd have had to write and keep current ourselves.
+        const reason = data.err_msg || `קוד השגיאה של Hyp: ${data.ccode || '-'}`;
+        // Say whether it was filed. A record that quietly failed to save is the
+        // same problem this whole change exists to remove.
         setError(
-          `הכרטיס לא עבר — החיוב לא בוצע. קוד השגיאה של Hyp: ${data.ccode || '-'}. אפשר לנסות שוב או בכרטיס אחר.`,
+          `הכרטיס לא עבר — ${reason}. אפשר לנסות שוב או בכרטיס אחר.`
+          + (recorded ? ' הניסיון נרשם על ההזמנה.' : ' (הניסיון לא נרשם על ההזמנה — בדוק את הלוגים.)'),
         );
+        onPaid?.({ ...data, declined: true });
       }
     };
     window.addEventListener('message', handler);
