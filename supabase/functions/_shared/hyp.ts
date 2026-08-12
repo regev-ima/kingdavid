@@ -38,6 +38,16 @@ export function readHypField(source: FieldSource, ...names: string[]): string | 
 // most-likely-first; the lookup is case-insensitive so only spelling varies.
 const PAYMENTS_COUNT_NAMES = ['Payments', 'Tashlumim', 'Tash', 'NumOfPayments', 'PaymentsNum'];
 const ID_NUMBER_NAMES = ['UserId', 'ClientId', 'Uid', 'IdNumber', 'TZ'];
+// Hyp names the decline reason itself, in Hebrew, on the redirect it sends
+// back — e.g. "דחה עסקה : cvv2/id (6) שגוי". We were showing only the numeric
+// CCode beside it and were about to hand-write a table of code meanings; there
+// is no need, and no way that table could have been more accurate than this.
+const ERROR_MESSAGE_NAMES = ['errMsg', 'ErrMsg', 'errmsg', 'ErrorMessage', 'Error'];
+
+/** Hyp's own words for what went wrong, or '' when it didn't say. */
+export function readErrorMessage(source: FieldSource): string {
+  return String(readHypField(source, ...ERROR_MESSAGE_NAMES) ?? '').trim();
+}
 
 /**
  * How many installments the charge was split into ("מספר תשלומים").
@@ -91,6 +101,8 @@ export async function recordPaymentAttempt(
     hyp_attempt_id?: string | null;
     status: 'declined' | 'unknown';
     ccode?: string | null;
+    /** Hyp's own description of the failure — see readErrorMessage. */
+    err_msg?: string | null;
     amount?: number | null;
     source: string;
     recorded_by?: string | null;

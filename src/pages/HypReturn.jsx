@@ -26,6 +26,10 @@ export default function HypReturn() {
   };
 
   const ccode = get('CCode') || '';
+  // Hyp names the reason itself, in Hebrew — "דחה עסקה : cvv2/id (6) שגוי".
+  // We were about to hand-write a table of CCode meanings; their own wording
+  // is both more accurate and always current, so it's what the rep reads.
+  const errMsg = (get('errMsg') || get('ErrMsg') || '').trim();
   const transactionId = get('Id') || get('TransId') || get('TransactionId') || '';
   // Hyp drops the query string we put on Succesful/Failed and replaces it
   // with its own params, so the `status` we set in hyp-sign never makes it
@@ -47,6 +51,7 @@ export default function HypReturn() {
           status,
           order: orderId,
           ccode,
+          err_msg: errMsg,
           transaction_id: transactionId,
           all_params: allParams,
         },
@@ -56,7 +61,7 @@ export default function HypReturn() {
       // ignore — parent on a different origin would block postMessage, but
       // our flow keeps everything on the same origin.
     }
-  }, [status, orderId, ccode, transactionId, allParams]);
+  }, [status, orderId, ccode, errMsg, transactionId, allParams]);
 
   const isSuccess = status === 'success';
 
@@ -72,6 +77,9 @@ export default function HypReturn() {
         <>
           <XCircle className="h-12 w-12 text-red-500" />
           <p className="font-medium">הכרטיס לא עבר</p>
+          {errMsg ? (
+            <p className="text-sm font-medium text-foreground">{errMsg}</p>
+          ) : null}
           <p className="text-sm text-muted-foreground">החיוב לא בוצע. אפשר לנסות שוב או בכרטיס אחר.</p>
           {ccode && (
             <p className="text-xs text-muted-foreground">
