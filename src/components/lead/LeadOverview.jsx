@@ -38,6 +38,8 @@ import StatusBadge from '@/components/shared/StatusBadge';
 import SLABadge from '@/components/sla/SLABadge';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
+import LeadContactLogCard from '@/components/lead/LeadContactLogCard';
+import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
 import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import { formatSourceLabel, ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
 import SourceBadge from '@/components/shared/SourceBadge';
@@ -685,13 +687,28 @@ export default function LeadOverview({
             </div>
           </section>
 
-          <NextTaskCard
-            queue={queue}
-            salesReps={salesReps}
-            onOpenTask={onOpenTask}
-            onCompleteTask={onCompleteTask}
-            onAddTask={onAddTask}
-          />
+          {/* What to do next, who we already spoke to, and whether we've met
+              this person before — the three things a rep reads on the way to
+              picking up the phone, stacked in that order. The contact log and
+              the previous enquiries used to be nowhere and at the foot of the
+              page respectively. */}
+          <div className="space-y-4">
+            <NextTaskCard
+              queue={queue}
+              salesReps={salesReps}
+              onOpenTask={onOpenTask}
+              onCompleteTask={onCompleteTask}
+              onAddTask={onAddTask}
+            />
+
+            <LeadContactLogCard
+              leadId={lead?.id}
+              users={users}
+              onAddCommunication={onAddCommunication}
+            />
+
+            <OtherEnquiriesCard lead={lead} />
+          </div>
         </div>
 
         {/* Activity — the collapsed track: three most recent events, "הצג

@@ -27,7 +27,9 @@ import {
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { getRepDisplayName } from '@/lib/repDisplay';
 import StatusBadge from '@/components/shared/StatusBadge';
+import RecordingPlayer from '@/components/call/RecordingPlayer';
 import { ALL_TASK_TYPE_LABELS, LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { buildContactLog, contactOutcomeLabel, formatCallDuration } from '@/lib/leadContactLog';
 
 // ── shared text helpers (kept identical to the old LeadActivityTimeline so
 // historical entries read exactly the same) ───────────────────────────────
@@ -126,15 +128,6 @@ const COMM_TYPE = {
   email:    { icon: Mail,          label: 'אימייל',  tone: 'bg-purple-100 text-purple-700' },
   meeting:  { icon: CalendarDays,  label: 'פגישה',   tone: 'bg-amber-100 text-amber-700' },
 };
-const COMM_OUTCOME_LABELS = {
-  answered_positive: 'נענה - חיובי',
-  answered_neutral: 'נענה - ניטרלי',
-  answered_negative: 'נענה - שלילי',
-  no_answer: 'לא נענה',
-  voicemail: 'הותיר הודעה',
-  sent: 'נשלח',
-};
-
 const FILTERS = [
   { key: 'all', label: 'הכל' },
   { key: 'communication', label: 'תקשורת' },
@@ -144,10 +137,12 @@ const FILTERS = [
 
 /**
  * One chronological feed that merges the lead's activity log (status changes,
- * rep assignments, quote creation, field edits…) with its closed tasks
- * (done / not-done / cancelled). Replaces the old separate "task history" and
- * "activity log" blocks. Self-contained: fetches the activity log itself and
- * takes the lead's tasks + users as props (the lead screen already loads both).
+ * rep assignments, quote creation, field edits…), its closed tasks
+ * (done / not-done / cancelled), and every conversation with the customer —
+ * phone calls the switchboard recorded as well as communication a rep logged
+ * by hand. Replaces the old separate "task history" and "activity log" blocks.
+ * Self-contained: fetches the logs itself and takes the lead's tasks + users as
+ * props (the lead screen already loads both).
  */
 // One event boiled down to what the collapsed track shows: a coloured bubble,
 // a few words, and when. Built from the same metadata tables the full feed
@@ -206,6 +201,18 @@ export default function LeadUnifiedTimeline({
     staleTime: 60000,
   });
 
+  // Calls the phone system saw — click-to-call and everything Voicenter's CDR
+  // sync matched back to this lead. This feed used to skip call_logs entirely,
+  // which meant the lead screen showed status changes and closed tasks but not
+  // a single actual conversation: "מתי דיברו איתו" had no answer anywhere on
+  // the page, not even after opening the full activity.
+  const { data: calls = [] } = useQuery({
+    queryKey: ['lead-call-logs', leadId],
+    queryFn: () => base44.entities.CallLog.filter({ lead_id: leadId }),
+    enabled: !!leadId,
+    staleTime: 60000,
+  });
+
   // Closed tasks (anything that's no longer "not_completed") become entries.
   const closedTasks = useMemo(
     () => tasks.filter((t) => String(t?.task_status || '').toLowerCase() !== 'not_completed'),
@@ -228,17 +235,16 @@ export default function LeadUnifiedTimeline({
         : new Date(task.created_date || 0).getTime();
       out.push({ id: `task-${task.id}`, kind: 'task', ts: ts || 0, task });
     }
-    for (const comm of comms) {
-      out.push({
-        id: `comm-${comm.id}`,
-        kind: 'communication',
-        ts: new Date(comm.created_date || 0).getTime() || 0,
-        comm,
-      });
+    // Calls and hand-logged communication are one kind here — both are
+    // "we talked to the customer", and the "תקשורת" filter should mean that
+    // rather than "the subset a rep happened to type in". Notes are kept: this
+    // feed is where everything belongs.
+    for (const entry of buildContactLog(calls, comms, { includeNotes: true })) {
+      out.push({ id: entry.logKey, kind: 'communication', ts: entry.ts, comm: entry });
     }
     out.sort((a, b) => b.ts - a.ts);
     return out;
-  }, [logs, closedTasks, comms]);
+  }, [logs, closedTasks, comms, calls]);
 
   const filtered = filter === 'all' ? events : events.filter((e) => e.kind === filter);
   const track = events.slice(0, 3).reverse(); // oldest → newest, which in RTL reads right → left
@@ -424,7 +430,7 @@ function renderCommunicationEvent(comm, isLast, users) {
   const when = comm.created_date;
 
   return (
-    <li key={`comm-${comm.id}`} className="flex gap-3 relative">
+    <li key={comm.logKey} className="flex gap-3 relative">
       <Rail isLast={isLast} />
       <span className={`relative z-10 flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${meta.tone}`}>
         <Icon className="h-3.5 w-3.5" />
@@ -440,11 +446,16 @@ function renderCommunicationEvent(comm, isLast, users) {
               {dir}
             </span>
           )}
-          {!isNote && comm.outcome && COMM_OUTCOME_LABELS[comm.outcome] && (
+          {!isNote && comm.outcome && (
             <span className="inline-flex items-center rounded-full text-[10px] h-5 px-2 bg-muted text-foreground/70">
-              {COMM_OUTCOME_LABELS[comm.outcome]}
+              {contactOutcomeLabel(comm.outcome)}
             </span>
           )}
+          {comm.duration_seconds ? (
+            <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+              {formatCallDuration(comm.duration_seconds)}
+            </span>
+          ) : null}
           <span className="text-[11px] text-muted-foreground/70">
             {when ? formatInTimeZone(when, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : ''}
           </span>
@@ -459,6 +470,14 @@ function renderCommunicationEvent(comm, isLast, users) {
         <p className="text-[11px] text-muted-foreground/70 mt-0.5">
           {comm.rep_id ? getRepDisplayName(comm.rep_id, users) : ''}
         </p>
+
+        {/* Voicenter keeps a recording for most answered calls — the one thing
+            in this feed that lets a rep hear what was actually said. */}
+        {comm.recording_url ? (
+          <div className="mt-1.5">
+            <RecordingPlayer recordingUrl={comm.recording_url} hasRecording />
+          </div>
+        ) : null}
       </div>
     </li>
   );

@@ -37,7 +37,7 @@ import { useToast } from "@/components/ui/use-toast";
 import AddCommunication from '@/components/lead/AddCommunication';
 import LeadMarketingSection from '@/components/lead/LeadMarketingSection';
 import { leadMarketingFieldLabels } from '@/constants/leadMarketingFields';
-import { differenceInDays } from '@/lib/safe-date-fns';
+import { formatLeadAge } from '@/lib/hebrewDuration';
 import { Badge } from "@/components/ui/badge";
 import SalesTaskDialog from '@/components/task/SalesTaskDialog';
 import NewQuoteDialog from '@/components/quote/NewQuoteDialog';
@@ -48,50 +48,11 @@ import NewOrder from '@/pages/NewOrder';
 import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS } from '@/constants/leadOptions';
 import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import { canViewLead } from '@/components/shared/rbac';
-import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
 import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 import { isSameRep, reconcileRepSlots } from '@/lib/repSlots';
 import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from '@/lib/rbac';
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
-
-// Hebrew counter with proper singular / dual / plural forms
-// (e.g. 1 → "יום", 2 → "יומיים", 3 → "3 ימים").
-function hebrewCount(n, one, two, many) {
-  if (n === 1) return one;
-  if (n === 2) return two;
-  return `${n} ${many}`;
-}
-
-// Join Hebrew list parts with commas and a final "ו" conjunction:
-// ["3 חודשים","2 שבועות","5 ימים"] → "3 חודשים, 2 שבועות ו-5 ימים".
-function joinHebrewParts(parts) {
-  if (parts.length === 0) return 'פחות מיום';
-  if (parts.length === 1) return parts[0];
-  const last = parts[parts.length - 1];
-  const conj = /^\d/.test(last) ? 'ו-' : 'ו'; // "ו-5 ימים" vs "ויומיים"
-  return `${parts.slice(0, -1).join(', ')} ${conj}${last}`;
-}
-
-// Lead age as a single cascading breakdown that adds back up to the total
-// day count — e.g. a 109-day-old lead reads "3 חודשים, 2 שבועות ו-5 ימים",
-// NOT three independent totals. Uses round 30-day months / 7-day weeks so
-// the parts always sum to the days; zero-valued units are dropped.
-function formatLeadAge(createdDate) {
-  const created = createdDate instanceof Date ? createdDate : new Date(createdDate);
-  if (isNaN(created.getTime())) return '-';
-
-  let remaining = Math.max(0, differenceInDays(new Date(), created));
-  const months = Math.floor(remaining / 30); remaining -= months * 30;
-  const weeks = Math.floor(remaining / 7); remaining -= weeks * 7;
-  const days = remaining;
-
-  const parts = [];
-  if (months > 0) parts.push(hebrewCount(months, 'חודש', 'חודשיים', 'חודשים'));
-  if (weeks > 0) parts.push(hebrewCount(weeks, 'שבוע', 'שבועיים', 'שבועות'));
-  if (days > 0) parts.push(hebrewCount(days, 'יום', 'יומיים', 'ימים'));
-  return joinHebrewParts(parts);
-}
 
 export default function LeadDetails({ leadId: leadIdProp, initialMode: initialModeProp, isModal = false, onClose }) {
   const navigate = useNavigate();
@@ -146,6 +107,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
       toast({ title: "מתחיל שיחה...", description: phone });
       await base44.functions.invoke('clickToCall', { customerPhone: phone, leadId });
       toast({ title: "השיחה התחילה בהצלחה" });
+      // clickToCall writes the call_logs row server-side (result "pending"
+      // until the Voicenter sync resolves it), so refresh the contact card and
+      // the activity feed — the call the rep just placed belongs on screen.
+      queryClient.invalidateQueries({ queryKey: ['lead-contact-log', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['lead-call-logs', leadId] });
     } catch (err) {
       toast({
         title: "שגיאה בהתחלת שיחה",
@@ -230,8 +196,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   );
 
   // "פנייה נוספת" — is this row a repeat enquiry from someone who already
-  // came in before? OtherEnquiriesCard lists the siblings further down the
-  // page; the header just needs the one-glance marker.
+  // came in before? OtherEnquiriesCard lists the siblings themselves in the
+  // overview's left column; the header just needs the one-glance marker.
   const leadForRepeatLookup = useMemo(() => (lead ? [lead] : []), [lead]);
   const repeatEnquiry = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
 
@@ -762,12 +728,11 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
           </div>
         )}
 
-        {/* Other enquiries from the same person. Deliberately ABOVE the tabs
-            and not inside "פרטי לקוח מלאים": a rep must know they are calling
-            someone who already contacted us before they pick up the phone, not
-            after clicking through to a tab. Renders nothing when this is the
-            person's only enquiry, so a first-time lead stays uncluttered. */}
-        <OtherEnquiriesCard lead={lead} />
+        {/* Other enquiries from the same person moved up into the overview's
+            left column (LeadOverview), next to the next task — a rep must know
+            they are calling someone who already contacted us before they pick
+            up the phone, and a strip at the foot of the page was neither seen
+            in time nor able to show more than one of them. */}
 
         {/* Editing the lead. There is no read-only twin of this card any
             more: the overview above shows the lead's facts, so a second

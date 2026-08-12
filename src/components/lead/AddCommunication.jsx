@@ -78,6 +78,10 @@ export default function AddCommunication({ leadId, isOpen, onClose }) {
       // legacy key too for any other listener.
       queryClient.invalidateQueries({ queryKey: ['allCommunications', leadId] });
       queryClient.invalidateQueries({ queryKey: ['communications', leadId] });
+      // The lead screen's "שיחות ותקשורת" card merges this log with call_logs
+      // under its own key — without this the entry the rep just typed would
+      // only appear after the card went stale.
+      queryClient.invalidateQueries({ queryKey: ['lead-contact-log', leadId] });
       toast.success('רשומת התקשורת נשמרה');
       onClose();
       setFormData({
