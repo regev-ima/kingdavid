@@ -9,7 +9,8 @@
  * same number by construction.
  *
  * House rules, unchanged:
- *   • Line prices are stored PRE-VAT; discounts are a per-line percent.
+ *   • Line prices are stored PRE-VAT; discounts are a per-line percent. What
+ *     a human TYPES is the customer's incl-VAT price — see preVatFromInclVat.
  *   • Extras (תוספות — הובלה / הרכבה) are stored VAT-INCLUSIVE, so VAT is
  *     never recomputed on top of them.
  *   • Everything rounds to agorot, and only where a person will read it.
@@ -85,6 +86,26 @@ export function calculateDocumentTotals(items = [], extras = []) {
   const vat_amount = round2(total - subtotal);
 
   return { subtotal, discount_total: round2(a.itemsDiscountPreVat), vat_amount, total };
+}
+
+/**
+ * The pre-VAT price to STORE for a price a human typed VAT-inclusive.
+ *
+ * The catalog is priced the way the business quotes: ₪7,540 is what the
+ * customer pays for that bed, full stop. It used to be typed the other way
+ * round — ₪6,390 pre-VAT — and 6,390 × 1.18 is ₪7,540.20, so every such price
+ * carried twenty agorot nobody chose and the catalog screen hid them behind a
+ * whole-shekel `Math.round`. Typing the customer's price and deriving the rest
+ * is what keeps it round: 7,540 ÷ 1.18 = 6,389.83, and 6,389.83 × 1.18 lands
+ * back on 7,540.00.
+ */
+export function preVatFromInclVat(inclVat) {
+  return round2((Number(inclVat) || 0) / VAT_MULTIPLIER);
+}
+
+/** The customer-facing price of a stored pre-VAT one. */
+export function inclVatFromPreVat(preVat) {
+  return round2((Number(preVat) || 0) * VAT_MULTIPLIER);
 }
 
 /**
