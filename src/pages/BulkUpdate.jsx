@@ -42,6 +42,7 @@ import {
 import { BULK_UPDATE_ENTITIES, EMPTY_FIELD_VALUE } from '@/constants/bulkUpdateConfig';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canUseBulkUpdate } from '@/lib/rbac';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 const ICONS = { Users, CheckSquare, ShoppingCart, FileText, Crown, Headphones };
 
@@ -325,7 +326,7 @@ export default function BulkUpdate() {
           <SelectContent>
             <SelectItem value={EMPTY_FIELD_VALUE}>שדה ריק (ללא נציג)</SelectItem>
             {reps.map(r => (
-              <SelectItem key={r.email} value={r.email}>{r.full_name} ({r.email})</SelectItem>
+              <RepSelectItem key={r.email} rep={r}>{r.full_name} ({r.email})</RepSelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -384,7 +385,7 @@ export default function BulkUpdate() {
           <SelectTrigger><SelectValue placeholder="בחר נציג..." /></SelectTrigger>
           <SelectContent>
             {reps.map(r => (
-              <SelectItem key={r.email} value={r.email}>{r.full_name} ({r.email})</SelectItem>
+              <RepSelectItem key={r.email} rep={r}>{r.full_name} ({r.email})</RepSelectItem>
             ))}
           </SelectContent>
         </Select>

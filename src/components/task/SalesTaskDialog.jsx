@@ -27,6 +27,7 @@ import NewQuote from '@/pages/NewQuote';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { isAdmin as isAdminUser, canAccessSalesWorkspace } from '@/components/shared/rbac';
 import { phoneTail as phoneTailOf, isPhoneShapedQuery } from '@/utils/phoneUtils';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 const TASK_STATUS_STYLES = {
   not_completed: { on: 'border-amber-400/50 bg-amber-50 text-amber-700', off: 'border-border hover:border-amber-300 hover:bg-amber-50/50 text-muted-foreground' },
@@ -557,9 +558,9 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
           <SelectContent>
             <SelectItem value="unassigned">-- ללא שיוך --</SelectItem>
             {users.map(u => (
-              <SelectItem key={u.id} value={u.email}>
+              <RepSelectItem key={u.id} rep={u}>
                 {u.full_name || u.email}{u.department === 'factory' ? ' (מפעל)' : ''}
-              </SelectItem>
+              </RepSelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -574,7 +575,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
           <SelectContent>
             <SelectItem value="unassigned">-- ללא שיוך --</SelectItem>
             {users.map(u => (
-              <SelectItem key={u.id} value={u.email}>{u.full_name || u.email}</SelectItem>
+              <RepSelectItem key={u.id} rep={u} />
             ))}
           </SelectContent>
         </Select>
@@ -1126,9 +1127,9 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
                     <SelectContent>
                       <SelectItem value="unassigned">-- ללא שיוך --</SelectItem>
                       {users.map(u => (
-                        <SelectItem key={u.id} value={u.email}>
+                        <RepSelectItem key={u.id} rep={u}>
                           {u.full_name || u.email}{u.department === 'factory' ? ' (מפעל)' : ''}
-                        </SelectItem>
+                        </RepSelectItem>
                       ))}
                     </SelectContent>
                   </Select>

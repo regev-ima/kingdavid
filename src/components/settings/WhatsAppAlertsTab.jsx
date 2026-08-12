@@ -9,12 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   Loader2, Save, Send, RefreshCw, CheckCircle2, AlertTriangle, BellOff, Bell, Users, Zap,
   ListChecks,
 } from 'lucide-react';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // Admin settings for the "a rep's WhatsApp disconnected" alert.
 //
@@ -263,9 +264,9 @@ export default function WhatsAppAlertsTab() {
             <SelectTrigger><SelectValue placeholder="בחר נציג" /></SelectTrigger>
             <SelectContent>
               {senders.map((r) => (
-                <SelectItem key={r.user_id} value={r.user_id}>
+                <RepSelectItem key={r.user_id} rep={{ full_name: r.name }} value={r.user_id}>
                   {r.name}{r.connected ? '' : ` — ${r.state_label}`}
-                </SelectItem>
+                </RepSelectItem>
               ))}
             </SelectContent>
           </Select>

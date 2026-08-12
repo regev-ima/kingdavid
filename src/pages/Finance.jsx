@@ -22,6 +22,7 @@ import { canAccessAdminOnly, canViewFinanceWorkspace } from '@/lib/rbac';
 import { getDateRange, getPreviousDateRange } from '@/utils/dateRange';
 import { formatCurrency } from '@/utils/currency';
 import { toCsv, downloadCsv } from '@/utils/csv';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 const filterOptions = [
   {
@@ -782,9 +783,7 @@ export default function Finance() {
                     <SelectContent>
                       <SelectItem value="all">כל הנציגים</SelectItem>
                       {users.filter(u => u.role === 'user' || u.role === 'admin').map(user => (
-                        <SelectItem key={user.id} value={user.email}>
-                          {user.full_name}
-                        </SelectItem>
+                        <RepSelectItem key={user.id} rep={user} />
                       ))}
                     </SelectContent>
                   </Select>

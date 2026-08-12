@@ -4,6 +4,7 @@ import { MessageCircle, Phone, RefreshCw, UserMinus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import UserAvatar from "@/components/shared/UserAvatar";
 import { isSameRep } from '@/lib/repSlots';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // Radix needs a non-empty string per item, so "remove the assignment" travels
 // as a sentinel value rather than as an empty option.
@@ -61,7 +62,7 @@ export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, exclu
               </SelectTrigger>
               <SelectContent>
                 {assignableReps.map((r) => (
-                  <SelectItem key={r.id} value={r.email}>{r.full_name}</SelectItem>
+                  <RepSelectItem key={r.id} rep={r} />
                 ))}
               </SelectContent>
             </Select>
@@ -109,7 +110,7 @@ export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, exclu
             </SelectTrigger>
             <SelectContent>
               {assignableReps.filter((r) => !isSameRep(r.email, rep?.email)).map((r) => (
-                <SelectItem key={r.id} value={r.email}>{r.full_name}</SelectItem>
+                <RepSelectItem key={r.id} rep={r} />
               ))}
               {onRemove && (
                 <SelectItem value={REMOVE_VALUE} className="text-destructive focus:text-destructive">
@@ -137,9 +138,7 @@ export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, exclu
             </SelectTrigger>
             <SelectContent>
               {assignableReps.map((r) => (
-                <SelectItem key={r.id} value={r.email}>
-                  {r.full_name}
-                </SelectItem>
+                <RepSelectItem key={r.id} rep={r} />
               ))}
             </SelectContent>
           </Select>
@@ -200,9 +199,7 @@ export default function RepCard({ rep, label, isEmpty, onAssign, onRemove, exclu
               </SelectTrigger>
               <SelectContent>
                 {assignableReps.filter((r) => !isSameRep(r.email, rep?.email)).map((r) => (
-                  <SelectItem key={r.id} value={r.email}>
-                    {r.full_name}
-                  </SelectItem>
+                  <RepSelectItem key={r.id} rep={r} />
                 ))}
                 {onRemove && (
                   <SelectItem value={REMOVE_VALUE} className="text-destructive focus:text-destructive">

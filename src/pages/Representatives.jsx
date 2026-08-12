@@ -33,6 +33,7 @@ import RepManageDialog from '@/components/representatives/RepManageDialog';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { supabase } from '@/api/supabaseClient';
 import { createAuditLog } from '@/utils/auditLog';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 const ROLE_LABELS = {
   admin: 'מנהל',
@@ -990,9 +991,9 @@ export default function Representatives({ embedded = false }) {
                     </SelectTrigger>
                     <SelectContent>
                       {availableRepsForTransfer.map(r => (
-                        <SelectItem key={r.id} value={r.email}>
+                        <RepSelectItem key={r.id} rep={r}>
                           {r.full_name} ({r.email})
-                        </SelectItem>
+                        </RepSelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1079,9 +1080,9 @@ export default function Representatives({ embedded = false }) {
                     </SelectTrigger>
                     <SelectContent>
                       {availableRepsForDeleteTransfer.map(r => (
-                        <SelectItem key={r.id} value={r.email}>
+                        <RepSelectItem key={r.id} rep={r}>
                           {r.full_name} ({r.email})
-                        </SelectItem>
+                        </RepSelectItem>
                       ))}
                     </SelectContent>
                   </Select>

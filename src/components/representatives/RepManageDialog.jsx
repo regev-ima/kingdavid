@@ -24,6 +24,7 @@ import {
   Clock, ShieldCheck, User as UserIcon, Save, MessageCircle, Eye, EyeOff,
 } from 'lucide-react';
 import UserAvatar from '@/components/shared/UserAvatar';
+import RepIdentityPicker, { useAvatarIdentitySupported } from '@/components/representatives/RepIdentityPicker';
 import WhatsAppSettingsTab from '@/components/representatives/WhatsAppSettingsTab';
 import RepPermissionsTab from '@/components/representatives/RepPermissionsTab';
 import { ACCESS_LEVEL_META, getAccessLevel } from '@/lib/permissions';
@@ -103,6 +104,13 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
   const [role, setRole] = useState(rep?.role || 'user');
   const [commission, setCommission] = useState(rep?.commission_rate ?? '');
   const [isActive, setIsActive] = useState(rep?.is_active !== false);
+  // Colour and icon are pinned independently; null on either means "assign
+  // that half automatically".
+  const [identity, setIdentity] = useState({
+    colorId: rep?.avatar_color || null,
+    iconId: rep?.profile_icon || null,
+  });
+  const avatarIdentitySupported = useAvatarIdentitySupported();
 
   // ── Schedule / vacation / permissions / documents ──
   const [schedule, setSchedule] = useState(() => initSchedule(rep));
@@ -146,6 +154,14 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
       commission_rate: commission === '' ? 0 : parseFloat(commission) || 0,
       is_active: isActive,
     };
+    // Only once the column is there — otherwise the whole save (name, phone,
+    // role) would fail on a field the admin didn't even touch. profile_icon is
+    // the same column the Settings picker writes, so the two agree by
+    // construction rather than by one overriding the other.
+    if (avatarIdentitySupported) {
+      data.avatar_color = identity.colorId;
+      data.profile_icon = identity.iconId;
+    }
     saveMutation.mutate({ data, successMsg: 'פרטי הנציג נשמרו' });
   };
 
@@ -291,7 +307,10 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
       >
         <DialogHeader className="px-6 pt-5 pb-4 border-b pe-14 space-y-0">
           <div className="flex items-center gap-3">
-            <UserAvatar user={rep} size="md" />
+            {/* Reflects the pending pick, so the header updates as you choose
+                rather than only after saving. Each half falls back to the
+                roster's answer on its own when set to "אוטומטי". */}
+            <UserAvatar user={rep} size="md" identityOverride={identity} />
             <div className="min-w-0 flex-1 text-right">
               <div className="flex items-center gap-2">
                 <DialogTitle className="truncate">{rep?.full_name || rep?.email}</DialogTitle>
@@ -364,6 +383,13 @@ export default function RepManageDialog({ rep, onClose, currentUserEmail, onRequ
                   />
                 </div>
               </div>
+
+              <RepIdentityPicker
+                rep={rep}
+                colorId={identity.colorId}
+                iconId={identity.iconId}
+                onChange={setIdentity}
+              />
 
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>

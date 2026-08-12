@@ -31,6 +31,7 @@ import {
   chatStatusMeta, chatTitle, chatInitial, prettyPhone, listTime, dayLabel, colorFromString,
   formatDuration, WHATSAPP_TAGS, WHATSAPP_TAG_MAP,
 } from '@/components/whatsapp/whatsappHelpers';
+import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // Urgency colour for how long a customer has been waiting (seconds).
 function waitChipClass(seconds) {
@@ -455,7 +456,7 @@ export default function WhatsAppChat() {
                 <SelectContent>
                   <SelectItem value="all">כל הנציגים</SelectItem>
                   {repsWithChats.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>{r.full_name || r.email}</SelectItem>
+                    <RepSelectItem key={r.id} rep={r} value={r.id} />
                   ))}
                 </SelectContent>
               </Select>
