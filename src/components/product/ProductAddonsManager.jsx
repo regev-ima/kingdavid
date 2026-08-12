@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2, DollarSign, X } from "lucide-react";
+import { preVatFromInclVat, inclVatFromPreVat } from '@/lib/quoteTotals';
 
 const VAT_RATE = 1.18;
 
@@ -22,7 +23,10 @@ const CATEGORY_OPTIONS = [
 ];
 
 const formatPrice = (price) => price != null ? `₪${price.toLocaleString()}` : '-';
-const withVat = (price) => price != null ? Math.round(price * VAT_RATE) : null;
+// Exact, not rounded: a whole-shekel Math.round here is what let a stored
+// price whose incl-VAT is ₪1,050.20 read as a round ₪1,050 on this screen while
+// the customer's order said otherwise.
+const withVat = (price) => (price != null ? inclVatFromPreVat(price) : null);
 
 export default function ProductAddonsManager({ productId }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -30,7 +34,9 @@ export default function ProductAddonsManager({ productId }) {
   const [addonForm, setAddonForm] = useState({
     name: '',
     description: '',
-    base_price: '',
+    // What the rep types is the CUSTOMER's price, VAT in. base_price /
+    // size_prices[].price stay the stored pre-VAT columns.
+    price_incl_vat: '',
     size_prices: [],
     applicable_categories: [],
     is_active: true,
@@ -79,7 +85,7 @@ export default function ProductAddonsManager({ productId }) {
     setAddonForm({
       name: '',
       description: '',
-      base_price: '',
+      price_incl_vat: '',
       size_prices: [],
       applicable_categories: [],
       is_active: true,
@@ -90,14 +96,17 @@ export default function ProductAddonsManager({ productId }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // price_incl_vat is a field of this form, not a column — strip it before
+    // the payload goes anywhere near the table.
+    const { price_incl_vat, ...addonColumns } = addonForm;
     const data = {
-      ...addonForm,
-      base_price: Number(addonForm.base_price),
+      ...addonColumns,
+      base_price: preVatFromInclVat(price_incl_vat),
       sort_order: Number(addonForm.sort_order),
       size_prices: addonForm.size_prices.map(sp => ({
         width_cm: Number(sp.width_cm),
         length_cm: Number(sp.length_cm),
-        price: Number(sp.price)
+        price: preVatFromInclVat(sp.price_incl_vat)
       })).filter(sp => sp.width_cm && sp.length_cm && sp.price)
     };
 
@@ -111,7 +120,7 @@ export default function ProductAddonsManager({ productId }) {
   const addSizePrice = () => {
     setAddonForm(prev => ({
       ...prev,
-      size_prices: [...prev.size_prices, { width_cm: '', length_cm: '', price: '' }]
+      size_prices: [...prev.size_prices, { width_cm: '', length_cm: '', price_incl_vat: '' }]
     }));
   };
 
@@ -134,8 +143,11 @@ export default function ProductAddonsManager({ productId }) {
     setAddonForm({
       name: addon.name || '',
       description: addon.description || '',
-      base_price: addon.base_price || '',
-      size_prices: addon.size_prices || [],
+      price_incl_vat: addon.base_price ? inclVatFromPreVat(addon.base_price) : '',
+      size_prices: (addon.size_prices || []).map((sp) => ({
+        ...sp,
+        price_incl_vat: sp.price ? inclVatFromPreVat(sp.price) : '',
+      })),
       applicable_categories: addon.applicable_categories || [],
       is_active: addon.is_active !== false,
       sort_order: addon.sort_order || 0
@@ -185,17 +197,19 @@ export default function ProductAddonsManager({ productId }) {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>מחיר בסיס (לפני מע"מ) *</Label>
+                {/* Typed the way the price is quoted — the customer's, VAT in.
+                    base_price stays the stored pre-VAT column. */}
+                <Label>מחיר ללקוח כולל מע"מ *</Label>
                 <Input
                   type="number"
-                  value={addonForm.base_price}
-                  onChange={(e) => setAddonForm({ ...addonForm, base_price: e.target.value })}
+                  value={addonForm.price_incl_vat}
+                  onChange={(e) => setAddonForm({ ...addonForm, price_incl_vat: e.target.value })}
                   required />
               </div>
               <div>
-                <Label>כולל מע"מ</Label>
+                <Label>לפני מע"מ (נשמר)</Label>
                 <div className="h-10 flex items-center px-3 bg-muted rounded-md text-sm font-medium text-muted-foreground">
-                  {addonForm.base_price ? `₪${withVat(Number(addonForm.base_price))?.toLocaleString()}` : '-'}
+                  {addonForm.price_incl_vat ? formatPrice(preVatFromInclVat(addonForm.price_incl_vat)) : '-'}
                 </div>
               </div>
               <div>
@@ -222,8 +236,8 @@ export default function ProductAddonsManager({ productId }) {
                   <div className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-muted-foreground">
                     <span>רוחב (ס"מ)</span>
                     <span>אורך (ס"מ)</span>
-                    <span>מחיר (לפני מע"מ)</span>
-                    <span>כולל מע"מ</span>
+                    <span>מחיר ללקוח (כולל מע"מ)</span>
+                    <span>לפני מע"מ (נשמר)</span>
                     <span></span>
                   </div>
                   {addonForm.size_prices.map((sp, idx) => (
@@ -244,13 +258,13 @@ export default function ProductAddonsManager({ productId }) {
                       />
                       <Input
                         type="number"
-                        value={sp.price}
-                        onChange={(e) => updateSizePrice(idx, 'price', e.target.value)}
+                        value={sp.price_incl_vat}
+                        onChange={(e) => updateSizePrice(idx, 'price_incl_vat', e.target.value)}
                         placeholder="מחיר"
                         className="h-9"
                       />
                       <div className="h-9 flex items-center px-2 bg-muted rounded-md text-xs text-muted-foreground">
-                        {sp.price ? `₪${withVat(Number(sp.price))?.toLocaleString()}` : '-'}
+                        {sp.price_incl_vat ? formatPrice(preVatFromInclVat(sp.price_incl_vat)) : '-'}
                       </div>
                       <Button type="button" variant="ghost" size="icon" className="h-9 w-9" onClick={() => removeSizePrice(idx)}>
                         <X className="h-4 w-4 text-red-500" />
