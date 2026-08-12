@@ -14,7 +14,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import UserAvatar from '@/components/shared/UserAvatar';
 import {
-  Users, UserCheck, Calendar as CalendarIcon,
+  Users, UserCheck, UserX, Calendar as CalendarIcon,
   Filter, X as XIcon, FileSpreadsheet, ArrowRightLeft, Sparkles,
   Clock, Hourglass, Loader2, CheckCircle2, ChevronDown, Search,
   FileText, ClipboardCheck, DollarSign, CheckSquare,
@@ -49,7 +49,10 @@ const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
 // from. Leaving it out is why that warning never appeared on this screen — the
 // rows arrived without a contact, useRepeatEnquiries had nothing to group by,
 // and the marker silently rendered nothing on every row.
-const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,contact_id,facebook_ad_name,first_action_at,effective_sort_date,created_date';
+// pending_rep_email likewise: without it the נציג column cannot tell a lead
+// nobody has ("לא משויך") from one already offered to a rep who hasn't picked
+// it up ("ממתין: …") — two different states, one of which needs a manager.
+const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,pending_rep_email,contact_id,facebook_ad_name,first_action_at,effective_sort_date,created_date';
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
 
@@ -1001,13 +1004,20 @@ export default function LeadManagement() {
         </div>
       </div>
 
-      {/* The six numbers the screen opens on. Every one of them is a filter:
+      {/* The numbers the screen opens on. Every one of them is a filter:
           clicking a tile scopes the list below to exactly the rows it counts,
           and clicking it again releases the scope. For a rep each number is
           their own — their leads, their quotes, their tasks, their closings —
           because every query behind them carries the same rep scope the lead
-          list does. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          list does.
+          Seven across is a wide-screen layout: below 1800px they wrap to a
+          4-wide grid instead. A tile has ~88px of fixed furniture (padding +
+          the icon), so seven of them across a 1500px workspace leaves a
+          five-figure count wider than the space it has — and a number that
+          overflows its tile can't be fixed by truncating it either, since an
+          RTL ellipsis clips the leading digits. Giving each tile room is the
+          only version that stays readable. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-7 gap-3">
         <TaskKpiTile
           label="לידים שהתקבלו"
           value={kpiCounts.totalCount}
@@ -1017,6 +1027,22 @@ export default function LeadManagement() {
           tone="sky"
           isActive={scope === 'all' && !hasActiveFilter}
           onClick={() => { setScope('all'); setFilters({ search: '', status: 'all', source: 'all', rep: 'all' }); }}
+        />
+        {/* Arrived but nobody owns it — the pool a manager works down. Sits
+            beside "לידים שהתקבלו" because it is a slice of it: of everything
+            that came in, these are the ones still waiting for a rep. Clicking
+            it scopes the list to exactly those rows, and turning "בחירה מרובה"
+            on from there is the whole assign-a-batch flow. */}
+        <TaskKpiTile
+          label="לא משויכים"
+          value={kpiCounts.unassignedCount}
+          sub="ממתינים לשיוך"
+          subTone="text-amber-600"
+          secondarySub={activePresetLabel}
+          icon={UserX}
+          tone="amber"
+          isActive={scope === 'unassigned'}
+          onClick={() => toggleScope('unassigned')}
         />
         <TaskKpiTile
           label="בטיפול"
@@ -1463,6 +1489,10 @@ function TaskKpiTile({ label, value, sub, subTone = 'text-muted-foreground', sec
     >
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-muted-foreground truncate" title={label}>{label}</p>
+        {/* Deliberately not truncated: an ellipsis on an RTL number eats its
+            LEADING digits ("134,521" → "…21"), which reads as a small number
+            rather than as a clipped one. The grid gives each tile enough room
+            instead — see the breakpoints on it. */}
         <p className="text-3xl font-bold tabular-nums mt-1">{fmt(value)}</p>
         <p className={`text-xs mt-1 truncate ${subTone}`}>
           {sub}
