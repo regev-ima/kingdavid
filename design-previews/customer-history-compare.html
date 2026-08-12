@@ -142,12 +142,12 @@
       <h1>ארבע דרכים לראות ליד</h1>
       <p>
         מסך הליד המלא — כל שדה וכל פעולה שקיימים היום, בלי להשמיט כלום — בארבע שפות עיצוב.
-        בכולן הפונט קטן בדרגה, וכולן מוסיפות את מה שחסר היום: ההיסטוריה של האיש על פני
-        כל הפניות שלו, ולא רק הפנייה שנפתחה הבוקר.
+        פונט קטן בדרגה, צבע רק במקום שדורש פעולה, וההיסטוריה של האיש על פני כל הפניות שלו
+        ולא רק זו שנפתחה הבוקר.
       </p>
     </div>
     <div class="who">
-      נתוני דמה: פנייה שנפתחה היום מטאבולה, של <b>זהבה כהן</b><br>
+      נתוני דמה מהקטלוג שלכם — מזרנים ומיטות, מידות 140/190 ו‑160/200<br>
       פנייה 4 מתוך 4 · 2 הזמנות ₪24,880 · 4 הצעות · 31 מגעים · קריאת שירות אחת
     </div>
   </header>
@@ -305,9 +305,9 @@
   .head h1 { margin: 0; font-size: var(--f-h1); font-weight: 800; letter-spacing: -.02em; }
   .badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
     padding: 1px 7px; font-size: var(--f-2xs); font-weight: 700; }
-  .b-sla   { background: var(--green-soft); color: var(--green); }
-  .b-rep   { background: var(--indigo-soft); color: var(--indigo); }
-  .b-svc   { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-ring); cursor: pointer; }
+  .b-sla   { color: var(--fg-faint); font-weight: 600; padding-inline: 0; }
+  .b-rep   { color: var(--primary); background: var(--primary-soft); }
+  .b-svc   { color: var(--amber); background: transparent; border: 1px solid var(--amber-ring); cursor: pointer; }
   .phone { display: inline-flex; align-items: center; gap: 5px; font-size: var(--f-md);
     font-variant-numeric: tabular-nums; color: var(--fg-muted); margin-inline-start: auto; }
   .phone .n { direction: ltr; unicode-bidi: isolate; }
@@ -336,8 +336,8 @@
   .fact .sub { display: block; margin-top: 2px; font-size: var(--f-2xs); color: var(--fg-faint);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
-    padding: 1px 8px; font-size: var(--f-xs); font-weight: 600; background: var(--amber-soft); color: var(--amber); }
-  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+    padding: 1px 8px; font-size: var(--f-xs); font-weight: 600; background: var(--inset); color: var(--fg-muted); }
+  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; opacity: .6; }
   .caret { color: var(--fg-faint); font-size: 8px; }
 
   /* ── Actions ────────────────────────────────────────────────────────── */
@@ -345,22 +345,22 @@
   .actions .btn { height: 30px; border-radius: 8px; font-size: var(--f-md); }
 
   /* ── Alert strips ───────────────────────────────────────────────────── */
+  .banners { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; padding: 4px 14px 0; }
+  @media (max-width: 820px) { .banners { grid-template-columns: 1fr; } }
   .strip { display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-    margin: 9px 14px 0; border-radius: 8px; padding: 5px 9px; font-size: var(--f-sm); }
-  .strip.amber { border: 1px solid var(--amber-ring); background: var(--amber-soft); }
+    font-size: var(--f-sm); }
+  .strip { border-bottom: 1px solid var(--border-soft); border-radius: 0; padding: 5px 0; }
   .strip.amber .k { font-weight: 700; color: var(--amber); }
-  .strip.indigo { border: 1px solid color-mix(in srgb, var(--indigo) 28%, transparent); background: var(--indigo-soft); }
-  .strip.indigo .k { font-weight: 700; color: var(--indigo); display: inline-flex; align-items: center; gap: 5px; }
-  .strip .lnk { margin-inline-start: auto; color: var(--indigo); font-weight: 600; cursor: pointer; }
-  .strip .mini { height: 22px; padding: 0 8px; font-size: var(--f-xs); border-radius: 6px;
-    background: var(--amber); border: 0; color: #fff; font-weight: 600; cursor: pointer; }
+  .strip.indigo .k { font-weight: 700; color: var(--primary); display: inline-flex; align-items: center; gap: 5px; }
+  .strip .lnk { margin-inline-start: auto; color: var(--primary); font-weight: 600; cursor: pointer; }
+  .strip .mini { height: 20px; padding: 0; font-size: var(--f-xs); border: 0; background: transparent;
+    color: var(--fg); font-weight: 600; cursor: pointer; border-bottom: 1px solid var(--border); }
   :root[data-theme="dark"] .strip .mini { color: hsl(230 18% 12%); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .strip .mini { color: hsl(230 18% 12%); } }
 
   /* ── Two cards ──────────────────────────────────────────────────────── */
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 9px 14px 0; align-items: start; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: var(--shadow); overflow: hidden; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .card > h3 { margin: 0; padding: 7px 10px 5px; font-size: var(--f-sm); font-weight: 700;
     display: flex; align-items: center; gap: 5px; }
   .card > h3 .ic { color: var(--primary); }
@@ -405,7 +405,7 @@
   .tab { display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer; font: inherit;
     background: var(--inset); color: var(--fg-muted); border-radius: 7px; padding: 3px 9px;
     font-size: var(--f-sm); font-weight: 500; }
-  .tab.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); border: 1px solid var(--border); }
+  .tab.on { background: var(--card); color: var(--fg); font-weight: 600; border: 1px solid var(--border); }
   .tab .c { display: inline-grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px;
     border-radius: 999px; background: var(--fg-faint); color: var(--card); font-size: var(--f-2xs); font-weight: 700; }
   .tab.on .c { background: var(--primary); color: #fff; }
@@ -413,7 +413,7 @@
   .tabs .agg { margin-inline-start: auto; font-size: var(--f-2xs); color: var(--fg-faint); }
 
   .panel { margin: 7px 14px 0; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+    background: var(--card); overflow: hidden; }
   .prow { display: grid; grid-template-columns: 66px minmax(0,1fr) auto auto; align-items: center;
     gap: 8px; padding: 5px 10px; font-size: var(--f-sm); cursor: pointer; }
   .prow + .prow { border-top: 1px solid var(--border-soft); }
@@ -442,7 +442,7 @@
   .segs { display: inline-flex; background: var(--inset); border-radius: 7px; padding: 2px; gap: 2px; margin-inline-start: auto; }
   .seg { border: 0; background: transparent; font: inherit; font-size: var(--f-xs); font-weight: 500;
     color: var(--fg-muted); padding: 2px 8px; border-radius: 5px; cursor: pointer; }
-  .seg.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+  .seg.on { background: var(--card); color: var(--fg); font-weight: 600; border: 1px solid var(--border); }
   .act-head .cnt { font-size: var(--f-2xs); color: var(--fg-faint); }
 
   .mon { position: sticky; top: 0; z-index: 3; background: var(--bg);
@@ -468,12 +468,11 @@
   .ev .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ev .txt b { font-weight: 600; }
   .ev .end { font-size: var(--f-2xs); color: var(--fg-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .b-green .dot,.b-green .chip { background: var(--green-soft); color: var(--green); }
-  .b-blue .dot,.b-blue .chip { background: var(--blue-soft); color: var(--blue); }
-  .b-amber .dot,.b-amber .chip { background: var(--amber-soft); color: var(--amber); }
-  .b-violet .dot,.b-violet .chip { background: var(--violet-soft); color: var(--violet); }
-  .b-rose .dot,.b-rose .chip { background: var(--rose-soft); color: var(--rose); }
-  .b-slate .dot,.b-slate .chip { background: var(--inset); color: var(--fg-muted); }
+  /* Colour answers one question — "does this need me?" — and the chip label
+     answers the rest. Six hues by event type made every row shout equally. */
+  .b-quiet .dot,.b-quiet .chip { background: var(--inset); color: var(--fg-muted); }
+  .b-pos .dot,.b-pos .chip { background: var(--green-soft); color: var(--green); }
+  .b-neg .dot,.b-neg .chip { background: var(--rose-soft); color: var(--rose); }
   .ev.money .txt { font-weight: 600; }
   .ev.money .end { font-size: var(--f-sm); font-weight: 700; color: var(--green); }
   .ev.live .txt::after { content: "פתוח"; margin-inline-start: 6px; font-size: var(--f-2xs);
@@ -555,7 +554,7 @@
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>
           <span class="t">טאבולה/אאוטבריין</span>
         </dd>
-        <span class="sub" title="מודעה">מודעה: Elite — Mattress RMK</span>
+        <span class="sub" title="מודעה">מודעה: Elite — מזרנים 160/200</span>
       </div>
       <div class="fact" title="עדכון אחרון: 12/08/2026 09:44">
         <dt>תאריך כניסה</dt>
@@ -607,14 +606,13 @@
       <button class="btn" type="button">עוד פעולות <span class="caret">▾</span></button>
     </div>
 
-    <!-- ── Pending rep banner ─────────────────────────────────────────── -->
-    <div class="strip amber">
+    <!-- ── Pending rep · other enquiries ──────────────────────────────── -->
+    <div class="banners"><div class="strip amber">
       <span class="k">נציג ממתין לשיוך:</span>
       <span>אורית בן־דוד</span>
-      <button class="mini" type="button">שייך נציג זה כראשי</button>
+      <button class="mini" type="button">שייך כראשי</button>
     </div>
 
-    <!-- ── Other enquiries from the same contact ──────────────────────── -->
     <div class="strip indigo">
       <span class="k">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>
@@ -622,7 +620,7 @@
       </span>
       <span>האחרונה 22/02/2026 · לקוח חוזר · נסגרה עסקה</span>
       <span class="lnk">הצג את כולן ←</span>
-    </div>
+    </div></div>
 
     <!-- ── Marketing + notes  |  next task ────────────────────────────── -->
     <div class="cols">
@@ -643,7 +641,7 @@
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M15 3v5h5"/></svg>
             הערות
           </span>
-          <div class="box">שאלה על מזרן מתכוונן שלא במלאי. קנתה כאן פעמיים — כדאי להציע את אושן פלוס כתחליף לפני שסוגרים כלא רלוונטי.</div>
+          <div class="box">ביקשה מיטה מתכווננת חשמלית — לא בקטלוג. קנתה כאן פעמיים, כדאי להציע בסיס קבוע עם מזרן קפיצים מבודדים לפני שסוגרים כלא רלוונטי.</div>
         </div>
       </section>
 
@@ -661,7 +659,7 @@
               הערות
             </span>
           </div>
-          <p>לחזור אליה עם חלופות למזרן המתכוונן. לבדוק מול המלאי אם אושן פלוס זמין ב‑160×200.</p>
+          <p>לחזור אליה — ביקשה מיטה מתכווננת חשמלית שאין בקטלוג. להציע בסיס קבוע 160/200 עם מזרן קפיצים מבודדים.</p>
           <div class="meta">
             <span class="g">
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
@@ -680,7 +678,7 @@
           </div>
         </div>
         <ul class="restlist">
-          <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">לשלוח קטלוג מזרנים מתכווננים</span><span class="d">14/08</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">לשלוח קטלוג מזרנים</span><span class="d">14/08</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">מעקב אחרי החלטה</span><span class="d">ללא יעד</span></li>
         </ul>
       </section>
@@ -695,10 +693,10 @@
     </div>
 
     <div class="panel">
-      <div class="prow"><span class="d">28/02/26</span><span class="t"><b>#Q-2261</b> · ספה תלת „מילאנו״ + שידה</span><span class="st st-green">התקבלה</span><span class="amt">₪11,480</span></div>
-      <div class="prow"><span class="d">19/03/24</span><span class="t"><b>#Q-1180</b> · מיטת „אושן״ 160×200 + 2 מזרנים</span><span class="st st-green">התקבלה</span><span class="amt">₪13,400</span></div>
-      <div class="prow"><span class="d">16/03/24</span><span class="t"><b>#Q-1147</b> · אושן ללא מזרנים</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪9,900</span></div>
-      <div class="prow"><span class="d">15/03/24</span><span class="t"><b>#Q-1102</b> · דגם קלאסיק 140×190</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪7,250</span></div>
+      <div class="prow"><span class="d">28/02/26</span><span class="t"><b>#Q-2261</b> · מיטה זוגית 160/200, בד פרחי + ראש מיטה</span><span class="st st-green">התקבלה</span><span class="amt">₪11,480</span></div>
+      <div class="prow"><span class="d">19/03/24</span><span class="t"><b>#Q-1180</b> · מזרן קפיצים מבודדים 160/200 + ארגז מצעים</span><span class="st st-green">התקבלה</span><span class="amt">₪13,400</span></div>
+      <div class="prow"><span class="d">16/03/24</span><span class="t"><b>#Q-1147</b> · מזרן 160/200 בלבד</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪9,900</span></div>
+      <div class="prow"><span class="d">15/03/24</span><span class="t"><b>#Q-1102</b> · מזרן קפיצים 140/190</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪7,250</span></div>
       <div class="pfoot">
         <span>סה״כ הצעות <b>4</b> · התקבלו <b>2</b> · אחוז סגירה <b>50%</b></span>
         <span style="margin-inline-start:auto">2 הזמנות מקושרות · <b>₪24,880</b> · קריאת שירות אחת (#312, נסגרה ב‑6 ימים)</span>
@@ -723,17 +721,17 @@
 
       <div class="lead-mark"><span class="g">הפנייה הנוכחית <span class="n">· טאבולה/אאוטבריין · 12/08/2026</span></span></div>
       <div class="mon">אוגוסט 2026</div>
-      <div class="ev b-amber top">
+      <div class="ev b-quiet top">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg></span>
         <span class="t">12/08 09:44</span><span class="chip">משימה</span>
         <span class="txt">נפתחה משימת <b>שיחה</b> — באיחור מאתמול</span><span class="end">מתן לוי</span>
       </div>
-      <div class="ev b-violet">
+      <div class="ev b-quiet">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
         <span class="t">12/08 09:25</span><span class="chip">שיוך</span>
         <span class="txt">שויכה ל<b>מתן לוי</b> — הנציג שסגר את שתי ההזמנות הקודמות</span><span class="end">אוטומטי</span>
       </div>
-      <div class="ev b-blue live tail">
+      <div class="ev b-neg live tail">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         <span class="t">12/08 04:54</span><span class="chip">נוצר</span>
         <span class="txt">פנייה נוצרה · UTM Term <b>Elite</b></span><span class="end">טאבולה</span>
@@ -741,28 +739,28 @@
 
       <div class="lead-mark"><span class="g">פנייה קודמת <span class="n">· לקוח חוזר · 22/02/2026 · נסגרה עסקה</span></span></div>
       <div class="mon">מרץ 2026</div>
-      <div class="ev b-slate top">
+      <div class="ev b-quiet top">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3M20 17h2v-3.3a4 4 0 0 0-.9-2.5L18.5 8H14v9h2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></span>
         <span class="t">19/03 11:00</span><span class="chip">אספקה</span>
         <span class="txt">הזמנה <b>#7194</b> סופקה — רמת גן, קומה 3</span><span class="end">בזמן</span>
       </div>
-      <div class="ev b-green money">
+      <div class="ev b-pos money">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg></span>
         <span class="t">02/03 16:20</span><span class="chip">הזמנה</span>
-        <span class="txt">הזמנה <b>#7194</b> · ספה תלת „מילאנו״ + שידת טלוויזיה</span><span class="end">₪11,480</span>
+        <span class="txt">הזמנה <b>#7194</b> · מיטה זוגית 160/200, בד פרחי + ראש מיטה</span><span class="end">₪11,480</span>
       </div>
-      <div class="ev b-violet tail">
+      <div class="ev b-quiet tail">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></span>
         <span class="t">28/02 10:05</span><span class="chip">הצעה</span>
         <span class="txt">הצעה <b>Q-2261</b> נשלחה בוואטסאפ · התקבלה כעבור 3 ימים</span><span class="end">₪11,480</span>
       </div>
       <div class="mon">פברואר 2026</div>
-      <div class="ev b-blue top">
+      <div class="ev b-quiet top">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.2 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.8 2Z"/></svg></span>
         <span class="t">25/02 14:30</span><span class="chip">שיחה</span>
-        <span class="txt">יוצאת 8 דק׳ · נענה חיובי — <b>„מחפשת ספה לסלון, תקציב עד 12 אלף״</b></span><span class="end">מתן לוי</span>
+        <span class="txt">יוצאת 8 דק׳ · נענה חיובי — <b>„מחפשת מיטה זוגית, תקציב עד 12 אלף״</b></span><span class="end">מתן לוי</span>
       </div>
-      <div class="ev b-green tail">
+      <div class="ev b-quiet tail">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         <span class="t">22/02 08:12</span><span class="chip">נוצר</span>
         <span class="txt">פנייה נוצרה · <b>לקוח חוזר</b> · הגיעה ישירות לסניף</span><span class="end">נסגרה עסקה</span>
@@ -772,53 +770,53 @@
 
       <div class="lead-mark"><span class="g">פנייה קודמת <span class="n">· בירור אספקה · 03/05/2024 · טופל</span></span></div>
       <div class="mon">אפריל–מאי 2024</div>
-      <div class="ev b-slate top">
+      <div class="ev b-quiet top">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
         <span class="t">05/05 12:10</span><span class="chip">סטטוס</span>
         <span class="txt">בירור אספקה ← <b>בירור אספקה — טופל</b></span><span class="end">שירות לקוחות</span>
       </div>
-      <div class="ev b-amber">
+      <div class="ev b-quiet">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
         <span class="t">18/04 09:30</span><span class="chip">שירות</span>
-        <span class="txt">קריאה <b>#312</b> נסגרה — הוחלף בורג במסגרת, אושרה שביעות רצון</span><span class="end">6 ימים</span>
+        <span class="txt">קריאה <b>#312</b> נסגרה — הוחלף מזרן במסגרת 30 ימי ניסיון</span><span class="end">6 ימים</span>
       </div>
-      <div class="ev b-amber tail">
+      <div class="ev b-quiet tail">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.8 2.8 0 0 1-4-4Z"/></svg></span>
         <span class="t">12/04 17:45</span><span class="chip">שירות</span>
-        <span class="txt">נפתחה קריאת שירות <b>#312</b> · חריקה במסגרת המיטה</span><span class="end">אחריות</span>
+        <span class="txt">נפתחה קריאת שירות <b>#312</b> · שקיעה בצד אחד של המזרן</span><span class="end">30 ימי ניסיון</span>
       </div>
 
       <div class="lead-mark"><span class="g">הפנייה הראשונה <span class="n">· פייסבוק · 14/03/2024 · נסגרה עסקה</span></span></div>
       <div class="mon">מרץ–אפריל 2024</div>
-      <div class="ev b-slate top">
+      <div class="ev b-quiet top">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3M20 17h2v-3.3a4 4 0 0 0-.9-2.5L18.5 8H14v9h2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></span>
         <span class="t">04/04 13:15</span><span class="chip">אספקה</span>
         <span class="txt">הזמנה <b>#4821</b> סופקה והורכבה בבית הלקוחה</span><span class="end">בזמן</span>
       </div>
-      <div class="ev b-green money">
+      <div class="ev b-pos money">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg></span>
         <span class="t">21/03 12:40</span><span class="chip">הזמנה</span>
-        <span class="txt">הזמנה <b>#4821</b> · מיטת „אושן״ 160×200 + 2 מזרנים אורתופדיים</span><span class="end">₪13,400</span>
+        <span class="txt">הזמנה <b>#4821</b> · מזרן קפיצים מבודדים 160/200 + ארגז מצעים</span><span class="end">₪13,400</span>
       </div>
-      <div class="ev b-violet">
+      <div class="ev b-quiet">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></span>
         <span class="t">19/03 15:00</span><span class="chip">הצעה</span>
         <span class="txt">הצעה <b>Q-1180</b> — אחרי Q-1102 ו‑Q-1147 שפגו</span><span class="end">₪13,400</span>
       </div>
-      <div class="ev b-blue">
+      <div class="ev b-quiet">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></span>
         <span class="t">17/03 11:00</span><span class="chip">פגישה</span>
-        <span class="txt">סניף פתח תקווה · <b>שכבה על שלושה דגמים, בחרה „אושן״</b></span><span class="end">מתן לוי</span>
+        <span class="txt">סניף פתח תקווה · <b>שכבה על שלושה מזרנים, בחרה קפיצים מבודדים</b></span><span class="end">מתן לוי</span>
       </div>
-      <div class="ev b-blue">
+      <div class="ev b-quiet">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg></span>
         <span class="t">15/03 18:22</span><span class="chip">וואטסאפ</span>
-        <span class="txt">3 הודעות · נשלח קטלוג מיטות + תיאום פגישה</span><span class="end">מתן לוי</span>
+        <span class="txt">3 הודעות · נשלח קטלוג מזרנים + תיאום פגישה</span><span class="end">מתן לוי</span>
       </div>
-      <div class="ev b-green tail">
+      <div class="ev b-quiet tail">
         <span class="dot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         <span class="t">14/03 20:08</span><span class="chip">נוצר</span>
-        <span class="txt">הפנייה הראשונה · פייסבוק · קמפיין <b>„מבצע 160×200״</b></span><span class="end">תחילת הקשר</span>
+        <span class="txt">הפנייה הראשונה · פייסבוק · קמפיין <b>„מבצע 160/200״</b></span><span class="end">תחילת הקשר</span>
       </div>
     </div>
 
@@ -905,9 +903,9 @@
   .head h1 { margin: 0; font-size: var(--f-h1); font-weight: 800; letter-spacing: -.02em; }
   .badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
     padding: 1px 7px; font-size: var(--f-2xs); font-weight: 700; }
-  .b-sla   { background: var(--green-soft); color: var(--green); }
-  .b-rep   { background: var(--indigo-soft); color: var(--indigo); }
-  .b-svc   { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-ring); cursor: pointer; }
+  .b-sla   { color: var(--fg-faint); font-weight: 600; padding-inline: 0; }
+  .b-rep   { color: var(--primary); background: var(--primary-soft); }
+  .b-svc   { color: var(--amber); background: transparent; border: 1px solid var(--amber-ring); cursor: pointer; }
   .phone { display: inline-flex; align-items: center; gap: 5px; font-size: var(--f-md);
     font-variant-numeric: tabular-nums; color: var(--fg-muted); margin-inline-start: auto; }
   .phone .n { direction: ltr; unicode-bidi: isolate; }
@@ -936,8 +934,8 @@
   .fact .sub { display: block; margin-top: 2px; font-size: var(--f-2xs); color: var(--fg-faint);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
-    padding: 1px 8px; font-size: var(--f-xs); font-weight: 600; background: var(--amber-soft); color: var(--amber); }
-  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+    padding: 1px 8px; font-size: var(--f-xs); font-weight: 600; background: var(--inset); color: var(--fg-muted); }
+  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; opacity: .6; }
   .caret { color: var(--fg-faint); font-size: 8px; }
 
   /* ── Actions ────────────────────────────────────────────────────────── */
@@ -945,22 +943,22 @@
   .actions .btn { height: 30px; border-radius: 8px; font-size: var(--f-md); }
 
   /* ── Alert strips ───────────────────────────────────────────────────── */
+  .banners { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; padding: 4px 14px 0; }
+  @media (max-width: 820px) { .banners { grid-template-columns: 1fr; } }
   .strip { display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-    margin: 9px 14px 0; border-radius: 8px; padding: 5px 9px; font-size: var(--f-sm); }
-  .strip.amber { border: 1px solid var(--amber-ring); background: var(--amber-soft); }
+    font-size: var(--f-sm); }
+  .strip { border-bottom: 1px solid var(--border-soft); border-radius: 0; padding: 5px 0; }
   .strip.amber .k { font-weight: 700; color: var(--amber); }
-  .strip.indigo { border: 1px solid color-mix(in srgb, var(--indigo) 28%, transparent); background: var(--indigo-soft); }
-  .strip.indigo .k { font-weight: 700; color: var(--indigo); display: inline-flex; align-items: center; gap: 5px; }
-  .strip .lnk { margin-inline-start: auto; color: var(--indigo); font-weight: 600; cursor: pointer; }
-  .strip .mini { height: 22px; padding: 0 8px; font-size: var(--f-xs); border-radius: 6px;
-    background: var(--amber); border: 0; color: #fff; font-weight: 600; cursor: pointer; }
+  .strip.indigo .k { font-weight: 700; color: var(--primary); display: inline-flex; align-items: center; gap: 5px; }
+  .strip .lnk { margin-inline-start: auto; color: var(--primary); font-weight: 600; cursor: pointer; }
+  .strip .mini { height: 20px; padding: 0; font-size: var(--f-xs); border: 0; background: transparent;
+    color: var(--fg); font-weight: 600; cursor: pointer; border-bottom: 1px solid var(--border); }
   :root[data-theme="dark"] .strip .mini { color: hsl(230 18% 12%); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .strip .mini { color: hsl(230 18% 12%); } }
 
   /* ── Two cards ──────────────────────────────────────────────────────── */
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; padding: 9px 14px 0; align-items: start; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: var(--shadow); overflow: hidden; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .card > h3 { margin: 0; padding: 7px 10px 5px; font-size: var(--f-sm); font-weight: 700;
     display: flex; align-items: center; gap: 5px; }
   .card > h3 .ic { color: var(--primary); }
@@ -1005,7 +1003,7 @@
   .tab { display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer; font: inherit;
     background: var(--inset); color: var(--fg-muted); border-radius: 7px; padding: 3px 9px;
     font-size: var(--f-sm); font-weight: 500; }
-  .tab.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); border: 1px solid var(--border); }
+  .tab.on { background: var(--card); color: var(--fg); font-weight: 600; border: 1px solid var(--border); }
   .tab .c { display: inline-grid; place-items: center; min-width: 15px; height: 15px; padding: 0 4px;
     border-radius: 999px; background: var(--fg-faint); color: var(--card); font-size: var(--f-2xs); font-weight: 700; }
   .tab.on .c { background: var(--primary); color: #fff; }
@@ -1013,7 +1011,7 @@
   .tabs .agg { margin-inline-start: auto; font-size: var(--f-2xs); color: var(--fg-faint); }
 
   .panel { margin: 7px 14px 0; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+    background: var(--card); overflow: hidden; }
   .prow { display: grid; grid-template-columns: 66px minmax(0,1fr) auto auto; align-items: center;
     gap: 8px; padding: 5px 10px; font-size: var(--f-sm); cursor: pointer; }
   .prow + .prow { border-top: 1px solid var(--border-soft); }
@@ -1042,7 +1040,7 @@
   .segs { display: inline-flex; background: var(--inset); border-radius: 7px; padding: 2px; gap: 2px; margin-inline-start: auto; }
   .seg { border: 0; background: transparent; font: inherit; font-size: var(--f-xs); font-weight: 500;
     color: var(--fg-muted); padding: 2px 8px; border-radius: 5px; cursor: pointer; }
-  .seg.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+  .seg.on { background: var(--card); color: var(--fg); font-weight: 600; border: 1px solid var(--border); }
   .act-head .cnt { font-size: var(--f-2xs); color: var(--fg-faint); }
 
   /* ── The lifeline ───────────────────────────────────────────────────── */
@@ -1168,7 +1166,7 @@
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>
           <span class="t">טאבולה/אאוטבריין</span>
         </dd>
-        <span class="sub" title="מודעה">מודעה: Elite — Mattress RMK</span>
+        <span class="sub" title="מודעה">מודעה: Elite — מזרנים 160/200</span>
       </div>
       <div class="fact" title="עדכון אחרון: 12/08/2026 09:44">
         <dt>תאריך כניסה</dt>
@@ -1220,14 +1218,13 @@
       <button class="btn" type="button">עוד פעולות <span class="caret">▾</span></button>
     </div>
 
-    <!-- ── Pending rep banner ─────────────────────────────────────────── -->
-    <div class="strip amber">
+    <!-- ── Pending rep · other enquiries ──────────────────────────────── -->
+    <div class="banners"><div class="strip amber">
       <span class="k">נציג ממתין לשיוך:</span>
       <span>אורית בן־דוד</span>
-      <button class="mini" type="button">שייך נציג זה כראשי</button>
+      <button class="mini" type="button">שייך כראשי</button>
     </div>
 
-    <!-- ── Other enquiries from the same contact ──────────────────────── -->
     <div class="strip indigo">
       <span class="k">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>
@@ -1235,7 +1232,7 @@
       </span>
       <span>האחרונה 22/02/2026 · לקוח חוזר · נסגרה עסקה</span>
       <span class="lnk">הצג את כולן ←</span>
-    </div>
+    </div></div>
 
     <!-- ── Marketing + notes  |  next task ────────────────────────────── -->
     <div class="cols">
@@ -1256,7 +1253,7 @@
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M15 3v5h5"/></svg>
             הערות
           </span>
-          <div class="box">שאלה על מזרן מתכוונן שלא במלאי. קנתה כאן פעמיים — כדאי להציע את אושן פלוס כתחליף לפני שסוגרים כלא רלוונטי.</div>
+          <div class="box">ביקשה מיטה מתכווננת חשמלית — לא בקטלוג. קנתה כאן פעמיים, כדאי להציע בסיס קבוע עם מזרן קפיצים מבודדים לפני שסוגרים כלא רלוונטי.</div>
         </div>
       </section>
 
@@ -1274,7 +1271,7 @@
               הערות
             </span>
           </div>
-          <p>לחזור אליה עם חלופות למזרן המתכוונן. לבדוק מול המלאי אם אושן פלוס זמין ב‑160×200.</p>
+          <p>לחזור אליה — ביקשה מיטה מתכווננת חשמלית שאין בקטלוג. להציע בסיס קבוע 160/200 עם מזרן קפיצים מבודדים.</p>
           <div class="meta">
             <span class="g">
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
@@ -1293,7 +1290,7 @@
           </div>
         </div>
         <ul class="restlist">
-          <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">לשלוח קטלוג מזרנים מתכווננים</span><span class="d">14/08</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">לשלוח קטלוג מזרנים</span><span class="d">14/08</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">מעקב אחרי החלטה</span><span class="d">ללא יעד</span></li>
         </ul>
       </section>
@@ -1308,10 +1305,10 @@
     </div>
 
     <div class="panel">
-      <div class="prow"><span class="d">28/02/26</span><span class="t"><b>#Q-2261</b> · ספה תלת „מילאנו״ + שידה</span><span class="st st-green">התקבלה</span><span class="amt">₪11,480</span></div>
-      <div class="prow"><span class="d">19/03/24</span><span class="t"><b>#Q-1180</b> · מיטת „אושן״ 160×200 + 2 מזרנים</span><span class="st st-green">התקבלה</span><span class="amt">₪13,400</span></div>
-      <div class="prow"><span class="d">16/03/24</span><span class="t"><b>#Q-1147</b> · אושן ללא מזרנים</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪9,900</span></div>
-      <div class="prow"><span class="d">15/03/24</span><span class="t"><b>#Q-1102</b> · דגם קלאסיק 140×190</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪7,250</span></div>
+      <div class="prow"><span class="d">28/02/26</span><span class="t"><b>#Q-2261</b> · מיטה זוגית 160/200, בד פרחי + ראש מיטה</span><span class="st st-green">התקבלה</span><span class="amt">₪11,480</span></div>
+      <div class="prow"><span class="d">19/03/24</span><span class="t"><b>#Q-1180</b> · מזרן קפיצים מבודדים 160/200 + ארגז מצעים</span><span class="st st-green">התקבלה</span><span class="amt">₪13,400</span></div>
+      <div class="prow"><span class="d">16/03/24</span><span class="t"><b>#Q-1147</b> · מזרן 160/200 בלבד</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪9,900</span></div>
+      <div class="prow"><span class="d">15/03/24</span><span class="t"><b>#Q-1102</b> · מזרן קפיצים 140/190</span><span class="st st-grey">פג תוקף</span><span class="amt dim">₪7,250</span></div>
       <div class="pfoot">
         <span>סה״כ הצעות <b>4</b> · התקבלו <b>2</b> · אחוז סגירה <b>50%</b></span>
         <span style="margin-inline-start:auto">2 הזמנות מקושרות · <b>₪24,880</b> · קריאת שירות אחת (#312, נסגרה ב‑6 ימים)</span>
@@ -1401,7 +1398,7 @@
         <div class="lane">
           <span class="lbl">שירות <span class="c">1</span></span>
           <span class="plot">
-            <span class="mk" style="right:4.6%"><span class="pin amber" title="#312 · 12/04/2024 · חריקה במסגרת · נסגרה ב‑6 ימים">
+            <span class="mk" style="right:4.6%"><span class="pin amber" title="#312 · 12/04/2024 · שקיעה במזרן · נסגרה ב‑6 ימים">
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="width:8px;height:8px"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.8 2.8 0 0 1-4-4Z"/></svg>
             </span></span>
           </span>
@@ -1502,9 +1499,9 @@
   .head h1 { margin: 0; font-size: var(--f-h1); font-weight: 800; letter-spacing: -.02em; }
   .badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
     padding: 1px 7px; font-size: var(--f-2xs); font-weight: 700; }
-  .b-sla { background: var(--green-soft); color: var(--green); }
-  .b-rep { background: var(--indigo-soft); color: var(--indigo); }
-  .b-svc { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-ring); cursor: pointer; }
+  .b-sla { color: var(--fg-faint); font-weight: 600; padding-inline: 0; }
+  .b-rep { color: var(--primary); background: var(--primary-soft); }
+  .b-svc { color: var(--amber); background: transparent; border: 1px solid var(--amber-ring); cursor: pointer; }
   .phone { display: inline-flex; align-items: center; gap: 5px; font-size: var(--f-md);
     font-variant-numeric: tabular-nums; color: var(--fg-muted); margin-inline-start: auto; }
   .phone .n { direction: ltr; unicode-bidi: isolate; }
@@ -1532,8 +1529,8 @@
   .fact .sub { display: block; margin-top: 2px; font-size: var(--f-2xs); color: var(--fg-faint);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px;
-    padding: 1px 8px; font-size: var(--f-xs); font-weight: 600; background: var(--amber-soft); color: var(--amber); }
-  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; }
+    padding: 1px 8px; font-size: var(--f-xs); font-weight: 600; background: var(--inset); color: var(--fg-muted); }
+  .pill .dot { width: 5px; height: 5px; border-radius: 999px; background: currentColor; opacity: .6; }
   .caret { color: var(--fg-faint); font-size: 8px; }
 
   .actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 9px 14px 0; }
@@ -1541,18 +1538,16 @@
 
   .strip { display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
     border-radius: 8px; padding: 5px 9px; font-size: var(--f-sm); }
-  .strip.amber { border: 1px solid var(--amber-ring); background: var(--amber-soft); }
+  .strip { border-bottom: 1px solid var(--border-soft); border-radius: 0; padding: 5px 0; }
   .strip.amber .k { font-weight: 700; color: var(--amber); }
-  .strip.indigo { border: 1px solid color-mix(in srgb, var(--indigo) 28%, transparent); background: var(--indigo-soft); }
-  .strip.indigo .k { font-weight: 700; color: var(--indigo); display: inline-flex; align-items: center; gap: 5px; }
-  .strip .lnk { margin-inline-start: auto; color: var(--indigo); font-weight: 600; cursor: pointer; }
-  .strip .mini { height: 22px; padding: 0 8px; font-size: var(--f-xs); border-radius: 6px;
-    background: var(--amber); border: 0; color: #fff; font-weight: 600; cursor: pointer; }
+  .strip.indigo .k { font-weight: 700; color: var(--primary); display: inline-flex; align-items: center; gap: 5px; }
+  .strip .lnk { margin-inline-start: auto; color: var(--primary); font-weight: 600; cursor: pointer; }
+  .strip .mini { height: 20px; padding: 0; font-size: var(--f-xs); border: 0; background: transparent;
+    color: var(--fg); font-weight: 600; cursor: pointer; border-bottom: 1px solid var(--border); }
   :root[data-theme="dark"] .strip .mini { color: hsl(230 18% 12%); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .strip .mini { color: hsl(230 18% 12%); } }
 
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    box-shadow: var(--shadow); overflow: hidden; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .card > h3 { margin: 0; padding: 7px 10px 5px; font-size: var(--f-sm); font-weight: 700;
     display: flex; align-items: center; gap: 5px; }
   .card > h3 .ic { color: var(--primary); }
@@ -1596,7 +1591,7 @@
   .st-rose  { background: var(--rose-soft); color: var(--rose); }
 
   /* ── Board: everything on one fixed screen ──────────────────────────── */
-  .board { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; padding: 8px 14px 0; align-items: start; }
+  .board { display: grid; grid-template-columns: 0.82fr 1fr 1.3fr 1.08fr; gap: 8px; padding: 8px 14px 0; align-items: start; }
   .banners { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px 14px 0; }
   .lists { padding: 0 10px 8px; }
   .lrow { display: grid; grid-template-columns: 52px minmax(0,1fr) auto; align-items: center;
@@ -1656,7 +1651,7 @@
   .segs { display: inline-flex; background: var(--inset); border-radius: 7px; padding: 2px; gap: 2px; }
   .seg { border: 0; background: transparent; font: inherit; font-size: var(--f-2xs); font-weight: 500;
     color: var(--fg-muted); padding: 2px 7px; border-radius: 5px; cursor: pointer; }
-  .seg.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow); }
+  .seg.on { background: var(--card); color: var(--fg); font-weight: 600; border: 1px solid var(--border); }
 
   @media (max-width: 1100px) { .board { grid-template-columns: 1fr 1fr; } .kpis { grid-template-columns: repeat(4,1fr); } }
   @media (max-width: 700px) {
@@ -1724,7 +1719,7 @@
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>
           <span class="t">טאבולה/אאוטבריין</span>
         </dd>
-        <span class="sub" title="מודעה">מודעה: Elite — Mattress RMK</span>
+        <span class="sub" title="מודעה">מודעה: Elite — מזרנים 160/200</span>
       </div>
       <div class="fact" title="עדכון אחרון: 12/08/2026 09:44">
         <dt>תאריך כניסה</dt>
@@ -1826,7 +1821,7 @@
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M15 3v5h5"/></svg>
             הערות
           </span>
-          <div class="box">שאלה על מזרן מתכוונן שלא במלאי. קנתה כאן פעמיים — כדאי להציע את אושן פלוס כתחליף לפני שסוגרים כלא רלוונטי.</div>
+          <div class="box">ביקשה מיטה מתכווננת חשמלית — לא בקטלוג. קנתה כאן פעמיים, כדאי להציע בסיס קבוע עם מזרן קפיצים מבודדים לפני שסוגרים כלא רלוונטי.</div>
         </div>
       </section>
 
@@ -1844,7 +1839,7 @@
               הערות
             </span>
           </div>
-          <p>לחזור אליה עם חלופות למזרן המתכוונן. לבדוק מול המלאי אם אושן פלוס זמין ב‑160×200.</p>
+          <p>לחזור אליה — ביקשה מיטה מתכווננת חשמלית שאין בקטלוג. להציע בסיס קבוע 160/200 עם מזרן קפיצים מבודדים.</p>
           <div class="meta">
             <span class="g">
               <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>
@@ -1863,7 +1858,7 @@
           </div>
         </div>
         <ul class="restlist">
-          <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">לשלוח קטלוג מזרנים מתכווננים</span><span class="d">14/08</span></li>
+          <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">לשלוח קטלוג מזרנים</span><span class="d">14/08</span></li>
           <li><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--fg-faint)"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 3 3 5-6"/></svg><span class="t">מעקב אחרי החלטה</span><span class="d">ללא יעד</span></li>
         </ul>
       </section>
@@ -1874,19 +1869,19 @@
           הצעות מחיר <span class="r st st-grey">4 · 50%</span>
         </h3>
         <div class="lists">
-          <div class="lrow"><span class="d">28/02/26</span><span class="t"><b>Q-2261</b> · ספה מילאנו</span><span class="a">₪11,480</span></div>
-          <div class="lrow"><span class="d">19/03/24</span><span class="t"><b>Q-1180</b> · אושן + מזרנים</span><span class="a">₪13,400</span></div>
-          <div class="lrow"><span class="d">16/03/24</span><span class="t"><b>Q-1147</b> · אושן ללא מזרנים</span><span class="a dim">פג תוקף</span></div>
-          <div class="lrow"><span class="d">15/03/24</span><span class="t"><b>Q-1102</b> · דגם קלאסיק</span><span class="a dim">פג תוקף</span></div>
+          <div class="lrow"><span class="d">28/02/26</span><span class="t"><b>Q-2261</b> · מיטה זוגית 160/200</span><span class="a">₪11,480</span></div>
+          <div class="lrow"><span class="d">19/03/24</span><span class="t"><b>Q-1180</b> · מזרן + ארגז מצעים</span><span class="a">₪13,400</span></div>
+          <div class="lrow"><span class="d">16/03/24</span><span class="t"><b>Q-1147</b> · מזרן 160/200 בלבד</span><span class="a dim">פג תוקף</span></div>
+          <div class="lrow"><span class="d">15/03/24</span><span class="t"><b>Q-1102</b> · מזרן קפיצים 140/190</span><span class="a dim">פג תוקף</span></div>
         </div>
         <div class="sub-h">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18M16 10a4 4 0 0 1-8 0"/></svg>
           הזמנות <span class="n">2 · ₪24,880</span>
         </div>
         <div class="lists">
-          <div class="lrow"><span class="d">02/03/26</span><span class="t"><b>#7194</b> · ספה תלת + שידה</span><span class="a">₪11,480</span></div>
+          <div class="lrow"><span class="d">02/03/26</span><span class="t"><b>#7194</b> · מיטה זוגית + ראש מיטה</span><span class="a">₪11,480</span></div>
           <div class="lrow"><span class="d">19/03/26</span><span class="t">↳ סופקה, רמת גן ק׳ 3</span><span class="st st-green">בזמן</span></div>
-          <div class="lrow"><span class="d">21/03/24</span><span class="t"><b>#4821</b> · אושן + 2 מזרנים</span><span class="a">₪13,400</span></div>
+          <div class="lrow"><span class="d">21/03/24</span><span class="t"><b>#4821</b> · מזרן 160/200 + ארגז</span><span class="a">₪13,400</span></div>
           <div class="lrow"><span class="d">04/04/24</span><span class="t">↳ סופקה והורכבה</span><span class="st st-green">בזמן</span></div>
         </div>
       </section>
@@ -1897,8 +1892,8 @@
           שירות <span class="r st st-amber">1</span>
         </h3>
         <div class="lists">
-          <div class="lrow"><span class="d">12/04/24</span><span class="t"><b>#312</b> · חריקה במסגרת</span><span class="st st-green">נסגרה</span></div>
-          <div class="lrow"><span class="d">18/04/24</span><span class="t">↳ הוחלף בורג, אושרה שביעות רצון</span><span class="a dim">6 ימים</span></div>
+          <div class="lrow"><span class="d">12/04/24</span><span class="t"><b>#312</b> · שקיעה במזרן</span><span class="st st-green">נסגרה</span></div>
+          <div class="lrow"><span class="d">18/04/24</span><span class="t">↳ הוחלף מזרן</span><span class="a dim">6 ימים</span></div>
         </div>
         <div class="sub-h">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/></svg>
@@ -1908,7 +1903,7 @@
           <div class="lrow"><span class="d">12/08/26</span><span class="t">טאבולה · מוצרים שלא קיימים</span><span class="st st-rose">פתוחה</span></div>
           <div class="lrow"><span class="d">22/02/26</span><span class="t">לקוח חוזר · הגיעה לסניף</span><span class="st st-green">עסקה</span></div>
           <div class="lrow"><span class="d">03/05/24</span><span class="t">בירור אספקה</span><span class="st st-grey">טופל</span></div>
-          <div class="lrow"><span class="d">14/03/24</span><span class="t">פייסבוק · מבצע 160×200</span><span class="st st-green">עסקה</span></div>
+          <div class="lrow"><span class="d">14/03/24</span><span class="t">פייסבוק · מבצע 160/200</span><span class="st st-green">עסקה</span></div>
         </div>
         <div class="sub-h">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
@@ -2181,7 +2176,7 @@
     <!-- ── Facts ──────────────────────────────────────────────────────── -->
     <dl class="facts">
       <div class="f"><dt>סטטוס</dt><dd class="hot">מחפש מוצרים שלא קיימים<span class="sub" style="color:var(--ink-3)">משתנה דרך משימה</span></dd></div>
-      <div class="f"><dt>מקור הגעה</dt><dd>טאבולה/אאוטבריין<span class="sub">מודעה: Elite — Mattress RMK</span></dd></div>
+      <div class="f"><dt>מקור הגעה</dt><dd>טאבולה/אאוטבריין<span class="sub">מודעה: Elite — מזרנים 160/200</span></dd></div>
       <div class="f"><dt>תאריך כניסה</dt><dd>12/08/2026 04:54<span class="sub">גיל הליד: פחות מיום · עודכן 09:44</span></dd></div>
       <div class="f"><dt>נציג אחראי</dt><dd>מתן לוי<span class="caret">▾</span><span class="sub">סגר את שתי ההזמנות</span></dd></div>
       <div class="f"><dt>נציג שני</dt><dd style="color:var(--ink-3);font-weight:400">לא משויך<span class="caret">▾</span></dd></div>
@@ -2226,12 +2221,12 @@
           <span class="d">12/08 09:44</span>
           <span class="body">
             <b>שיחה</b> · מתן לוי
-            <p>לחזור אליה עם חלופות למזרן המתכוונן. לבדוק מול המלאי אם אושן פלוס זמין ב‑160×200.</p>
+            <p>לחזור אליה — ביקשה מיטה מתכווננת חשמלית שאין בקטלוג. להציע בסיס קבוע 160/200 עם מזרן קפיצים מבודדים.</p>
           </span>
           <span class="lead"></span>
           <span class="done">סמן כבוצע</span>
         </div>
-        <div class="l"><span class="d">14/08</span><span class="t">לשלוח קטלוג מזרנים מתכווננים</span><span class="lead"></span><span class="v dim">פתוחה</span></div>
+        <div class="l"><span class="d">14/08</span><span class="t">לשלוח קטלוג מזרנים</span><span class="lead"></span><span class="v dim">פתוחה</span></div>
         <div class="l"><span class="d">ללא יעד</span><span class="t">מעקב אחרי החלטה</span><span class="lead"></span><span class="v dim">פתוחה</span></div>
       </section>
 
@@ -2246,22 +2241,22 @@
 
       <section>
         <h2>הצעות מחיר <span class="tot">4 · שתיים נסגרו · 50%</span></h2>
-        <div class="l"><span class="d">28/02/26</span><span class="t">Q‑2261 · ספה תלת „מילאנו״ + שידה</span><span class="lead"></span><span class="v acc">₪11,480</span></div>
-        <div class="l"><span class="d">19/03/24</span><span class="t">Q‑1180 · אושן 160×200 + 2 מזרנים</span><span class="lead"></span><span class="v acc">₪13,400</span></div>
-        <div class="l"><span class="d">16/03/24</span><span class="t">Q‑1147 · אושן ללא מזרנים</span><span class="lead"></span><span class="v dim">פג תוקף</span></div>
-        <div class="l"><span class="d">15/03/24</span><span class="t">Q‑1102 · דגם קלאסיק 140×190</span><span class="lead"></span><span class="v dim">פג תוקף</span></div>
+        <div class="l"><span class="d">28/02/26</span><span class="t">Q‑2261 · מיטה זוגית 160/200 + ראש מיטה</span><span class="lead"></span><span class="v acc">₪11,480</span></div>
+        <div class="l"><span class="d">19/03/24</span><span class="t">Q‑1180 · מזרן קפיצים מבודדים 160/200 + ארגז מצעים</span><span class="lead"></span><span class="v acc">₪13,400</span></div>
+        <div class="l"><span class="d">16/03/24</span><span class="t">Q‑1147 · מזרן 160/200 בלבד</span><span class="lead"></span><span class="v dim">פג תוקף</span></div>
+        <div class="l"><span class="d">15/03/24</span><span class="t">Q‑1102 · מזרן קפיצים 140/190</span><span class="lead"></span><span class="v dim">פג תוקף</span></div>
       </section>
 
       <section>
         <h2>הזמנות <span class="tot">2 · ₪24,880</span></h2>
         <div class="l">
           <span class="d">02/03/26</span>
-          <span class="t">#7194 · ספה תלת „מילאנו״ + שידה<span class="sub">סופקה 19/03 · רמת גן, קומה 3 · בזמן</span></span>
+          <span class="t">#7194 · מיטה זוגית 160/200, בד פרחי + ראש מיטה<span class="sub">סופקה 19/03 · רמת גן, קומה 3 · בזמן</span></span>
           <span class="lead"></span><span class="v acc">₪11,480</span>
         </div>
         <div class="l">
           <span class="d">21/03/24</span>
-          <span class="t">#4821 · מיטת „אושן״ 160×200 + 2 מזרנים<span class="sub">סופקה והורכבה 04/04 · בזמן</span></span>
+          <span class="t">#4821 · מזרן קפיצים מבודדים 160/200 + ארגז מצעים<span class="sub">סופקה והורכבה 04/04 · בזמן</span></span>
           <span class="lead"></span><span class="v acc">₪13,400</span>
         </div>
       </section>
@@ -2271,12 +2266,12 @@
         <div class="l"><span class="d">12/08/26</span><span class="t">טאבולה/אאוטבריין · Elite<span class="sub">מחפש מוצרים שלא קיימים בחברה</span></span><span class="lead"></span><span class="v hot">פתוחה</span></div>
         <div class="l"><span class="d">22/02/26</span><span class="t">לקוח חוזר · הגיעה לסניף</span><span class="lead"></span><span class="v acc">נסגרה עסקה</span></div>
         <div class="l"><span class="d">03/05/24</span><span class="t">בירור אספקה</span><span class="lead"></span><span class="v dim">טופל</span></div>
-        <div class="l"><span class="d">14/03/24</span><span class="t">פייסבוק · „מבצע 160×200״</span><span class="lead"></span><span class="v acc">נסגרה עסקה</span></div>
+        <div class="l"><span class="d">14/03/24</span><span class="t">פייסבוק · „מבצע 160/200״</span><span class="lead"></span><span class="v acc">נסגרה עסקה</span></div>
       </section>
 
       <section>
         <h2>שירות ותקשורת <span class="tot">31 מגעים · 74% מענה</span></h2>
-        <div class="l"><span class="d">12/04/24</span><span class="t">קריאה #312 · חריקה במסגרת<span class="sub">אחריות · הוחלף בורג · נסגרה 18/04</span></span><span class="lead"></span><span class="v dim">6 ימים</span></div>
+        <div class="l"><span class="d">12/04/24</span><span class="t">קריאה #312 · שקיעה במזרן<span class="sub">30 ימי ניסיון · הוחלף מזרן · נסגרה 18/04</span></span><span class="lead"></span><span class="v dim">6 ימים</span></div>
         <div class="l"><span class="t">שיחות</span><span class="lead"></span><span class="v dim">18</span></div>
         <div class="l"><span class="t">וואטסאפ</span><span class="lead"></span><span class="v dim">9</span></div>
         <div class="l"><span class="t">מיילים · פגישה בסניף</span><span class="lead"></span><span class="v dim">3 · 1</span></div>
@@ -2293,7 +2288,7 @@
 
       <section>
         <h2>הערות</h2>
-        <div class="notebox">שאלה על מזרן מתכוונן שלא במלאי. קנתה כאן פעמיים — כדאי להציע את אושן פלוס כתחליף לפני שסוגרים כלא רלוונטי.</div>
+        <div class="notebox">ביקשה מיטה מתכווננת חשמלית — לא בקטלוג. קנתה כאן פעמיים, כדאי להציע בסיס קבוע עם מזרן קפיצים מבודדים לפני שסוגרים כלא רלוונטי.</div>
       </section>
 
     </div>
