@@ -8,7 +8,7 @@ import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import QuickActions from '@/components/shared/QuickActions';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
-import { Phone, Users, FileText, ShoppingCart, MessageCircle } from 'lucide-react';
+import { Phone, Users, FileText, ShoppingCart, MessageCircle, AlertCircle } from 'lucide-react';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import { format } from '@/lib/safe-date-fns';
 import { getLeadSlaAnchor, isLeadHandled } from '@/utils/leadStatus';
@@ -32,9 +32,9 @@ export default function LeadListTable({
   users = [],
   onRowClick,
   highlightId,
-  // 'full' keeps every column (Marketing still wants SLA / rep / activity
-  // date). 'tasks' is the manager's leads/tasks screen: the columns the
-  // approved design shows, in its order, and nothing else.
+  // 'full' keeps every column (Marketing still wants SLA / activity date).
+  // 'tasks' is the manager's leads/tasks screen: the columns the approved
+  // design shows, in its order, and nothing else.
   columnSet = 'full',
   // Multi-select is opt-in on the tasks screen — the design has no checkbox
   // column, so it appears only when the manager turns "בחירה מרובה" on.
@@ -219,15 +219,30 @@ export default function LeadListTable({
         <SourceBadge source={row.source} />
       ),
     },
-    ...(isTasksView ? [] : [{
-      header: 'נציג מטפל',
-      width: '160px',
+    {
+      header: isTasksView ? 'נציג' : 'נציג מטפל',
+      accessor: 'rep1',
+      width: isTasksView ? '150px' : '160px',
       render: (row) => {
-        if (!row.rep1) return <span className="text-xs text-amber-700">לא משויך</span>;
+        // Three states, not two. A lead offered to a rep who hasn't picked it up
+        // yet still has no owner — rep1 is empty, so it counts as unassigned
+        // everywhere else on this screen — and reads as "ממתין" rather than as
+        // that rep's lead. Same distinction the mobile card draws.
+        if (!row.rep1) {
+          const pending = row.pending_rep_email;
+          if (!pending) return <span className="text-xs font-medium text-amber-700">לא משויך</span>;
+          const pendingName = repNameByEmail.get(pending) || pending;
+          return (
+            <span className="flex items-center gap-1 text-xs text-amber-700 min-w-0" title={`ממתין לשיוך: ${pendingName}`}>
+              <AlertCircle className="h-3.5 w-3.5 flex-none" />
+              <span className="truncate">ממתין: {pendingName}</span>
+            </span>
+          );
+        }
         const name = repNameByEmail.get(row.rep1) || row.rep1;
         return <p className="text-sm truncate" title={name}>{name}</p>;
       },
-    }]),
+    },
     {
       header: 'משימה הבאה',
       accessor: 'next_active_task',

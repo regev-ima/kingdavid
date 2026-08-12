@@ -255,7 +255,10 @@ export default function ResponsiveLeadsTable({
             rowClassName ? rowClassName(row, rowIdx) : '',
             row.id === highlightId ? LAST_OPENED_ROW_CLASS : '',
           ].filter(Boolean).join(' ')}
-          tableClassName="table-fixed min-w-[1120px]"
+          // Roughly the sum of the declared column widths, so the columns keep
+          // their intended proportions and the table scrolls instead of
+          // crushing them. Grew with the נציג column on the management view.
+          tableClassName="table-fixed min-w-[1240px]"
         />
       </div>
 
