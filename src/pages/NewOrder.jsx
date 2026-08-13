@@ -34,6 +34,7 @@ import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
 import useOrderAutoSend from '@/hooks/use-order-autosend';
 import { sendOrderToCustomerWhatsApp, orderIsPaidEnoughToSend } from '@/lib/orderWhatsAppAutoSend';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
+import { nullBlankIds } from '@/lib/blankIds';
 import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
 import IsraeliPhoneInput from '@/components/shared/IsraeliPhoneInput';
 import { isValidIsraeliPhone, toLocalIsraeliPhone } from '@/utils/phoneUtils';
@@ -273,7 +274,9 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
 
   const clearPhoneLink = () => {
     setLinkedRecord(null);
-    if (!leadId) setFormData((prev) => ({ ...prev, lead_id: '' }));
+    // null, not '': lead_id is a uuid column, and an empty string there fails
+    // the whole insert with 22P02. "No lead behind this order" is NULL.
+    if (!leadId) setFormData((prev) => ({ ...prev, lead_id: null }));
   };
 
   useEffect(() => {
@@ -380,7 +383,10 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
         numberField: 'order_number',
         prefix: 'ORD',
         startingValue: 10001,
-        buildPayload: (newNumber) => ({
+        // nullBlankIds is the backstop: the payload is the whole form state, and
+        // a blank lead_id/quote_id/customer_id in it fails the INSERT outright
+        // (22P02) instead of just leaving the order unlinked. See lib/blankIds.
+        buildPayload: (newNumber) => nullBlankIds({
           ...data,
           order_number: newNumber,
           terms: termsCopy.terms ?? null,
