@@ -13,6 +13,7 @@
 import { supabase } from './supabaseClient';
 import { entities } from './entities';
 import { resolveUserProfile } from '@/lib/resolveUserProfile';
+import { buildStorageKey, contentTypeFor, storageErrorMessage } from '@/lib/fileUpload';
 
 // Allow only same-origin redirects. Without this, a crafted login or
 // logout URL like `?redirect=https://attacker.com/phish` would bounce
@@ -113,17 +114,23 @@ const functions = {
 // ── Integrations (Core: file upload, email, LLM) ───────────────
 const integrations = {
   Core: {
+    // The object key is derived, not the file name: Storage rejects any key
+    // with characters outside its allowed set, and Hebrew is outside it — so
+    // passing `file.name` through made every Hebrew-named upload fail with
+    // "Invalid key". See src/lib/fileUpload.js. The original name is kept by
+    // the caller (WhatsApp sends it as `file_name`), so nothing user-visible
+    // changes.
     async UploadFile({ file }) {
-      const fileName = `${Date.now()}_${file.name}`;
-      const { data, error } = await supabase.storage
+      const path = buildStorageKey(file?.name);
+      const { error } = await supabase.storage
         .from('uploads')
-        .upload(fileName, file);
+        .upload(path, file, { contentType: contentTypeFor(file) });
 
-      if (error) throw error;
+      if (error) throw new Error(storageErrorMessage(error));
 
       const { data: urlData } = supabase.storage
         .from('uploads')
-        .getPublicUrl(fileName);
+        .getPublicUrl(path);
 
       return { file_url: urlData.publicUrl };
     },

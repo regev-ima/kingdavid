@@ -11,6 +11,11 @@ import {
 import { Loader2, Send, Lock, AlertTriangle, BookText, Sparkles, Paperclip } from 'lucide-react';
 import { useWhatsAppTemplates } from './useWhatsAppTemplates';
 import { resolveTemplate, sendErrorMessage, buildImproveMessagePrompt } from './whatsappHelpers';
+import { compressImage } from '@/lib/imageCompression';
+import {
+  ATTACHMENT_ACCEPT, MAX_UPLOAD_MB, alignNameToType, attachmentRejection, formatFileSize,
+  imageCompressionOptions, isImageAttachment, preparedRejection,
+} from '@/lib/whatsappAttachment';
 
 const TEMPLATE_CATEGORIES = [
   { value: 'all', label: 'הכל' },
@@ -42,6 +47,9 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
   const [slashQuery, setSlashQuery] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
   const [improving, setImproving] = useState(false);
+  // Compressing a photo happens before the upload starts and can take a second
+  // or two on a big one — without its own flag the button looks idle.
+  const [preparingFile, setPreparingFile] = useState(false);
 
   const currentUserId = currentUser?.id;
   const isOwner = !!chat?.user_id && chat.user_id === currentUserId;
@@ -212,21 +220,51 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
     onError: (err) => toast.error(`שליחת הקובץ נכשלה: ${err?.message || 'שגיאה'}`),
   });
 
-  const handleFilePicked = (e) => {
-    const file = e.target.files?.[0];
+  // Picked file → sent file. Photos are shrunk on the way (a phone camera
+  // writes far more than WhatsApp keeps), documents go through untouched —
+  // a PDF is the quote, so re-encoding it is not on the table. Both limits and
+  // both refusal messages live in @/lib/whatsappAttachment.
+  const handleFilePicked = async (e) => {
+    const picked = e.target.files?.[0];
     // Reset the input so picking the SAME file again still fires onChange.
     e.target.value = '';
-    if (!file || sendFileMutation.isPending) return;
-    // Green API caps media at 100MB; stop oversized files before the upload.
-    if (file.size > 100 * 1024 * 1024) {
-      toast.error('הקובץ גדול מדי (מקסימום 100MB)');
+    if (!picked || sendFileMutation.isPending || preparingFile) return;
+    setSlashOpen(false);
+
+    const rejection = attachmentRejection(picked);
+    if (rejection) {
+      toast.error(rejection);
       return;
     }
-    setSlashOpen(false);
+
+    let file = picked;
+    if (isImageAttachment(picked)) {
+      setPreparingFile(true);
+      try {
+        // compressImage never throws — it returns the original on failure, and
+        // preparedRejection below is what catches that case.
+        file = alignNameToType(await compressImage(picked, imageCompressionOptions(picked)));
+      } finally {
+        setPreparingFile(false);
+      }
+    }
+
+    const prepared = preparedRejection(file, { original: picked });
+    if (prepared) {
+      toast.error(prepared);
+      return;
+    }
+
+    // Only worth mentioning when the rep would otherwise wonder what happened
+    // to their 9MB photo.
+    if (file !== picked && picked.size - file.size > 512 * 1024) {
+      toast.info(`התמונה הוקטנה ל-${formatFileSize(file.size)} לשליחה מהירה`);
+    }
+
     sendFileMutation.mutate(file);
   };
 
-  const busy = sendMutation.isPending || sendFileMutation.isPending;
+  const busy = sendMutation.isPending || sendFileMutation.isPending || preparingFile;
 
   // Improve the rep's OWN draft with AI (clarity/tone), replacing the composer
   // text in place — they still review and can edit/undo before sending. Does
@@ -320,7 +358,7 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+          accept={ATTACHMENT_ACCEPT}
           onChange={handleFilePicked}
         />
         <Button
@@ -331,9 +369,11 @@ export default function WhatsAppComposer({ chat, rep, currentUser, isAdmin, mess
           disabled={busy || statusLoading}
           className="h-10 w-10 shrink-0"
           aria-label="צרף קובץ או תמונה"
-          title="צרף קובץ או תמונה"
+          title={`צרף תמונה או קובץ (PDF, Word, Excel — עד ${MAX_UPLOAD_MB}MB · תמונות גדולות יוקטנו אוטומטית)`}
         >
-          {sendFileMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+          {preparingFile || sendFileMutation.isPending
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : <Paperclip className="h-4 w-4" />}
         </Button>
 
         <Popover open={templatesOpen} onOpenChange={setTemplatesOpen}>
