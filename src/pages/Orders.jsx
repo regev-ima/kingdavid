@@ -11,7 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, LayoutDashboard, X } from "lucide-react";
-import { format } from '@/lib/safe-date-fns';
+import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import UserAvatar from '@/components/shared/UserAvatar';
+import { getRepDisplayName } from '@/lib/repDisplay';
+import { isSameRep } from '@/lib/repSlots';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canViewOrdersWorkspace, filterOrdersForUser, canViewOrder, isPhoneLookupTerm, canAccessAdminOnly } from '@/lib/rbac';
 import { getDateRange } from '@/utils/dateRange';
@@ -167,6 +170,17 @@ export default function Orders() {
     enabled: canAccessSales,
   });
 
+  // Email → user record. Feeds both the "נציג" column (name + the rep's own
+  // avatar identity) and the rep filter's option labels, so the two always
+  // spell the same person the same way.
+  const userByEmail = useMemo(() => {
+    const map = new Map();
+    for (const user of users) {
+      if (user?.email) map.set(String(user.email).toLowerCase(), user);
+    }
+    return map;
+  }, [users]);
+
   // A phone search lets a rep find OTHER reps' orders too (view-only); any
   // other search — or none — stays scoped to the rep's own orders.
   const phoneSearch = isPhoneLookupTerm(filters.search);
@@ -257,19 +271,19 @@ export default function Orders() {
   // table, and a sales user (who only ever sees their own orders) gets no rep
   // filter at all, because there is only ever one name in their view.
   const repOptions = useMemo(() => {
-    const nameByEmail = new Map(
-      users.filter((u) => u?.email).map((u) => [String(u.email).toLowerCase(), u.full_name || u.email]),
-    );
     const seen = new Map();
     for (const order of rangeOrders) {
       for (const key of orderRepKeys(order)) {
-        if (!seen.has(key)) seen.set(key, nameByEmail.get(key) || key);
+        if (!seen.has(key)) {
+          const user = userByEmail.get(key);
+          seen.set(key, user?.full_name || user?.email || key);
+        }
       }
     }
     return [...seen.entries()]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label, 'he'));
-  }, [rangeOrders, users]);
+  }, [rangeOrders, userByEmail]);
 
   // Kept on screen while a rep is selected even if the view narrowed down to
   // that one rep — a filter that hides its own control is a filter nobody can
@@ -280,6 +294,20 @@ export default function Orders() {
       ? [...filterOptions, { key: 'rep', label: 'נציג', allLabel: 'כל הנציגים', options: repOptions }]
       : filterOptions
   ), [showRepFilter, repOptions]);
+
+  // One rep chip: their avatar identity (same colour + icon they get on every
+  // other screen) next to their name. Falls back to a synthetic user so an
+  // email that isn't in the roster still renders instead of blanking the cell.
+  const renderRep = (email) => {
+    const name = getRepDisplayName(email, users);
+    const user = userByEmail.get(String(email).toLowerCase()) || { email, full_name: name };
+    return (
+      <div key={email} className="flex items-center gap-1.5 min-w-0">
+        <UserAvatar user={user} size="xs" />
+        <span className="text-sm truncate" title={name}>{name}</span>
+      </div>
+    );
+  };
 
   const columns = [
     {
@@ -318,6 +346,24 @@ export default function Orders() {
         </span>
       )
     },
+    // Who made the sale. rep1 is the order's owner — the rep credited with it
+    // — and rep2, when set, is the second rep on the same sale (they split the
+    // commission). Both are listed so a manager who filtered by a rep sitting
+    // in slot 2 can see why the row matched.
+    {
+      header: 'נציג',
+      accessor: 'rep1',
+      render: (row) => {
+        // A rep2 that repeats rep1 is a legacy row the one-person-one-slot
+        // repair hasn't reached (it's a data repair, not a DB constraint) —
+        // listing them twice would just read as a rep splitting with themselves.
+        const reps = [row.rep1, row.rep2]
+          .filter(Boolean)
+          .filter((email, i, list) => i === 0 || !isSameRep(email, list[0]));
+        if (!reps.length) return <span className="text-sm text-muted-foreground">—</span>;
+        return <div className="space-y-1">{reps.map((email) => renderRep(email))}</div>;
+      }
+    },
     {
       header: 'סכום',
       accessor: 'total',
@@ -337,12 +383,20 @@ export default function Orders() {
       header: 'משלוח',
       render: (row) => <StatusBadge status={row.delivery_status} />
     },
+    // Date over time, both in Israel time — the hour is what tells a manager
+    // whether the order came in during the shift or after hours, and reading it
+    // in the browser's local zone would make that answer wrong abroad.
     {
       header: 'תאריך',
       render: (row) => (
-        <span className="text-sm text-muted-foreground">
-          {format(new Date(row.created_date), 'dd/MM/yyyy')}
-        </span>
+        <div className="leading-tight">
+          <div className="text-sm text-muted-foreground whitespace-nowrap">
+            {formatInTimeZone(row.created_date, 'Asia/Jerusalem', 'dd/MM/yyyy')}
+          </div>
+          <div className="text-xs text-muted-foreground/70 tabular-nums">
+            {formatInTimeZone(row.created_date, 'Asia/Jerusalem', 'HH:mm')}
+          </div>
+        </div>
       )
     },
     {
