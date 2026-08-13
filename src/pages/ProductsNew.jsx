@@ -39,6 +39,7 @@ import {
 "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, ChevronDown, ChevronUp, AlertTriangle, Clock, Tag, Upload, X, Loader2, Ruler } from "lucide-react";
+import { preVatFromInclVat, inclVatFromPreVat, round2 } from '@/lib/quoteTotals';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import BedConfigManager from "../components/product/BedConfigManager";
@@ -153,7 +154,9 @@ export default function ProductsNew() {
     length_cm: '',
     width_cm: '',
     height_cm: '',
-    base_price: '',
+    // What the rep types is the CUSTOMER's price, VAT included. base_price is
+    // derived from it on save — see preVatFromInclVat.
+    price_incl_vat: '',
     discount_percent: 0,
     stock_quantity: 0,
     min_stock_threshold: '',
@@ -341,7 +344,7 @@ export default function ProductsNew() {
       length_cm: '',
       width_cm: '',
       height_cm: '',
-      base_price: '',
+      price_incl_vat: '',
       discount_percent: 0,
       stock_quantity: 0,
       min_stock_threshold: '',
@@ -432,16 +435,19 @@ export default function ProductsNew() {
       toast.error('נדרש למלא מק"ט לפני יצירת הווריאציה');
       return;
     }
-    if (!Number.isFinite(Number(variationForm.base_price)) || Number(variationForm.base_price) <= 0) {
+    if (!Number.isFinite(Number(variationForm.price_incl_vat)) || Number(variationForm.price_incl_vat) <= 0) {
       toast.error('נדרש למלא מחיר חיובי לפני יצירת הווריאציה');
       return;
     }
+    // price_incl_vat is the form's field, not a column: base_price is what the
+    // table holds, and everything downstream reads it as pre-VAT.
+    const { price_incl_vat, ...formColumns } = variationForm;
     const cleanData = {
-      ...variationForm,
+      ...formColumns,
       length_cm: variationForm.length_cm ? Number(variationForm.length_cm) : null,
       width_cm: variationForm.width_cm ? Number(variationForm.width_cm) : null,
       height_cm: variationForm.height_cm ? Number(variationForm.height_cm) : null,
-      base_price: Number(variationForm.base_price),
+      base_price: preVatFromInclVat(price_incl_vat),
       discount_percent: Number(variationForm.discount_percent || 0),
       stock_quantity: Number(variationForm.stock_quantity || 0),
       min_stock_threshold: variationForm.min_stock_threshold ? Number(variationForm.min_stock_threshold) : null,
@@ -503,7 +509,8 @@ export default function ProductsNew() {
       length_cm: variation.length_cm || '',
       width_cm: variation.width_cm || '',
       height_cm: variation.height_cm || '',
-      base_price: variation.base_price || '',
+      // Stored pre-VAT, shown to the rep the way they price: incl VAT.
+      price_incl_vat: variation.base_price ? inclVatFromPreVat(variation.base_price) : '',
       discount_percent: variation.discount_percent || 0,
       stock_quantity: variation.stock_quantity || 0,
       min_stock_threshold: variation.min_stock_threshold || '',
@@ -1210,11 +1217,13 @@ export default function ProductsNew() {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>מחיר לפני מע״מ *</Label>
+                {/* The price the business quotes. Stored pre-VAT, but typed the
+                    way it is spoken — see preVatFromInclVat. */}
+                <Label>מחיר ללקוח כולל מע״מ *</Label>
                 <Input
                       type="number"
-                      value={variationForm.base_price}
-                      onChange={(e) => setVariationForm({ ...variationForm, base_price: e.target.value })}
+                      value={variationForm.price_incl_vat}
+                      onChange={(e) => setVariationForm({ ...variationForm, price_incl_vat: e.target.value })}
                       required />
 
               </div>
@@ -1227,11 +1236,13 @@ export default function ProductsNew() {
 
               </div>
               <div>
-                <Label>מחיר סופי (מחושב)</Label>
+                <Label>מחיר סופי ללקוח (מחושב)</Label>
                 <Input
-                      value={variationForm.base_price && variationForm.discount_percent ?
-                      (variationForm.base_price * (1 - variationForm.discount_percent / 100)).toFixed(2) :
-                      variationForm.base_price || '0'}
+                      value={(() => {
+                        const incl = Number(variationForm.price_incl_vat) || 0;
+                        const disc = Number(variationForm.discount_percent) || 0;
+                        return `₪${round2(incl * (1 - disc / 100)).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                      })()}
                       disabled
                       className="bg-muted" />
 
@@ -1240,13 +1251,12 @@ export default function ProductsNew() {
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <Label>מחיר כולל מע״מ 18% (לקריאה בלבד)</Label>
+                <Label>מחיר לפני מע״מ (נשמר, מחושב)</Label>
                 <Input
                       value={(() => {
-                        const finalPrice = variationForm.base_price && variationForm.discount_percent ?
-                          variationForm.base_price * (1 - variationForm.discount_percent / 100) :
-                          Number(variationForm.base_price) || 0;
-                        return finalPrice ? `₪${Math.round(finalPrice * 1.18).toLocaleString()}` : '₪0';
+                        const preVat = preVatFromInclVat(variationForm.price_incl_vat);
+                        const disc = Number(variationForm.discount_percent) || 0;
+                        return `₪${round2(preVat * (1 - disc / 100)).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                       })()}
                       disabled
                       className="bg-muted font-semibold" />
@@ -1493,7 +1503,12 @@ export default function ProductsNew() {
                                         </TableCell>
                                         <TableCell>
                                           <div className="font-semibold text-muted-foreground">
-                                            ₪{variation.final_price ? Math.round(variation.final_price * 1.18).toLocaleString() : '-'}
+                                            {/* Exact, not Math.round: rounding here is what hid the
+                                                twenty agorot of 7,540.20 behind a round 7,540, so the
+                                                catalog and the customer's order disagreed in silence. */}
+                                            ₪{variation.final_price
+                                              ? inclVatFromPreVat(variation.final_price).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                              : '-'}
                                           </div>
                                         </TableCell>
                                         <TableCell className="bg-transparent text-foreground p-2 align-middle [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]">

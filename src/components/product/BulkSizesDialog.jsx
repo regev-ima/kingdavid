@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, AlertTriangle, Ruler } from 'lucide-react';
+import { preVatFromInclVat } from '@/lib/quoteTotals';
 import {
   buildVariationSku,
   filterSizesForBedTypes,
@@ -179,8 +180,11 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
 
       const created = [];
       for (const row of selectedRows) {
+        // Everything on this dialog is typed as the customer's price, VAT in —
+        // the base price, the per-size surcharges and the per-row overrides
+        // alike. base_price is the pre-VAT column, so it is derived here.
         const price = Number(row.price);
-        const basePriceValue = Number.isFinite(price) && price > 0 ? price : null;
+        const basePriceValue = Number.isFinite(price) && price > 0 ? preVatFromInclVat(price) : null;
         created.push(await base44.entities.ProductVariation.create({
           product_id: product.id,
           sku: row.sku,
@@ -242,7 +246,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
             </div>
             <div className="space-y-1.5">
               <Label>
-                מחיר בסיס{baseSize ? ` (${formatDimensions(getSizeDimensions(baseSize))})` : ''}
+                מחיר ללקוח כולל מע״מ{baseSize ? ` (${formatDimensions(getSizeDimensions(baseSize))})` : ''}
               </Label>
               <Input
                 type="number"
