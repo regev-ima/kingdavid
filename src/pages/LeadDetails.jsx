@@ -55,6 +55,7 @@ import { canEditPrimaryRep, canEditSecondaryRep, canAccessSalesWorkspace } from 
 import { buildLeadWorkbenchState } from '@/lib/leadWorkbench';
 import { useContactLeadIds } from '@/hooks/use-contact-lead-ids';
 import { formatInTimeZone } from '@/lib/safe-date-fns-tz';
+import { closeSalesTask } from '@/lib/closeSalesTask';
 import RepSelectItem from '@/components/shared/RepSelectItem';
 
 // What the customer actually bought, in one line — "מזרן עילית 1345 ×2 · בסיס
@@ -464,7 +465,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
       if (openAssignmentTasks.length > 0) {
         await Promise.all(openAssignmentTasks.map(t =>
-          base44.entities.SalesTask.update(t.id, {
+          closeSalesTask(t.id, {
             task_status: 'completed',
             rep1: email,
             summary: `${assignerName} שייך את הליד לנציג ${repName}`,
@@ -614,7 +615,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
     if (openAssignmentTasks.length > 0) {
       await Promise.all(openAssignmentTasks.map(t =>
-        base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+        closeSalesTask(t.id, { task_status: 'completed' })
       ));
     } else {
       await base44.entities.SalesTask.create({
@@ -729,7 +730,7 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
 
                             if (openAssignmentTasks.length > 0) {
                               await Promise.all(openAssignmentTasks.map(t =>
-                                base44.entities.SalesTask.update(t.id, { task_status: 'completed' })
+                                closeSalesTask(t.id, { task_status: 'completed' })
                               ));
                             } else {
                               await base44.entities.SalesTask.create({

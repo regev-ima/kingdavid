@@ -159,12 +159,17 @@ function summarizeEvent(event) {
     return { Icon: meta.icon, tone: meta.tone, label: meta.label };
   }
   if (event.kind === 'task') {
+    // Only closed tasks reach this feed, so the collapsed track says how each
+    // one ended rather than just "משימה": the colour carries the outcome
+    // (done / not done / cancelled) and the icon stays the task's own type, so
+    // a completed call and a cancelled call don't look alike at a glance.
     const chip = TASK_TYPE_CHIP[event.task?.task_type] || FALLBACK_TASK_TYPE_CHIP;
+    const outcome = TASK_OUTCOME[event.task?.task_status] || TASK_OUTCOME.cancelled;
     const first = String(event.task?.summary || '').split('\n')[0].trim();
     return {
       Icon: chip.icon,
-      tone: chip.tone,
-      label: `משימה: ${first || ALL_TASK_TYPE_LABELS[event.task?.task_type] || 'משימה'}`,
+      tone: outcome.dot,
+      label: `${outcome.label}: ${first || ALL_TASK_TYPE_LABELS[event.task?.task_type] || 'משימה'}`,
     };
   }
   const type = event.log?.action_type;
