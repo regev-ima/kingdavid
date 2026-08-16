@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
 import { Input } from '@/components/ui/input';
@@ -10,8 +11,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import StatusBadge from '@/components/shared/StatusBadge';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
-import { Search, Phone, ArrowLeft, UserPlus, Users } from 'lucide-react';
+import { Search, Phone, ArrowLeft, UserPlus, Users, Calendar } from 'lucide-react';
 import { SOURCE_LABELS } from '@/constants/leadOptions';
+import { getRepDisplayName } from '@/lib/repDisplay';
+import { parseDbTimestamp, formatInTimeZone } from '@/lib/safe-date-fns-tz';
 import {
   formatIsraeliPhone as formatPhone,
   isPhoneShapedQuery as isPhoneShapedQueryFor,
@@ -80,6 +83,17 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
   // more than once. Looking a person up is exactly when a rep needs to know
   // that: the answer to "is this a new customer?" is on this screen or nowhere.
   const repeatEnquiries = useRepeatEnquiries(results);
+
+  // Only used to turn the rep's email on a result into their name. Same
+  // `['users']` key the rest of the app uses, so this shares the cached roster
+  // instead of adding a request. `retry: false` — if it fails the card falls
+  // back to the email (getRepDisplayName's own fallback) rather than blocking.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   const hasQuery = debouncedQuery.length >= 2;
   const showEmpty = hasQuery && !isLoading && results.length === 0;
@@ -154,6 +168,7 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
             <LeadResultCard
               key={lead.id}
               lead={lead}
+              users={users}
               repeatEntry={repeatEnquiries.get(lead.id)}
               onOpen={() => handleOpen(lead.id)}
             />
@@ -164,10 +179,18 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
   );
 }
 
-function LeadResultCard({ lead, repeatEntry, onOpen }) {
+function LeadResultCard({ lead, users, repeatEntry, onOpen }) {
   const ownerEmail = lead.rep1 || lead.pending_rep_email || lead.rep2 || null;
+  // The rep's name, not their mailbox. A card that says
+  // "misgavkingdavid@gmail.com" makes the reader translate an address into a
+  // person before they can act on it; getRepDisplayName falls back to the
+  // email only when the roster genuinely has no user for it.
+  const ownerName = ownerEmail ? getRepDisplayName(ownerEmail, users) : null;
   const sourceLabel = lead.source ? (SOURCE_LABELS[lead.source] || lead.source) : null;
   const callHref = lead.phone ? `tel:${lead.phone}` : null;
+  // Creation date, always — "how old is this enquiry?" is part of deciding
+  // what to do with it, and it shouldn't take opening the lead to answer.
+  const createdAt = parseDbTimestamp(lead.created_date);
 
   return (
     <button
@@ -180,7 +203,12 @@ function LeadResultCard({ lead, repeatEntry, onOpen }) {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-base font-bold text-foreground truncate">{lead.full_name || 'לא צוין שם'}</p>
             <RepeatEnquiryBadge entry={repeatEntry} />
-            {lead.status ? <StatusBadge status={lead.status} /> : null}
+            {/* Status always has a badge. A lead with no status is a real
+                state a rep needs to see, and a card that simply omits the
+                badge reads as "I forgot to look" rather than "there is none". */}
+            {lead.status
+              ? <StatusBadge status={lead.status} />
+              : <StatusBadge status="__none__" label="ללא סטטוס" />}
           </div>
           <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
             {lead.phone ? (
@@ -197,12 +225,34 @@ function LeadResultCard({ lead, repeatEntry, onOpen }) {
               </span>
             ) : null}
           </div>
+          {/* Date and hour on one line: the hour is a follow-up to the date,
+              so it's smaller and lighter rather than a second date-sized fact. */}
+          <div className="mt-1.5 text-[11px] text-muted-foreground inline-flex items-baseline gap-1.5 whitespace-nowrap">
+            <Calendar className="h-3 w-3 self-center" />
+            <span>נוצר:</span>
+            {createdAt ? (
+              <>
+                <span className="font-medium text-foreground tabular-nums">
+                  {formatInTimeZone(createdAt, 'Asia/Jerusalem', 'dd/MM/yyyy')}
+                </span>
+                <span className="text-[10px] text-muted-foreground/70 tabular-nums">
+                  {formatInTimeZone(createdAt, 'Asia/Jerusalem', 'HH:mm')}
+                </span>
+              </>
+            ) : (
+              <span className="font-medium text-foreground">—</span>
+            )}
+          </div>
           {ownerEmail ? (
-            <div className="mt-2 text-[11px] text-muted-foreground inline-flex items-center gap-1">
-              <Users className="h-3 w-3" />
-              <span>נציג מטפל: <span className="font-medium text-foreground">{ownerEmail}</span></span>
+            <div className="mt-1 text-[11px] text-muted-foreground flex items-center gap-1">
+              <Users className="h-3 w-3 flex-shrink-0" />
+              {/* The email stays reachable in the tooltip — the admin fixing a
+                  missing user record still needs to know which address it is. */}
+              <span className="truncate" title={ownerEmail}>
+                נציג מטפל: <span className="font-medium text-foreground">{ownerName}</span>
+              </span>
               {lead.pending_rep_email && lead.rep1 ? (
-                <span className="text-amber-700">· ממתין לשיוך</span>
+                <span className="text-amber-700 flex-shrink-0">· ממתין לשיוך</span>
               ) : null}
             </div>
           ) : (
