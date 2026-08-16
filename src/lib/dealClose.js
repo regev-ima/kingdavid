@@ -1,5 +1,6 @@
 import { base44 } from '@/api/base44Client';
 import { statusOpensAutoTask } from '@/constants/leadOptions';
+import { closeSalesTask } from '@/lib/closeSalesTask';
 
 const IDLE_NOTE = 'בוטלה אוטומטית – הסטטוס של הליד אינו מצריך משימה פתוחה';
 
@@ -66,12 +67,11 @@ async function sweepOpenTasks(leadId, newStatus, note, exceptTaskId) {
     (openTasks || [])
       .filter((t) => t && t.id !== exceptTaskId)
       .map((t) =>
-        base44.entities.SalesTask
-          .update(t.id, {
-            task_status: 'cancelled',
-            status: newStatus,
-            summary: t.summary ? `${t.summary}\n— ${note}` : note,
-          })
+        closeSalesTask(t.id, {
+          task_status: 'cancelled',
+          status: newStatus,
+          summary: t.summary ? `${t.summary}\n— ${note}` : note,
+        })
           .catch((err) => {
             console.error('sweepOpenTasks: task update failed', t.id, err);
           }),

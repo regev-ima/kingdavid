@@ -39,6 +39,7 @@ import {
   resolveOutcomeStatus,
   outcomeOpensNextTask,
 } from '@/lib/taskCompletionFlow';
+import { closeSalesTask } from '@/lib/closeSalesTask';
 
 // The "מה קרה?" dialog. Opens after a rep clicks "סיים משימה" on a task.
 // Flow:
@@ -156,7 +157,9 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
         await base44.entities.Lead.update(task.lead_id, { status: nextLeadStatus });
       }
 
-      // 2. Close the current task.
+      // 2. Close the current task. Via closeSalesTask so it's stamped with the
+      //    time it closed — that stamp is what puts it at the top of the lead's
+      //    activity feed instead of back at the date it was opened.
       const taskUpdate = {
         task_status: 'completed',
         ...(nextLeadStatus ? { status: nextLeadStatus } : {}),
@@ -167,7 +170,7 @@ export default function CompleteTaskDialog({ isOpen, onClose, task, onCompleted 
           ? `${previous}\n— ${notes.trim()}`
           : notes.trim();
       }
-      await base44.entities.SalesTask.update(task.id, taskUpdate);
+      await closeSalesTask(task.id, taskUpdate);
 
       // No task sweep. Cancelling the lead's other open tasks was the
       // follow-on of a status change that, for all but the ladder, no longer

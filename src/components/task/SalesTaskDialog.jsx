@@ -28,6 +28,7 @@ import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser
 import { isAdmin as isAdminUser, canAccessSalesWorkspace } from '@/components/shared/rbac';
 import { phoneTail as phoneTailOf, isPhoneShapedQuery } from '@/utils/phoneUtils';
 import RepSelectItem from '@/components/shared/RepSelectItem';
+import { closeSalesTask } from '@/lib/closeSalesTask';
 
 const TASK_STATUS_STYLES = {
   not_completed: { on: 'border-amber-400/50 bg-amber-50 text-amber-700', off: 'border-border hover:border-amber-300 hover:bg-amber-50/50 text-muted-foreground' },
@@ -425,7 +426,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
 
       await base44.entities.Lead.update(currentLeadId, { status: followupFlow.status });
       if (!isCreate) {
-        await base44.entities.SalesTask.update(editingTask.id, {
+        await closeSalesTask(editingTask.id, {
           task_status: 'completed',
           status: followupFlow.status,
         });
@@ -484,7 +485,7 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
         due_date: new Date().toISOString(),
         summary: `יש להתקשר ללקוח ${editingTask.lead?.full_name || ''}`.trim(),
       });
-      await base44.entities.SalesTask.update(editingTask.id, { task_status: 'completed' });
+      await closeSalesTask(editingTask.id, { task_status: 'completed' });
       invalidateTaskCaches(queryClient);
       toast.success('הנציג שויך והמשימה נוצרה');
       onClose();
