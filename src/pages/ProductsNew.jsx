@@ -144,7 +144,12 @@ export default function ProductsNew() {
     sale_ends_at: '',
     hardness: '',
     features: '',
-    technologies: []
+    technologies: [],
+    // Catalogue facts (imported from the 2025 sheet, editable here).
+    height_cm: '',
+    no_flip: false,
+    hardness_label: '',
+    origin: ''
   });
 
   const [variationForm, setVariationForm] = useState({
@@ -329,7 +334,11 @@ export default function ProductsNew() {
       sale_ends_at: '',
       hardness: '',
       features: '',
-      technologies: []
+      technologies: [],
+      height_cm: '',
+      no_flip: false,
+      hardness_label: '',
+      origin: ''
     });
     setEditingProduct(null);
   };
@@ -395,6 +404,10 @@ export default function ProductsNew() {
       base_cost: productForm.base_cost ? Number(productForm.base_cost) : null,
       production_time_days: productForm.production_time_days ? Number(productForm.production_time_days) : null,
       warranty_years: productForm.warranty_years ? Number(productForm.warranty_years) : null,
+      height_cm: productForm.height_cm ? Number(productForm.height_cm) : null,
+      no_flip: !!productForm.no_flip,
+      hardness_label: (productForm.hardness_label || '').trim(),
+      origin: (productForm.origin || '').trim(),
       default_variation_id: productForm.default_variation_id && productForm.default_variation_id !== 'none'
         ? productForm.default_variation_id
         : null,
@@ -489,6 +502,10 @@ export default function ProductsNew() {
       sale_starts_at: saleStartsAt,
       sale_ends_at: saleEndsAt,
       hardness: product.hardness ?? '',
+      height_cm: product.height_cm || '',
+      no_flip: product.no_flip || false,
+      hardness_label: product.hardness_label || '',
+      origin: product.origin || '',
       features: product.features || '',
       technologies: Array.isArray(product.technologies) ? product.technologies : []
     });
@@ -703,6 +720,48 @@ export default function ProductsNew() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-1">1=הכי רך, 10=הכי קשיח</p>
+            </div>
+
+            {/* The four catalogue facts. hardness_label is the sentence the
+                catalogue prints ("קשיח, מפנק במיוחד") — it lives beside the
+                1-10 number, not instead of it. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Label>דרגת קשיחות (נוסח קטלוג)</Label>
+                <Input
+                  value={productForm.hardness_label}
+                  onChange={(e) => setProductForm({ ...productForm, hardness_label: e.target.value })}
+                  placeholder="קשיח, מפנק במיוחד"
+                />
+              </div>
+              <div>
+                <Label>גובה (ס״מ)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={productForm.height_cm}
+                  onChange={(e) => setProductForm({ ...productForm, height_cm: e.target.value })}
+                  placeholder="28"
+                  className="w-28"
+                />
+              </div>
+              <div>
+                <Label>ייצור</Label>
+                <Input
+                  value={productForm.origin}
+                  onChange={(e) => setProductForm({ ...productForm, origin: e.target.value })}
+                  placeholder="מיוצר בישראל"
+                />
+              </div>
+              <label className="flex items-center gap-2 mt-6 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!productForm.no_flip}
+                  onChange={(e) => setProductForm({ ...productForm, no_flip: e.target.checked })}
+                  className="h-4 w-4"
+                />
+                NO FLIP — ללא צורך בהיפוך
+              </label>
             </div>
 
             <div>
