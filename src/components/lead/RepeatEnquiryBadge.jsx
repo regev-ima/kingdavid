@@ -21,7 +21,7 @@ import DuplicateLeadsDialog from '@/components/lead/DuplicateLeadsDialog';
  * text, as it was — the click stops at the badge either way, so it never falls
  * through to the row underneath and opens the one lead the rep already has.
  */
-export default function RepeatEnquiryBadge({ entry, contactId, currentLeadId, name, className = '' }) {
+export default function RepeatEnquiryBadge({ entry, contactId, currentLeadId, name, phone, className = '' }) {
   const [open, setOpen] = useState(false);
   if (!entry) return null;
 
@@ -68,6 +68,7 @@ export default function RepeatEnquiryBadge({ entry, contactId, currentLeadId, na
         contactId={contactId}
         currentLeadId={currentLeadId}
         name={name}
+        phone={phone}
       />
     </>
   );

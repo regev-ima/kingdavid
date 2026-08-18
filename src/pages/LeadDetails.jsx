@@ -237,8 +237,8 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   );
 
   // "פנייה נוספת" — is this row a repeat enquiry from someone who already
-  // came in before? OtherEnquiriesCard lists the siblings themselves in the
-  // overview's left column; the header just needs the one-glance marker.
+  // came in before? The badge in the header carries the marker, and opens the
+  // person's other records in full when it is clicked.
   const leadForRepeatLookup = useMemo(() => (lead ? [lead] : []), [lead]);
   const repeatEnquiry = useRepeatEnquiries(leadForRepeatLookup).get(lead?.id);
 

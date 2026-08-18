@@ -39,7 +39,6 @@ import SLABadge from '@/components/sla/SLABadge';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
 import LeadUnifiedTimeline from '@/components/lead/LeadUnifiedTimeline';
 import LeadContactLogCard from '@/components/lead/LeadContactLogCard';
-import OtherEnquiriesCard from '@/components/lead/OtherEnquiriesCard';
 import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import { formatSourceLabel, ALL_TASK_TYPE_LABELS } from '@/constants/leadOptions';
 import SourceBadge from '@/components/shared/SourceBadge';
@@ -162,14 +161,59 @@ function RepFact({ label, email, salesReps, canEdit, isPending, excludeEmails = 
   );
 }
 
-// The lead's most urgent open task, rendered the way the mockup does: what to
-// do, the notes under it, when it's due and who owns it, and the one button
-// that closes it. Any other open task follows as a compact row — the queue
-// this card replaced showed all of them, and a rep with three open tasks still
-// needs to see that there are three.
-function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask }) {
+// Every task this lead has: the most urgent open one in full — what to do, the
+// notes under it, when it's due and who owns it, and the button that closes it
+// — then any other open task as a compact row, then the ones already done.
+//
+// The done list is the part a rep used to have to take on faith. A task that
+// closed vanished from the lead entirely, so "did anyone follow up on this?"
+// had no answer on the screen where it is asked. They are dimmed and dated,
+// clearly finished work rather than a queue.
+function LeadTasksCard({ queue, tasks = [], salesReps, onOpenTask, onCompleteTask, onAddTask }) {
   const [first, ...rest] = queue;
   const task = first?.entity;
+
+  const doneTasks = (tasks || [])
+    .filter((t) => t?.task_status === 'completed')
+    .sort((a, b) => {
+      // Most recently closed first. closeSalesTask stamps updated_date on the
+      // way out, so that is when it actually closed.
+      const da = parseWorkbenchDate(a?.updated_date)?.getTime() || 0;
+      const db = parseWorkbenchDate(b?.updated_date)?.getTime() || 0;
+      return db - da;
+    });
+
+  const doneList = doneTasks.length > 0 ? (
+    <div className="px-4 pb-3 pt-2 border-t border-border/50">
+      <span className="text-[11px] font-medium text-muted-foreground/80">
+        בוצעו ({doneTasks.length})
+      </span>
+      <ul className="list-none m-0 p-0 mt-1 max-h-[132px] overflow-y-auto">
+        {doneTasks.map((t) => {
+          const closedAt = parseWorkbenchDate(t.updated_date);
+          const title = String(t.summary || '').split('\n')[0]
+            || ALL_TASK_TYPE_LABELS[t.task_type]
+            || 'משימה';
+          return (
+            <li key={t.id}>
+              <button
+                type="button"
+                onClick={() => onOpenTask?.(t)}
+                title={title}
+                className="w-full flex items-center gap-2 px-2 py-1 -mx-2 rounded-lg text-start hover:bg-muted transition-colors"
+              >
+                <Check className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">{title}</span>
+                <span className="flex-none text-[11px] text-muted-foreground/70 tabular-nums">
+                  {closedAt ? formatInTimeZone(closedAt, 'Asia/Jerusalem', 'dd/MM') : ''}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  ) : null;
 
   if (!task) {
     return (
@@ -177,7 +221,7 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
         <div className="flex items-center justify-between gap-2 px-4 py-3">
           <span className="inline-flex items-center gap-2 text-sm font-bold">
             <ClipboardCheck className="h-4 w-4 text-primary" />
-            משימה הבאה
+            משימות
           </span>
         </div>
         {/* Nothing to do is one line, not a panel. The empty state used to be
@@ -190,6 +234,7 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
             משימה חדשה
           </Button>
         </div>
+        {doneList}
       </section>
     );
   }
@@ -207,7 +252,7 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <span className="inline-flex items-center gap-2 text-sm font-bold">
           <ClipboardCheck className="h-4 w-4 text-primary" />
-          משימה הבאה
+          משימות
         </span>
         {overdue ? (
           <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 ring-1 ring-rose-200">
@@ -289,6 +334,7 @@ function NextTaskCard({ queue, salesReps, onOpenTask, onCompleteTask, onAddTask 
           </ul>
         ) : null}
       </div>
+      {doneList}
     </section>
   );
 }
@@ -412,6 +458,7 @@ export default function LeadOverview({
             contactId={lead?.contact_id}
             currentLeadId={lead?.id}
             name={lead?.full_name}
+            phone={lead?.phone}
           />
         </div>
 
@@ -684,19 +731,13 @@ export default function LeadOverview({
               </div>
             </section>
 
-            <NextTaskCard
-              queue={queue}
-              salesReps={salesReps}
-              onOpenTask={onOpenTask}
-              onCompleteTask={onCompleteTask}
-              onAddTask={onAddTask}
-            />
           </div>
 
-          {/* Who we already spoke to, and whether we've met this person
-              before. Both used to be unanswerable from here — the contact log
-              was nowhere on the screen at all, and the previous enquiries were
-              a one-line strip at the foot of the page. */}
+          {/* What was said to this person, and what is still owed to them.
+              The previous enquiries used to sit here too; they moved into the
+              "ליד כפול" badge, which opens all of the person's records with
+              the fields that tell them apart — a table this column had no room
+              for and a question this column answered with three dates. */}
           <div className="space-y-4">
             <LeadContactLogCard
               lead={lead}
@@ -704,7 +745,14 @@ export default function LeadOverview({
               onAddCommunication={onAddCommunication}
             />
 
-            <OtherEnquiriesCard lead={lead} />
+            <LeadTasksCard
+              queue={queue}
+              tasks={tasks}
+              salesReps={salesReps}
+              onOpenTask={onOpenTask}
+              onCompleteTask={onCompleteTask}
+              onAddTask={onAddTask}
+            />
           </div>
         </div>
 

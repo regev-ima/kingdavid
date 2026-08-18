@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -9,23 +10,26 @@ import { parseDbTimestamp } from '@/lib/safe-date-fns-tz';
 import { createPageUrl } from '@/utils';
 import { formatIsraeliPhone } from '@/utils/phoneUtils';
 import { getRepDisplayName } from '@/lib/repDisplay';
-import { AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react';
+import { ALL_TASK_TYPE_LABELS, LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
+import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
+import { AlertTriangle, ArrowLeft, Check, ClipboardCheck, Loader2, Phone, X } from 'lucide-react';
 
-// One row per enquiry, one column per fact a rep needs to tell the enquiries
-// apart: when it landed, how to reach them, which ad sent them, who owns it.
-// Wide on purpose — the table scrolls sideways inside the dialog rather than
-// dropping columns, because the whole point is seeing the records side by side.
+// One column per fact that TELLS THE RECORDS APART. The person's name and
+// phone are the same on every row by definition — they are what ties the rows
+// together — so they sit in the header once instead of down a column each.
 const COLUMNS = [
-  { key: 'name',     label: 'שם',          width: 'min-w-[140px]' },
+  { key: 'select',   label: '',            width: 'w-10' },
   { key: 'created',  label: 'שעת כניסה',   width: 'min-w-[130px]' },
-  { key: 'phone',    label: 'טלפון',       width: 'min-w-[120px]' },
-  { key: 'email',    label: 'מייל',        width: 'min-w-[160px]' },
   { key: 'source',   label: 'מקור הגעה',   width: 'min-w-[130px]' },
-  { key: 'landing',  label: 'דף נחיתה',    width: 'min-w-[160px]' },
-  { key: 'campaign', label: 'שם קמפיין',   width: 'min-w-[160px]' },
-  { key: 'clickId',  label: 'Click ID',    width: 'min-w-[120px]' },
-  { key: 'rep',      label: 'נציג אחראי',  width: 'min-w-[130px]' },
-  { key: 'status',   label: 'סטטוס',       width: 'min-w-[120px]' },
+  { key: 'landing',  label: 'דף נחיתה',    width: 'min-w-[150px]' },
+  { key: 'campaign', label: 'שם קמפיין',   width: 'min-w-[150px]' },
+  { key: 'task',     label: 'משימה פתוחה', width: 'min-w-[150px]' },
+  { key: 'rep',      label: 'נציג אחראי',  width: 'min-w-[120px]' },
+  { key: 'status',   label: 'סטטוס',       width: 'min-w-[110px]' },
   { key: 'open',     label: '',            width: 'w-[76px]' },
 ];
 
@@ -47,14 +51,37 @@ const Cell = ({ value, className = '' }) => {
  * `contact_id`. Clicking the warning used to do what clicking anywhere else on
  * the row does — open that one lead — which answered the question the warning
  * raises ("which OTHER records exist?") with the record the rep was already
- * looking at. Now it lays all of them out with the fields that distinguish
- * them: two enquiries a month apart off two different campaigns look identical
- * until the campaign, the landing page and the owner are on screen together.
+ * looking at.
+ *
+ * The columns are only what differs between the records: when it came in, off
+ * which campaign and landing page, who owns it, where it stands, and whether
+ * someone already has an open task on it — the last one being the thing that
+ * decides whether to call at all, since a colleague may be mid-conversation
+ * with this person on another record.
  *
  * The row the rep came from is marked and not linked — it is the page they are
  * on. Every other row opens that lead.
  */
-export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, currentLeadId, name }) {
+export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, currentLeadId, name, phone }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: effectiveUser } = useEffectiveCurrentUser(!!open);
+  const isAdmin = effectiveUser?.role === 'admin';
+
+  // Which records the rep ticked, and what they want done with them.
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [action, setAction] = useState('status');
+  const [actionValue, setActionValue] = useState('');
+
+  // A fresh open is a fresh decision — never inherit a selection or a
+  // half-picked action from the last time this dialog was up.
+  useEffect(() => {
+    if (open) return;
+    setSelectedIds([]);
+    setAction('status');
+    setActionValue('');
+  }, [open]);
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['lead-duplicate-records', contactId],
     enabled: !!open && !!contactId,
@@ -82,27 +109,110 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
     enabled: !!open,
   });
 
+  // Same shape the lead screen uses for its rep pickers: the people a lead can
+  // actually be assigned to.
+  const salesReps = useMemo(
+    () => (users || []).filter((u) => u?.email && (u.role === 'user' || u.role === 'admin')),
+    [users],
+  );
+
+  const leadIds = useMemo(() => rows.map((r) => r?.id).filter(Boolean), [rows]);
+
+  // Open tasks across all of the person's records, in one batched query — the
+  // same shape the leads table uses for its "משימה הבאה" column.
+  const { data: openTasks = [] } = useQuery({
+    queryKey: ['duplicate-lead-tasks', leadIds.join(',')],
+    enabled: !!open && leadIds.length > 0,
+    staleTime: 30_000,
+    queryFn: () => base44.entities.SalesTask.filter(
+      { lead_id: { $in: leadIds }, task_status: 'not_completed' },
+      'due_date',
+      leadIds.length * 5,
+    ),
+  });
+
+  const nextTaskByLead = useMemo(() => {
+    const map = new Map();
+    for (const task of openTasks || []) {
+      if (!task?.lead_id) continue;
+      // Assignment tasks are retired — a leftover row is nobody's next task.
+      if (task.task_type === 'assignment') continue;
+      const existing = map.get(task.lead_id);
+      if (!existing) { map.set(task.lead_id, task); continue; }
+      const a = task.due_date ? new Date(task.due_date).getTime() : Infinity;
+      const b = existing.due_date ? new Date(existing.due_date).getTime() : Infinity;
+      if (a < b) map.set(task.lead_id, task);
+    }
+    return map;
+  }, [openTasks]);
+
+  const toggleOne = (id, checked) => {
+    setSelectedIds((prev) => (checked ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)));
+  };
+  const allSelected = leadIds.length > 0 && selectedIds.length === leadIds.length;
+
+  // Both actions are ordinary field updates the app already performs one lead
+  // at a time — a status change and a rep assignment. Doing them from here
+  // just saves opening each duplicate to repeat the same edit.
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      const fields = action === 'rep1' ? { rep1: actionValue } : { status: actionValue };
+      await Promise.all(selectedIds.map((id) => base44.entities.Lead.update(id, fields)));
+    },
+    onSuccess: () => {
+      const count = selectedIds.length;
+      const label = action === 'rep1'
+        ? getRepDisplayName(actionValue, users)
+        : (LEAD_STATUS_OPTIONS.find((o) => o.value === actionValue)?.label || actionValue);
+      toast({
+        title: action === 'rep1' ? 'הפניות שויכו' : 'הסטטוס עודכן',
+        description: `${count} פניות · ${label}`,
+      });
+      setSelectedIds([]);
+      setActionValue('');
+      queryClient.invalidateQueries({ queryKey: ['lead-duplicate-records', contactId] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['lead'] });
+    },
+    onError: (err) => {
+      toast({
+        title: 'העדכון נכשל',
+        description: err?.message || 'שגיאה לא צפויה',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const actionOptions = action === 'rep1'
+    ? salesReps.map((rep) => ({ value: rep.email, label: rep.full_name || rep.email }))
+    : LEAD_STATUS_OPTIONS;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* The badge lives inside a clickable lead row, and a portal still
-          bubbles clicks up the React tree — without this, closing the dialog
-          navigates into the lead behind it. */}
+          bubbles clicks up the React tree — without stopPropagation, closing
+          the dialog navigates into the lead behind it. */}
       <DialogContent
+        dir="rtl"
         className="max-w-[min(1100px,95vw)] p-0 gap-0 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <DialogHeader className="px-5 py-4 border-b border-border text-start">
+        <DialogHeader className="px-5 py-4 border-b border-border text-start space-y-1">
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" aria-hidden="true" />
-            <span className="min-w-0 truncate">
-              פניות כפולות{name ? ` — ${name}` : ''}
-            </span>
+            <span className="min-w-0 truncate">פניות כפולות{name ? ` — ${name}` : ''}</span>
             {rows.length > 0 ? (
               <span className="inline-flex items-center justify-center rounded-full px-1.5 min-w-[20px] h-5 text-[11px] font-bold bg-amber-100 text-amber-700">
                 {rows.length}
               </span>
             ) : null}
           </DialogTitle>
+          {phone ? (
+            <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <Phone className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+              <span className="tabular-nums" dir="ltr">{formatIsraeliPhone(phone)}</span>
+            </span>
+          ) : null}
         </DialogHeader>
 
         {isLoading ? (
@@ -124,7 +234,13 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
                       key={col.key}
                       className={`${col.width} text-start font-medium text-[11px] text-muted-foreground whitespace-nowrap px-3 py-2 border-b border-border`}
                     >
-                      {col.label}
+                      {col.key === 'select' ? (
+                        <Checkbox
+                          checked={allSelected}
+                          onCheckedChange={(c) => setSelectedIds(c ? leadIds : [])}
+                          aria-label="בחר את כל הפניות"
+                        />
+                      ) : col.label}
                     </th>
                   ))}
                 </tr>
@@ -133,34 +249,48 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
                 {rows.map((row) => {
                   const when = parseDbTimestamp(row.effective_sort_date || row.created_date);
                   const isCurrent = row.id === currentLeadId;
+                  // The same person can be written down twice under two
+                  // spellings ("דורון בן אבי" / "Doron Ben-Avi"). The name is
+                  // in the header, so it earns a line here only when this
+                  // record disagrees with it.
+                  const ownName = String(row.full_name || '').trim();
+                  const differentName = ownName && ownName !== String(name || '').trim() ? ownName : '';
+                  const task = nextTaskByLead.get(row.id);
+                  const taskDue = task?.due_date ? parseDbTimestamp(task.due_date) : null;
+                  const overdue = taskDue ? taskDue.getTime() < Date.now() : false;
                   return (
                     <tr
                       key={row.id}
                       className={`border-b border-border/50 last:border-b-0 ${isCurrent ? 'bg-amber-50/70' : 'hover:bg-muted/30'}`}
                     >
-                      <td className="px-3 py-2 max-w-[220px]">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Cell value={row.full_name} className="font-medium" />
+                      <td className="px-3 py-2 align-top">
+                        <Checkbox
+                          checked={selectedIds.includes(row.id)}
+                          onCheckedChange={(c) => toggleOne(row.id, !!c)}
+                          aria-label="בחר פנייה"
+                        />
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="whitespace-nowrap tabular-nums text-xs">
+                            {when ? format(when, 'dd/MM/yyyy HH:mm') : '—'}
+                          </span>
                           {isCurrent ? (
                             <span className="flex-none rounded-md bg-amber-100 text-amber-700 text-[10px] font-medium px-1.5 py-0.5 whitespace-nowrap">
                               הפנייה הנוכחית
                             </span>
                           ) : null}
                         </div>
+                        {differentName ? (
+                          <span className="block text-[10px] text-muted-foreground/70 truncate" title={differentName}>
+                            נרשם כ־{differentName}
+                          </span>
+                        ) : null}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap tabular-nums text-xs">
-                        {when ? format(when, 'dd/MM/yyyy HH:mm') : <span className="text-muted-foreground/50">—</span>}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-xs" dir="ltr">
-                        <Cell value={formatIsraeliPhone(row.phone)} />
-                      </td>
-                      <td className="px-3 py-2 max-w-[200px] text-xs" dir="ltr">
-                        <Cell value={row.email} />
-                      </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 align-top">
                         <SourceBadge source={row.source} />
                       </td>
-                      <td className="px-3 py-2 max-w-[220px] text-xs">
+                      <td className="px-3 py-2 align-top max-w-[220px] text-xs">
                         {row.landing_page ? (
                           <a
                             href={row.landing_page}
@@ -175,19 +305,35 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
                           <span className="text-muted-foreground/50">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 max-w-[220px] text-xs">
+                      <td className="px-3 py-2 align-top max-w-[220px] text-xs">
                         <Cell value={row.utm_campaign || row.facebook_campaign_name} />
                       </td>
-                      <td className="px-3 py-2 max-w-[160px] text-xs" dir="ltr">
-                        <Cell value={row.click_id} />
+                      <td className="px-3 py-2 align-top max-w-[200px] text-xs">
+                        {task ? (
+                          <span className="flex items-center gap-1.5 min-w-0" title={String(task.summary || '').trim() || undefined}>
+                            <ClipboardCheck className={`h-3.5 w-3.5 flex-none ${overdue ? 'text-rose-600' : 'text-primary'}`} />
+                            <span className="min-w-0 truncate">
+                              {String(task.summary || '').split('\n')[0]
+                                || ALL_TASK_TYPE_LABELS[task.task_type]
+                                || 'משימה פתוחה'}
+                            </span>
+                            {taskDue ? (
+                              <span className={`flex-none tabular-nums text-[11px] ${overdue ? 'text-rose-600 font-medium' : 'text-muted-foreground'}`}>
+                                {format(taskDue, 'dd/MM')}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/50">—</span>
+                        )}
                       </td>
-                      <td className="px-3 py-2 max-w-[180px] text-xs">
+                      <td className="px-3 py-2 align-top max-w-[180px] text-xs">
                         <Cell value={getRepDisplayName(row.rep1, users)} />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 align-top">
                         <StatusBadge status={row.status} className="whitespace-nowrap" />
                       </td>
-                      <td className="px-3 py-2 text-xs">
+                      <td className="px-3 py-2 align-top text-xs">
                         {isCurrent ? (
                           <span className="text-muted-foreground/50">—</span>
                         ) : (
@@ -208,6 +354,60 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
             </table>
           </div>
         )}
+
+        {/* What to do with the records once you can see them all. Both actions
+            are the ones the app already has for a lead — its status and who
+            owns it — applied to everything ticked instead of one lead at a
+            time. Nothing here deletes or merges anything. */}
+        {selectedIds.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/40 px-4 py-3">
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium">
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
+                {selectedIds.length}
+              </span>
+              נבחרו
+            </span>
+
+            <Select
+              value={action}
+              onValueChange={(v) => { setAction(v); setActionValue(''); }}
+            >
+              <SelectTrigger className="h-9 w-40 bg-card"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="status">שינוי סטטוס</SelectItem>
+                {isAdmin ? <SelectItem value="rep1">שיוך לנציג</SelectItem> : null}
+              </SelectContent>
+            </Select>
+
+            <Select value={actionValue} onValueChange={setActionValue}>
+              <SelectTrigger className="h-9 w-56 bg-card">
+                <SelectValue placeholder={action === 'rep1' ? 'בחר נציג…' : 'בחר סטטוס…'} />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {actionOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              size="sm"
+              className="h-9 gap-1.5"
+              disabled={!actionValue || applyMutation.isPending}
+              onClick={() => applyMutation.mutate()}
+            >
+              {applyMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Check className="h-3.5 w-3.5" />}
+              החל
+            </Button>
+
+            <Button size="sm" variant="ghost" className="h-9 gap-1" onClick={() => setSelectedIds([])}>
+              <X className="h-3.5 w-3.5" />
+              בטל בחירה
+            </Button>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

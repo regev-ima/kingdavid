@@ -23,7 +23,11 @@ import { chatTitle, prettyPhone, dayLabel, sendErrorMessage } from '@/components
 // through their own Green API instance (greenApiSend accepts a bare `phone` and
 // creates the chat row server-side), then the fresh thread opens automatically.
 // Renders nothing only when there's no phone to message at all.
-export default function LeadWhatsAppChatButton({ phone, name, className = '' }) {
+//
+// `iconOnly` is the leads-list form: a round icon beside the call button, no
+// label. Same popup — the point of putting it in the list is that a rep can
+// answer someone without opening their lead and coming back.
+export default function LeadWhatsAppChatButton({ phone, name, className = '', iconOnly = false }) {
   const [threadOpen, setThreadOpen] = useState(false);
   const [startOpen, setStartOpen] = useState(false);
   const tail = phoneTail(phone);
@@ -45,20 +49,38 @@ export default function LeadWhatsAppChatButton({ phone, name, className = '' }) 
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => (chat ? setThreadOpen(true) : setStartOpen(true))}
-        /* cn(), not string concatenation: the lead overview renders this in a
-           row of 44px action buttons and passes its own height/size classes,
-           which only win if tailwind-merge drops the defaults they conflict
-           with. */
-        className={cn('h-8 text-xs gap-1.5 border-green-300 text-green-700 hover:bg-green-50', className)}
-      >
-        <MessageCircle className="h-3.5 w-3.5" />
-        {chat ? "צ'אט וואטסאפ" : 'שלח וואטסאפ'}
-        {chat?.status === 'waiting' && <span className="h-2 w-2 rounded-full bg-red-500" />}
-      </Button>
+      {iconOnly ? (
+        <button
+          type="button"
+          onClick={() => (chat ? setThreadOpen(true) : setStartOpen(true))}
+          title={chat ? `וואטסאפ עם ${name || 'הליד'}` : `שלח וואטסאפ ל${name || 'ליד'}`}
+          aria-label="וואטסאפ"
+          className={cn(
+            'relative h-8 w-8 flex-none grid place-items-center rounded-full text-green-600 hover:bg-green-50 transition-colors',
+            className,
+          )}
+        >
+          <MessageCircle className="h-4 w-4" />
+          {chat?.status === 'waiting' && (
+            <span className="absolute top-0.5 end-0.5 h-2 w-2 rounded-full bg-red-500" />
+          )}
+        </button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => (chat ? setThreadOpen(true) : setStartOpen(true))}
+          /* cn(), not string concatenation: the lead overview renders this in a
+             row of 44px action buttons and passes its own height/size classes,
+             which only win if tailwind-merge drops the defaults they conflict
+             with. */
+          className={cn('h-8 text-xs gap-1.5 border-green-300 text-green-700 hover:bg-green-50', className)}
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          {chat ? "צ'אט וואטסאפ" : 'שלח וואטסאפ'}
+          {chat?.status === 'waiting' && <span className="h-2 w-2 rounded-full bg-red-500" />}
+        </Button>
+      )}
 
       {chat && (
         <WhatsAppChatDialog chat={chat} open={threadOpen} onOpenChange={setThreadOpen} fallbackName={name} />

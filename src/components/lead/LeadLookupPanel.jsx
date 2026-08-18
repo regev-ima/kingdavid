@@ -207,6 +207,7 @@ function LeadResultCard({ lead, users, repeatEntry, onOpen }) {
               contactId={lead.contact_id}
               currentLeadId={lead.id}
               name={lead.full_name}
+              phone={lead.phone}
             />
             {/* Status always has a badge. A lead with no status is a real
                 state a rep needs to see, and a card that simply omits the

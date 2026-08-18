@@ -8,6 +8,7 @@ import DataTable from '@/components/shared/DataTable';
 import { LAST_OPENED_ROW_CLASS } from '@/components/lead/LeadModalContext';
 import StatusBadge from '@/components/shared/StatusBadge';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
+import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import QuickActions from '@/components/shared/QuickActions';
 import UserAvatar from '@/components/shared/UserAvatar';
 import { SOURCE_LABELS, SLA_THRESHOLDS } from '@/constants/leadOptions';
@@ -124,6 +125,7 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
               contactId={row.contact_id}
               currentLeadId={row.id}
               name={row.full_name}
+              phone={row.phone}
             />
             {isReturningLead(row) && (
               <span className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0">
@@ -134,16 +136,21 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
           <div className="mt-1 flex items-center gap-2">
             <span className="text-sm text-muted-foreground" dir="ltr">{formatPhone(row.phone)}</span>
             {row.phone ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClickToCall(row.phone, row.id);
-                }}
-                className="h-7 w-7 rounded-full bg-green-100 hover:bg-green-200 flex items-center justify-center transition-colors flex-shrink-0"
-                title="התקשר"
-              >
-                <Phone className="h-4 w-4 text-green-700" />
-              </button>
+              <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClickToCall(row.phone, row.id);
+                  }}
+                  className="h-7 w-7 rounded-full bg-green-100 hover:bg-green-200 flex items-center justify-center transition-colors flex-shrink-0"
+                  title="התקשר"
+                >
+                  <Phone className="h-4 w-4 text-green-700" />
+                </button>
+                {/* Same popup the desktop list opens — answering from the card
+                    beats opening the lead and coming back for the next one. */}
+                <LeadWhatsAppChatButton iconOnly phone={row.phone} name={row.full_name} className="h-7 w-7" />
+              </span>
             ) : null}
           </div>
         </div>
