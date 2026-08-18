@@ -37,6 +37,8 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
   // they type turns "100" into "99.99999" mid-keystroke. Hold the raw text for
   // the focused field only and let the stored value catch up behind it.
   const [customPriceDraft, setCustomPriceDraft] = useState(null); // { index, text }
+  // Which finished quick-add row is back in edit mode (pencil), if any.
+  const [quickEditIndex, setQuickEditIndex] = useState(null);
 
   const productById = (id) => products.find((p) => p.id === id);
 
@@ -48,6 +50,9 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
   };
 
   const removeItem = (index) => {
+    // Row numbers shift under a delete; a stale edit target would put the
+    // search field on somebody else's line.
+    setQuickEditIndex(null);
     const it = items[index];
     const token = it?.bed_config_token;
     // Removing a bed also drops the configurator lines that belong to it.
@@ -128,9 +133,13 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
       ...(isBed ? { bed_config_token: prev.bed_config_token || genBedConfigToken(), bed_config_fields: [] } : {}),
     });
     delete line.is_custom;
-    delete line.is_quick_add;
     delete line.awaiting_size;
+    // is_quick_add stays: it is how the pencil knows to edit this row the way
+    // it was written — inline — instead of opening the picker the rep chose
+    // not to use.
+    line.is_quick_add = true;
     onChange(items.map((it, i) => (i === index ? line : it)));
+    setQuickEditIndex(null);
     if (isBed) {
       // Beds land in the configurator either way — the questions (ארגז מצעים,
       // הפרדה יהודית, קטלוג בד) are what make a bed a bed.
@@ -431,6 +440,35 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                     <tr className="hover:bg-muted/20 transition-colors">
                       <td className="text-center py-2.5 px-2 text-muted-foreground tabular-nums">{index + 1}</td>
                       <td className="py-2.5 px-3">
+                        {quickEditIndex === index ? (
+                          <ProductNameSearch
+                            products={products}
+                            variations={variations}
+                            value={item.name || ''}
+                            product={product}
+                            onPickProduct={(picked, text) => {
+                              if (!picked) {
+                                updateItem(index, 'name', text ?? '');
+                                return;
+                              }
+                              // A different product means the old size is
+                              // meaningless — back to picking one.
+                              onChange(items.map((it, i) => (i === index ? withTotal({
+                                ...it,
+                                product_id: picked.id,
+                                name: picked.name,
+                                variation_id: '',
+                                sku: '',
+                                width_cm: null,
+                                length_cm: null,
+                                unit_price: 0,
+                                awaiting_size: true,
+                                is_custom: true,
+                              }) : it)));
+                            }}
+                          />
+                        ) : (
+                        <>
                         <div className="font-medium text-foreground leading-tight flex items-center gap-1.5 flex-wrap">
                           {item.name}
                           {/* 30-day trial comes from the product itself, shown on
@@ -451,9 +489,17 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                             ))}
                           </div>
                         ) : null}
+                        </>
+                        )}
                       </td>
                       <td className="text-center py-2.5 px-2 text-xs text-muted-foreground tabular-nums" dir="ltr">
-                        {item.width_cm && item.length_cm ? `${item.width_cm}×${item.length_cm}` : '—'}
+                        {quickEditIndex === index ? (
+                          <ProductSizeSelect
+                            variations={variations}
+                            productId={item.product_id}
+                            onPickVariation={(variation) => completeQuickRow(index, variation)}
+                          />
+                        ) : item.width_cm && item.length_cm ? `${item.width_cm}×${item.length_cm}` : '—'}
                       </td>
                       <td className="py-2.5 px-2">
                         <div className="flex items-center justify-center">
@@ -476,7 +522,12 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                               product picker to change the product/size. */}
                           <button
                             type="button"
-                            onClick={() => (isBed ? openBedWizard(index) : editProduct(index))}
+                            onClick={() => {
+                              if (isBed) return openBedWizard(index);
+                              // A row added by typing is edited by typing.
+                              if (item.is_quick_add) return setQuickEditIndex(quickEditIndex === index ? null : index);
+                              editProduct(index);
+                            }}
                             title={isBed ? 'עריכת תצורת מיטה' : 'עריכת מוצר/מידה'}
                             className="p-1.5 rounded-md transition-colors text-primary hover:bg-primary/10"
                           >

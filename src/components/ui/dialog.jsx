@@ -49,12 +49,16 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
 ))
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
+// pe-10 keeps a lane clear for the close X, which sits at the inline-end edge:
+// without it a left-aligned title in an RTL dialog runs straight under the
+// button. text-start rather than text-left so the title follows the dialog's
+// own direction — in Hebrew that is the right edge, the far side from the X.
 const DialogHeader = ({
   className,
   ...props
 }) => (
   <div
-    className={cn("flex flex-col space-y-1.5 text-center sm:text-left", className)}
+    className={cn("flex flex-col space-y-1.5 pe-10 text-center sm:text-start", className)}
     {...props} />
 )
 DialogHeader.displayName = "DialogHeader"
