@@ -33,10 +33,16 @@ COMMENT ON COLUMN public.products.origin         IS 'ארץ/אופן ייצור 
 -- 2. Name normalisation, so "אנרג׳י" and "אנרג'י" are the same model -------
 CREATE FUNCTION pg_temp.catalog_key(t text) RETURNS text
   LANGUAGE sql IMMUTABLE AS $$
-    -- Keep only letters and digits: spaces, dashes, quotes and the three
-    -- different apostrophes Hebrew names get typed with all fall out, so
-    -- "אנרג׳י פילוטופ" and "אנרג'י פילוטופ" land on the same key.
-    SELECT regexp_replace(lower(btrim(coalesce(t, ''))), '[^a-z0-9\u05d0-\u05ea]', '', 'g')
+    -- Two passes. First drop parenthesised descriptors — the CRM names its
+    -- products "אנרג'י פילוטופ (קשיח ללא קפיצים) (זוגי)", and the model is
+    -- the part outside the brackets. Then keep only letters and digits, so
+    -- spaces, dashes and the three different apostrophes Hebrew names get
+    -- typed with all fall out, and "אנרג׳י" and "אנרג'י" share one key.
+    -- Exact equality after both passes keeps "אנרג'י" and "אנרג'י פילוטופ"
+    -- distinct models.
+    SELECT regexp_replace(
+             lower(regexp_replace(coalesce(t, ''), '\([^)]*\)', '', 'g')),
+             '[^a-z0-9\u05d0-\u05ea]', '', 'g')
   $$;
 
 -- 3. The sheet ------------------------------------------------------------
