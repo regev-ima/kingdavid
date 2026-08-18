@@ -233,7 +233,7 @@ function WhatsAppChatDialog({ chat, open, onOpenChange, fallbackName }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent dir="rtl" className="max-w-lg h-[80vh] p-0 gap-0 flex flex-col overflow-hidden">
-        <DialogHeader className="px-4 py-3 border-b shrink-0">
+        <DialogHeader className="px-4 py-3 pe-12 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2 text-base">
             <MessageCircle className="h-4 w-4 text-green-600" />
             <span className="truncate">{title}</span>

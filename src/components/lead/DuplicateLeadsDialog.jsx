@@ -192,13 +192,9 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
       {/* The badge lives inside a clickable lead row, and a portal still
           bubbles clicks up the React tree — without stopPropagation, closing
           the dialog navigates into the lead behind it. */}
-      {/* The close X ships pinned to the right, which in an RTL dialog is the
-          corner the title starts in — it landed on top of the name. The
-          arbitrary variant moves it to the left; the child combinator keeps it
-          to the built-in Close, the only direct-child button here. */}
       <DialogContent
         dir="rtl"
-        className="max-w-[min(1100px,95vw)] p-0 gap-0 overflow-hidden [&>button]:right-auto [&>button]:left-4"
+        className="max-w-[min(1100px,95vw)] p-0 gap-0 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <DialogHeader className="px-5 py-4 pe-14 border-b border-border text-start space-y-1">

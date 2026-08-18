@@ -11,6 +11,10 @@
 /** A line the customer is actually being charged for (catalog or custom). */
 export function isSellableItem(item) {
   if (!item) return false;
+  // A quick-add row that has picked its product but not its size is half a
+  // line: it carries no price and no מק״ט, so it cannot be what lets the form
+  // move on.
+  if (item.awaiting_size) return false;
   if (item.is_custom) return Boolean((item.name || '').trim());
   return Boolean(item.product_id);
 }
@@ -42,6 +46,11 @@ export function cleanOrderItems(items = []) {
  * not an error, but a priced one with no name is.
  */
 export function validateOrderItems(items = []) {
+  // A quick-add row that has its product but not its size: it would save at
+  // ₪0 with no מק״ט, which is not a line anybody meant to write.
+  if (items.some((item) => item?.awaiting_size)) {
+    return 'יש לבחור מידה לכל מוצר שנבחר (או למחוק את השורה)';
+  }
   if (items.some((item) => item?.is_custom && !(item.name || '').trim())) {
     return 'יש להזין שם לכל פריט כללי (או למחוק את השורה הריקה)';
   }
