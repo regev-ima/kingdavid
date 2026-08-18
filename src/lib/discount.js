@@ -1,8 +1,8 @@
 /**
  * Per-line discounts on quotes and orders.
  *
- * A line stores its discount as `discount_percent`, but reps mostly think in
- * shekels — "take ₪480 off this bed". Converting ₪ → % and then rounding that
+ * A line stores its discount as `discount_percent`, but reps think in shekels
+ * — "give him this bed for ₪5,000". Converting ₪ → % and then rounding that
  * percent to two decimals is what used to eat the agorot: ₪480 off a ₪5,480
  * bed became 8.76%, which is ₪480.05, so an order that should have read
  * ₪5,000.00 read ₪4,999.95 instead.
@@ -42,15 +42,4 @@ export function discountAmountOf(percent, base) {
  */
 export function formatDiscountPercent(percent) {
   return `${Number((Number(percent) || 0).toFixed(2))}%`;
-}
-
-/**
- * Is this a percent a rep could have typed (two decimals or fewer)? A derived
- * one — the leftover of a ₪-amount or final-price entry — is not, and the
- * discount popover reopens on the shekel tab for those, so pressing "החל"
- * again re-applies the same discount instead of a re-rounded one.
- */
-export function isTypedPercent(percent) {
-  const n = Number(percent) || 0;
-  return Math.abs(n - Number(n.toFixed(2))) < 1e-9;
 }
