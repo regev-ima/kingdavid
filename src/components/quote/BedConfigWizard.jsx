@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Check, BedDouble, Loader2, SkipForward } from 'lucide-react';
-import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER, FABRIC_CATALOG_FALLBACK_GROUP, FABRIC_CATALOG_FALLBACK_VALUES } from '@/lib/bedConfig';
+import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER, FABRIC_CATALOG_FALLBACK_GROUP, FABRIC_CATALOG_FALLBACK_VALUES, bedGroupsForProduct } from '@/lib/bedConfig';
 
 const VAT = BED_VAT_RATE;
 const withVat = (n) => (Number(n) || 0) * VAT;
@@ -163,9 +163,13 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
     return ans && ans !== 'skip' && ans.key === g.depends_on_value_key;
   };
 
+  // Scoped to this bed first (a model that has no storage box never asks about
+  // one), then narrowed by the question-to-question dependencies. Order matters:
+  // disabling a parent question drops its dependants too, because their
+  // dependency can no longer be satisfied.
   const visibleGroups = useMemo(
-    () => groups.filter((g) => g.is_active !== false && depSatisfied(g)),
-    [groups, answers, groupByKey]
+    () => bedGroupsForProduct(groups, product).filter(depSatisfied),
+    [groups, product, answers, groupByKey]
   );
 
   // Keep the step pointer valid as dependencies add/remove groups.
