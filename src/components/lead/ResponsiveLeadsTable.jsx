@@ -95,11 +95,20 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
 
   return (
     <div
-      onClick={handleCardClick}
+      /* The card opens the lead, so a dialog opened from inside it — the
+         WhatsApp chat — would too: React bubbles portal events up its own tree.
+         A real card click is inside the card's DOM; a portal click is not. */
+      onClick={(e) => {
+        if (!e.currentTarget.contains(e.target)) return;
+        handleCardClick();
+      }}
       className={`rounded-2xl border p-4 shadow-card active:scale-[0.99] transition-all ${className || 'bg-card'} ${isSelected ? 'border-primary bg-primary/5' : isLastOpened ? 'border-primary/40 bg-primary/[0.06] ring-1 ring-primary/30' : 'border-border'}`}
       role="button"
       tabIndex={0}
+      /* Enter/Space open the card only when the CARD has focus — a space typed
+         into a message box is a space. */
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           handleCardClick();

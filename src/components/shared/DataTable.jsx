@@ -131,14 +131,24 @@ export default function DataTable({
               <TableRow
                 key={row.id || rowIdx}
                 className={`border-b border-border/50 last:border-b-0 group ${onRowClick || selectionMode ? 'cursor-pointer hover:bg-primary/[0.03] focus-within:bg-primary/[0.03]' : ''} transition-colors duration-150 ${rowClassName ? rowClassName(row, rowIdx) || '' : ''}`}
-                onClick={() => {
+                /* A row is clickable, so anything a cell opens — a popup chat,
+                   a dialog — bubbles back here through React's tree even though
+                   the portal renders outside the table. `contains` tells the
+                   two apart: a real cell click is inside the row's DOM, a click
+                   inside a portal is not. */
+                onClick={(e) => {
+                  if (!e.currentTarget.contains(e.target)) return;
                   if (selectionMode && onRowSelect) {
                     onRowSelect(row);
                   } else if (onRowClick) {
                     onRowClick(row);
                   }
                 }}
-                onKeyDown={(e) => { if ((onRowClick || selectionMode) && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectionMode && onRowSelect ? onRowSelect(row) : onRowClick?.(row); } }}
+                /* Same for keys, with a stricter test: Enter/Space open the row
+                   only when the ROW itself has focus. Typed into an input in a
+                   cell — or in a popup a cell opened — a space is a space, not
+                   "open this lead". */
+                onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if ((onRowClick || selectionMode) && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); selectionMode && onRowSelect ? onRowSelect(row) : onRowClick?.(row); } }}
                 tabIndex={onRowClick ? 0 : undefined}
                 role={onRowClick ? 'button' : undefined}
               >
