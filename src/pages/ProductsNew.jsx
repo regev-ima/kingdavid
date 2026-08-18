@@ -702,6 +702,56 @@ export default function ProductsNew() {
               </div>
             </div>
 
+            {/* Which configurator questions this bed offers. Beds only — the
+                configurator never opens for anything else. Absence means the
+                question applies, so an untouched bed behaves exactly as it did
+                before this section existed; a rep only stops being asked when
+                someone unticks a box here. */}
+            {productForm.category === 'bed' && (
+              <div>
+                <Label>תצורת מיטה — שאלות פעילות למוצר זה</Label>
+                <p className="text-xs text-muted-foreground mt-1 mb-2">
+                  בטל סימון כדי שהשאלה לא תישאל על המיטה הזו — לא לנציג ולא באתר.
+                  שאלה שתלויה בשאלה שכיבית תיעלם איתה.
+                </p>
+                <div className="space-y-1.5 rounded-lg border p-3">
+                  {/* Say so rather than rendering an empty box: a section that
+                      silently disappears reads as a broken screen, and the next
+                      step ("go define the questions") is not guessable. */}
+                  {bedGroups.filter((g) => g.is_active !== false).length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      לא הוגדרו שאלות תצורה. אפשר להגדיר אותן בלשונית "תצורת מיטות".
+                    </p>
+                  )}
+                  {bedGroups
+                    .filter((g) => g.is_active !== false)
+                    .map((g) => {
+                      const enabled = isBedGroupEnabledForProduct(g, productForm);
+                      return (
+                        <div key={g.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id={`bedopt-${g.id}`}
+                            checked={enabled}
+                            onChange={(e) =>
+                              setProductForm({
+                                ...productForm,
+                                bed_options: { ...(productForm.bed_options || {}), [g.key]: e.target.checked },
+                              })
+                            }
+                            className="h-4 w-4"
+                          />
+                          <Label htmlFor={`bedopt-${g.id}`} className="font-normal cursor-pointer">
+                            {g.label}
+                          </Label>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+
             <div>
               <div className="flex items-center justify-between">
                 <Label>דרגת קושי</Label>
@@ -1120,47 +1170,6 @@ export default function ProductsNew() {
                 </Select>
               </div>
                 }
-
-            {/* Which configurator questions this bed offers. Beds only — the
-                configurator never opens for anything else. Absence means the
-                question applies, so an untouched bed behaves exactly as it did
-                before this section existed; a rep only stops being asked when
-                someone unticks a box here. */}
-            {productForm.category === 'bed' && bedGroups.length > 0 && (
-              <div>
-                <Label>תצורת מיטה — שאלות פעילות למוצר זה</Label>
-                <p className="text-xs text-muted-foreground mt-1 mb-2">
-                  בטל סימון כדי שהשאלה לא תישאל על המיטה הזו — לא לנציג ולא באתר.
-                  שאלה שתלויה בשאלה שכיבית תיעלם איתה.
-                </p>
-                <div className="space-y-1.5 rounded-lg border p-3">
-                  {bedGroups
-                    .filter((g) => g.is_active !== false)
-                    .map((g) => {
-                      const enabled = isBedGroupEnabledForProduct(g, productForm);
-                      return (
-                        <div key={g.id} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id={`bedopt-${g.id}`}
-                            checked={enabled}
-                            onChange={(e) =>
-                              setProductForm({
-                                ...productForm,
-                                bed_options: { ...(productForm.bed_options || {}), [g.key]: e.target.checked },
-                              })
-                            }
-                            className="h-4 w-4"
-                          />
-                          <Label htmlFor={`bedopt-${g.id}`} className="font-normal cursor-pointer">
-                            {g.label}
-                          </Label>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
 
             <div>
               <Label>הערת מנהל</Label>
