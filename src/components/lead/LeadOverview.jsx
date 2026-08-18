@@ -407,7 +407,12 @@ export default function LeadOverview({
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight m-0 truncate">{lead?.full_name}</h1>
           <SLABadge lead={lead} />
-          <RepeatEnquiryBadge entry={repeatEnquiry} />
+          <RepeatEnquiryBadge
+            entry={repeatEnquiry}
+            contactId={lead?.contact_id}
+            currentLeadId={lead?.id}
+            name={lead?.full_name}
+          />
         </div>
 
         {/* The phone sits mid-header and the edit/kebab pair holds the far

@@ -157,7 +157,12 @@ export default function LeadListTable({
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <p className="text-sm font-medium truncate" title={row.full_name || ''}>{row.full_name || '—'}</p>
-              <RepeatEnquiryBadge entry={repeatEnquiries.get(row.id)} />
+              <RepeatEnquiryBadge
+                entry={repeatEnquiries.get(row.id)}
+                contactId={row.contact_id}
+                currentLeadId={row.id}
+                name={row.full_name}
+              />
             </div>
             <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
           </div>
