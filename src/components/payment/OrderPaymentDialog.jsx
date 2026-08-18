@@ -31,9 +31,12 @@ import { CreditCard, Loader2, ShieldCheck, Wallet } from 'lucide-react';
 // touches our DOM. A card form here would collect real card data, carry the PCI
 // exposure that the iframe exists to avoid — and charge nothing.
 
+// Credit card first: it is what most orders are paid with, so it is the one
+// the rep should not have to go looking for. The object's order is the menu's
+// order.
 export const PAYMENT_METHODS = {
-  cash: 'מזומן',
   credit_card: 'כרטיס אשראי',
+  cash: 'מזומן',
   bank_transfer: 'העברה בנקאית',
   check: 'צ\'ק',
   bit: 'ביט',
@@ -64,7 +67,7 @@ export default function OrderPaymentDialog({
   onOpenChange,
   total = 0,
   alreadyPaid = 0,
-  defaultMethod = 'cash',
+  defaultMethod = 'credit_card',
   onConfirm,
   recordedBy,
   isSaving = false,
@@ -80,6 +83,12 @@ export default function OrderPaymentDialog({
   const [method, setMethod] = useState(defaultMethod);
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
+  // What identifies a card charge after the fact: the terminal slip has these
+  // three, and without them a charge on the order cannot be matched to a
+  // transaction when the customer calls about it.
+  const [cardLast4, setCardLast4] = useState('');
+  const [approvalNumber, setApprovalNumber] = useState('');
+  const [installments, setInstallments] = useState('1');
   const [error, setError] = useState(null);
 
   // Re-arm on every open: default to the outstanding balance and the method the
@@ -87,9 +96,12 @@ export default function OrderPaymentDialog({
   useEffect(() => {
     if (!open) return;
     setAmount(remaining > 0 ? String(remaining) : '');
-    setMethod(defaultMethod || 'cash');
+    setMethod(defaultMethod || 'credit_card');
     setDate(new Date().toISOString().split('T')[0]);
     setNotes('');
+    setCardLast4('');
+    setApprovalNumber('');
+    setInstallments('1');
     setError(null);
   }, [open, defaultMethod, remaining]);
 
@@ -106,6 +118,12 @@ export default function OrderPaymentDialog({
       return;
     }
 
+    const last4 = cardLast4.replace(/\D/g, '').slice(-4);
+    if (isCard && last4 && last4.length < 4) {
+      setError('יש להזין 4 ספרות אחרונות של הכרטיס (או להשאיר ריק)');
+      return;
+    }
+
     onConfirm?.({
       amount: round2(numericAmount),
       method,
@@ -113,6 +131,11 @@ export default function OrderPaymentDialog({
       notes: notes.trim(),
       recorded_at: new Date().toISOString(),
       recorded_by: recordedBy || null,
+      // Card details ride along only on a card charge, and only when filled —
+      // an empty string on a cash line would read as "we know it is blank".
+      ...(isCard && last4 ? { card_last4: last4 } : {}),
+      ...(isCard && approvalNumber.trim() ? { approval_number: approvalNumber.trim() } : {}),
+      ...(isCard && Number(installments) > 1 ? { installments: Number(installments) } : {}),
     });
   };
 
@@ -197,14 +220,55 @@ export default function OrderPaymentDialog({
           </div>
 
           {isCard && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-900">
-              <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
-              <span>
-                כאן רק מתעדים חיוב אשראי שכבר בוצע (למשל במסוף בחנות).
-                {onStartCardClearing ? ' לחיוב בפועל יש להשתמש בסליקת Hyp.' : ''}
-                {' '}מומלץ לציין את מספר האישור בהערה.
-              </span>
-            </div>
+            <>
+              {/* Straight off the terminal slip. Still no card number, expiry or
+                  CVV: charging a card goes through Hyp's iframe, and the last
+                  four digits are all that is needed to recognise the charge. */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">4 ספרות אחרונות</Label>
+                  <Input
+                    value={cardLast4}
+                    onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="1234"
+                    inputMode="numeric"
+                    maxLength={4}
+                    dir="ltr"
+                    className="h-9 text-left"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">מספר אישור</Label>
+                  <Input
+                    value={approvalNumber}
+                    onChange={(e) => setApprovalNumber(e.target.value)}
+                    placeholder="0123456"
+                    dir="ltr"
+                    className="h-9 text-left"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">מספר תשלומים</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="36"
+                    value={installments}
+                    onChange={(e) => setInstallments(e.target.value)}
+                    dir="ltr"
+                    className="h-9 text-left"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-start gap-2 text-xs text-amber-900">
+                <ShieldCheck className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                <span>
+                  כאן רק מתעדים חיוב אשראי שכבר בוצע (למשל במסוף בחנות).
+                  {onStartCardClearing ? ' לחיוב בפועל יש להשתמש בסליקת Hyp.' : ''}
+                </span>
+              </div>
+            </>
           )}
 
           {isCard && onStartCardClearing ? (
