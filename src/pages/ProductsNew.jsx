@@ -43,7 +43,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import ProductAddonsManager from "../components/product/ProductAddonsManager";
 import BedConfigManager from "../components/product/BedConfigManager";
 import { Slider } from "@/components/ui/slider";
-import { compressImage } from "@/lib/imageCompression";
+import { compressImageForDisplay } from "@/lib/imageCompression";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 const hardnessLabel = (v) => {
@@ -949,7 +949,7 @@ export default function ProductsNew() {
                       if (!file) return;
                       setUploadingCover(true);
                       try {
-                        const compressed = await compressImage(file);
+                        const compressed = await compressImageForDisplay(file);
                         const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
                         if (file_url) {
                           setProductForm((prev) => ({ ...prev, image_url: file_url }));
@@ -1057,7 +1057,7 @@ export default function ProductsNew() {
                       try {
                         const uploaded = [];
                         for (const file of files) {
-                          const compressed = await compressImage(file);
+                          const compressed = await compressImageForDisplay(file);
                           const { file_url } = await base44.integrations.Core.UploadFile({ file: compressed });
                           if (file_url) uploaded.push(file_url);
                         }

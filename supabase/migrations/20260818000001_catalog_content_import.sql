@@ -30,19 +30,34 @@ COMMENT ON COLUMN public.products.no_flip        IS 'NO FLIP — מזרן שאי
 COMMENT ON COLUMN public.products.hardness_label IS 'דרגת קשיחות כפי שהיא מנוסחת בקטלוג ("קשיח, מפנק במיוחד"), לצד hardness המספרי';
 COMMENT ON COLUMN public.products.origin         IS 'ארץ/אופן ייצור כפי שמוצג בקטלוג';
 
--- 2. Name normalisation, so "אנרג׳י" and "אנרג'י" are the same model -------
+-- 2. Name normalisation and matching ---------------------------------------
+-- The CRM's product names are the model plus whatever the shop added around
+-- it: "אנרג'י פילוטופ (קשיח ללא קפיצים) (זוגי)", "לידר דו צדדי 2023 (זוגי)",
+-- sometimes a leading "מזרן". So a product matches a catalogue model when its
+-- normalised name STARTS WITH the model's normalised name, and of all models
+-- that fit, the LONGEST wins — which is what keeps "אנרג'י פילוטופ" from
+-- falling into plain "אנרג'י", and "לידר גרסת 22 ס״מ" out of plain "לידר".
 CREATE FUNCTION pg_temp.catalog_key(t text) RETURNS text
   LANGUAGE sql IMMUTABLE AS $$
-    -- Two passes. First drop parenthesised descriptors — the CRM names its
-    -- products "אנרג'י פילוטופ (קשיח ללא קפיצים) (זוגי)", and the model is
-    -- the part outside the brackets. Then keep only letters and digits, so
+    -- Drop parenthesised descriptors, then keep only letters and digits, so
     -- spaces, dashes and the three different apostrophes Hebrew names get
-    -- typed with all fall out, and "אנרג׳י" and "אנרג'י" share one key.
-    -- Exact equality after both passes keeps "אנרג'י" and "אנרג'י פילוטופ"
-    -- distinct models.
+    -- typed with all fall out.
     SELECT regexp_replace(
              lower(regexp_replace(coalesce(t, ''), '\([^)]*\)', '', 'g')),
              '[^a-z0-9\u05d0-\u05ea]', '', 'g')
+  $$;
+
+-- Match quality of one candidate model-key against a product key: the key's
+-- length when the product starts with it (directly, or after shedding a
+-- leading "מזרן"), else 0. An empty candidate never matches anything.
+CREATE FUNCTION pg_temp.match_len(pkey text, ckey text) RETURNS int
+  LANGUAGE sql IMMUTABLE AS $$
+    SELECT CASE
+      WHEN ckey IS NULL OR ckey = '' THEN 0
+      WHEN pkey LIKE ckey || '%' THEN length(ckey)
+      WHEN regexp_replace(pkey, '^מזרן', '') LIKE ckey || '%' THEN length(ckey)
+      ELSE 0
+    END
   $$;
 
 -- 3. The sheet ------------------------------------------------------------
@@ -296,22 +311,34 @@ TRIPLE PILLOW TOP', '[{"name": "Triple Pillow Top XVP", "description": "בחלק
 ויסקו אלסטי', '[{"name": "5 אזורי תמיכה", "description": "קפיצי פוקט מבודדים. כל קפיץ נמצא בשרוול כיס משלו. 5 אזורי נוחות לחלוקת משקל ופיזור לחצים."}, {"name": "שכבת פולימרים", "description": "תמיכה יציבה ואחידה בזכות פולימרים איכותיים ושכבות מעבר."}, {"name": "שכבת ויסקו", "description": "כ-10 ס״מ שכבת ויסקו מפנקת ועשירה במיוחד להתאמה מושלמת למבנה הגוף ולפינוק יוצא דופן."}, {"name": "בד המזרן", "description": "אריג כותנה נעים ומפנק, היפואלרגני, מונע הזעה במהלך השינה. למזרן תפירת קווילט איכותית ועמוקה לשמירת בד המזרן מתוח ואסטטי לאורך שנים רבות."}]', 'מיוצר בישראל');
 
 -- 4. Write it onto the products ------------------------------------------
+-- One best model per product: score every (product, model) pair, keep the
+-- longest-key match. DISTINCT ON makes the choice deterministic even if two
+-- models ever tied.
 UPDATE public.products p
-SET description    = COALESCE(NULLIF(c.description, ''),    p.description),
-    features       = COALESCE(NULLIF(c.features, ''),       p.features),
-    technologies   = CASE WHEN c.technologies IS NOT NULL AND c.technologies <> '[]'::jsonb
-                          THEN c.technologies ELSE p.technologies END,
-    warranty_years = COALESCE(c.warranty_years, p.warranty_years),
-    height_cm      = COALESCE(c.height_cm,      p.height_cm),
-    no_flip        = COALESCE(c.no_flip,        p.no_flip),
-    hardness_label = COALESCE(NULLIF(c.hardness_label, ''), p.hardness_label),
-    origin         = COALESCE(NULLIF(c.origin, ''),         p.origin)
-FROM catalog_import c
-WHERE pg_temp.catalog_key(p.name) IN (
-        pg_temp.catalog_key(c.name_he),
-        pg_temp.catalog_key(NULLIF(c.alt_he, '')),
-        pg_temp.catalog_key(c.name_en)
-      );
+SET description    = COALESCE(NULLIF(m.description, ''),    p.description),
+    features       = COALESCE(NULLIF(m.features, ''),       p.features),
+    technologies   = CASE WHEN m.technologies IS NOT NULL AND m.technologies <> '[]'::jsonb
+                          THEN m.technologies ELSE p.technologies END,
+    warranty_years = COALESCE(m.warranty_years, p.warranty_years),
+    height_cm      = COALESCE(m.height_cm,      p.height_cm),
+    no_flip        = COALESCE(m.no_flip,        p.no_flip),
+    hardness_label = COALESCE(NULLIF(m.hardness_label, ''), p.hardness_label),
+    origin         = COALESCE(NULLIF(m.origin, ''),         p.origin)
+FROM (
+  SELECT DISTINCT ON (pp.id) pp.id AS product_id, c.*
+  FROM public.products pp
+  CROSS JOIN catalog_import c
+  CROSS JOIN LATERAL (
+    SELECT greatest(
+      pg_temp.match_len(pg_temp.catalog_key(pp.name), pg_temp.catalog_key(c.name_he)),
+      pg_temp.match_len(pg_temp.catalog_key(pp.name), pg_temp.catalog_key(NULLIF(c.alt_he, ''))),
+      pg_temp.match_len(pg_temp.catalog_key(pp.name), pg_temp.catalog_key(c.name_en))
+    ) AS score
+  ) sc
+  WHERE sc.score > 0
+  ORDER BY pp.id, sc.score DESC, c.name_he
+) m
+WHERE p.id = m.product_id;
 
 -- 5. Say which models the CRM does not have --------------------------------
 DO $$
@@ -322,11 +349,11 @@ BEGIN
   FROM catalog_import c
   WHERE NOT EXISTS (
     SELECT 1 FROM public.products p
-    WHERE pg_temp.catalog_key(p.name) IN (
-      pg_temp.catalog_key(c.name_he),
-      pg_temp.catalog_key(NULLIF(c.alt_he, '')),
-      pg_temp.catalog_key(c.name_en)
-    )
+    WHERE greatest(
+      pg_temp.match_len(pg_temp.catalog_key(p.name), pg_temp.catalog_key(c.name_he)),
+      pg_temp.match_len(pg_temp.catalog_key(p.name), pg_temp.catalog_key(NULLIF(c.alt_he, ''))),
+      pg_temp.match_len(pg_temp.catalog_key(p.name), pg_temp.catalog_key(c.name_en))
+    ) > 0
   );
   IF missing IS NOT NULL THEN
     RAISE NOTICE 'catalog import: no product matched for — %', missing;

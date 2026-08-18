@@ -35,3 +35,36 @@ export async function compressImage(file, overrides = {}) {
     return file;
   }
 }
+
+// Formats a browser can UPLOAD but not DISPLAY: Chrome renders none of these
+// in an <img>, so a product photo stored as one shows as a broken icon in the
+// catalog, the quote and the website — while the upload itself "succeeded".
+// (WhatsApp attachments are unaffected on purpose: phones handle HEIC fine,
+// so plain compressImage stays as it was.)
+const UNDISPLAYABLE_TYPES = new Set(['image/heic', 'image/heif', 'image/tiff', 'image/bmp']);
+
+/**
+ * Compress an image that is going to be SHOWN in the browser — product photos,
+ * covers, gallery images. Converts undisplayable formats (iPhone HEIC, TIFF)
+ * to JPEG on the way; when the browser cannot decode the source at all (Chrome
+ * cannot read HEIC), throws a Hebrew error the picker can show, instead of
+ * uploading a file that renders broken everywhere.
+ *
+ * @param {File} file
+ * @returns {Promise<File>}
+ */
+export async function compressImageForDisplay(file) {
+  if (!file || !file.type?.startsWith('image/')) return file;
+  if (!UNDISPLAYABLE_TYPES.has(file.type)) return compressImage(file);
+
+  try {
+    const converted = await imageCompression(file, { ...DEFAULTS, fileType: 'image/jpeg' });
+    const stem = (file.name || 'image').replace(/\.[A-Za-z0-9]+$/, '');
+    return new File([converted], `${stem}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch {
+    throw new Error(
+      'הקובץ בפורמט שהדפדפן לא מציג (HEIC/TIFF) ולא ניתן להמרה כאן. ' +
+      'צלמו/ייצאו כ-JPG, או העלו מספארי/אייפון שממיר אוטומטית.',
+    );
+  }
+}
