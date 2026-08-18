@@ -6,6 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import StatusBadge from '@/components/shared/StatusBadge';
 import ResponsiveLeadsTable from '@/components/lead/ResponsiveLeadsTable';
 import RepeatEnquiryBadge from '@/components/lead/RepeatEnquiryBadge';
+import LeadWhatsAppChatButton from '@/components/whatsapp/LeadWhatsAppChatButton';
 import QuickActions from '@/components/shared/QuickActions';
 import UserAvatar from '@/components/shared/UserAvatar';
 import CompleteTaskDialog from '@/components/sales/CompleteTaskDialog';
@@ -162,20 +163,27 @@ export default function LeadListTable({
                 contactId={row.contact_id}
                 currentLeadId={row.id}
                 name={row.full_name}
+                phone={row.phone}
               />
             </div>
             <p className="text-xs text-muted-foreground truncate" dir="ltr" title={row.phone || ''}>{formatPhone(row.phone)}</p>
           </div>
+          {/* Call and WhatsApp, side by side. Both act on the row without
+              opening it: the rep answers or dials from the list and moves to
+              the next line, which is the whole reason the chat is a popup. */}
           {isTasksView && row.phone ? (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleClickToCall(row.phone); }}
-              className="h-8 w-8 flex-none grid place-items-center rounded-full text-primary hover:bg-primary/10 transition-colors"
-              title={`חיוג ל${row.full_name || ''}`}
-              aria-label="חיוג"
-            >
-              <Phone className="h-4 w-4" />
-            </button>
+            <div className="flex items-center flex-none" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleClickToCall(row.phone); }}
+                className="h-8 w-8 flex-none grid place-items-center rounded-full text-primary hover:bg-primary/10 transition-colors"
+                title={`חיוג ל${row.full_name || ''}`}
+                aria-label="חיוג"
+              >
+                <Phone className="h-4 w-4" />
+              </button>
+              <LeadWhatsAppChatButton iconOnly phone={row.phone} name={row.full_name} />
+            </div>
           ) : null}
         </div>
       ),
