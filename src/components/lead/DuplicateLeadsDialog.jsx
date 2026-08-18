@@ -16,7 +16,18 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
-import { AlertTriangle, ArrowLeft, Check, ClipboardCheck, Loader2, Phone, X } from 'lucide-react';
+import { isAdmin as isAdminUser } from '@/lib/userScope';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { AlertTriangle, ArrowLeft, Check, ClipboardCheck, Loader2, Phone, Trash2, X } from 'lucide-react';
 
 // One column per fact that TELLS THE RECORDS APART. The person's name and
 // phone are the same on every row by definition — they are what ties the rows
@@ -65,13 +76,17 @@ const Cell = ({ value, className = '' }) => {
 export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, currentLeadId, name, phone }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { data: effectiveUser } = useEffectiveCurrentUser(!!open);
-  const isAdmin = effectiveUser?.role === 'admin';
+  // The hook hands back `effectiveUser` (impersonation included), not `data` —
+  // reading `data` made every user look like a rep, which is why the menu had
+  // only one item.
+  const { effectiveUser } = useEffectiveCurrentUser(!!open);
+  const isManager = isAdminUser(effectiveUser);
 
   // Which records the rep ticked, and what they want done with them.
   const [selectedIds, setSelectedIds] = useState([]);
   const [action, setAction] = useState('status');
   const [actionValue, setActionValue] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // A fresh open is a fresh decision — never inherit a selection or a
   // half-picked action from the last time this dialog was up.
@@ -80,6 +95,7 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
     setSelectedIds([]);
     setAction('status');
     setActionValue('');
+    setConfirmDelete(false);
   }, [open]);
 
   const { data: rows = [], isLoading } = useQuery({
@@ -151,23 +167,33 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
   };
   const allSelected = leadIds.length > 0 && selectedIds.length === leadIds.length;
 
-  // Both actions are ordinary field updates the app already performs one lead
-  // at a time — a status change and a rep assignment. Doing them from here
-  // just saves opening each duplicate to repeat the same edit.
+  // Status and rep assignment are ordinary field updates the app already
+  // performs one lead at a time; doing them here saves opening each duplicate
+  // to repeat the same edit. Deletion is the one that removes rows, so it is
+  // managers only and it asks first.
   const applyMutation = useMutation({
     mutationFn: async () => {
+      if (action === 'delete') {
+        await Promise.all(selectedIds.map((id) => base44.entities.Lead.delete(id)));
+        return;
+      }
       const fields = action === 'rep1' ? { rep1: actionValue } : { status: actionValue };
       await Promise.all(selectedIds.map((id) => base44.entities.Lead.update(id, fields)));
     },
     onSuccess: () => {
       const count = selectedIds.length;
-      const label = action === 'rep1'
-        ? getRepDisplayName(actionValue, users)
-        : (LEAD_STATUS_OPTIONS.find((o) => o.value === actionValue)?.label || actionValue);
-      toast({
-        title: action === 'rep1' ? 'הפניות שויכו' : 'הסטטוס עודכן',
-        description: `${count} פניות · ${label}`,
-      });
+      if (action === 'delete') {
+        toast({ title: 'הפניות נמחקו', description: `${count} פניות הוסרו מהמערכת` });
+      } else {
+        const label = action === 'rep1'
+          ? getRepDisplayName(actionValue, users)
+          : (LEAD_STATUS_OPTIONS.find((o) => o.value === actionValue)?.label || actionValue);
+        toast({
+          title: action === 'rep1' ? 'הפניות שויכו' : 'הסטטוס עודכן',
+          description: `${count} פניות · ${label}`,
+        });
+      }
+      setConfirmDelete(false);
       setSelectedIds([]);
       setActionValue('');
       queryClient.invalidateQueries({ queryKey: ['lead-duplicate-records', contactId] });
@@ -175,8 +201,9 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
       queryClient.invalidateQueries({ queryKey: ['lead'] });
     },
     onError: (err) => {
+      setConfirmDelete(false);
       toast({
-        title: 'העדכון נכשל',
+        title: action === 'delete' ? 'המחיקה נכשלה' : 'העדכון נכשל',
         description: err?.message || 'שגיאה לא צפויה',
         variant: 'destructive',
       });
@@ -186,6 +213,9 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
   const actionOptions = action === 'rep1'
     ? salesReps.map((rep) => ({ value: rep.email, label: rep.full_name || rep.email }))
     : LEAD_STATUS_OPTIONS;
+  // Deleting takes no second value — the rows themselves are the argument.
+  const needsValue = action !== 'delete';
+  const canApply = selectedIds.length > 0 && (needsValue ? !!actionValue : true);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -368,6 +398,8 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
               נבחרו
             </span>
 
+            {/* A rep can move these records along; only a manager can hand them
+                to someone else or remove them. */}
             <Select
               value={action}
               onValueChange={(v) => { setAction(v); setActionValue(''); }}
@@ -375,31 +407,37 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
               <SelectTrigger className="h-9 w-40 bg-card"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="status">שינוי סטטוס</SelectItem>
-                {isAdmin ? <SelectItem value="rep1">שיוך לנציג</SelectItem> : null}
+                {isManager ? <SelectItem value="rep1">הקצאה לנציג</SelectItem> : null}
+                {isManager ? <SelectItem value="delete">מחיקת פניות</SelectItem> : null}
               </SelectContent>
             </Select>
 
-            <Select value={actionValue} onValueChange={setActionValue}>
-              <SelectTrigger className="h-9 w-56 bg-card">
-                <SelectValue placeholder={action === 'rep1' ? 'בחר נציג…' : 'בחר סטטוס…'} />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {actionOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {needsValue ? (
+              <Select value={actionValue} onValueChange={setActionValue}>
+                <SelectTrigger className="h-9 w-56 bg-card">
+                  <SelectValue placeholder={action === 'rep1' ? 'בחר נציג…' : 'בחר סטטוס…'} />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  {actionOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
 
             <Button
               size="sm"
+              variant={action === 'delete' ? 'destructive' : 'default'}
               className="h-9 gap-1.5"
-              disabled={!actionValue || applyMutation.isPending}
-              onClick={() => applyMutation.mutate()}
+              disabled={!canApply || applyMutation.isPending}
+              onClick={() => (action === 'delete' ? setConfirmDelete(true) : applyMutation.mutate())}
             >
               {applyMutation.isPending
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Check className="h-3.5 w-3.5" />}
-              החל
+                : action === 'delete'
+                  ? <Trash2 className="h-3.5 w-3.5" />
+                  : <Check className="h-3.5 w-3.5" />}
+              {action === 'delete' ? `מחק ${selectedIds.length}` : 'החל'}
             </Button>
 
             <Button size="sm" variant="ghost" className="h-9 gap-1" onClick={() => setSelectedIds([])}>
@@ -409,6 +447,30 @@ export default function DuplicateLeadsDialog({ open, onOpenChange, contactId, cu
           </div>
         ) : null}
       </DialogContent>
+
+      {/* Deleting a lead takes its calls, tasks and history with it and cannot
+          be undone, so it is stated plainly and asked once. */}
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>למחוק {selectedIds.length} פניות?</AlertDialogTitle>
+            <AlertDialogDescription>
+              הפניות יימחקו לצמיתות, יחד עם המשימות והפעילות שרשומות עליהן. לא ניתן לשחזר.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={applyMutation.isPending}>ביטול</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              disabled={applyMutation.isPending}
+              onClick={(e) => { e.preventDefault(); applyMutation.mutate(); }}
+            >
+              {applyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin me-1.5" /> : null}
+              מחק לצמיתות
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

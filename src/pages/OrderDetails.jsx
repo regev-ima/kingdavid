@@ -660,6 +660,22 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
                             {payment.date ? format(new Date(payment.date), 'dd/MM/yyyy') : ''}
                             {payment.notes ? ` · ${payment.notes}` : ''}
                           </div>
+                          {/* A charge recorded by hand off the terminal slip
+                              carries the same three facts under its own field
+                              names — one block renders either. */}
+                          {(payment.card_last4 || payment.approval_number || payment.installments > 1) ? (
+                            <div className="text-[11px] text-muted-foreground/80 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5" dir="rtl">
+                              {payment.card_last4 && (
+                                <span>כרטיס: <span dir="ltr">**** {payment.card_last4}</span></span>
+                              )}
+                              {payment.approval_number && (
+                                <span>אישור: <span dir="ltr">{payment.approval_number}</span></span>
+                              )}
+                              {payment.installments > 1 && (
+                                <span>תשלומים: {payment.installments}</span>
+                              )}
+                            </div>
+                          ) : null}
                           {(payment.hyp_transaction_id || payment.hyp_acode || payment.hyp_brand || payment.hyp_l4digit || payment.hyp_payments_count) && (
                             <div className="text-[11px] text-muted-foreground/80 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5" dir="rtl">
                               {payment.hyp_transaction_id && (

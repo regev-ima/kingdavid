@@ -1254,6 +1254,24 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
                         {payment.date || ''}
                         {payment.notes ? ` · ${payment.notes}` : ''}
                       </div>
+                      {/* What identifies a card charge on the slip. Recorded by
+                          hand or returned by Hyp — same three facts either
+                          way, so they read the same on the row. */}
+                      {(payment.card_last4 || payment.hyp_l4digit
+                        || payment.approval_number || payment.hyp_acode
+                        || payment.installments > 1 || payment.hyp_payments_count > 1) ? (
+                        <div className="text-[11px] text-muted-foreground/80 mt-0.5 flex flex-wrap gap-x-3">
+                          {(payment.card_last4 || payment.hyp_l4digit) ? (
+                            <span>כרטיס: <span dir="ltr">**** {payment.card_last4 || payment.hyp_l4digit}</span></span>
+                          ) : null}
+                          {(payment.approval_number || payment.hyp_acode) ? (
+                            <span>אישור: <span dir="ltr">{payment.approval_number || payment.hyp_acode}</span></span>
+                          ) : null}
+                          {(payment.installments > 1 || payment.hyp_payments_count > 1) ? (
+                            <span>תשלומים: {payment.installments || payment.hyp_payments_count}</span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                     <Button
                       type="button"
