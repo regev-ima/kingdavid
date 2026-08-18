@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import ProductSelector from '@/components/quote/ProductSelector';
 import BedConfigWizard from '@/components/quote/BedConfigWizard';
 import DiscountPopover from '@/components/quote/DiscountPopover';
+import { ProductNameSearch, ProductSizeSelect } from '@/components/quote/ProductQuickAdd';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft, PencilLine } from 'lucide-react';
+import { Plus, Trash2, Pencil, Package, Settings2, CornerDownLeft, PencilLine, Search } from 'lucide-react';
 import { productMatchesBedType } from '@/utils/bedType';
 import { genBedConfigToken, bedConfigFieldLines } from '@/lib/bedConfig';
 import { lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
@@ -74,6 +75,70 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
       total: 0,
       selected_addons: [],
     }]);
+  };
+
+  // "הוסף מוצר" — the same catalog, reached by typing instead of by walking
+  // the picker's category → type → product → size. The row appears empty and
+  // fills itself in as the rep picks: `awaiting_size` marks the half-made
+  // state, and it is gone the moment a size is chosen.
+  const addQuickProductItem = () => {
+    onChange([...items, {
+      is_custom: true,
+      is_quick_add: true,
+      product_id: '',
+      variation_id: '',
+      sku: '',
+      name: '',
+      quantity: 1,
+      unit_price: 0,
+      discount_percent: 0,
+      total: 0,
+      selected_addons: [],
+    }]);
+  };
+
+  // The catalog fields a chosen product + size put on a line. One definition
+  // for both doors in, so a line added by typing is indistinguishable from one
+  // added through the picker.
+  const catalogLineFields = (product, variation) => ({
+    product_id: product.id,
+    name: product.name,
+    sku: variation.sku || '',
+    variation_id: variation.id,
+    length_cm: variation.length_cm ?? null,
+    width_cm: variation.width_cm ?? null,
+    height_cm: variation.height_cm ?? null,
+    // Catalog final_price is stored PRE-VAT, which is what the line stores too.
+    unit_price: variation.final_price || 0,
+  });
+
+  // A quick-add row picks its product first and its size second; this is the
+  // second half, which turns the placeholder row into a real catalog line.
+  const completeQuickRow = (index, variation) => {
+    const product = productById(variation.product_id);
+    if (!product) return;
+    const isBed = product.category === 'bed';
+    const prev = items[index] || {};
+    const line = withTotal({
+      ...prev,
+      ...catalogLineFields(product, variation),
+      quantity: prev.quantity || 1,
+      discount_percent: prev.discount_percent || 0,
+      selected_addons: [],
+      ...(isBed ? { bed_config_token: prev.bed_config_token || genBedConfigToken(), bed_config_fields: [] } : {}),
+    });
+    delete line.is_custom;
+    delete line.is_quick_add;
+    delete line.awaiting_size;
+    onChange(items.map((it, i) => (i === index ? line : it)));
+    if (isBed) {
+      // Beds land in the configurator either way — the questions (ארגז מצעים,
+      // הפרדה יהודית, קטלוג בד) are what make a bed a bed.
+      setBedWizardSnapshot([]);
+      setBedWizardIndex(index);
+    } else {
+      setExpanded((e) => ({ ...e, [index]: true }));
+    }
   };
 
   // Add a product line straight from the picker's product + size selection.
@@ -186,6 +251,12 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
           <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={addCustomItem}>
             <PencilLine className="h-4 w-4" /> הוסף פריט כללי
           </Button>
+          {/* Between the two: a catalog line without the picker's four steps.
+              "הוסף פריט" and "הוסף פריט כללי" are untouched — this is an extra
+              way in while the reps decide which one they like. */}
+          <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={addQuickProductItem}>
+            <Search className="h-4 w-4" /> הוסף מוצר
+          </Button>
           <Button type="button" size="sm" className="gap-1.5" onClick={() => setSelectorOpen(true)}>
             <Plus className="h-4 w-4" /> הוסף פריט
           </Button>
@@ -225,15 +296,51 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                     <tr key={index} className="hover:bg-muted/20 transition-colors">
                       <td className="text-center py-2.5 px-2 text-muted-foreground tabular-nums">{index + 1}</td>
                       <td className="py-2.5 px-3">
-                        <Input
-                          value={item.name || ''}
-                          onChange={(e) => updateItem(index, 'name', e.target.value)}
-                          placeholder="שם הפריט"
-                          className="h-8 text-sm"
-                        />
-                        <span className="text-[10px] text-muted-foreground">פריט כללי</span>
+                        {item.is_quick_add ? (
+                          <>
+                            <ProductNameSearch
+                              products={products}
+                              variations={variations}
+                              value={item.name || ''}
+                              product={item.product_id ? productById(item.product_id) : null}
+                              onPickProduct={(product, text) => {
+                                // product === null → the rep typed over a
+                                // chosen product; undefined → they are still
+                                // typing and nothing was chosen yet.
+                                onChange(items.map((it, i) => (i === index ? withTotal({
+                                  ...it,
+                                  name: text ?? '',
+                                  ...(product
+                                    ? { product_id: product.id, name: product.name, awaiting_size: true }
+                                    : { product_id: '', variation_id: '', sku: '', awaiting_size: false, unit_price: 0 }),
+                                }) : it)));
+                              }}
+                            />
+                            <span className="text-[10px] text-muted-foreground">
+                              {item.awaiting_size ? 'בחר מידה כדי להשלים את השורה' : 'מוצר מהקטלוג'}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Input
+                              value={item.name || ''}
+                              onChange={(e) => updateItem(index, 'name', e.target.value)}
+                              placeholder="שם הפריט"
+                              className="h-8 text-sm"
+                            />
+                            <span className="text-[10px] text-muted-foreground">פריט כללי</span>
+                          </>
+                        )}
                       </td>
-                      <td className="text-center py-2.5 px-2 text-xs text-muted-foreground">—</td>
+                      <td className="text-center py-2.5 px-2 text-xs text-muted-foreground">
+                        {item.is_quick_add && item.product_id ? (
+                          <ProductSizeSelect
+                            variations={variations}
+                            productId={item.product_id}
+                            onPickVariation={(variation) => completeQuickRow(index, variation)}
+                          />
+                        ) : '—'}
+                      </td>
                       <td className="py-2.5 px-2">
                         <div className="flex items-center justify-center">
                           <div className="flex items-center border rounded-lg overflow-hidden">
@@ -244,6 +351,13 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                         </div>
                       </td>
                       <td className="py-2.5 px-2">
+                        {/* A quick-add row waiting on its size has no price of
+                            its own yet — the size sets it, and after that the
+                            row is a catalog row with a locked price. */}
+                        {item.awaiting_size ? (
+                          <span className="block text-center text-xs text-muted-foreground">—</span>
+                        ) : (
+                        <>
                         {/* The rep types the price the customer pays — incl.
                             VAT — and we store the pre-VAT figure the rest of
                             the app works in. */}
@@ -271,6 +385,8 @@ export default function ProductItemsEditor({ items = [], onChange, products = []
                           dir="ltr"
                         />
                         <span className="block text-[9px] text-muted-foreground text-center mt-0.5">כולל מע״מ</span>
+                        </>
+                        )}
                       </td>
                       <td className="text-center py-2.5 px-2">
                         <DiscountPopover item={item} onApplyDiscount={(p) => updateItem(index, 'discount_percent', p)} />
