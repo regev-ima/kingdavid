@@ -1,0 +1,82 @@
+name: Product images — audit stored URLs vs storage
+
+# Product photos exist in the 'product-images' bucket but under messy paths
+# (" (1).gallery-judaic/gallery-judaic-07.jpg"), while the products carry clean
+# URLs ("kd/1.jpg") that point at nothing — so the CRM and the website render
+# broken images over files that were uploaded just fine.
+#
+# This workflow only READS: it prints (a) every object actually in the bucket
+# and (b) every product-images URL recorded on a product, marked exists/broken.
+# From those two lists the repair mapping is written as its own migration.
+# Read-only, so it is safe to run any time from the Actions tab.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/product-images-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: What the bucket actually holds
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          q="SELECT name FROM storage.objects WHERE bucket_id = 'product-images' ORDER BY name LIMIT 600;"
+          payload=$(jq -n --arg q "$q" '{query: $q}')
+          code=$(curl -sS -o /tmp/objects.json -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          echo "Management API HTTP $code"
+          echo "── objects in product-images:"
+          jq -r '.[].name // empty' /tmp/objects.json 2>/dev/null || cat /tmp/objects.json
+          test "$code" -lt 400
+
+      - name: What the products point at, and which of it is broken
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          # Every product-images URL on any product (cover or gallery), joined
+          # against the bucket's real objects. %20 is decoded so a URL-encoded
+          # leading space still matches the object it names.
+          q="
+          WITH refs AS (
+            SELECT p.id, p.name AS product_name, u.kind, u.url
+            FROM public.products p
+            CROSS JOIN LATERAL (
+              SELECT 'cover' AS kind, p.image_url AS url
+              WHERE p.image_url LIKE '%/product-images/%'
+              UNION ALL
+              SELECT 'gallery', g.url
+              FROM unnest(COALESCE(p.images, '{}'::text[])) AS g(url)
+              WHERE g.url LIKE '%/product-images/%'
+            ) u
+          )
+          SELECT r.product_name, r.kind, r.url,
+                 EXISTS (
+                   SELECT 1 FROM storage.objects o
+                   WHERE o.bucket_id = 'product-images'
+                     AND o.name = replace(split_part(r.url, '/product-images/', 2), '%20', ' ')
+                 ) AS object_exists
+          FROM refs r
+          ORDER BY object_exists, r.product_name, r.kind, r.url;"
+          payload=$(jq -n --arg q "$q" '{query: $q}')
+          code=$(curl -sS -o /tmp/refs.json -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$payload")
+          echo "Management API HTTP $code"
+          echo "── product image references (exists=false is a broken picture):"
+          jq -r '.[] | "\(.object_exists)\t\(.product_name)\t\(.kind)\t\(.url)"' /tmp/refs.json 2>/dev/null || cat /tmp/refs.json
+          test "$code" -lt 400
