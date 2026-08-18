@@ -8,72 +8,42 @@ import {
   discountAmountOf,
   discountPercentFromAmount,
   formatDiscountPercent,
-  isTypedPercent,
-  roundDiscountPercent,
 } from "@/lib/discount";
 import { lineGrossPreVat, round2, VAT_MULTIPLIER } from "@/lib/quoteTotals";
 
 const ils = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const discountTypes = [
-  { value: 'percent', label: 'אחוז הנחה' },
-  { value: 'amount', label: 'סכום הנחה (₪)' },
-  { value: 'final', label: 'מחיר סופי (₪)' },
-];
-
+// A discount is given as the price the customer ends up paying, and nothing
+// else. Reps quote a bed at a number — "give it to him for 5,000" — so the
+// shekel-off and percent-off entries were two more ways to say the same thing,
+// each with its own rounding to argue with. The line still stores a percent;
+// that is a storage detail the popover no longer asks anyone to think in.
 export default function DiscountPopover({ item, onApplyDiscount }) {
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState('percent');
   const [inputValue, setInputValue] = useState('');
 
-  // The line's list price including VAT — the base every discount type is
-  // stated against, and the same figure the totals panel bills off.
+  // The line's list price including VAT — what the final price is measured
+  // against, and the same figure the totals panel bills off.
   const priceWithVat = lineGrossPreVat(item) * VAT_MULTIPLIER;
 
-  // Reopen on the tab the discount was actually set in. A percent the rep
-  // typed comes back as a percent; one we derived from a shekel figure comes
-  // back as that shekel figure, so pressing "החל" again re-applies the same
-  // discount rather than a percent rounded off it.
+  // Reopen on the price the line is actually at, so pressing "החל" again
+  // re-applies the same discount instead of reading as a fresh one off the
+  // list price.
   useEffect(() => {
     if (!open) return;
     const stored = Number(item.discount_percent) || 0;
     if (stored <= 0) {
-      setType('percent');
       setInputValue('');
-    } else if (isTypedPercent(stored)) {
-      setType('percent');
-      setInputValue(String(stored));
     } else {
-      setType('amount');
-      setInputValue(String(discountAmountOf(stored, priceWithVat)));
+      setInputValue(String(round2(round2(priceWithVat) - discountAmountOf(stored, priceWithVat))));
     }
   }, [open]);
 
   const getDiscountPercent = () => {
     const val = parseFloat(inputValue) || 0;
     if (val <= 0) return 0;
-
-    switch (type) {
-      case 'percent':
-        return roundDiscountPercent(val);
-      case 'amount':
-        return discountPercentFromAmount(val, priceWithVat);
-      case 'final': {
-        const clampedFinal = Math.max(0, Math.min(val, priceWithVat));
-        return discountPercentFromAmount(priceWithVat - clampedFinal, priceWithVat);
-      }
-      default:
-        return 0;
-    }
-  };
-
-  const getMaxValue = () => {
-    switch (type) {
-      case 'percent': return 100;
-      case 'amount': return round2(priceWithVat);
-      case 'final': return round2(priceWithVat);
-      default: return 100;
-    }
+    const clampedFinal = Math.max(0, Math.min(val, priceWithVat));
+    return discountPercentFromAmount(priceWithVat - clampedFinal, priceWithVat);
   };
 
   // Apply the percent at full precision — rounding it to two decimals here is
@@ -84,10 +54,9 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
   };
 
   const previewPercent = getDiscountPercent();
+  // Off the rounded price the rep is reading above, so the figure that comes
+  // off and the price they typed add back up on screen.
   const previewAmount = discountAmountOf(previewPercent, priceWithVat);
-  // Off the rounded price the rep is reading above, so the three figures in
-  // the popover add up on screen.
-  const previewFinal = round2(round2(priceWithVat) - previewAmount);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -108,35 +77,17 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
           <p className="text-sm font-semibold text-foreground">הנחה על פריט</p>
           <p className="text-xs text-muted-foreground">מחיר כולל מע״מ: {ils(priceWithVat)}</p>
 
-          {/* Discount type tabs */}
-          <div className="flex gap-1 bg-muted rounded-lg p-1">
-            {discountTypes.map(dt => (
-              <button
-                key={dt.value}
-                type="button"
-                onClick={() => { setType(dt.value); setInputValue(''); }}
-                className={`flex-1 text-[11px] py-1.5 px-1 rounded-md font-medium transition-colors ${type === dt.value ? 'bg-white shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground/80'}`}
-              >
-                {dt.label}
-              </button>
-            ))}
-          </div>
-
           {/* Input */}
           <div className="space-y-1">
-            <Label className="text-xs">
-              {type === 'percent' && 'אחוז הנחה'}
-              {type === 'amount' && 'סכום הנחה בשקלים'}
-              {type === 'final' && 'מחיר סופי כולל מע״מ'}
-            </Label>
+            <Label className="text-xs">מחיר סופי כולל מע״מ</Label>
             <Input
               type="number"
               min="0"
-              max={getMaxValue()}
+              max={round2(priceWithVat)}
               step="0.01"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder={type === 'percent' ? '0-100' : '₪'}
+              placeholder="₪"
               className="text-left"
               dir="ltr"
               autoFocus
@@ -149,10 +100,6 @@ export default function DiscountPopover({ item, onApplyDiscount }) {
               <div className="flex justify-between">
                 <span className="text-red-700">הנחה:</span>
                 <span className="font-bold text-red-700">{formatDiscountPercent(previewPercent)} ({ils(previewAmount)})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-red-700">מחיר אחרי הנחה:</span>
-                <span className="font-bold text-red-700">{ils(previewFinal)}</span>
               </div>
             </div>
           )}

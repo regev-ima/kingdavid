@@ -202,7 +202,12 @@ function LeadResultCard({ lead, users, repeatEntry, onOpen }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-base font-bold text-foreground truncate">{lead.full_name || 'לא צוין שם'}</p>
-            <RepeatEnquiryBadge entry={repeatEntry} />
+            <RepeatEnquiryBadge
+              entry={repeatEntry}
+              contactId={lead.contact_id}
+              currentLeadId={lead.id}
+              name={lead.full_name}
+            />
             {/* Status always has a badge. A lead with no status is a real
                 state a rep needs to see, and a card that simply omits the
                 badge reads as "I forgot to look" rather than "there is none". */}

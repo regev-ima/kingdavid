@@ -364,12 +364,13 @@ export default function LeadOverview({
     || lead?.source_form
     || '';
 
+  // utm_medium and utm_term are still stored on the lead, but they only matter
+  // to whoever reads the marketing pages — a rep working the lead never acts on
+  // "cpc" or a keyword, so they stay out of the card.
   const marketingRows = [
     { k: 'UTM Source', v: lead?.utm_source || sourceLabel },
-    { k: 'UTM Medium', v: lead?.utm_medium },
     { k: 'UTM Campaign', v: lead?.utm_campaign || lead?.facebook_campaign_name },
     { k: 'UTM Content', v: lead?.utm_content || lead?.facebook_ad_name },
-    { k: 'UTM Term', v: lead?.utm_term || lead?.facebook_adset_name },
   ];
 
   const copyPhone = async () => {
@@ -406,7 +407,12 @@ export default function LeadOverview({
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight m-0 truncate">{lead?.full_name}</h1>
           <SLABadge lead={lead} />
-          <RepeatEnquiryBadge entry={repeatEnquiry} />
+          <RepeatEnquiryBadge
+            entry={repeatEnquiry}
+            contactId={lead?.contact_id}
+            currentLeadId={lead?.id}
+            name={lead?.full_name}
+          />
         </div>
 
         {/* The phone sits mid-header and the edit/kebab pair holds the far
@@ -611,7 +617,7 @@ export default function LeadOverview({
         {/* Two columns. Marketing is first in the DOM, so in RTL it lands on
             the RIGHT — the side the mockup puts it on.
 
-            The split is by height, not by topic: marketing carries five UTM
+            The split is by height, not by topic: marketing carries the UTM
             rows and the notes box, so it alone is nearly as tall as the two
             history cards stacked. Pairing it with the next task on the right
             and putting the two histories on the left leaves the columns close
@@ -625,9 +631,9 @@ export default function LeadOverview({
                   פרטי שיווק
                 </span>
               </div>
-              {/* Five reference values a rep glances at, not a table they read.
-                  They were laid out like paragraphs — 44px a row, five rows —
-                  and pushed the rest of the lead off the screen for it. */}
+              {/* Reference values a rep glances at, not a table they read.
+                  They were laid out like paragraphs — 44px a row — and pushed
+                  the rest of the lead off the screen for it. */}
               <ul className="list-none m-0 px-4 pb-3">
                 {marketingRows.map((row) => (
                   <li

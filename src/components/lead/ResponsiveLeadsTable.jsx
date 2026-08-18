@@ -119,7 +119,12 @@ function MobileLeadCard({ row, users, selectedIds, onToggleSelect, onOpenLead, o
           </div>
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-base font-semibold text-foreground truncate">{row.full_name}</h3>
-            <RepeatEnquiryBadge entry={repeatEntry} />
+            <RepeatEnquiryBadge
+              entry={repeatEntry}
+              contactId={row.contact_id}
+              currentLeadId={row.id}
+              name={row.full_name}
+            />
             {isReturningLead(row) && (
               <span className="inline-flex items-center gap-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-medium px-1.5 py-0.5 flex-shrink-0">
                 🔁 פניה חוזרת
