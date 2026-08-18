@@ -109,3 +109,77 @@ export function legacyFabricToFields(item) {
   if (!values.length) return null;
   return { group_key: 'fabric_catalog', group_label: 'קטלוג בד', values };
 }
+
+// ---------------------------------------------------------------------------
+// Per-product scoping  ·  website exposure  ·  size bands
+// ---------------------------------------------------------------------------
+
+// How a question reaches the storefront. Stored on bed_option_groups.website_mode.
+//   hidden — stays in the CRM (default: a new question is internal until said
+//            otherwise, so nothing reaches customers by accident)
+//   ask    — rendered to the customer as a question
+//   auto   — sent for pricing only; the site answers it from the chosen size
+export const BED_WEBSITE_MODES = [
+  { key: 'hidden', label: 'לא מוצג באתר' },
+  { key: 'ask', label: 'נשאל באתר' },
+  { key: 'auto', label: 'נבחר אוטומטית לפי מידה' },
+];
+
+export function getBedWebsiteMode(group) {
+  const key = group?.website_mode || 'hidden';
+  return BED_WEBSITE_MODES.find((m) => m.key === key) || BED_WEBSITE_MODES[0];
+}
+
+/**
+ * Does this bed offer this question?
+ *
+ * `products.bed_options` stores only the EXCEPTIONS — `{"storage_box": false}`.
+ * A key that is absent means enabled, which is what makes the whole catalog
+ * work unchanged the day the column appears: no backfill, nothing to switch on.
+ * Only an explicit `false` turns a question off.
+ */
+export function isBedGroupEnabledForProduct(group, product) {
+  if (!group?.key) return true;
+  const scope = product?.bed_options;
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope)) return true;
+  return scope[group.key] !== false;
+}
+
+/** The group list a given bed actually asks, in order. */
+export function bedGroupsForProduct(groups = [], product) {
+  return groups.filter(
+    (g) => g?.is_active !== false && isBedGroupEnabledForProduct(g, product),
+  );
+}
+
+/**
+ * The choice whose size band covers `widthCm`.
+ *
+ * A value declares its band with min_width_cm / max_width_cm — "ארגז מצעים זוגי
+ * סטנדרטי" is ≤160, "קינג סייז" is ≥180. Either end may be NULL (open-ended),
+ * and a value with neither covers every size.
+ *
+ * Used by the storefront to answer an 'auto' question from the variation the
+ * customer already picked, instead of asking them a second time. Returns null
+ * when nothing matches — the caller must treat that as "no answer", never as a
+ * silent ₪0, or a bed would ship with a box nobody charged for.
+ */
+export function bedValueForWidth(values = [], widthCm) {
+  const w = Number(widthCm);
+  if (!Number.isFinite(w) || w <= 0) return null;
+  const inBand = (v) => {
+    if (v?.is_active === false) return false;
+    const min = v?.min_width_cm == null ? -Infinity : Number(v.min_width_cm);
+    const max = v?.max_width_cm == null ? Infinity : Number(v.max_width_cm);
+    return w >= min && w <= max;
+  };
+  // Narrowest band wins, so an exact rule beats a catch-all that covers everything.
+  const span = (v) => {
+    const min = v?.min_width_cm == null ? -Infinity : Number(v.min_width_cm);
+    const max = v?.max_width_cm == null ? Infinity : Number(v.max_width_cm);
+    return max - min;
+  };
+  const matches = values.filter(inBand);
+  if (!matches.length) return null;
+  return matches.reduce((best, v) => (span(v) < span(best) ? v : best));
+}

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import BulkSizesDialog from '@/components/product/BulkSizesDialog';
 import GlobalSizesList from '@/components/product/GlobalSizesList';
 import { suggestSkuPrefix } from '@/lib/productSizes';
+import { isBedGroupEnabledForProduct } from '@/lib/bedConfig';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -176,6 +177,14 @@ export default function ProductsNew() {
     queryFn: () => base44.entities.ProductVariation.list()
   });
 
+  // The bed-configurator questions, for the per-bed on/off list in the product
+  // dialog. Same query key as BedConfigManager, so react-query serves both from
+  // one fetch.
+  const { data: bedGroups = [] } = useQuery({
+    queryKey: ['bed-option-groups'],
+    queryFn: () => base44.entities.BedOptionGroup.list('sort_order')
+  });
+
   // Stable identity: a fresh array each render re-triggered the dialog's setup
   // effect and cleared what the user had typed into it.
   const bulkSizesVariations = useMemo(
@@ -338,7 +347,8 @@ export default function ProductsNew() {
       height_cm: '',
       no_flip: false,
       hardness_label: '',
-      origin: ''
+      origin: '',
+      bed_options: {}
     });
     setEditingProduct(null);
   };
@@ -421,7 +431,15 @@ export default function ProductsNew() {
       discount_value: productForm.is_on_sale && productForm.discount_value !== '' ? Number(productForm.discount_value) : null,
       sale_starts_at: productForm.is_on_sale && productForm.sale_starts_at ? productForm.sale_starts_at : null,
       sale_ends_at: productForm.is_on_sale && productForm.sale_ends_at ? productForm.sale_ends_at : null,
-      hardness: hardnessValue
+      hardness: hardnessValue,
+      // Only the exceptions are stored. A question this bed asks is simply
+      // absent from the object, which is what makes "no entry = enabled" hold
+      // for every bed that was never touched.
+      bed_options: productForm.category === 'bed'
+        ? Object.fromEntries(
+            Object.entries(productForm.bed_options || {}).filter(([, on]) => on === false),
+          )
+        : {}
     };
 
     if (editingProduct) {
@@ -507,7 +525,11 @@ export default function ProductsNew() {
       hardness_label: product.hardness_label || '',
       origin: product.origin || '',
       features: product.features || '',
-      technologies: Array.isArray(product.technologies) ? product.technologies : []
+      technologies: Array.isArray(product.technologies) ? product.technologies : [],
+      bed_options:
+        product.bed_options && typeof product.bed_options === 'object' && !Array.isArray(product.bed_options)
+          ? product.bed_options
+          : {}
     });
     setIsProductDialogOpen(true);
   };
@@ -1098,6 +1120,47 @@ export default function ProductsNew() {
                 </Select>
               </div>
                 }
+
+            {/* Which configurator questions this bed offers. Beds only — the
+                configurator never opens for anything else. Absence means the
+                question applies, so an untouched bed behaves exactly as it did
+                before this section existed; a rep only stops being asked when
+                someone unticks a box here. */}
+            {productForm.category === 'bed' && bedGroups.length > 0 && (
+              <div>
+                <Label>תצורת מיטה — שאלות פעילות למוצר זה</Label>
+                <p className="text-xs text-muted-foreground mt-1 mb-2">
+                  בטל סימון כדי שהשאלה לא תישאל על המיטה הזו — לא לנציג ולא באתר.
+                  שאלה שתלויה בשאלה שכיבית תיעלם איתה.
+                </p>
+                <div className="space-y-1.5 rounded-lg border p-3">
+                  {bedGroups
+                    .filter((g) => g.is_active !== false)
+                    .map((g) => {
+                      const enabled = isBedGroupEnabledForProduct(g, productForm);
+                      return (
+                        <div key={g.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id={`bedopt-${g.id}`}
+                            checked={enabled}
+                            onChange={(e) =>
+                              setProductForm({
+                                ...productForm,
+                                bed_options: { ...(productForm.bed_options || {}), [g.key]: e.target.checked },
+                              })
+                            }
+                            className="h-4 w-4"
+                          />
+                          <Label htmlFor={`bedopt-${g.id}`} className="font-normal cursor-pointer">
+                            {g.label}
+                          </Label>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>הערת מנהל</Label>

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Trash2, Loader2, Upload, ChevronUp, ChevronDown, Type } from 'lucide-react';
 import { compressImage } from '@/lib/imageCompression';
-import { genBedConfigToken, BED_NOTE_TYPES, BED_VAT_RATE, BED_FIELD_TYPES } from '@/lib/bedConfig';
+import { genBedConfigToken, BED_NOTE_TYPES, BED_VAT_RATE, BED_FIELD_TYPES, BED_WEBSITE_MODES } from '@/lib/bedConfig';
 
 const inclVat = (preVat) => Math.round((Number(preVat) || 0) * BED_VAT_RATE);
 
@@ -166,6 +166,28 @@ export default function BedConfigManager() {
                   </select>
                 </label>
                 <div className="flex items-center gap-3 ms-auto">
+                  {/* What the storefront does with this question. 'hidden' is
+                      the default and the safe one: a question stays internal
+                      until somebody deliberately publishes it, so adding a new
+                      question can never leak it to customers. 'auto' sends the
+                      choices for PRICING but never renders them — the site
+                      answers from the size bands below. */}
+                  <label className="flex items-center gap-1.5 text-xs" title="מה האתר עושה עם השאלה הזו">
+                    <span className="text-muted-foreground">באתר:</span>
+                    <select
+                      value={g.website_mode || 'hidden'}
+                      onChange={(e) => updateGroup.mutate({ id: g.id, data: { website_mode: e.target.value } })}
+                      className={`h-8 rounded-md border-2 px-2 text-xs font-semibold cursor-pointer ${
+                        (g.website_mode || 'hidden') === 'hidden'
+                          ? 'bg-slate-100 text-slate-600 border-slate-300'
+                          : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      }`}
+                    >
+                      {BED_WEBSITE_MODES.map((m) => (
+                        <option key={m.key} value={m.key}>{m.label}</option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
                     ניתן לדלג
                     <Switch checked={g.skippable !== false} onCheckedChange={(v) => updateGroup.mutate({ id: g.id, data: { skippable: v } })} />
@@ -215,7 +237,7 @@ export default function BedConfigManager() {
               {gVals.map((v) => (
                 isText
                   ? <FieldRow key={v.id} value={v} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
-                  : <ValueRow key={v.id} value={v} addons={addons} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
+                  : <ValueRow key={v.id} value={v} group={g} addons={addons} onUpdate={(data) => updateValue.mutate({ id: v.id, data })} onDelete={() => deleteValue.mutate(v.id)} />
               ))}
               <Button variant="outline" size="sm" className="gap-1" onClick={() => addValue.mutate(g)} disabled={addValue.isPending}>
                 <Plus className="h-3.5 w-3.5" /> {isText ? 'שדה' : 'אפשרות'}
@@ -228,7 +250,7 @@ export default function BedConfigManager() {
   );
 }
 
-function ValueRow({ value, addons = [], onUpdate, onDelete }) {
+function ValueRow({ value, group, addons = [], onUpdate, onDelete }) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
 
@@ -333,6 +355,44 @@ function ValueRow({ value, addons = [], onUpdate, onDelete }) {
           placeholder="הערה לנציג (למשל: 'מסגרת שלמה חזקה יותר אך יקרה יותר')"
         />
       </div>
+
+      {/* Size band — only meaningful for a question the SITE answers by itself.
+          The customer already picked a bed size, so re-asking which box fits it
+          is a question they have answered and a chance to get it wrong; these
+          two numbers let the site pick this choice instead. Leave both empty and
+          the choice covers every size. The rep's wizard ignores them entirely —
+          it keeps asking. */}
+      {group?.website_mode === 'auto' && (
+        <div className="flex items-center gap-2 ps-14 text-xs text-muted-foreground">
+          <span className="shrink-0">נבחר אוטומטית ברוחב מיטה:</span>
+          <Input
+            type="number"
+            defaultValue={value.min_width_cm ?? ''}
+            key={`minw-${value.id}`}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              const n = raw === '' ? null : Number(raw);
+              if (n !== (value.min_width_cm ?? null)) onUpdate({ min_width_cm: n });
+            }}
+            className="h-8 w-20 tabular-nums"
+            placeholder="מ-"
+          />
+          <span className="shrink-0">עד</span>
+          <Input
+            type="number"
+            defaultValue={value.max_width_cm ?? ''}
+            key={`maxw-${value.id}`}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              const n = raw === '' ? null : Number(raw);
+              if (n !== (value.max_width_cm ?? null)) onUpdate({ max_width_cm: n });
+            }}
+            className="h-8 w-20 tabular-nums"
+            placeholder="עד"
+          />
+          <span className="shrink-0">ס״מ · ריק = כל המידות</span>
+        </div>
+      )}
     </div>
   );
 }
