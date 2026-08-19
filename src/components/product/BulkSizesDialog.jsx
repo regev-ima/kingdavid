@@ -32,6 +32,30 @@ import {
  * and every SKU and price computed in front of you before anything is written.
  * Each row stays editable — the table is the rule, not a straitjacket.
  */
+// Prices are typed INCLUDING VAT here — the catalogue card's number — and
+// stored pre-VAT, which is what the rest of the app computes in. The base
+// price, the per-size suggestions and the row edits are all incl-VAT on
+// screen; the division happens once, on the way to the database.
+const VAT_RATE = 1.18;
+const toInclVat = (preVat) => {
+  const n = Number(preVat);
+  if (!Number.isFinite(n) || n === 0) return '';
+  // The stored pre-VAT figure is itself rounded to the agora, so multiplying
+  // back lands a hair off a whole shekel — 2148.31 × 1.18 is 2535.0058. Every
+  // price in this catalogue is a whole shekel, so a result within 2 agorot of
+  // one snaps to it and the rep sees back exactly what they typed. Anything
+  // genuinely fractional keeps its agorot.
+  const incl = n * VAT_RATE;
+  const whole = Math.round(incl);
+  if (Math.abs(incl - whole) <= 0.02) return String(whole);
+  return String(Math.round(incl * 100 + 1e-6) / 100);
+};
+const toPreVat = (inclVat) => {
+  const n = Number(inclVat);
+  if (!Number.isFinite(n) || n === 0) return null;
+  return Number((n / VAT_RATE).toFixed(2));
+};
+
 export default function BulkSizesDialog({ open, onOpenChange, product, existingVariations = [], onCreated }) {
   const queryClient = useQueryClient();
 
@@ -128,21 +152,25 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     const baseDims = getSizeDimensions(baseSize);
     if (!baseDims) return;
     const baseVariation = existingByDims.get(`${baseDims.width_cm}x${baseDims.length_cm}`);
-    if (baseVariation?.base_price != null) setBasePrice(String(baseVariation.base_price));
+    if (baseVariation?.base_price != null) setBasePrice(toInclVat(baseVariation.base_price));
   }, [open, baseSize, existingByDims]);
 
   const rows = useMemo(() => relevantSizes.map((size) => {
     const dims = getSizeDimensions(size);
     const key = dims ? `${dims.width_cm}x${dims.length_cm}` : null;
     const existing = key ? existingByDims.get(key) : null;
-    const suggestedPrice = resolveSizePrice({
-      basePrice,
+    // resolveSizePrice works in the catalogue's stored (pre-VAT) numbers, so the
+    // typed incl-VAT base goes in converted and the answer comes back out
+    // converted — the rep only ever sees incl-VAT.
+    const suggestedPreVat = resolveSizePrice({
+      basePrice: basePrice === '' ? '' : toPreVat(basePrice),
       size,
       productSizePrice: productSizePrices.find((psp) => psp.global_size_id === size.id),
       // The upcharge is per category: a bed and a mattress in the same size
       // don't add the same amount.
       category: product?.category,
     });
+    const suggestedPrice = suggestedPreVat != null ? toInclVat(suggestedPreVat) : null;
     return {
       size,
       dims,
@@ -152,7 +180,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
       sku: buildVariationSku(prefix, dims),
       price: priceEdits[size.id] !== undefined
         ? priceEdits[size.id]
-        : (suggestedPrice != null ? String(suggestedPrice) : ''),
+        : (suggestedPrice != null ? suggestedPrice : ''),
     };
   }), [relevantSizes, existingByDims, baseSize, prefix, basePrice, priceEdits, productSizePrices, product?.category]);
 
@@ -179,8 +207,8 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
 
       const created = [];
       for (const row of selectedRows) {
-        const price = Number(row.price);
-        const basePriceValue = Number.isFinite(price) && price > 0 ? price : null;
+        // row.price is what the rep sees — including VAT. Store pre-VAT.
+        const basePriceValue = toPreVat(row.price);
         created.push(await base44.entities.ProductVariation.create({
           product_id: product.id,
           sku: row.sku,
@@ -242,7 +270,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
             </div>
             <div className="space-y-1.5">
               <Label>
-                מחיר בסיס{baseSize ? ` (${formatDimensions(getSizeDimensions(baseSize))})` : ''}
+                מחיר בסיס כולל מע״מ{baseSize ? ` (${formatDimensions(getSizeDimensions(baseSize))})` : ''}
               </Label>
               <Input
                 type="number"
@@ -252,7 +280,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
               />
               <p className="text-[11px] text-muted-foreground">
                 {baseSize
-                  ? 'המחיר של כל מידה מחושב כבסיס + התוספת שלה בקטלוג, וניתן לעריכה בשורה.'
+                  ? 'כל המחירים כאן כוללים מע״מ. המחיר של כל מידה מחושב כבסיס + התוספת שלה בקטלוג, וניתן לעריכה בשורה.'
                   : 'לא נמצאה מידת בסיס למוצר — אפשר למלא מחיר לכל מידה ידנית.'}
               </p>
             </div>
@@ -354,7 +382,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                           className="h-8 text-sm"
                           value={row.price}
                           disabled={disabled}
-                          placeholder="מחיר"
+                          placeholder="כולל מע״מ"
                           onChange={(e) => setPriceEdits((prev) => ({ ...prev, [row.size.id]: e.target.value }))}
                         />
                       </div>

@@ -56,6 +56,30 @@ const hardnessLabel = (v) => {
   return 'קשיח';
 };
 
+// Prices are ENTERED including VAT — that is the number on the catalogue card
+// and the number a rep says out loud — and STORED pre-VAT, which is what every
+// quote, order and total in the app works in. These two convert between the
+// screen and the column; nothing about the stored data changes.
+const VAT_RATE = 1.18;
+const toInclVat = (preVat) => {
+  const n = Number(preVat);
+  if (!Number.isFinite(n) || n === 0) return '';
+  // The stored pre-VAT figure is itself rounded to the agora, so multiplying
+  // back lands a hair off a whole shekel — 2148.31 × 1.18 is 2535.0058. Every
+  // price in this catalogue is a whole shekel, so a result within 2 agorot of
+  // one snaps to it and the rep sees back exactly what they typed. Anything
+  // genuinely fractional keeps its agorot.
+  const incl = n * VAT_RATE;
+  const whole = Math.round(incl);
+  if (Math.abs(incl - whole) <= 0.02) return String(whole);
+  return String(Math.round(incl * 100 + 1e-6) / 100);
+};
+const toPreVat = (inclVat) => {
+  const n = Number(inclVat);
+  if (!Number.isFinite(n) || n === 0) return 0;
+  return Number((n / VAT_RATE).toFixed(2));
+};
+
 const categoryLabels = {
   mattress: 'מזרון',
   bed: 'מיטה',
@@ -153,6 +177,9 @@ export default function ProductsNew() {
     origin: ''
   });
 
+  // base_price in THIS form is the price including VAT — what the user types.
+  // It is divided by 1.18 on save, and multiplied back when an existing size is
+  // opened for editing.
   const [variationForm, setVariationForm] = useState({
     product_id: '',
     sku: '',
@@ -472,7 +499,8 @@ export default function ProductsNew() {
       length_cm: variationForm.length_cm ? Number(variationForm.length_cm) : null,
       width_cm: variationForm.width_cm ? Number(variationForm.width_cm) : null,
       height_cm: variationForm.height_cm ? Number(variationForm.height_cm) : null,
-      base_price: Number(variationForm.base_price),
+      // Typed including VAT, stored pre-VAT.
+      base_price: toPreVat(variationForm.base_price),
       discount_percent: Number(variationForm.discount_percent || 0),
       stock_quantity: Number(variationForm.stock_quantity || 0),
       min_stock_threshold: variationForm.min_stock_threshold ? Number(variationForm.min_stock_threshold) : null,
@@ -542,7 +570,7 @@ export default function ProductsNew() {
       length_cm: variation.length_cm || '',
       width_cm: variation.width_cm || '',
       height_cm: variation.height_cm || '',
-      base_price: variation.base_price || '',
+      base_price: toInclVat(variation.base_price),
       discount_percent: variation.discount_percent || 0,
       stock_quantity: variation.stock_quantity || 0,
       min_stock_threshold: variation.min_stock_threshold || '',
@@ -1341,13 +1369,16 @@ export default function ProductsNew() {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label>מחיר לפני מע״מ *</Label>
+                <Label>מחיר כולל מע״מ *</Label>
                 <Input
                       type="number"
                       value={variationForm.base_price}
                       onChange={(e) => setVariationForm({ ...variationForm, base_price: e.target.value })}
+                      placeholder="5900"
                       required />
-
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  המחיר כפי שהוא בקטלוג — מה שהלקוח משלם.
+                </p>
               </div>
               <div>
                 <Label>אחוז הנחה (%)</Label>
@@ -1358,29 +1389,29 @@ export default function ProductsNew() {
 
               </div>
               <div>
-                <Label>מחיר סופי (מחושב)</Label>
+                <Label>מחיר סופי כולל מע״מ (מחושב)</Label>
                 <Input
                       value={variationForm.base_price && variationForm.discount_percent ?
                       (variationForm.base_price * (1 - variationForm.discount_percent / 100)).toFixed(2) :
                       variationForm.base_price || '0'}
                       disabled
-                      className="bg-muted" />
+                      className="bg-muted font-semibold" />
 
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <Label>מחיר כולל מע״מ 18% (לקריאה בלבד)</Label>
+                <Label>מחיר לפני מע״מ (מה שנשמר, לקריאה בלבד)</Label>
                 <Input
                       value={(() => {
-                        const finalPrice = variationForm.base_price && variationForm.discount_percent ?
+                        const finalIncl = variationForm.base_price && variationForm.discount_percent ?
                           variationForm.base_price * (1 - variationForm.discount_percent / 100) :
                           Number(variationForm.base_price) || 0;
-                        return finalPrice ? `₪${Math.round(finalPrice * 1.18).toLocaleString()}` : '₪0';
+                        return finalIncl ? `₪${toPreVat(finalIncl).toLocaleString()}` : '₪0';
                       })()}
                       disabled
-                      className="bg-muted font-semibold" />
+                      className="bg-muted" />
 
               </div>
             </div>
