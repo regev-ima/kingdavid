@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Check, BedDouble, Loader2, SkipForward } from 'lucide-react';
-import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER, FABRIC_CATALOG_FALLBACK_GROUP, FABRIC_CATALOG_FALLBACK_VALUES, bedGroupsForProduct } from '@/lib/bedConfig';
+import { getBedNoteType, BED_VAT_RATE, BED_FIELD_OTHER, FABRIC_CATALOG_FALLBACK_GROUP, FABRIC_CATALOG_FALLBACK_VALUES, bedGroupsForProduct, bedValueForWidth } from '@/lib/bedConfig';
 
 const VAT = BED_VAT_RATE;
 const withVat = (n) => (Number(n) || 0) * VAT;
@@ -76,7 +76,6 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
     return m;
   }, [values]);
 
-  const groupByKey = useMemo(() => new Map(groups.map((g) => [g.key, g])), [groups]);
   const addonById = useMemo(() => new Map(addons.map((a) => [a.id, a])), [addons]);
 
   // Prefill from previously-saved config lines (edit mode): rebuild the chosen
@@ -153,23 +152,63 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
     return (Number(value?.price) || 0) / VAT;
   };
 
-  // A group is shown only if it has no dependency, or the depended group's chosen
-  // value matches the required key.
-  const depSatisfied = (g) => {
-    if (!g.depends_on_group_key) return true;
-    const dep = groupByKey.get(g.depends_on_group_key);
-    if (!dep) return true;
-    const ans = answers[dep.id];
-    return ans && ans !== 'skip' && ans.key === g.depends_on_value_key;
-  };
-
+  // Resolve the configurator for this bed at this size, in one pass, mirroring
+  // the storefront's resolveBedConfig (kingdavidwebsite src/lib/bedOptions.js).
+  //
   // Scoped to this bed first (a model that has no storage box never asks about
   // one), then narrowed by the question-to-question dependencies. Order matters:
   // disabling a parent question drops its dependants too, because their
-  // dependency can no longer be satisfied.
+  // dependency can no longer be satisfied — and a dependency may be satisfied by
+  // an auto-resolved answer, so the walk has to carry those forward as it goes.
+  //
+  // A question the catalog published as 'auto' is ANSWERED FROM THE SIZE rather
+  // than asked: "סוג ארגז" is standard ≤160 / king ≥180, and the rep already
+  // picked a width. Asking again was a chance to answer it wrong — a rep could
+  // put a king box on a 140 bed, which the website structurally cannot do. Same
+  // rule, same bands, both sides.
+  const { activeGroups, autoAnswers } = useMemo(() => {
+    const scoped = bedGroupsForProduct(groups, product);
+    const byKey = new Map(scoped.map((g) => [g.key, g]));
+    const auto = new Map();
+    const active = [];
+    const resolvedKeyOf = (groupKey) => {
+      const dep = byKey.get(groupKey);
+      if (!dep) return undefined;
+      const a = auto.get(dep.id) ?? answers[dep.id];
+      return a && a !== 'skip' ? a.key : undefined;
+    };
+    for (const g of scoped) {
+      if (g.depends_on_group_key) {
+        if (!byKey.has(g.depends_on_group_key)) continue;
+        if (resolvedKeyOf(g.depends_on_group_key) !== g.depends_on_value_key) continue;
+      }
+      if (g.website_mode === 'auto' && g.input_type !== 'text') {
+        const v = bedValueForWidth(valuesByGroup.get(g.id) || [], variation?.width_cm);
+        // No band covers this width. The storefront skips the question — it has
+        // nobody to ask. A rep it can ask, so fall through and ask, rather than
+        // dropping a priced option on the floor.
+        if (v) { auto.set(g.id, v); active.push(g); continue; }
+      }
+      active.push(g);
+    }
+    return { activeGroups: active, autoAnswers: auto };
+  }, [groups, product, answers, valuesByGroup, variation?.width_cm]);
+
+  /** The answer for a group, whichever side resolved it. */
+  const answerFor = (g) => autoAnswers.get(g.id) ?? answers[g.id];
+
+  // The steps the rep walks. An auto-resolved question is not one of them — it
+  // still prices and still reaches the quote, it just isn't a click.
   const visibleGroups = useMemo(
-    () => bedGroupsForProduct(groups, product).filter(depSatisfied),
-    [groups, product, answers, groupByKey]
+    () => activeGroups.filter((g) => !autoAnswers.has(g.id)),
+    [activeGroups, autoAnswers],
+  );
+
+  // Shown read-only under the steps, so a rep can see where a charge on the
+  // total came from instead of meeting an unexplained number.
+  const autoResolved = useMemo(
+    () => activeGroups.filter((g) => autoAnswers.has(g.id)).map((g) => ({ group: g, value: autoAnswers.get(g.id) })),
+    [activeGroups, autoAnswers],
   );
 
   // Keep the step pointer valid as dependencies add/remove groups.
@@ -195,16 +234,18 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
 
   const runningTotal = useMemo(() => {
     let sum = 0;
-    for (const g of visibleGroups) {
+    // activeGroups, not visibleGroups — an auto-resolved question is charged
+    // even though it is never a step.
+    for (const g of activeGroups) {
       if (g.input_type === 'text') {
         sum += (Number(textGroupPrice[g.id]) || 0) / VAT;
         continue;
       }
-      const a = answers[g.id];
+      const a = answerFor(g);
       if (a && a !== 'skip') sum += priceOf(a);
     }
     return sum;
-  }, [visibleGroups, answers, textGroupPrice, addonPrices, addons, product, variation]);
+  }, [activeGroups, autoAnswers, answers, textGroupPrice, addonPrices, addons, product, variation]);
 
   const select = (value) => setAnswers((p) => ({ ...p, [current.id]: value }));
   const skip = () => setAnswers((p) => ({ ...p, [current.id]: 'skip' }));
@@ -234,7 +275,8 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
   const finish = () => {
     const lines = [];
     const fields = [];
-    for (const g of visibleGroups) {
+    // activeGroups: the auto-resolved answers must reach the quote too.
+    for (const g of activeGroups) {
       if (g.input_type === 'text') {
         // Text fields ride on the bed item as metadata (bed_config_fields).
         const values = textValuesOf(g);
@@ -256,7 +298,7 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
         }
         continue;
       }
-      const a = answers[g.id];
+      const a = answerFor(g);
       if (!a || a === 'skip') continue;
       const price = priceOf(a);
       lines.push({
@@ -298,9 +340,42 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
 
         {loading ? (
           <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        ) : visibleGroups.length === 0 ? (
+        ) : activeGroups.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-center text-sm text-muted-foreground px-6">
             לא הוגדרו שאלות תצורה פעילות. אפשר להגדיר אותן ב"קטלוג מוצרים → תצורת מיטות".
+          </div>
+        ) : visibleGroups.length === 0 ? (
+          /* Every question this bed asks was answered from the size, so there is
+             no step to walk — show what was chosen and let the rep confirm.
+             Without this branch `current` is undefined and the question area
+             dereferences it. */
+          <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                כל האפשרויות נקבעו לפי מידת המיטה{variation?.width_cm ? ` (${variation.width_cm} ס״מ)` : ''}.
+              </p>
+              <ul className="space-y-1.5 max-w-md">
+                {autoResolved.map(({ group, value }) => (
+                  <li key={group.id} className="flex items-baseline justify-between gap-3 text-sm border-b border-border/60 pb-1.5">
+                    <span className="text-muted-foreground">{group.label}</span>
+                    <span className="font-medium">
+                      {value.label}
+                      {priceOf(value) > 0 ? <span className="text-muted-foreground font-normal"> (+{fmt(withVat(priceOf(value)))})</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="shrink-0 flex items-center justify-between gap-3 border-t border-border px-5 h-16">
+              <span className="text-xs">
+                <span className="text-muted-foreground">סה״כ תוספות: </span>
+                <span className="font-bold text-primary">{fmt(withVat(runningTotal))}</span>
+              </span>
+              <Button onClick={finish} className="gap-1.5">
+                <Check className="h-4 w-4" />
+                אישור
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex-1 min-h-0 flex">
@@ -339,6 +414,22 @@ export default function BedConfigWizard({ open, onOpenChange, product, variation
                   );
                 })}
               </ol>
+              {autoResolved.length > 0 && (
+                /* A charge the rep never clicked still shows up in the total.
+                   Naming it here is what keeps that from looking like a bug. */
+                <div className="shrink-0 border-t border-border px-3 py-2 space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    נקבע לפי מידה{variation?.width_cm ? ` (${variation.width_cm} ס״מ)` : ''}
+                  </div>
+                  {autoResolved.map(({ group, value }) => (
+                    <div key={group.id} className="flex items-baseline gap-1.5 text-[11px] leading-tight">
+                      <Check className="h-3 w-3 shrink-0 text-emerald-600" />
+                      <span className="text-muted-foreground shrink-0">{group.label}:</span>
+                      <span className="font-medium truncate">{value.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="shrink-0 flex items-center border-t border-border px-3 h-16 text-xs">
                 <span>
                   <span className="text-muted-foreground">סה״כ תוספות: </span>
