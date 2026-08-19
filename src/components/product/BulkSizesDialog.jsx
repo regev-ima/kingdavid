@@ -159,18 +159,25 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     const dims = getSizeDimensions(size);
     const key = dims ? `${dims.width_cm}x${dims.length_cm}` : null;
     const existing = key ? existingByDims.get(key) : null;
-    // resolveSizePrice works in the catalogue's stored (pre-VAT) numbers, so the
-    // typed incl-VAT base goes in converted and the answer comes back out
-    // converted — the rep only ever sees incl-VAT.
-    const suggestedPreVat = resolveSizePrice({
-      basePrice: basePrice === '' ? '' : toPreVat(basePrice),
+    // The whole suggestion is computed INCL-VAT, because that is the unit both
+    // inputs are already in: the base price as typed, and the catalogue
+    // surcharge, which is the "תוספת" from the showroom card. Converting the
+    // base down to pre-VAT first and adding the surcharge there was mixing
+    // units — the sum grossed back up, so a ₪390 upcharge reached the customer
+    // as ₪460.20 and every non-base size landed on stray agorot (5900 → 6360.20
+    // where the card says 6290). The single division happens on save.
+    const override = productSizePrices.find((psp) => psp.global_size_id === size.id);
+    const suggestedIncl = resolveSizePrice({
+      basePrice,
       size,
-      productSizePrice: productSizePrices.find((psp) => psp.global_size_id === size.id),
+      // Stored prices are pre-VAT; bring the override onto the same incl-VAT
+      // footing as the base before it competes with it.
+      sizePriceOverride: override?.price != null ? toInclVat(override.price) : null,
       // The upcharge is per category: a bed and a mattress in the same size
       // don't add the same amount.
       category: product?.category,
     });
-    const suggestedPrice = suggestedPreVat != null ? toInclVat(suggestedPreVat) : null;
+    const suggestedPrice = suggestedIncl != null ? String(suggestedIncl) : null;
     return {
       size,
       dims,
@@ -184,9 +191,36 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
     };
   }), [relevantSizes, existingByDims, baseSize, prefix, basePrice, priceEdits, productSizePrices, product?.category]);
 
-  const selectableRows = rows.filter((r) => r.dims && !r.existing);
+  // product_variations.sku is UNIQUE across the WHOLE table, not per product,
+  // so two products sharing a prefix collide — and suggestSkuPrefix derives the
+  // prefix from the product's first word, so "מזרן זוגי רסיטל" and a second
+  // "מזרן זוגי רסיטל 2" both suggest MZR. Finding out at INSERT time is the
+  // worst moment: the loop below is not transactional, so the rows before the
+  // collision are already committed. Ask first.
+  const candidateSkus = useMemo(
+    () => rows.filter((r) => r.dims && !r.existing && r.sku).map((r) => r.sku),
+    [rows],
+  );
+  const { data: skuOwners = [], isFetching: checkingSkus } = useQuery({
+    queryKey: ['variation-sku-conflicts', product?.id, candidateSkus],
+    enabled: open && candidateSkus.length > 0,
+    staleTime: 30 * 1000,
+    queryFn: () => base44.entities.ProductVariation.filter({ sku: { $in: candidateSkus } }),
+  });
+  const takenSkus = useMemo(() => {
+    const taken = new Set();
+    for (const v of skuOwners) {
+      // A row of this product's own is already reported as "כבר קיימת".
+      if (v?.sku && v.product_id !== product?.id) taken.add(v.sku);
+    }
+    return taken;
+  }, [skuOwners, product?.id]);
+
+  const selectableRows = rows.filter((r) => r.dims && !r.existing && !takenSkus.has(r.sku));
   const selectedRows = selectableRows.filter((r) => selected[r.size.id]);
   const missingDims = rows.filter((r) => !r.dims);
+  const conflictRows = rows.filter((r) => r.dims && !r.existing && takenSkus.has(r.sku));
+  const pricelessSelected = selectedRows.filter((r) => !(Number(r.price) > 0));
 
   const toggleAll = (checked) => {
     setSelected(checked
@@ -205,25 +239,36 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
         await base44.entities.Product.update(product.id, productPatch);
       }
 
+      // Sequential creates with no transaction: whatever landed before a failure
+      // STAYS. Reporting a bare "failed" here told the rep nothing happened
+      // while half the sizes existed, which is how a product ends up in a state
+      // this dialog can no longer edit (it only creates, never updates). Carry
+      // the successes out with the error so the message can tell the truth.
       const created = [];
       for (const row of selectedRows) {
         // row.price is what the rep sees — including VAT. Store pre-VAT.
         const basePriceValue = toPreVat(row.price);
-        created.push(await base44.entities.ProductVariation.create({
-          product_id: product.id,
-          sku: row.sku,
-          width_cm: row.dims.width_cm,
-          length_cm: row.dims.length_cm,
-          base_price: basePriceValue,
-          // final_price is a stored column, not a derived one — the product
-          // screen reads it for every price it shows, and the single-variation
-          // form computes it on save the same way. Writing base_price alone left
-          // the new sizes reading as ₪0 even when a price had been entered.
-          final_price: basePriceValue,
-          discount_percent: 0,
-          stock_quantity: 0,
-          is_active: true,
-        }));
+        try {
+          created.push(await base44.entities.ProductVariation.create({
+            product_id: product.id,
+            sku: row.sku,
+            width_cm: row.dims.width_cm,
+            length_cm: row.dims.length_cm,
+            base_price: basePriceValue,
+            // final_price is a stored column, not a derived one — the product
+            // screen reads it for every price it shows, and the single-variation
+            // form computes it on save the same way. Writing base_price alone left
+            // the new sizes reading as ₪0 even when a price had been entered.
+            final_price: basePriceValue,
+            discount_percent: 0,
+            stock_quantity: 0,
+            is_active: true,
+          }));
+        } catch (err) {
+          err.createdSoFar = created;
+          err.failedSku = row.sku;
+          throw err;
+        }
       }
       return created;
     },
@@ -235,7 +280,20 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
       onOpenChange(false);
     },
     onError: (err) => {
-      toast.error(`יצירת המידות נכשלה: ${err?.message || 'שגיאה לא צפויה'}`);
+      const landed = err?.createdSoFar?.length || 0;
+      if (landed > 0) {
+        // Those rows are real. Refresh, or the screen keeps showing them as
+        // creatable and the next attempt collides with the rows we just wrote.
+        queryClient.invalidateQueries({ queryKey: ['product-variations'] });
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+      }
+      const duplicate = /duplicate key|product_variations_sku_key/i.test(err?.message || '');
+      const reason = duplicate
+        ? `המק״ט ${err.failedSku || ''} כבר קיים במוצר אחר — מק״ט חייב להיות ייחודי בכל הקטלוג. שנה את הקידומת ונסה שוב.`
+        : (err?.message || 'שגיאה לא צפויה');
+      toast.error(landed > 0
+        ? `נוצרו ${landed} מידות ואז העצירה: ${reason}`
+        : `יצירת המידות נכשלה: ${reason}`);
     },
   });
 
@@ -334,7 +392,8 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                   </div>
                 )}
                 {rows.map((row) => {
-                  const disabled = !row.dims || !!row.existing;
+                  const skuTaken = !!row.sku && !row.existing && takenSkus.has(row.sku);
+                  const disabled = !row.dims || !!row.existing || skuTaken;
                   return (
                     <div
                       key={row.size.id}
@@ -366,6 +425,11 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                               כבר קיימת
                             </span>
                           )}
+                          {skuTaken && (
+                            <span className="text-[10px] rounded-full bg-destructive/10 text-destructive px-1.5 py-0.5 font-semibold">
+                              מק״ט תפוס במוצר אחר
+                            </span>
+                          )}
                           {!row.isBase && row.surcharge > 0 && (
                             <span className="text-[11px] text-muted-foreground">
                               תוספת +₪{row.surcharge.toLocaleString()}
@@ -373,7 +437,7 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
                           )}
                         </div>
                         {row.sku && !row.existing && (
-                          <p className="text-[11px] text-muted-foreground font-mono mt-0.5" dir="ltr">{row.sku}</p>
+                          <p className={`text-[11px] font-mono mt-0.5 ${skuTaken ? 'text-destructive' : 'text-muted-foreground'}`} dir="ltr">{row.sku}</p>
                         )}
                       </div>
                       <div className="w-32 flex-shrink-0">
@@ -393,10 +457,17 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
             </div>
           )}
 
-          {selectedRows.some((r) => !(Number(r.price) > 0)) && (
-            <p className="text-xs text-amber-700">
-              {selectedRows.filter((r) => !(Number(r.price) > 0)).length} מהמידות שסומנו ייווצרו ללא מחיר.
-              אפשר למלא מחיר בסיס למעלה, או מחיר בשורה עצמה.
+          {conflictRows.length > 0 && (
+            <p className="text-xs text-destructive">
+              {conflictRows.length} מק״טים בקידומת <span className="font-mono" dir="ltr">{prefix}</span> כבר שייכים למוצר אחר —
+              מק״ט חייב להיות ייחודי בכל הקטלוג. שנה את הקידומת למעלה כדי לשחרר אותם.
+            </p>
+          )}
+
+          {pricelessSelected.length > 0 && (
+            <p className="text-xs text-destructive">
+              {pricelessSelected.length} מהמידות שסומנו הן ללא מחיר, והן ייווצרו ריקות — ולמסך הזה אין דרך
+              לתקן מידה קיימת. מלא מחיר בסיס למעלה, או מחיר בשורה עצמה.
             </p>
           )}
 
@@ -411,7 +482,13 @@ export default function BulkSizesDialog({ open, onOpenChange, product, existingV
           <Button variant="outline" onClick={() => onOpenChange(false)}>ביטול</Button>
           <Button
             onClick={() => createMutation.mutate()}
-            disabled={selectedRows.length === 0 || !prefix || createMutation.isPending}
+            disabled={
+              selectedRows.length === 0
+              || !prefix
+              || pricelessSelected.length > 0
+              || checkingSkus
+              || createMutation.isPending
+            }
           >
             {createMutation.isPending && <Loader2 className="h-4 w-4 me-2 animate-spin" />}
             צור {selectedRows.length || ''} מידות
