@@ -209,11 +209,25 @@ export function getSizeSurcharge(size, category) {
  *   3. the base price alone, for the base size (surcharge 0) and for any size
  *      the catalog has no surcharge for.
  *
+ * ONE UNIT, CHOSEN BY THE CALLER. `basePrice`, `sizePriceOverride` and the
+ * answer are all in whatever unit the caller works in — and so is the
+ * catalog's surcharge, which is NOT a free choice: `global_sizes.size_surcharge`
+ * is "the תוספת column from the card" (migration 20260804000005), i.e. the
+ * customer-facing incl-VAT shekels printed on the showroom card. A caller that
+ * divides its base down to pre-VAT and then adds the surcharge is mixing units:
+ * the sum grosses back up and a ₪390 upcharge silently reaches the customer as
+ * ₪460.20, landing every price on stray agorot. Work incl-VAT and divide once,
+ * on the way to the database.
+ *
+ * `sizePriceOverride` is a plain number, already converted by the caller — the
+ * override is stored pre-VAT like every other stored price, so it needs the
+ * same conversion the base got.
+ *
  * Returns null when there's no base price to work from, so the caller can show
  * an empty field instead of a confident ₪0.
  */
-export function resolveSizePrice({ basePrice, size, productSizePrice, category }) {
-  const override = Number(productSizePrice?.price);
+export function resolveSizePrice({ basePrice, size, sizePriceOverride, category }) {
+  const override = Number(sizePriceOverride);
   if (Number.isFinite(override) && override > 0) return override;
 
   const base = Number(basePrice);
