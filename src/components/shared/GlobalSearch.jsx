@@ -169,7 +169,13 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+      {/* dir="rtl" is not decoration here. A Radix dialog is portaled to
+          <body>, which sits outside Layout's dir="rtl" wrapper, and index.html
+          declares <html lang="en"> with no direction — so a dialog that does
+          not say so itself renders left-to-right. Every other dialog in the app
+          sets it; this one was the exception, and it showed the moment the
+          lead result stopped being two centred lines of text. */}
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" dir="rtl">
         <DialogHeader>
           <DialogTitle>חיפוש גלובלי</DialogTitle>
         </DialogHeader>
