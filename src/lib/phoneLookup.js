@@ -65,6 +65,55 @@ async function findByPhone(supabase, table, phone, {
   return fallback || [];
 }
 
+/**
+ * Rows in `table` whose FIRST **or SECOND** phone contains the tail of `phone`.
+ *
+ * Two queries rather than one `phone.ilike.x,phone_2.ilike.x` OR, and that is
+ * not a style choice. An unsorted LIMIT lets the planner bet it will find
+ * enough matches early and walk the table instead of the index — measured on
+ * 125k leads, `phone OR phone_2 … LIMIT 5` came back as a Seq Scan removing
+ * 125,602 rows in 75 ms, while the same two conditions asked separately each
+ * used their trigram index and answered in 3 ms and 0.06 ms. A single-column
+ * condition gives the planner nothing to be clever about.
+ *
+ * (Searches that sort before they limit are safe with an OR: the sort has to
+ * see every match, so the early-exit shortcut is not available and the planner
+ * builds a BitmapOr. Those callers keep using `.or()`.)
+ *
+ * The second-phone query is allowed to fail: in an environment where
+ * 20260804000003 hasn't run there is no phone_2 column, and half a result is
+ * better than a lookup that throws.
+ */
+export async function findByPhoneSubstring(supabase, table, phone, {
+  select = DEFAULT_SELECT[table] || '*',
+  limit = 5,
+  secondColumn = 'phone_2',
+} = {}) {
+  const tail = phoneTail(phone);
+  if (!tail) return [];
+  const pattern = `%${tail}%`;
+
+  const [primary, secondary] = await Promise.all([
+    supabase.from(table).select(select).ilike('phone', pattern).limit(limit),
+    supabase.from(table).select(select).ilike(secondColumn, pattern).limit(limit),
+  ]);
+  if (primary.error) throw primary.error;
+  if (secondary.error) {
+    console.warn(`[phoneLookup] ${table}.${secondColumn} unavailable:`, secondary.error.message);
+  }
+
+  // The same person can hold the number in both fields; the first hit wins so
+  // a duplicate never reaches the screen as two results.
+  const seen = new Set();
+  const merged = [];
+  for (const row of [...(primary.data || []), ...(secondary.data || [])]) {
+    if (!row || seen.has(row.id)) continue;
+    seen.add(row.id);
+    merged.push(row);
+  }
+  return merged.slice(0, limit);
+}
+
 export function findLeadsByPhone(supabase, phone, options) {
   return findByPhone(supabase, 'leads', phone, options);
 }

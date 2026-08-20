@@ -54,7 +54,9 @@ function applyCustomerFilters(query, { search, rep, audience }) {
   }
   if (search && search.trim()) {
     const term = search.trim().replace(/[",()]/g, '');
-    query = query.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
+    // phone_2 too: a customer reachable only on their second number was not
+    // findable on the screen that lists customers.
+    query = query.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,phone_2.ilike.%${term}%,email.ilike.%${term}%`);
   }
   return query;
 }

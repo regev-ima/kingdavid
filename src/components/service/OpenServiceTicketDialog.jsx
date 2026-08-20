@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { findByPhoneSubstring } from '@/lib/phoneLookup';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,6 @@ import {
   nextTicketNumber,
   normalizePhone,
 } from '@/constants/serviceOptions';
-import { phoneTail } from '@/utils/phoneUtils';
 
 // Rep-facing "open a service ticket" dialog for the new Service Center. A
 // richer sibling of the legacy NewServiceTicketDialog (kept untouched): adds
@@ -39,6 +39,9 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
 
   const initialName = order?.customer_name || customer?.full_name || '';
   const initialPhone = order?.customer_phone || customer?.phone || '';
+  // Carried so the ticket is findable by whichever number the customer calls
+  // from — the search reads it, and until now nothing ever wrote it.
+  const initialPhone2 = order?.customer_phone_2 || customer?.phone_2 || '';
   const initialEmail = order?.customer_email || customer?.email || '';
 
   const emptyForm = {
@@ -51,6 +54,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     complaint_age_months: '',
     customer_name: initialName,
     customer_phone: initialPhone,
+    customer_phone_2: initialPhone2,
     customer_email: initialEmail,
     customer_id: order?.customer_id || customer?.id || null,
     lead_id: order?.lead_id || null,
@@ -99,15 +103,16 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
     enabled: lookupEnabled,
     staleTime: 60_000,
     queryFn: async () => {
-      const tail = phoneTail(debouncedPhone);
-      const pattern = `%${tail}%`;
-      const [{ data: customers }, { data: leads }] = await Promise.all([
-        base44.supabase.from('customers').select('id, full_name, phone, email').ilike('phone', pattern).limit(5),
-        base44.supabase.from('leads').select('id, full_name, phone, email').ilike('phone', pattern).limit(5),
+      // Second phone included — a service call comes in from whichever number
+      // the customer happens to be holding.
+      const select = 'id, full_name, phone, phone_2, email';
+      const [customers, leads] = await Promise.all([
+        findByPhoneSubstring(base44.supabase, 'customers', debouncedPhone, { select }),
+        findByPhoneSubstring(base44.supabase, 'leads', debouncedPhone, { select }),
       ]);
       return [
-        ...(customers || []).map((r) => ({ kind: 'customer', ...r })),
-        ...(leads || []).map((r) => ({ kind: 'lead', ...r })),
+        ...customers.map((r) => ({ kind: 'customer', ...r })),
+        ...leads.map((r) => ({ kind: 'lead', ...r })),
       ];
     },
   });
@@ -119,6 +124,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
       customer_name: m.full_name || prev.customer_name,
       customer_email: m.email || prev.customer_email,
       customer_phone: m.phone || prev.customer_phone,
+      customer_phone_2: m.phone_2 || prev.customer_phone_2,
       customer_id: m.kind === 'customer' ? m.id : null,
       lead_id: m.kind === 'lead' ? m.id : null,
     }));
@@ -137,6 +143,7 @@ export default function OpenServiceTicketDialog({ open, onOpenChange, order, cus
         lead_id: data.lead_id || null,
         customer_name: data.customer_name,
         customer_phone: data.customer_phone,
+        customer_phone_2: data.customer_phone_2 || '',
         customer_email: data.customer_email || '',
         category: data.request_type === 'trial_30d' ? 'trial' : data.request_type === 'warranty' ? 'warranty' : 'other',
         request_type: data.request_type,
