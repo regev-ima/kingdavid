@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useLeadModal } from "@/components/lead/LeadModalContext";
+import LeadResultCard from '@/components/lead/LeadResultCard';
+import { useRepeatEnquiries } from '@/lib/repeatEnquiries';
 import { phoneTail as phoneTailOf } from '@/utils/phoneUtils';
 import { getUserScope, USER_SCOPES } from "@/lib/rbac";
 import { isPhoneShapedQuery } from "@/utils/phoneUtils";
@@ -104,16 +106,31 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     }),
   });
 
-  const { data: leads = [] } = useQuery({
+  // 20, not the 5 the other sections get: leads are what this box is opened
+  // for, and a rep scanning for "which of these is my customer" needs the
+  // list, not the first handful of whatever sorted to the top.
+  const { data: leads = [], isFetching: isLeadsFetching } = useQuery({
     queryKey: ['gs-leads', debouncedQuery],
     enabled: enabled && canSearchLeads,
     staleTime: 60_000,
     queryFn: () => base44.entities.Lead.filter(
       buildOrFilter(['full_name', 'phone', 'email']),
       '-created_date',
-      5,
+      20,
     ),
   });
+
+  // The roster turns a rep's email into their name on the result card, and the
+  // repeat-enquiry map is what puts "ליד כפול" on it. Both are shared caches
+  // the app already fills elsewhere, so neither adds a request in practice.
+  const { data: users = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    staleTime: 5 * 60_000,
+    retry: false,
+    enabled: enabled && canSearchLeads,
+  });
+  const repeatEnquiries = useRepeatEnquiries(leads);
 
   const { data: orders = [] } = useQuery({
     queryKey: ['gs-orders', debouncedQuery],
@@ -181,20 +198,25 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
         </div>
 
         <div className="overflow-y-auto flex-1 space-y-4">
-          {debouncedQuery.length >= 2 && totalResults === 0 && (
-            <div className="flex flex-col items-center gap-3 py-4">
-              <p className="text-center text-muted-foreground">לא נמצאו תוצאות</p>
-              {canSearchLeads && isPhoneShapedQuery(debouncedQuery) && (
-                <Link
-                  to={createPageUrl('NewLead') + `?phone=${encodeURIComponent(debouncedQuery)}`}
-                  onClick={onClose}
-                >
-                  <Button size="sm" className="gap-1.5">
-                    <UserPlus className="h-4 w-4" />
-                    צור ליד חדש עם הטלפון <span dir="ltr" className="font-semibold">{debouncedQuery}</span>
-                  </Button>
-                </Link>
-              )}
+          {debouncedQuery.length >= 2 && totalResults === 0 && !isLeadsFetching && (
+            <p className="text-center text-muted-foreground py-4">לא נמצאו תוצאות</p>
+          )}
+
+          {/* Offered whenever no LEAD matched, not only when nothing at all
+              did. A number with an old order but no lead is exactly when a rep
+              is about to type the customer in again by hand. */}
+          {enabled && canSearchLeads && !isLeadsFetching && leads.length === 0
+            && isPhoneShapedQuery(debouncedQuery) && (
+            <div className="flex justify-center py-2">
+              <Link
+                to={createPageUrl('NewLead') + `?phone=${encodeURIComponent(debouncedQuery)}`}
+                onClick={onClose}
+              >
+                <Button size="sm" className="gap-1.5">
+                  <UserPlus className="h-4 w-4" />
+                  צור ליד חדש עם הטלפון <span dir="ltr" className="font-semibold">{debouncedQuery}</span>
+                </Button>
+              </Link>
             </div>
           )}
 
@@ -205,15 +227,13 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
               </h3>
               <div className="space-y-2">
                 {leads.map(lead => (
-                  <button
-                    type="button"
+                  <LeadResultCard
                     key={lead.id}
-                    onClick={() => { onClose(); openLead(lead.id); }}
-                    className="w-full text-right block p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <p className="font-medium">{lead.full_name}</p>
-                    <p className="text-sm text-muted-foreground">{lead.phone} • {lead.email}</p>
-                  </button>
+                    lead={lead}
+                    users={users}
+                    repeatEntry={repeatEnquiries.get(lead.id)}
+                    onOpen={() => { onClose(); openLead(lead.id); }}
+                  />
                 ))}
               </div>
             </div>
