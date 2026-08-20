@@ -86,7 +86,11 @@ CREATE TABLE public.sales_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id uuid, task_type text, task_status text, status text,
   summary text, due_date timestamptz, work_start_date timestamptz,
-  created_date timestamptz DEFAULT now()
+  rep1 text,
+  created_date timestamptz DEFAULT now(),
+  -- closeSalesTask stamps this at closing time; the completed_by migration
+  -- backfills completed_at from it.
+  updated_date timestamptz DEFAULT now()
 );
 
 CREATE TABLE public.quotes (
