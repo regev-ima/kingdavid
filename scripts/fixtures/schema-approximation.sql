@@ -57,7 +57,7 @@ CREATE TABLE public.users (
 
 CREATE TABLE public.customers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  full_name text, phone text, email text, address text, city text,
+  full_name text, phone text, phone_2 text, email text, address text, city text,
   lead_id uuid, original_source text, source text,
   total_orders int DEFAULT 0, total_revenue numeric DEFAULT 0,
   lifetime_value numeric DEFAULT 0, account_manager text,
@@ -67,7 +67,7 @@ CREATE TABLE public.customers (
 
 CREATE TABLE public.leads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  full_name text, phone text, email text, city text, address text,
+  full_name text, phone text, phone_2 text, email text, city text, address text,
   status text, source text, source_form text, subject text,
   tags text[] NOT NULL DEFAULT ARRAY[]::text[],
   notes text, rep1 text, rep2 text, pending_rep_email text,
@@ -103,6 +103,7 @@ CREATE TABLE public.orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id uuid,
   customer_id uuid REFERENCES public.customers(id),   -- NO ACTION by default
+  customer_phone text, customer_phone_2 text,
   payment_status text, production_status text, delivery_status text,
   total numeric, created_date timestamptz DEFAULT now()
 );

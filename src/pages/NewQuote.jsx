@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
+import { findByPhoneSubstring } from '@/lib/phoneLookup';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { User, UserCheck } from 'lucide-react';
@@ -110,9 +111,11 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
   //   * 150ms debounce (was 350ms) — feels real-time without DDoSing the DB.
   //   * Lookup kicks in at 4 digits (was 7) so the user gets feedback as
   //     soon as the discriminating tail of the number is typed.
-  // The DB side is covered by the pg_trgm GIN index added in
-  // 20260428000001_phone_trigram_indexes.sql so ILIKE '%tail%' is no
-  // longer a full table scan.
+  // The DB side is covered by the pg_trgm GIN indexes in
+  // 20260820000001_search_trigram_indexes.sql (phone) and
+  // 20260820000003_second_phone_search_indexes.sql (phone_2), so ILIKE
+  // '%tail%' is no longer a full table scan. The file this used to name,
+  // 20260428000001, never had a workflow and never ran.
   // Delivery/assembly rows the rep took off. Without this the auto-detection
   // puts the row straight back on the next keystroke, and removing it becomes
   // impossible.
@@ -135,25 +138,18 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     // the dropdown doesn't blink between keystrokes.
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      // Use the longest available tail (up to 9 digits) — short queries
-      // could match a lot of rows so the limit clamps the result anyway.
-      const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
-      const pattern = `%${tail}%`;
-      const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
-        base44.supabase
-          .from('customers')
-          .select('id, full_name, phone, phone_2, email, address, city')
-          .ilike('phone', pattern)
-          .limit(5),
-        base44.supabase
-          .from('leads')
-          .select('id, full_name, phone, phone_2, email, address, city, status')
-          .ilike('phone', pattern)
-          .limit(5),
+      // Both phone fields, longest available tail (up to 9 digits) — see
+      // findByPhoneSubstring for why the second number is a query of its own
+      // and not another branch of an OR.
+      const [customers, leads] = await Promise.all([
+        findByPhoneSubstring(base44.supabase, 'customers', debouncedPhone, {
+          select: 'id, full_name, phone, phone_2, email, address, city',
+        }),
+        findByPhoneSubstring(base44.supabase, 'leads', debouncedPhone, {
+          select: 'id, full_name, phone, phone_2, email, address, city, status',
+        }),
       ]);
-      if (cErr) throw cErr;
-      if (lErr) throw lErr;
-      return { customers: customers || [], leads: leads || [] };
+      return { customers, leads };
     },
   });
 

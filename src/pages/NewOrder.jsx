@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
+import { findByPhoneSubstring } from '@/lib/phoneLookup';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -216,24 +217,20 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
     enabled: phoneLookupEnabled && canAccessSales,
     staleTime: 60_000,
     placeholderData: (prev) => prev,
+    // Both phone fields, via the shared helper — a customer who gave the office
+    // one number and their mobile as "טלפון נוסף" was invisible to this lookup,
+    // so the rep typed them in again and made the duplicate the system then
+    // warned about.
     queryFn: async () => {
-      const tail = debouncedPhone.slice(-Math.min(9, debouncedPhone.length));
-      const pattern = `%${tail}%`;
-      const [{ data: customers, error: cErr }, { data: leads, error: lErr }] = await Promise.all([
-        base44.supabase
-          .from('customers')
-          .select('id, full_name, phone, phone_2, email, address, city')
-          .ilike('phone', pattern)
-          .limit(5),
-        base44.supabase
-          .from('leads')
-          .select('id, full_name, phone, phone_2, email, address, city, status')
-          .ilike('phone', pattern)
-          .limit(5),
+      const [customers, leads] = await Promise.all([
+        findByPhoneSubstring(base44.supabase, 'customers', debouncedPhone, {
+          select: 'id, full_name, phone, phone_2, email, address, city',
+        }),
+        findByPhoneSubstring(base44.supabase, 'leads', debouncedPhone, {
+          select: 'id, full_name, phone, phone_2, email, address, city, status',
+        }),
       ]);
-      if (cErr) throw cErr;
-      if (lErr) throw lErr;
-      return { customers: customers || [], leads: leads || [] };
+      return { customers, leads };
     },
   });
 

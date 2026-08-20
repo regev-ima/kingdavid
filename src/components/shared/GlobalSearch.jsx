@@ -98,10 +98,10 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     [debouncedQuery]
   );
 
+  const PHONE_FIELDS = ['phone', 'phone_2', 'customer_phone', 'customer_phone_2'];
   const buildOrFilter = (fields) => ({
     $or: fields.map((f) => {
-      const isPhoneField = f === 'phone' || f === 'customer_phone';
-      const term = isPhoneField && phoneTail ? phoneTail : debouncedQuery;
+      const term = PHONE_FIELDS.includes(f) && phoneTail ? phoneTail : debouncedQuery;
       return { [f]: { $regex: term, $options: 'i' } };
     }),
   });
@@ -117,7 +117,7 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     // this box did not. Now that the menu entry opens this dialog, a rep
     // pasting a lead number has to land somewhere.
     queryFn: () => base44.entities.Lead.filter(
-      buildOrFilter(['full_name', 'phone', 'email', 'unique_id']),
+      buildOrFilter(['full_name', 'phone', 'phone_2', 'email', 'unique_id']),
       '-created_date',
       20,
     ),
@@ -140,7 +140,7 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     enabled: enabled && canSearchOrders,
     staleTime: 60_000,
     queryFn: () => base44.entities.Order.filter(
-      buildOrFilter(['order_number', 'customer_name', 'customer_phone']),
+      buildOrFilter(['order_number', 'customer_name', 'customer_phone', 'customer_phone_2']),
       '-created_date',
       5,
     ),

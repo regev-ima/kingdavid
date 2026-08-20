@@ -62,7 +62,11 @@ export default function LeadLookupPanel({ autoFocus = true, onCreateLead = null,
         .limit(30);
       if (isPhoneShapedQuery(safe)) {
         const digits = safe.replace(/\D/g, '');
-        q = q.ilike('phone', `%${digits}%`);
+        // Both numbers. Safe as one OR here because the query sorts before it
+        // limits — the sort has to see every match, so the planner cannot take
+        // the early-exit shortcut that turns an unsorted LIMIT into a table
+        // scan (see findByPhoneSubstring).
+        q = q.or(`phone.ilike.%${digits}%,phone_2.ilike.%${digits}%`);
       } else {
         q = q.or(`full_name.ilike.%${safe}%,email.ilike.%${safe}%,unique_id.ilike.%${safe}%`);
       }
