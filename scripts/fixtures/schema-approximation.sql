@@ -96,6 +96,8 @@ CREATE TABLE public.sales_tasks (
 CREATE TABLE public.quotes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id uuid, customer_id uuid, status text, total numeric,
+  quote_number text, customer_name text,
+  customer_phone text, customer_phone_2 text,
   created_date timestamptz DEFAULT now()
 );
 
@@ -103,6 +105,7 @@ CREATE TABLE public.orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lead_id uuid,
   customer_id uuid REFERENCES public.customers(id),   -- NO ACTION by default
+  order_number text, customer_name text,
   customer_phone text, customer_phone_2 text,
   payment_status text, production_status text, delivery_status text,
   total numeric, created_date timestamptz DEFAULT now()
@@ -112,7 +115,9 @@ CREATE TABLE public.support_tickets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id uuid REFERENCES public.customers(id) ON DELETE SET NULL,
   lead_id     uuid REFERENCES public.leads(id)     ON DELETE SET NULL,
-  status text, priority text, sla_due_date timestamptz, customer_phone text
+  status text, priority text, sla_due_date timestamptz,
+  ticket_number text, customer_name text, customer_phone text,
+  created_date timestamptz DEFAULT now()
 );
 
 CREATE TABLE public.lead_activity_logs (

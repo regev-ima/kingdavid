@@ -150,8 +150,11 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     queryKey: ['gs-quotes', debouncedQuery],
     enabled: enabled && canSearchQuotes,
     staleTime: 60_000,
+    // A phone number used to find the lead and the orders behind it but never
+    // the quote — quotes were matched on number and name only, while
+    // customer_phone sat right there unread.
     queryFn: () => base44.entities.Quote.filter(
-      buildOrFilter(['quote_number', 'customer_name']),
+      buildOrFilter(['quote_number', 'customer_name', 'customer_phone', 'customer_phone_2']),
       '-created_date',
       5,
     ),
@@ -162,7 +165,7 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     enabled: enabled && canSearchTickets,
     staleTime: 60_000,
     queryFn: () => base44.entities.SupportTicket.filter(
-      buildOrFilter(['ticket_number', 'customer_name', 'customer_phone']),
+      buildOrFilter(['ticket_number', 'customer_name', 'customer_phone', 'customer_phone_2']),
       '-created_date',
       5,
     ),
