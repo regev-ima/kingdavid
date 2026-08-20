@@ -113,8 +113,11 @@ export default function GlobalSearch({ isOpen, onClose, user }) {
     queryKey: ['gs-leads', debouncedQuery],
     enabled: enabled && canSearchLeads,
     staleTime: 60_000,
+    // unique_id came along with the איתור ליד screen, which searched it and
+    // this box did not. Now that the menu entry opens this dialog, a rep
+    // pasting a lead number has to land somewhere.
     queryFn: () => base44.entities.Lead.filter(
-      buildOrFilter(['full_name', 'phone', 'email']),
+      buildOrFilter(['full_name', 'phone', 'email', 'unique_id']),
       '-created_date',
       20,
     ),

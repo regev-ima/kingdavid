@@ -65,7 +65,11 @@ export const navigationByRole = {
   admin: [
     { name: 'מרכז שליטה', href: 'Dashboard2', icon: LayoutDashboard, perm: 'dashboards.control_center' },
     { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: UserCog, perm: 'leads.view' },
-    { name: 'איתור ליד', href: 'LeadLookup', icon: Search, perm: 'leads.lookup' },
+    // opensSearch: the entry opens the search popup instead of navigating. The
+    // href stays because everything else keys off it — the permission gate, the
+    // hide/reorder settings, and the /LeadLookup route itself, which is still
+    // reachable by bookmark.
+    { name: 'איתור ליד', href: 'LeadLookup', icon: Search, perm: 'leads.lookup', opensSearch: true },
     { name: 'לקוחות', href: 'Customers', icon: Contact, perm: 'customers.view' },
     { name: 'משימות מכירה', href: 'SalesTasks', icon: CheckSquare, perm: 'tasks.view' },
     { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays, perm: 'team.shift_schedule' },
@@ -91,7 +95,11 @@ export const navigationByRole = {
   sales_user: [
     { name: 'לידים/משימות מכירה', href: 'LeadManagement', icon: CheckSquare, perm: 'leads.view' },
     { name: 'שיבוץ משמרות', href: 'Schedule', icon: CalendarDays, perm: 'team.shift_schedule' },
-    { name: 'איתור ליד', href: 'LeadLookup', icon: Search, perm: 'leads.lookup' },
+    // opensSearch: the entry opens the search popup instead of navigating. The
+    // href stays because everything else keys off it — the permission gate, the
+    // hide/reorder settings, and the /LeadLookup route itself, which is still
+    // reachable by bookmark.
+    { name: 'איתור ליד', href: 'LeadLookup', icon: Search, perm: 'leads.lookup', opensSearch: true },
     { name: 'לקוחות', href: 'Customers', icon: Contact, perm: 'customers.view' },
     { name: 'הזמנות', href: 'Orders', icon: ShoppingCart, perm: 'orders.view' },
     { name: 'הצעות מחיר', href: 'Quotes', icon: FileText, perm: 'quotes.view' },
@@ -142,6 +150,21 @@ function LayoutContent({ children, currentPageName }) {
       return next;
     });
   };
+
+  // Ctrl/Cmd+K. A search a rep reaches thirty times a day should not cost a
+  // trip to the mouse; this is the shortcut every tool with a search box uses,
+  // so it is the one they will already try. preventDefault because Firefox
+  // hands Ctrl+K to the address bar otherwise.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const { isImpersonating, impersonatedRep, originalAdmin, stopImpersonation, getEffectiveUser } = useImpersonation();
@@ -347,11 +370,31 @@ function LayoutContent({ children, currentPageName }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* A field, not an icon. The search is the most-used screen in the
+              app and it was hiding behind a magnifying glass that reads as
+              decoration — reps navigated to the איתור ליד page instead, which
+              is a page load for something that should be a keystroke. A box
+              that looks like a box gets typed into. Below sm there is no room
+              for it, so the icon stays there. The cutoff is lg and not sm,
+              because measured at 768px the field lands 4px from the logo —
+              a field crammed against a wordmark reads worse than the icon. */}
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen(true)}
+            className="hidden lg:flex h-10 w-64 xl:w-80 items-center gap-2 rounded-xl border border-border bg-muted/40 px-3.5 text-sm text-muted-foreground hover:bg-muted hover:border-border/80 transition-colors"
+          >
+            <Search className="h-4 w-4 flex-none" />
+            <span className="truncate">חיפוש ליד, הזמנה, לקוח...</span>
+            <kbd className="ms-auto hidden xl:inline-flex items-center rounded border border-border bg-card px-1.5 text-[10px] font-medium text-muted-foreground/80">
+              Ctrl K
+            </kbd>
+          </button>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setIsSearchOpen(true)}
-            className="text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg"
+            className="lg:hidden text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg"
+            aria-label="חיפוש"
           >
             <Search className="h-5 w-5" />
           </Button>
@@ -421,22 +464,46 @@ function LayoutContent({ children, currentPageName }) {
         <nav className="p-2 pt-0 space-y-1">
           {filteredNav.map((item) => {
             const isActive = currentPageName === item.href;
+            const itemClass = `
+              flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 text-sm font-medium
+              ${isActive
+                ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                : 'text-foreground/70 hover:bg-muted hover:text-foreground'
+              }
+            `;
+            const itemBody = (
+              <>
+                <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
+                <span className={`truncate whitespace-nowrap transition-opacity duration-200 ${sidebarPinned ? '' : 'lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100'}`}>{item.name}</span>
+              </>
+            );
+
+            // Searching is not somewhere you go — it is something you do, and
+            // then you are back where you were. Loading a whole screen for it
+            // meant a rep checking one number lost the row they were reading.
+            if (item.opensSearch) {
+              return (
+                <button
+                  key={item.name}
+                  type="button"
+                  onClick={() => { setIsSearchOpen(true); setIsMobileMenuOpen(false); }}
+                  title={item.name}
+                  className={`w-full text-right ${itemClass}`}
+                >
+                  {itemBody}
+                </button>
+              );
+            }
+
             return (
               <Link
                 key={item.name}
                 to={createPageUrl(item.href)}
                 onClick={() => setIsMobileMenuOpen(false)}
                 title={item.name}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-150 text-sm font-medium
-                  ${isActive
-                    ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
-                    : 'text-foreground/70 hover:bg-muted hover:text-foreground'
-                  }
-                `}
+                className={itemClass}
               >
-                <item.icon className={`h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-                <span className={`truncate whitespace-nowrap transition-opacity duration-200 ${sidebarPinned ? '' : 'lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100'}`}>{item.name}</span>
+                {itemBody}
               </Link>
             );
           })}
