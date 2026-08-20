@@ -905,7 +905,12 @@ export default function LeadManagement() {
     (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '', 'he'),
   );
 
-  const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== 'all' || scope !== 'all';
+  // "Is the rep looking at something narrower than their normal view" — which
+  // is why the rep test is against defaultRep and not 'all'. A rep sitting on
+  // their own leads is not filtering, that is where the page starts them;
+  // measuring it against 'all' would leave the "לידים שהתקבלו" tile unable to
+  // light up for anyone but a manager.
+  const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== defaultRep || scope !== 'all';
 
   // Switch the active scope (toggling off if it's already active). Scopes are
   // status/assignment-defined, so a lingering status filter (e.g. one picked
@@ -924,7 +929,7 @@ export default function LeadManagement() {
   const selectRepBucket = (repEmail, bucketScope) => {
     const isActive = filters.rep === repEmail && scope === (bucketScope || 'all');
     if (isActive) {
-      setFilters((f) => ({ ...f, rep: 'all', status: 'all' }));
+      setFilters((f) => ({ ...f, rep: defaultRep, status: 'all' }));
       setScope('all');
     } else {
       setFilters((f) => ({ ...f, rep: repEmail, status: 'all' }));
@@ -1019,6 +1024,13 @@ export default function LeadManagement() {
           RTL ellipsis clips the leading digits. Giving each tile room is the
           only version that stays readable. */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-7 gap-3">
+        {/* Clicking this clears the filters back to where the page STARTS —
+            which for a rep is their own leads, not the whole floor's. It used
+            to reset rep to 'all', so the tile showed a rep "0 arrived today"
+            and then opened everyone's list when they pressed it: the number
+            and the click disagreed. Widening to all reps is still one click
+            away, on the rep chip's ×, because that is the rep actually asking
+            for it. */}
         <TaskKpiTile
           label="לידים שהתקבלו"
           value={kpiCounts.totalCount}
@@ -1027,7 +1039,7 @@ export default function LeadManagement() {
           icon={Users}
           tone="sky"
           isActive={scope === 'all' && !hasActiveFilter}
-          onClick={() => { setScope('all'); setFilters({ search: '', status: 'all', source: 'all', rep: 'all' }); }}
+          onClick={() => { setScope('all'); setFilters({ search: '', status: 'all', source: 'all', rep: defaultRep }); }}
         />
         {/* Arrived but nobody owns it — the pool a manager works down. Sits
             beside "לידים שהתקבלו" because it is a slice of it: of everything
@@ -1235,7 +1247,7 @@ export default function LeadManagement() {
           variant="ghost"
           className="h-11 rounded-xl gap-2 bg-primary/5 text-primary hover:bg-primary/10"
           onClick={() => {
-            setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
+            setFilters({ search: '', status: 'all', source: 'all', rep: defaultRep });
             setScope('all');
             setHourFrom(null);
             setHourTo(null);
@@ -1291,7 +1303,7 @@ export default function LeadManagement() {
           onClearScope={() => setScope('all')}
           onClearFilter={(key) => setFilters((f) => ({ ...f, [key]: key === 'search' ? '' : 'all' }))}
           onClearAll={() => {
-            setFilters({ search: '', status: 'all', source: 'all', rep: 'all' });
+            setFilters({ search: '', status: 'all', source: 'all', rep: defaultRep });
             setScope('all');
             setHourFrom(null);
             setHourTo(null);
