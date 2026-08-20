@@ -173,15 +173,14 @@ function LeadTasksCard({ queue, tasks = [], salesReps, onOpenTask, onCompleteTas
   const [first, ...rest] = queue;
   const task = first?.entity;
 
+  // completed_at is stamped by a trigger the moment the task leaves the open
+  // state; updated_date is the pre-trigger answer, kept for tasks closed before
+  // that migration ran (where it holds the same moment anyway).
+  const closedWhen = (t) => parseWorkbenchDate(t?.completed_at || t?.updated_date);
+
   const doneTasks = (tasks || [])
     .filter((t) => t?.task_status === 'completed')
-    .sort((a, b) => {
-      // Most recently closed first. closeSalesTask stamps updated_date on the
-      // way out, so that is when it actually closed.
-      const da = parseWorkbenchDate(a?.updated_date)?.getTime() || 0;
-      const db = parseWorkbenchDate(b?.updated_date)?.getTime() || 0;
-      return db - da;
-    });
+    .sort((a, b) => (closedWhen(b)?.getTime() || 0) - (closedWhen(a)?.getTime() || 0));
 
   const doneList = doneTasks.length > 0 ? (
     <div className="px-4 pb-3 pt-2 border-t border-border/50">
@@ -190,22 +189,31 @@ function LeadTasksCard({ queue, tasks = [], salesReps, onOpenTask, onCompleteTas
       </span>
       <ul className="list-none m-0 p-0 mt-1 max-h-[132px] overflow-y-auto">
         {doneTasks.map((t) => {
-          const closedAt = parseWorkbenchDate(t.updated_date);
+          const closedAt = closedWhen(t);
+          // Who actually closed it — not t.rep1, which is who it belonged to. A
+          // manager closing a rep's task is the case this line exists for.
+          // Blank for tasks closed before the stamp existed: no name beats the
+          // wrong name.
+          const closedBy = t.completed_by ? getRepDisplayName(t.completed_by, salesReps) : '';
           const title = String(t.summary || '').split('\n')[0]
             || ALL_TASK_TYPE_LABELS[t.task_type]
             || 'משימה';
+          // The row has room for the day; the full time lives in the tooltip.
+          const day = closedAt ? formatInTimeZone(closedAt, 'Asia/Jerusalem', 'dd/MM') : '';
+          const exact = closedAt ? formatInTimeZone(closedAt, 'Asia/Jerusalem', 'dd/MM/yyyy HH:mm') : '';
           return (
             <li key={t.id}>
               <button
                 type="button"
                 onClick={() => onOpenTask?.(t)}
-                title={title}
+                title={[title, closedBy && `בוצע ע״י ${closedBy}`, exact].filter(Boolean).join(' · ')}
                 className="w-full flex items-center gap-2 px-2 py-1 -mx-2 rounded-lg text-start hover:bg-muted transition-colors"
               >
                 <Check className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />
                 <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">{title}</span>
-                <span className="flex-none text-[11px] text-muted-foreground/70 tabular-nums">
-                  {closedAt ? formatInTimeZone(closedAt, 'Asia/Jerusalem', 'dd/MM') : ''}
+                <span className="flex-none text-[11px] text-muted-foreground/70">
+                  {closedBy ? <span className="truncate">{closedBy} · </span> : null}
+                  <span className="tabular-nums">{day}</span>
                 </span>
               </button>
             </li>

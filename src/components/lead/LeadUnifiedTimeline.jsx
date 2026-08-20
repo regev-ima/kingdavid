@@ -508,7 +508,13 @@ function renderTaskEvent(task, isLast, users, onOpenTask) {
   const typeChip = TASK_TYPE_CHIP[task.task_type] || FALLBACK_TASK_TYPE_CHIP;
   const TypeIcon = typeChip.icon;
   const taskTypeLabel = ALL_TASK_TYPE_LABELS[task.task_type] || 'אחר';
-  const when = task.updated_date || task.created_date || task.manual_created_date;
+  const when = task.completed_at || task.updated_date || task.created_date || task.manual_created_date;
+  // This line used to print rep1 on its own, which reads as "this is who did
+  // it" — but rep1 is who the task was assigned to. They are the same person
+  // most of the time and different exactly when it matters, so each is now
+  // named for what it is.
+  const closedBy = task.completed_by ? getRepDisplayName(task.completed_by, users) : '';
+  const owner = task.rep1 ? getRepDisplayName(task.rep1, users) : '';
 
   return (
     <li key={`task-${task.id}`} className="flex gap-3 relative">
@@ -549,7 +555,9 @@ function renderTaskEvent(task, isLast, users, onOpenTask) {
         )}
 
         <p className="text-[11px] text-muted-foreground/70 mt-1">
-          {task.rep1 ? getRepDisplayName(task.rep1, users) : 'לא משויך'}
+          {closedBy ? `בוצע ע״י ${closedBy}` : null}
+          {closedBy && owner && owner !== closedBy ? ` · שויך ל${owner}` : null}
+          {!closedBy ? (owner ? `שויך ל${owner}` : 'לא משויך') : null}
         </p>
       </button>
     </li>
