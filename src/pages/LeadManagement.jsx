@@ -444,20 +444,26 @@ export default function LeadManagement() {
 
   // Same one-shot probe for the source-channel computed column: filter by
   // channel where it exists, fall back to the old verbatim compare where the
-  // migration hasn't landed, so the request never 400s.
+  // migration hasn't landed, so the request never 400s. Unlike the probes
+  // above, only a DEFINITIVE "no such column" may count as unsupported here —
+  // caching a transient network hiccup as "not migrated" would silently revert
+  // the filter to the verbatim compare, which is the exact bug it fixes. Any
+  // other failure is thrown so the query retries instead of remembering it.
   const { data: sourceChannelSupported = false } = useQuery({
     queryKey: ['leadSourceChannelSupported'],
     enabled: !!effectiveUser,
     staleTime: Infinity,
     gcTime: Infinity,
-    retry: false,
+    retry: 2,
     queryFn: async () => {
       const { error } = await base44.supabase.from('leads').select('id').eq(SOURCE_CHANNEL_COLUMN, 'google').limit(1);
-      if (error) {
+      if (!error) return true;
+      const missingColumn = error.code === '42703' || /source_channel/i.test(error.message || '');
+      if (missingColumn) {
         console.warn('[leads] source-channel filter unavailable (source_channel):', error.message);
         return false;
       }
-      return true;
+      throw error;
     },
   });
 

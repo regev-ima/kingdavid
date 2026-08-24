@@ -43,6 +43,13 @@ export const SOURCE_CHANNELS = {
 };
 
 // Checked top to bottom; first match wins.
+//
+// MIRRORED IN SQL by public.lead_source_channel() (migration 20260824000001),
+// which the מקור הגעה filter on ניהול לידים queries via the `source_channel`
+// computed column — so the filter finds exactly the rows the badge labels.
+// Change a rule here → change it there too, and REINDEX
+// leads_source_channel_idx: the index stores values computed at write time,
+// and CREATE OR REPLACE alone would leave it answering with the old rules.
 const CHANNEL_RULES = [
   ['google',     [/גוגל/, /^google/, /^דיגיטל$/, /^digital$/]],
   ['facebook',   [/פייסבוק/, /פייסב/, /פייסוק/, /facebook/, /^fb$/]],
@@ -97,7 +104,9 @@ export const SOURCE_CHANNEL_FILTER_LABELS = Object.fromEntries(
  *  filtering by something no row can match. */
 export function normalizeSourceFilterValue(value) {
   if (!value || value === 'all') return 'all';
-  if (SOURCE_CHANNELS[value]) return value;
+  // hasOwnProperty, not a truthy lookup: the value comes from the URL, and
+  // ?source=constructor must not walk the prototype into a "valid" channel.
+  if (Object.prototype.hasOwnProperty.call(SOURCE_CHANNELS, value)) return value;
   const channel = resolveSourceChannel(value);
   return channel === 'unknown' ? 'all' : channel;
 }
