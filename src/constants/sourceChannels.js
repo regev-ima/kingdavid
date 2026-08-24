@@ -43,6 +43,13 @@ export const SOURCE_CHANNELS = {
 };
 
 // Checked top to bottom; first match wins.
+//
+// MIRRORED IN SQL by public.lead_source_channel() (migration 20260824000001),
+// which the מקור הגעה filter on ניהול לידים queries via the `source_channel`
+// computed column — so the filter finds exactly the rows the badge labels.
+// Change a rule here → change it there too, and REINDEX
+// leads_source_channel_idx: the index stores values computed at write time,
+// and CREATE OR REPLACE alone would leave it answering with the old rules.
 const CHANNEL_RULES = [
   ['google',     [/גוגל/, /^google/, /^דיגיטל$/, /^digital$/]],
   ['facebook',   [/פייסבוק/, /פייסב/, /פייסוק/, /facebook/, /^fb$/]],
@@ -71,4 +78,35 @@ export function resolveSourceChannel(source) {
     if (patterns.some((re) => re.test(s))) return channel;
   }
   return 'unknown';
+}
+
+// What the "מקור הגעה" dropdown offers: the CHANNELS the badge column shows,
+// not the picker keys — a filter can only find what the rows are labeled with.
+// The SQL side of the same resolution is public.lead_source_channel()
+// (migration 20260824000001), exposed as the `source_channel` computed column
+// the filter queries. 'unknown' is offered as "אחר": it is a real bucket —
+// everything no rule matches — not a placeholder.
+export const SOURCE_CHANNEL_FILTER_OPTIONS = [
+  ...Object.keys(SOURCE_CHANNELS)
+    .filter((value) => value !== 'unknown')
+    .map((value) => ({ value, label: SOURCE_CHANNELS[value].label })),
+  { value: 'unknown', label: 'אחר' },
+];
+
+export const SOURCE_CHANNEL_FILTER_LABELS = Object.fromEntries(
+  SOURCE_CHANNEL_FILTER_OPTIONS.map((o) => [o.value, o.label]),
+);
+
+/** A ?source= value from an old link (the picker keys the filter used to
+ *  compare verbatim: 'digital', 'returning_customer', …) lands on the channel
+ *  that same value resolves to on the badge, so the deep link keeps meaning
+ *  what it meant. Unrecognisable values collapse to 'all' rather than
+ *  filtering by something no row can match. */
+export function normalizeSourceFilterValue(value) {
+  if (!value || value === 'all') return 'all';
+  // hasOwnProperty, not a truthy lookup: the value comes from the URL, and
+  // ?source=constructor must not walk the prototype into a "valid" channel.
+  if (Object.prototype.hasOwnProperty.call(SOURCE_CHANNELS, value)) return value;
+  const channel = resolveSourceChannel(value);
+  return channel === 'unknown' ? 'all' : channel;
 }
