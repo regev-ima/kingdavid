@@ -28,7 +28,8 @@ import { canAccessSalesWorkspace, isFactoryUser } from '@/components/shared/rbac
 import { canSeeAllLeads } from '@/lib/leadVisibility';
 import { useLeadVisibilityPolicy } from '@/hooks/useLeadVisibilityPolicy';
 import { useCustomStatuses } from '@/hooks/useCustomStatuses';
-import { LEAD_STATUS_OPTIONS, LEAD_SOURCE_OPTIONS, SOURCE_LABELS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
+import { LEAD_STATUS_OPTIONS, CLOSED_STATUSES, TIMEZONE } from '@/constants/leadOptions';
+import { SOURCE_CHANNEL_FILTER_OPTIONS, SOURCE_CHANNEL_FILTER_LABELS, normalizeSourceFilterValue } from '@/constants/sourceChannels';
 import { leadPhoneFilter, probePhoneKey } from '@/lib/phoneLookup';
 import { excludeCancelled } from '@/lib/cancelOrder';
 import ImportFromSheets from '@/components/lead/ImportFromSheets';
@@ -103,6 +104,15 @@ function israelDayWindow(now = new Date()) {
 // and becomes an OR of the two halves.
 const HOUR_COLUMN = 'arrival_hour_il';
 
+// ─── Source (channel) filter ────────────────────────────────────
+// `leads.source` is free text — 100+ distinct campaign names in two alphabets —
+// so the "מקור הגעה" filter compares the CHANNEL that text resolves to (the
+// same resolution the SourceBadge renders), via the `source_channel` computed
+// column added by migration 20260824000001. Comparing the raw column verbatim
+// is what made every pick return an empty list: almost no row literally says
+// 'website'.
+const SOURCE_CHANNEL_COLUMN = 'source_channel';
+
 function hourRangeCondition(from, to) {
   const f = Number.isInteger(from) ? from : 0;
   const t = Number.isInteger(to) ? to : 24;
@@ -165,7 +175,7 @@ function handlingStatusTone(value) {
 // filters on those.
 const RELATED_SCOPES = ['open_quotes', 'tasks_today', 'tasks_open', 'won'];
 
-function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIds }) {
+function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported, relatedLeadIds }) {
   const conditions = [];
   const startDate = dateRange?.from instanceof Date ? dateRange.from : null;
   const endDate = dateRange?.to instanceof Date ? dateRange.to : null;
@@ -214,7 +224,12 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
     conditions.push({ status: filters.status });
   }
   if (filters.source && filters.source !== 'all') {
-    conditions.push({ source: filters.source });
+    // Channel match where the computed column exists; on an environment whose
+    // migration hasn't run yet the old verbatim compare is all the server can
+    // do (it still finds the few rows that store the key itself).
+    conditions.push(sourceChannelSupported
+      ? { [SOURCE_CHANNEL_COLUMN]: filters.source }
+      : { source: filters.source });
   }
   if (filters.search) {
     const s = filters.search;
@@ -333,7 +348,9 @@ export default function LeadManagement() {
   const [filters, setFilters] = useState({
     search: urlParams.get('search') || '',
     status: urlParams.get('status') || 'all',
-    source: urlParams.get('source') || 'all',
+    // Old links carry the retired picker keys ('digital', 'returning_customer');
+    // they land on the channel they resolve to, so the deep link keeps working.
+    source: normalizeSourceFilterValue(urlParams.get('source') || 'all'),
     rep: urlParams.get('rep') || 'all',
   });
   // A rep pinned in the URL is an explicit choice — a deep link, or back-nav
@@ -419,6 +436,25 @@ export default function LeadManagement() {
         // Not fatal — the control simply stays hidden. Logged so a missing
         // migration is obvious in the console instead of silently absent.
         console.warn('[leads] hour filter unavailable (arrival_hour_il):', error.message);
+        return false;
+      }
+      return true;
+    },
+  });
+
+  // Same one-shot probe for the source-channel computed column: filter by
+  // channel where it exists, fall back to the old verbatim compare where the
+  // migration hasn't landed, so the request never 400s.
+  const { data: sourceChannelSupported = false } = useQuery({
+    queryKey: ['leadSourceChannelSupported'],
+    enabled: !!effectiveUser,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    queryFn: async () => {
+      const { error } = await base44.supabase.from('leads').select('id').eq(SOURCE_CHANNEL_COLUMN, 'google').limit(1);
+      if (error) {
+        console.warn('[leads] source-channel filter unavailable (source_channel):', error.message);
         return false;
       }
       return true;
@@ -704,10 +740,10 @@ export default function LeadManagement() {
 
   const leadsQuery = useMemo(
     () => buildLeadsQuery({
-      filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported,
+      filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported,
       relatedLeadIds: relatedLeadIdsPage,
     }),
-    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, relatedLeadIdsPage],
+    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported, relatedLeadIdsPage],
   );
   // Reset paging to the first page whenever the query itself changes (scope /
   // filter / rep / status / date / search) — without this, switching views
@@ -754,13 +790,13 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   const handlingBreakdownActive = scope === 'handling' || scope === 'lc_handling';
   const { data: statusBreakdown = {} } = useQuery({
-    queryKey: ['leadMgmt-handling-breakdown', seesAllLeads, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso, hourKey],
+    queryKey: ['leadMgmt-handling-breakdown', seesAllLeads, userEmail, filters.rep, filters.source, filters.search, fromIso, toIso, hourKey, sourceChannelSupported],
     enabled: !!effectiveUser && handlingBreakdownActive,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
       const ctx = (status, forcedScope) => buildLeadsQuery({
-        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, seesAllLeads, hourCond, phoneKeySupported,
+        filters: { ...filters, status }, dateRange, scope: forcedScope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported,
       });
       const [total, ...perStatus] = await Promise.all([
         base44.entities.Lead.count(ctx('all', 'handling')),
@@ -1183,7 +1219,9 @@ export default function LeadManagement() {
             <SelectTrigger className="h-11 w-48 rounded-xl"><SelectValue placeholder="כל המקורות" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">כל המקורות</SelectItem>
-              {LEAD_SOURCE_OPTIONS.map((opt) => (
+              {/* The channels the מדיה badges show — the only vocabulary the
+                  rows are actually labeled with (see SOURCE_CHANNEL_COLUMN). */}
+              {SOURCE_CHANNEL_FILTER_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
               ))}
             </SelectContent>
@@ -1672,7 +1710,7 @@ function ActiveFilterSummary({
        || customStatusesForFilter.find((s) => s.value === filters.status)?.label
        || filters.status)
     : null;
-  const sourceLabel = filters.source !== 'all' ? (SOURCE_LABELS[filters.source] || filters.source) : null;
+  const sourceLabel = filters.source !== 'all' ? (SOURCE_CHANNEL_FILTER_LABELS[filters.source] || filters.source) : null;
   const repLabel = filters.rep !== 'all' ? (repNameByEmail.get(filters.rep) || filters.rep) : null;
   const chips = [
     scope !== 'all' && { key: 'scope', label: SCOPE_LABELS[scope] || scope, onClear: onClearScope },

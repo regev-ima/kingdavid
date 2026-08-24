@@ -72,3 +72,32 @@ export function resolveSourceChannel(source) {
   }
   return 'unknown';
 }
+
+// What the "מקור הגעה" dropdown offers: the CHANNELS the badge column shows,
+// not the picker keys — a filter can only find what the rows are labeled with.
+// The SQL side of the same resolution is public.lead_source_channel()
+// (migration 20260824000001), exposed as the `source_channel` computed column
+// the filter queries. 'unknown' is offered as "אחר": it is a real bucket —
+// everything no rule matches — not a placeholder.
+export const SOURCE_CHANNEL_FILTER_OPTIONS = [
+  ...Object.keys(SOURCE_CHANNELS)
+    .filter((value) => value !== 'unknown')
+    .map((value) => ({ value, label: SOURCE_CHANNELS[value].label })),
+  { value: 'unknown', label: 'אחר' },
+];
+
+export const SOURCE_CHANNEL_FILTER_LABELS = Object.fromEntries(
+  SOURCE_CHANNEL_FILTER_OPTIONS.map((o) => [o.value, o.label]),
+);
+
+/** A ?source= value from an old link (the picker keys the filter used to
+ *  compare verbatim: 'digital', 'returning_customer', …) lands on the channel
+ *  that same value resolves to on the badge, so the deep link keeps meaning
+ *  what it meant. Unrecognisable values collapse to 'all' rather than
+ *  filtering by something no row can match. */
+export function normalizeSourceFilterValue(value) {
+  if (!value || value === 'all') return 'all';
+  if (SOURCE_CHANNELS[value]) return value;
+  const channel = resolveSourceChannel(value);
+  return channel === 'unknown' ? 'all' : channel;
+}
