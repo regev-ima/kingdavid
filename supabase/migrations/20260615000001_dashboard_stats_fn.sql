@@ -61,8 +61,11 @@ lq AS (
   WHERE lead_id IS NOT NULL AND created_date >= p_start AND created_date <= p_end
 ),
 lr AS (
+  -- cancelled_at IS NULL added by 20260825000001 (a cancelled order is not
+  -- revenue) — kept here too so a re-run of THIS file's workflow can't revert it.
   SELECT lead_id, SUM(COALESCE(total, 0)) AS rev FROM public.orders
   WHERE lead_id IS NOT NULL AND created_date >= p_start AND created_date <= p_end
+    AND cancelled_at IS NULL
   GROUP BY lead_id
 ),
 lb AS (
@@ -88,6 +91,7 @@ oa AS (
   FROM public.orders o
   LEFT JOIN public.leads l ON l.id = o.lead_id
   WHERE o.created_date >= p_start AND o.created_date <= p_end
+    AND o.cancelled_at IS NULL
 )
 SELECT jsonb_build_object(
   'summary', (SELECT jsonb_build_object(
@@ -130,7 +134,9 @@ SELECT jsonb_build_object(
       FROM lb WHERE effective_sort_date IS NOT NULL GROUP BY 1) s),
   'revenue_daily', (SELECT COALESCE(jsonb_agg(jsonb_build_object('date', d, 'value', v) ORDER BY d), '[]'::jsonb)
     FROM (SELECT to_char(created_date AT TIME ZONE 'UTC', 'YYYY-MM-DD') d, SUM(COALESCE(total, 0)) v
-      FROM public.orders WHERE created_date >= p_start AND created_date <= p_end AND created_date IS NOT NULL GROUP BY 1) s)
+      FROM public.orders WHERE created_date >= p_start AND created_date <= p_end AND created_date IS NOT NULL
+        AND cancelled_at IS NULL
+      GROUP BY 1) s)
 );
 $func$;
 
