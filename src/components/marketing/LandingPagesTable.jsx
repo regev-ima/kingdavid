@@ -5,6 +5,7 @@ import {
 } from '@/components/ui/table';
 import { formatCurrency } from '@/utils/currency';
 import { ConvBar, ChannelBadge } from './PanelBits';
+import InfoTip from './InfoTip';
 
 // Landing pages for the SELECTED range — unlike the all-time landing_pages_stats
 // view, these rows come from marketing_stats_v1 and respect the date filter.
@@ -12,7 +13,14 @@ export default function LandingPagesTable({ rows = [], isLoading }) {
   return (
     <Card>
       <CardHeader className="pb-2 border-b border-border/50">
-        <CardTitle className="text-sm">דפי נחיתה בטווח הנבחר</CardTitle>
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          דפי נחיתה בטווח הנבחר
+          <InfoTip title="דפי נחיתה">
+            <p>שורה לכל דף נחיתה שלידים מהטווח הגיעו דרכו (לפי הקישור שנשמר על הליד). "ללא דף נחיתה" = לידים בלי קישור, למשל שיחות נכנסות וכניסה לחנות.</p>
+            <p>שני דפים שמקבלים תנועה דומה עם המרה שונה = הדף עצמו עושה את ההבדל — שווה לבדוק מה שונה בו.</p>
+            <p>ההכנסות הן מכל ההזמנות של לידי הדף מהטווח, גם אם נסגרו אחריו.</p>
+          </InfoTip>
+        </CardTitle>
       </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">

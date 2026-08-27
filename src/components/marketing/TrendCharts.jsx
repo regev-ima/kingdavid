@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { channelHex, channelLabel } from './channelVisuals';
+import InfoTip from './InfoTip';
 
 // Daily trends: leads stacked by channel (with the won line over them) and
 // revenue per day. Data comes pre-summed from marketing_stats_v1 — 'daily' is
@@ -58,7 +59,14 @@ export default function TrendCharts({ daily = [], revenueDaily = [], selectedCha
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
       <Card className="xl:col-span-2">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">לידים ביום — לפי ערוץ</CardTitle>
+          <CardTitle className="text-sm flex items-center gap-1.5">
+            לידים ביום — לפי ערוץ
+            <InfoTip title="לידים ביום — לפי ערוץ">
+              <p>כל עמודה = יום. הצבעים מרכיבים את העמודה לפי ערוץ (עד 5 הערוצים הגדולים; השאר מאוגדים ב"שאר הערוצים").</p>
+              <p>הקו הירוק = כמה מהלידים של אותו יום סגרו עסקה בסוף.</p>
+              <p>עמודה שמתכווצת פתאום = קמפיין שנעצר או תקציב שנחתך; קפיצה = קמפיין חדש עלה. ריחוף על עמודה מציג את המספרים המדויקים.</p>
+            </InfoTip>
+          </CardTitle>
         </CardHeader>
         <CardContent className="pt-0">
           {rows.length === 0 ? (
@@ -88,7 +96,13 @@ export default function TrendCharts({ daily = [], revenueDaily = [], selectedCha
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center justify-between gap-2">
-            <span>הכנסות ביום (הזמנות בתקופה)</span>
+            <span className="inline-flex items-center gap-1.5">
+              הכנסות ביום (הזמנות בתקופה)
+              <InfoTip title="הכנסות ביום">
+                <p>סכום ההזמנות שבוצעו בכל יום בטווח (הזמנות מבוטלות לא נספרות), מכל הלידים — כולל לידים ותיקים שסגרו עכשיו.</p>
+                <p>לכן הגרף הזה שונה מכרטיס "הכנסות מלידי התקופה": הכרטיס עוקב אחרי הלידים של הטווח, הגרף עוקב אחרי הקופה של הטווח.</p>
+              </InfoTip>
+            </span>
             {/* revenue_daily is aggregated per day only — the channel cut
                 doesn't apply to it, same convention as the heatmap. */}
             {selectedChannel !== 'all' && (

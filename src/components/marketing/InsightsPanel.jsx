@@ -1,5 +1,6 @@
 import React from 'react';
 import { Sparkles, TrendingUp, TrendingDown, PhoneMissed, AlertTriangle, Clock, Ban } from 'lucide-react';
+import InfoTip from './InfoTip';
 
 const TONE_CLS = {
   emerald: 'border-emerald-200 bg-emerald-50/70 text-emerald-900',
@@ -28,6 +29,11 @@ export default function InsightsPanel({ insights = [], onCampaignClick }) {
       <h2 className="text-sm font-bold text-foreground mb-2 flex items-center gap-1.5">
         <Sparkles className="h-4 w-4 text-indigo-500" />
         המלצות חכמות
+        <InfoTip title="איך נולדת המלצה">
+          <p>המערכת סורקת כל קמפיין וערוץ בטווח ומסמנת מה שדורש החלטה: המרה חריגה לטובה (להעלות תקציב), החזר גרוע (להוריד), לידים שלא נענים (לשפר טיפול — לא לגעת בתקציב), עלות בלי לידים, ומגמות חדות מול התקופה הקודמת.</p>
+          <p>קמפיין נשפט רק מ-8 לידים ומעלה, וקמפיין שהלידים שלו לא טופלו לעולם לא יקבל המלצת קיצוץ — קודם מתקנים את הטיפול.</p>
+          <p>כל כרטיס מפרט את המספרים שהובילו אליו. לחיצה על כרטיס עם שם קמפיין קופצת אליו בטבלת הקמפיינים.</p>
+        </InfoTip>
       </h2>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5">
         {insights.map((ins) => {

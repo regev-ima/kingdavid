@@ -25,6 +25,8 @@ export default function KPICard({
   trendValue,
   color = 'indigo',
   onClick,
+  // Optional ReactNode rendered next to the title (e.g. an info tooltip).
+  info,
   // When false, render `value` exactly as given (no thousands-formatting).
   // formatNumber() runs parseFloat first, which silently strips a trailing
   // "%" ("73.7%"→"73.7") or a ":ss" ("1:23"→"1"), so callers passing a
@@ -83,7 +85,10 @@ export default function KPICard({
     >
       <div className="flex items-start justify-between gap-2 sm:gap-6">
         <div className="flex-1 min-w-0 overflow-hidden">
-          <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground mb-1 sm:mb-2 truncate uppercase tracking-wide" title={title}>{title}</p>
+          <p className="text-[10px] sm:text-xs font-semibold text-muted-foreground mb-1 sm:mb-2 truncate uppercase tracking-wide" title={title}>
+            {title}
+            {info ? <span className="ms-1 inline-flex align-middle">{info}</span> : null}
+          </p>
           <p className={`text-xl sm:text-4xl font-bold text-foreground leading-tight break-words`}>{displayValue}</p>
           {subtitle && (
             <p className="text-[10px] sm:text-sm text-muted-foreground mt-1 sm:mt-2 truncate" title={subtitle}>{subtitle}</p>
