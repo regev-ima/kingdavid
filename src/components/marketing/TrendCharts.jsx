@@ -23,6 +23,32 @@ const tooltipStyle = {
   direction: 'rtl',
 };
 
+// Custom tooltip for the leads chart: the DAILY TOTAL leads the card in bold,
+// then the per-channel breakdown, then the closed-deals line.
+function LeadsDayTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const channelItems = payload.filter((p) => p.dataKey !== 'won');
+  const wonItem = payload.find((p) => p.dataKey === 'won');
+  const total = channelItems.reduce((acc, p) => acc + Number(p.value || 0), 0);
+  return (
+    <div dir="rtl" style={tooltipStyle} className="px-3 py-2 shadow-elevated">
+      <p className="font-bold text-foreground mb-1">
+        {fmtDay(label)} — סה״כ {total.toLocaleString()} לידים
+      </p>
+      {channelItems.map((p) => (
+        <p key={p.dataKey} style={{ color: p.color }} className="leading-relaxed">
+          {p.name}: {Number(p.value || 0).toLocaleString()}
+        </p>
+      ))}
+      {wonItem && (
+        <p className="text-emerald-700 font-semibold mt-0.5">
+          נסגרו: {Number(wonItem.value || 0).toLocaleString()}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function TrendCharts({ daily = [], revenueDaily = [], selectedChannel = 'all' }) {
   const { rows, channels } = useMemo(() => {
     const filtered = selectedChannel === 'all' ? daily : daily.filter((r) => r.channel === selectedChannel);
@@ -77,11 +103,7 @@ export default function TrendCharts({ daily = [], revenueDaily = [], selectedCha
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="d" reversed tickFormatter={fmtDay} tick={{ fontSize: 11 }} minTickGap={18} />
                 <YAxis orientation="right" tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelFormatter={fmtDay}
-                  formatter={(value, name) => [Number(value).toLocaleString(), name]}
-                />
+                <Tooltip content={<LeadsDayTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {channels.map((key) => (
                   <Bar key={key} dataKey={key} stackId="leads" name={seriesLabel(key)} fill={seriesColor(key)} radius={[2, 2, 0, 0]} />
