@@ -1,7 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,15 +8,12 @@ import {
 } from 'lucide-react';
 import Dashboard2DateRange, { DEFAULT_PRESETS } from '@/components/dashboard2/Dashboard2DateRange';
 import KPICard from '@/components/shared/KPICard';
-import LeadListTable from '@/components/lead/LeadListTable';
-import { useLeadModal } from '@/components/lead/LeadModalContext';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canAccessAdminOnly } from '@/lib/rbac';
 import { formatCurrency } from '@/utils/currency';
-import { resolveSourceChannel } from '@/constants/sourceChannels';
 import { useMarketingPanelData } from '@/components/marketing/useMarketingPanelData';
-import { channelLabel } from '@/components/marketing/channelVisuals';
 import { formatMins } from '@/components/marketing/PanelBits';
+import InfoTip from '@/components/marketing/InfoTip';
 import ChannelChips from '@/components/marketing/ChannelChips';
 import InsightsPanel from '@/components/marketing/InsightsPanel';
 import TrendCharts from '@/components/marketing/TrendCharts';
@@ -28,15 +22,6 @@ import MarketingHeatmap from '@/components/marketing/MarketingHeatmap';
 import ChannelsTable from '@/components/marketing/ChannelsTable';
 import CampaignsTable from '@/components/marketing/CampaignsTable';
 import LandingPagesTable from '@/components/marketing/LandingPagesTable';
-
-// The lead report needs the same channel the aggregates used server-side —
-// including the "facebook only via facebook_* metadata" fallback, which the old
-// client-side filter missed. Mirrors the CASE in marketing_stats_v1 exactly:
-// same three name columns, so the report and the cubes bucket identically.
-const leadChannel = (l) => resolveSourceChannel(
-  l?.utm_source || l?.source
-  || (l?.facebook_campaign_name || l?.facebook_ad_name || l?.facebook_adset_name ? 'facebook' : ''),
-);
 
 const fracDelta = (curr, prev) => (
   curr != null && prev != null && prev > 0 ? (curr - prev) / prev : null
@@ -123,34 +108,6 @@ export default function Marketing() {
   // campaigns tab doesn't replay the spotlight and wipe the user's filters.
   const clearFocus = useCallback(() => setFocus(null), []);
 
-  // ── דוח לידים — fetched only when that tab is open, on the same date basis
-  // (effective_sort_date) the aggregates use, so the counts agree.
-  const { openLead, lastOpenedLeadId } = useLeadModal();
-  const { data: users = [] } = useQuery({
-    queryKey: ['users'],
-    queryFn: () => base44.entities.User.list(),
-    staleTime: 5 * 60 * 1000,
-    enabled: isAdmin,
-  });
-  const repNameByEmail = useMemo(() => new Map(users.map((u) => [u.email, u.full_name || u.email])), [users]);
-
-  const startIso = dateRange.start.toISOString();
-  const endIso = dateRange.end.toISOString();
-  const { data: rangeLeads = [], isFetching: leadsFetching } = useQuery({
-    queryKey: ['marketingLeads', startIso, endIso],
-    enabled: isAdmin && activeTab === 'leads',
-    staleTime: 60 * 1000,
-    queryFn: () => base44.entities.Lead.filter(
-      { effective_sort_date: { $gte: startIso, $lte: endIso } },
-      '-effective_sort_date',
-      1000,
-    ),
-  });
-  const displayLeads = useMemo(
-    () => (channelFilter === 'all' ? rangeLeads : rangeLeads.filter((l) => leadChannel(l) === channelFilter)),
-    [rangeLeads, channelFilter],
-  );
-
   if (isLoadingUser) return <div className="text-center py-12 text-muted-foreground">טוען...</div>;
   if (!isAdmin) {
     return (
@@ -183,7 +140,7 @@ export default function Marketing() {
             onPresetChange={(k) => { setRangeKey(k); if (k !== 'custom') setCustomRange(null); }}
             onCustomChange={(r) => { setCustomRange(r || null); if (r?.from && r?.to) setRangeKey('custom'); }}
           />
-          <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={refetch} disabled={isFetching}>
+          <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={refetch} disabled={isFetching} title="טעינה מחדש של כל נתוני הפאנל">
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
             רענן
           </Button>
@@ -204,11 +161,19 @@ export default function Marketing() {
 
       {/* Channel cut — everything below re-slices to the selected channel */}
       {channels.length > 0 && (
-        <ChannelChips
-          channels={channels.filter((c) => c.leads > 0)}
-          selected={channelFilter}
-          onSelect={setChannelFilter}
-        />
+        <div className="flex items-start gap-2">
+          <ChannelChips
+            channels={channels.filter((c) => c.leads > 0)}
+            selected={channelFilter}
+            onSelect={setChannelFilter}
+          />
+          <InfoTip title="איך ליד משתייך לערוץ" className="mt-1.5">
+            <p>לחיצה על ערוץ חותכת את כל הפאנל (מדדים, גרפים וטבלאות) לערוץ הזה. לחיצה נוספת מבטלת.</p>
+            <p>השיוך נקבע לפי <b>מקור ההגעה של הליד</b>, בסדר הזה: תגית utm_source מהקישור ← שדה המקור של הליד ← זיהוי פייסבוק לפי נתוני טופס הלידים.</p>
+            <p>לכן ליד שהגיע <b>לאתר דרך מודעה</b> נספר בערוץ המודעה (פייסבוק/גוגל) ולא ב"אתר" — "אתר" מונה רק לידים שמקורם ישירות מטפסי האתר, בלי קמפיין מזוהה.</p>
+            <p><b>"אחר"</b> = לידים שהמקור שלהם לא זוהה כאף ערוץ. כדי לראות מה יש שם: לחצו על "אחר" ופתחו את טאב הקמפיינים — שמות המקור הגולמיים יופיעו שם.</p>
+          </InfoTip>
+        </div>
       )}
 
       {/* KPI strip */}
@@ -222,38 +187,88 @@ export default function Marketing() {
             title="לידים" value={kpi.leads} icon={Users} color="indigo"
             delta={kpi.deltas.leads} deltaLabel={hasComparison ? 'מול תקופה קודמת' : undefined}
             subtitle={`${(kpi.contacted || 0).toLocaleString()} טופלו · ${(kpi.quoted || 0).toLocaleString()} הצעות`}
+            info={(
+              <InfoTip title="לידים">
+                <p>כמה לידים נכנסו בטווח התאריכים שנבחר (לפי תאריך הכניסה של הליד למערכת).</p>
+                <p><b>טופלו</b> = בוצעה להם שיחה ראשונה. <b>הצעות</b> = נשלחה להם הצעת מחיר מהמערכת.</p>
+                <p>החץ משווה לתקופה מקבילה באותו אורך שקדמה לטווח (למשל: 30 הימים שלפני 30 הימים האחרונים).</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="עסקאות שנסגרו" value={kpi.won} icon={Handshake} color="emerald"
             delta={kpi.deltas.won}
             subtitle={`המרה ${Number(kpi.conversion || 0).toFixed(1)}%`}
+            info={(
+              <InfoTip title="עסקאות שנסגרו">
+                <p>לידים מהטווח שהגיעו לסטטוס <b>"נסגרה עסקה"</b> — גם אם הסגירה עצמה קרתה אחרי סוף הטווח.</p>
+                <p><b>המרה</b> = עסקאות שנסגרו חלקי סך הלידים. שימו לב: לידים שעדיין בטיפול יכולים עוד להיסגר, אז ההמרה של תקופה טרייה תמשיך לעלות.</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="הכנסות מלידי התקופה" value={formatCurrency(kpi.revenue)} formatValue={false}
             icon={TrendingUp} color="violet" delta={kpi.deltas.revenue}
             subtitle={kpi.orders ? `${Number(kpi.orders).toLocaleString()} הזמנות` : undefined}
+            info={(
+              <InfoTip title="הכנסות מלידי התקופה">
+                <p>סכום ההזמנות של הלידים שנכנסו בטווח — <b>גם אם ההזמנה בוצעה אחרי הטווח</b>. ככה מודדים כמה קמפיין באמת שווה.</p>
+                <p>הזמנות מבוטלות לא נספרות. הזמנה משויכת דרך הליד שממנו נוצרה.</p>
+                <p>שימו לב: זה שונה מגרף "הכנסות ביום" בסקירה, שמציג הזמנות שבוצעו בתוך הטווח (מכל הלידים).</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="הוצאות שיווק" value={formatCurrency(kpi.spend)} formatValue={false}
             icon={DollarSign} color="red" delta={kpi.deltas.spend} deltaPolarity="negative"
+            info={(
+              <InfoTip title="הוצאות שיווק">
+                <p>סך העלויות שהוזנו בטבלת עלויות השיווק עבור הטווח, משויכות לערוץ ולקמפיין לפי השם שהוזן.</p>
+                <p><b>₪0 אומר שלא הוזנו עלויות לתקופה</b> — ברגע שיוזנו, יחושבו אוטומטית גם CPL, CAC ו-ROAS, וההמלצות החכמות יתחילו להתחשב בכסף.</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="עלות לליד (CPL)" value={kpi.cpl != null ? formatCurrency(kpi.cpl) : '—'} formatValue={false}
             icon={Target} color="amber" delta={kpi.deltas.cpl} deltaPolarity="negative"
+            info={(
+              <InfoTip title="עלות לליד (CPL)">
+                <p>הוצאות השיווק חלקי מספר הלידים בטווח. כמה עולה להביא ליד אחד.</p>
+                <p>ככל שנמוך יותר — טוב יותר. מוצג רק כשהוזנו עלויות שיווק לתקופה.</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="עלות לעסקה (CAC)" value={kpi.cac != null ? formatCurrency(kpi.cac) : '—'} formatValue={false}
             icon={Wallet} color="orange" delta={kpi.deltas.cac} deltaPolarity="negative"
+            info={(
+              <InfoTip title="עלות לעסקה (CAC)">
+                <p>הוצאות השיווק חלקי מספר העסקאות שנסגרו. כמה עולה להשיג לקוח משלם אחד.</p>
+                <p>המדד החשוב באמת להחלטות תקציב: קמפיין עם CPL זול אבל CAC יקר מביא לידים זולים שלא קונים.</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="החזר על השקעה (ROAS)" value={kpi.roas != null ? `${kpi.roas.toFixed(2)}x` : '—'} formatValue={false}
             icon={TrendingUp} color={kpi.roas != null && kpi.roas >= 1 ? 'emerald' : 'gray'}
             delta={kpi.deltas.roas}
+            info={(
+              <InfoTip title="החזר על השקעה (ROAS)">
+                <p>הכנסות מלידי התקופה חלקי הוצאות השיווק. כל שקל שהושקע — כמה שקלים החזיר.</p>
+                <p><b>מעל 1x</b> = ההשקעה מחזירה את עצמה. <b>2x ומעלה</b> = טוב. מתחת ל-1x = הפסד על הקמפיין.</p>
+              </InfoTip>
+            )}
           />
           <KPICard
             title="זמן תגובה חציוני" value={formatMins(kpi.medianMins)} formatValue={false}
             icon={Timer} color="blue" delta={kpi.medianDelta} deltaPolarity="negative"
             subtitle="מהגעת הליד לשיחה ראשונה"
+            info={(
+              <InfoTip title="זמן תגובה חציוני">
+                <p>כמה זמן עובר מרגע שהליד נכנס ועד השיחה הראשונה אליו — הערך החציוני (חצי מהלידים נענו מהר יותר, חצי לאט יותר).</p>
+                <p>ליד שנענה מהר נסגר בסיכוי גבוה משמעותית. אם הזמן כאן ארוך — הבעיה בקיבולת המוקד, לא בקמפיינים.</p>
+              </InfoTip>
+            )}
           />
         </div>
       )}
@@ -264,7 +279,6 @@ export default function Marketing() {
           <TabsTrigger value="overview">סקירה</TabsTrigger>
           <TabsTrigger value="campaigns">קמפיינים</TabsTrigger>
           <TabsTrigger value="landing">דפי נחיתה</TabsTrigger>
-          <TabsTrigger value="leads">דוח לידים</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -308,34 +322,6 @@ export default function Marketing() {
 
       {activeTab === 'landing' && (
         <LandingPagesTable rows={visibleLandingPages} isLoading={isLoading} />
-      )}
-
-      {activeTab === 'leads' && (
-        <Card>
-          <CardHeader className="pb-2 border-b border-border/50">
-            <CardTitle className="text-sm flex items-center justify-between gap-2">
-              <span>דוח לידים {channelFilter !== 'all' ? `— ${channelLabel(channelFilter)}` : ''}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {leadsFetching ? 'טוען…'
-                  : displayLeads.length > 500
-                    ? `מציג 500 מתוך ${displayLeads.length}${rangeLeads.length >= 1000 ? '+' : ''} לידים`
-                    : `${displayLeads.length} לידים`}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-3">
-            {/* Same table as ניהול לידים — click a row to open the lead in the
-                same popup. */}
-            <LeadListTable
-              leads={displayLeads.slice(0, 500)}
-              isLoading={leadsFetching && displayLeads.length === 0}
-              repNameByEmail={repNameByEmail}
-              onRowClick={(lead) => openLead(lead.id)}
-              highlightId={lastOpenedLeadId}
-              emptyMessage="לא נמצאו לידים בטווח"
-            />
-          </CardContent>
-        </Card>
       )}
     </div>
   );

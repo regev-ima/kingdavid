@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import InfoTip from './InfoTip';
 
 // When do leads arrive — hour (Israel time) × day-of-week intensity grid.
 // Useful for dayparting: budget and staffing follow the hot cells.
@@ -26,7 +27,14 @@ export default function MarketingHeatmap({ hours = [], note }) {
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center justify-between gap-2">
-          <span>מתי מגיעים הלידים (שעה ישראל)</span>
+          <span className="inline-flex items-center gap-1.5">
+            מתי מגיעים הלידים (שעה ישראל)
+            <InfoTip title="מתי מגיעים הלידים">
+              <p>כל משבצת = יום בשבוע × שעה ביממה. כהה יותר = יותר לידים נכנסו בשעה הזאת לאורך הטווח.</p>
+              <p>למה זה שווה כסף: המשבצות הכהות אומרות מתי לתגבר את המוקד ומתי לרכז תקציב פרסום; משבצות בהירות בשעות שמפרסמים בהן = תקציב שנשרף על שעות חלשות.</p>
+              <p>ריחוף על משבצת מציג את היום, השעה ומספר הלידים המדויק.</p>
+            </InfoTip>
+          </span>
           {note ? <span className="text-[11px] font-normal text-muted-foreground">{note}</span> : null}
         </CardTitle>
       </CardHeader>

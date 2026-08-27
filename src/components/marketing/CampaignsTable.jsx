@@ -14,6 +14,7 @@ import { formatCurrency } from '@/utils/currency';
 import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
 import { useCampaignDrill } from './useMarketingPanelData';
 import { ConvBar, RoiBadge, DeltaBadge, ChannelBadge } from './PanelBits';
+import InfoTip from './InfoTip';
 
 const STATUS_LABELS = Object.fromEntries(LEAD_STATUS_OPTIONS.map((s) => [s.value, s.label]));
 
@@ -43,16 +44,19 @@ const SORTS = [
   { key: 'cpl', label: 'CPL' },
 ];
 
-function SortableHead({ label, sortKey, sort, onSort, className = 'text-center' }) {
+function SortableHead({ label, sortKey, sort, onSort, className = 'text-center', tip, tipTitle }) {
   const active = sort.key === sortKey;
   return (
     <TableHead className={className}>
-      <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 hover:text-foreground">
-        {label}
-        {active
-          ? (sort.dir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)
-          : <ArrowUpDown className="h-3 w-3 opacity-40" />}
-      </button>
+      <span className="inline-flex items-center gap-1">
+        <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 hover:text-foreground" title="לחיצה ממיינת לפי העמודה">
+          {label}
+          {active
+            ? (sort.dir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)
+            : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+        </button>
+        {tip && <InfoTip title={tipTitle || label}>{tip}</InfoTip>}
+      </span>
     </TableHead>
   );
 }
@@ -229,7 +233,14 @@ export default function CampaignsTable({
     <Card>
       <CardHeader className="pb-3 border-b border-border/50">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <CardTitle className="text-sm">קמפיינים — מי מצדיק תקציב ומי לא</CardTitle>
+          <CardTitle className="text-sm flex items-center gap-1.5">
+            קמפיינים — מי מצדיק תקציב ומי לא
+            <InfoTip title="טבלת הקמפיינים">
+              <p>שורה לכל קמפיין שהביא לידים בטווח. שם הקמפיין נלקח מתגית utm_campaign, משם הקמפיין בפייסבוק, או משדה המקור של לידים ישנים.</p>
+              <p><b>לחיצה על שורה</b> פותחת פירוט מלא של הקמפיין: גרף יומי, סטים של מודעות, מודעות מובילות, דפי נחיתה וסטטוסים.</p>
+              <p>לחיצה על כותרת עמודה ממיינת לפיה. תיבת החיפוש מסננת לפי שם, והבורר משמאל מסתיר קמפיינים קטנים.</p>
+            </InfoTip>
+          </CardTitle>
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -241,7 +252,7 @@ export default function CampaignsTable({
               />
             </div>
             <Select value={minLeads} onValueChange={setMinLeads}>
-              <SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-[130px] text-xs" title="הסתרת קמפיינים עם מעט לידים — מסנן רעש מהטבלה"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="0">כל הקמפיינים</SelectItem>
                 <SelectItem value="5">מ-5 לידים</SelectItem>
@@ -259,16 +270,60 @@ export default function CampaignsTable({
             <TableHeader>
               <TableRow>
                 <TableHead className="text-right">קמפיין</TableHead>
-                <SortableHead label="לידים" sortKey="leads" sort={sort} onSort={onSort} />
-                <SortableHead label="המרה" sortKey="conversion" sort={sort} onSort={onSort} className="text-right" />
-                <TableHead className="text-center">טופלו</TableHead>
-                <TableHead className="text-center">הצעות</TableHead>
+                <SortableHead
+                  label="לידים" sortKey="leads" sort={sort} onSort={onSort}
+                  tip={<p>כמה לידים הביא הקמפיין בטווח. החץ הקטן משווה לתקופה מקבילה קודמת.</p>}
+                />
+                <SortableHead
+                  label="המרה" sortKey="conversion" sort={sort} onSort={onSort} className="text-right"
+                  tip={<p>אחוז הלידים של הקמפיין שסגרו עסקה. ירוק מ-30%, צהוב מ-15%, אדום מתחת.</p>}
+                />
+                <TableHead className="text-center">
+                  <span className="inline-flex items-center gap-1">
+                    טופלו
+                    <InfoTip title="טופלו">
+                      <p>אחוז הלידים של הקמפיין שקיבלו שיחה ראשונה. נמוך = הלידים לא נענים, ואי אפשר לשפוט את הקמפיין לפני שמטפלים בזה.</p>
+                    </InfoTip>
+                  </span>
+                </TableHead>
+                <TableHead className="text-center">
+                  <span className="inline-flex items-center gap-1">
+                    הצעות
+                    <InfoTip title="הצעות">
+                      <p>אחוז הלידים שקיבלו הצעת מחיר שהופקה מהמערכת.</p>
+                    </InfoTip>
+                  </span>
+                </TableHead>
                 <TableHead className="text-center">נסגרו</TableHead>
-                <SortableHead label="הכנסות" sortKey="revenue" sort={sort} onSort={onSort} className="text-end" />
-                <SortableHead label="עלות" sortKey="spend" sort={sort} onSort={onSort} />
-                <SortableHead label="CPL" sortKey="cpl" sort={sort} onSort={onSort} />
-                <SortableHead label="ROAS" sortKey="roas" sort={sort} onSort={onSort} />
-                <TableHead className="text-center">המלצה</TableHead>
+                <SortableHead
+                  label="הכנסות" sortKey="revenue" sort={sort} onSort={onSort} className="text-end"
+                  tip={<p>סך ההזמנות (ללא מבוטלות) של לידי הקמפיין מהטווח — גם אם ההזמנה בוצעה אחרי סוף הטווח.</p>}
+                />
+                <SortableHead
+                  label="עלות" sortKey="spend" sort={sort} onSort={onSort}
+                  tip={<p>עלות שיווק שהוזנה לקמפיין הזה בטווח (לפי התאמת שם). "—" = לא הוזנה עלות.</p>}
+                />
+                <SortableHead
+                  label="CPL" sortKey="cpl" sort={sort} onSort={onSort}
+                  tip={<p>עלות לליד: עלות הקמפיין חלקי הלידים שלו. נמוך = טוב.</p>}
+                />
+                <SortableHead
+                  label="ROAS" sortKey="roas" sort={sort} onSort={onSort}
+                  tip={<p>החזר על השקעה: הכנסות הקמפיין חלקי עלותו. מעל 1x = מחזיר את עצמו, מ-2x = טוב, מתחת ל-1x = הפסד.</p>}
+                />
+                <TableHead className="text-center">
+                  <span className="inline-flex items-center gap-1">
+                    המלצה
+                    <InfoTip title="תגיות ההמלצה">
+                      <p><b>להעלות תקציב</b> — המרה מעל הממוצע עם החזר טוב.</p>
+                      <p><b>להוריד תקציב</b> — החזר נמוך או המרה חלשה על לידים שכן טופלו.</p>
+                      <p><b>לשפר טיפול</b> — הלידים לא נענים; קודם מטפלים, אחר כך שופטים את הקמפיין.</p>
+                      <p><b>עלות בלי לידים</b> — הוזנה עלות אבל לא נכנס אף ליד.</p>
+                      <p><b>בעלייה / בירידה</b> — שינוי של 30%+ בלידים מול התקופה הקודמת.</p>
+                      <p>ההמלצות מחושבות רק לקמפיינים עם לפחות 8 לידים, כדי לא להסיק מרעש.</p>
+                    </InfoTip>
+                  </span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
