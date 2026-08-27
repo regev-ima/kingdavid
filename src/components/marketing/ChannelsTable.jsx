@@ -5,7 +5,10 @@ import {
 } from '@/components/ui/table';
 import { formatCurrency } from '@/utils/currency';
 import { ConvBar, RoiBadge, DeltaBadge, ChannelBadge, formatMins } from './PanelBits';
+import { channelLabel } from './channelVisuals';
 import InfoTip from './InfoTip';
+import { useHoverTip } from './hoverTip';
+import { buildCellTip } from './cellTips';
 
 function HeadWithTip({ label, tipTitle, children, className = 'text-center' }) {
   return (
@@ -20,20 +23,25 @@ function HeadWithTip({ label, tipTitle, children, className = 'text-center' }) {
 
 // Channel scoreboard: full economics per channel including the median
 // first-response time — the number that explains half of every "conversion"
-// argument before anyone touches the ad account.
-export default function ChannelsTable({ channels = [], isLoading, onChannelClick }) {
+// argument before anyone touches the ad account. Every data cell explains
+// itself on hover (buildCellTip) — the exact counts behind the number, its
+// share of the totals, and the previous-period comparison.
+export default function ChannelsTable({ channels = [], totals, isLoading, onChannelClick }) {
+  const { show, hide, overlay } = useHoverTip();
+  const tip = (c, col) => (e) => show(e, buildCellTip({ row: c, col, totals, rowLabel: channelLabel(c.channel) }));
+
   return (
     <Card>
       <CardHeader className="pb-2 border-b border-border/50">
         <CardTitle className="text-sm flex items-center gap-1.5">
           ערוצים — התמונה המלאה
           <InfoTip title="טבלת הערוצים">
-            <p>שורה לכל ערוץ שהביא לידים (או שהוזנו לו עלויות) בטווח. לחיצה על שם ערוץ מסננת את כל הפאנל אליו.</p>
+            <p>שורה לכל ערוץ שהביא לידים (או שהוזנו לו עלויות) בטווח. לחיצה על שם ערוץ מסננת את כל הפאנל אליו, ומעבר עכבר על כל מספר מציג את הנתונים שמאחוריו.</p>
             <p>ליד משתייך לערוץ לפי מקור ההגעה שלו: תגית utm מהקישור ← שדה המקור ← זיהוי פייסבוק. ליד שהגיע לאתר דרך מודעה נספר בערוץ המודעה, לא ב"אתר".</p>
           </InfoTip>
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0" onMouseLeave={hide}>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -78,31 +86,32 @@ export default function ChannelsTable({ channels = [], isLoading, onChannelClick
                 <TableRow><TableCell colSpan={11} className="py-8 text-center text-muted-foreground">אין נתונים בטווח</TableCell></TableRow>
               ) : channels.map((c) => (
                 <TableRow key={c.channel} className="hover:bg-muted/20">
-                  <TableCell>
+                  <TableCell onMouseEnter={tip(c, 'name')}>
                     <button type="button" className="hover:opacity-70" onClick={() => onChannelClick?.(c.channel)}>
                       <ChannelBadge channel={c.channel} />
                     </button>
                   </TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="text-center" onMouseEnter={tip(c, 'leads')}>
                     <div className="flex items-center justify-center gap-1.5">
                       <span className="tabular-nums font-semibold">{c.leads.toLocaleString()}</span>
                       <DeltaBadge value={c.leadsDelta} />
                     </div>
                   </TableCell>
-                  <TableCell><ConvBar value={c.conversion} /></TableCell>
-                  <TableCell className="text-center tabular-nums text-xs">{c.contactedRate.toFixed(0)}%</TableCell>
-                  <TableCell className="text-center tabular-nums text-xs">{c.quoteRate.toFixed(0)}%</TableCell>
-                  <TableCell className="text-center tabular-nums text-xs">{formatMins(c.medianMins)}</TableCell>
-                  <TableCell className="text-end font-bold tabular-nums">{formatCurrency(c.revenue)}</TableCell>
-                  <TableCell className="text-center text-xs tabular-nums">{c.spend > 0 ? formatCurrency(c.spend) : '—'}</TableCell>
-                  <TableCell className="text-center text-xs tabular-nums">{c.cpl != null ? formatCurrency(c.cpl) : '—'}</TableCell>
-                  <TableCell className="text-center text-xs tabular-nums">{c.cac != null ? formatCurrency(c.cac) : '—'}</TableCell>
-                  <TableCell className="text-center"><RoiBadge value={c.roas} /></TableCell>
+                  <TableCell onMouseEnter={tip(c, 'conversion')}><ConvBar value={c.conversion} /></TableCell>
+                  <TableCell className="text-center tabular-nums text-xs" onMouseEnter={tip(c, 'contacted')}>{c.contactedRate.toFixed(0)}%</TableCell>
+                  <TableCell className="text-center tabular-nums text-xs" onMouseEnter={tip(c, 'quoted')}>{c.quoteRate.toFixed(0)}%</TableCell>
+                  <TableCell className="text-center tabular-nums text-xs" onMouseEnter={tip(c, 'medianMins')}>{formatMins(c.medianMins)}</TableCell>
+                  <TableCell className="text-end font-bold tabular-nums" onMouseEnter={tip(c, 'revenue')}>{formatCurrency(c.revenue)}</TableCell>
+                  <TableCell className="text-center text-xs tabular-nums" onMouseEnter={tip(c, 'spend')}>{c.spend > 0 ? formatCurrency(c.spend) : '—'}</TableCell>
+                  <TableCell className="text-center text-xs tabular-nums" onMouseEnter={tip(c, 'cpl')}>{c.cpl != null ? formatCurrency(c.cpl) : '—'}</TableCell>
+                  <TableCell className="text-center text-xs tabular-nums" onMouseEnter={tip(c, 'cac')}>{c.cac != null ? formatCurrency(c.cac) : '—'}</TableCell>
+                  <TableCell className="text-center" onMouseEnter={tip(c, 'roas')}><RoiBadge value={c.roas} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
+        {overlay}
       </CardContent>
     </Card>
   );

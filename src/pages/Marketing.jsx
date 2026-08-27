@@ -301,6 +301,7 @@ export default function Marketing() {
           </div>
           <ChannelsTable
             channels={channels}
+            totals={data?.totals}
             isLoading={isLoading}
             onChannelClick={(ch) => setChannelFilter((prev) => (prev === ch ? 'all' : ch))}
           />
@@ -310,6 +311,7 @@ export default function Marketing() {
       {activeTab === 'campaigns' && (
         <CampaignsTable
           campaigns={visibleCampaigns}
+          totals={data?.totals}
           isLoading={isLoading}
           start={dateRange.start}
           end={dateRange.end}

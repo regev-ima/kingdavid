@@ -15,6 +15,8 @@ import { LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
 import { useCampaignDrill } from './useMarketingPanelData';
 import { ConvBar, RoiBadge, DeltaBadge, ChannelBadge } from './PanelBits';
 import InfoTip from './InfoTip';
+import { useHoverTip } from './hoverTip';
+import { buildCellTip } from './cellTips';
 
 const STATUS_LABELS = Object.fromEntries(LEAD_STATUS_OPTIONS.map((s) => [s.value, s.label]));
 
@@ -186,9 +188,14 @@ function CampaignDrillRow({ campaign, start, end }) {
 }
 
 export default function CampaignsTable({
-  campaigns = [], isLoading, start, end, insightByCampaign = new Map(),
+  campaigns = [], totals, isLoading, start, end, insightByCampaign = new Map(),
   focusCampaign, focusNonce, onFocusHandled,
 }) {
+  // Every data cell explains itself on hover — the counts behind the number,
+  // its share of the totals, and the previous-period comparison.
+  const { show: showTip, hide: hideTip, overlay: tipOverlay } = useHoverTip();
+  const tip = (c, col) => (e) => showTip(e, buildCellTip({ row: c, col, totals, rowLabel: c.campaign }));
+
   const [search, setSearch] = useState('');
   const [minLeads, setMinLeads] = useState('0');
   const [sort, setSort] = useState({ key: 'leads', dir: 'desc' });
@@ -264,7 +271,7 @@ export default function CampaignsTable({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0" onMouseLeave={hideTip}>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -340,29 +347,29 @@ export default function CampaignsTable({
                       className={`cursor-pointer hover:bg-muted/20 ${isOpen ? 'bg-indigo-50/40' : ''}`}
                       onClick={() => setExpanded(isOpen ? null : c.campaign)}
                     >
-                      <TableCell>
+                      <TableCell onMouseEnter={tip(c, 'name')}>
                         <div className="flex items-center gap-1.5">
                           {isOpen ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
                           <div className="min-w-0">
-                            <div className="font-medium truncate max-w-[240px]" title={c.campaign}>{c.campaign}</div>
+                            <div className="font-medium truncate max-w-[240px]">{c.campaign}</div>
                             <ChannelBadge channel={c.channel} />
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-center" onMouseEnter={tip(c, 'leads')}>
                         <div className="flex items-center justify-center gap-1.5">
                           <span className="tabular-nums font-semibold">{c.leads.toLocaleString()}</span>
                           <DeltaBadge value={c.leadsDelta} />
                         </div>
                       </TableCell>
-                      <TableCell><ConvBar value={c.conversion} /></TableCell>
-                      <TableCell className="text-center tabular-nums text-xs">{c.leads > 0 ? `${c.contactedRate.toFixed(0)}%` : '—'}</TableCell>
-                      <TableCell className="text-center tabular-nums text-xs">{c.leads > 0 ? `${c.quoteRate.toFixed(0)}%` : '—'}</TableCell>
-                      <TableCell className="text-center tabular-nums font-semibold text-emerald-700">{c.won.toLocaleString()}</TableCell>
-                      <TableCell className="text-end font-bold tabular-nums">{c.revenue > 0 ? formatCurrency(c.revenue) : '—'}</TableCell>
-                      <TableCell className="text-center text-xs tabular-nums">{c.spend > 0 ? formatCurrency(c.spend) : '—'}</TableCell>
-                      <TableCell className="text-center text-xs tabular-nums">{c.cpl != null ? formatCurrency(c.cpl) : '—'}</TableCell>
-                      <TableCell className="text-center"><RoiBadge value={c.roas} /></TableCell>
+                      <TableCell onMouseEnter={tip(c, 'conversion')}><ConvBar value={c.conversion} /></TableCell>
+                      <TableCell className="text-center tabular-nums text-xs" onMouseEnter={tip(c, 'contacted')}>{c.leads > 0 ? `${c.contactedRate.toFixed(0)}%` : '—'}</TableCell>
+                      <TableCell className="text-center tabular-nums text-xs" onMouseEnter={tip(c, 'quoted')}>{c.leads > 0 ? `${c.quoteRate.toFixed(0)}%` : '—'}</TableCell>
+                      <TableCell className="text-center tabular-nums font-semibold text-emerald-700" onMouseEnter={tip(c, 'won')}>{c.won.toLocaleString()}</TableCell>
+                      <TableCell className="text-end font-bold tabular-nums" onMouseEnter={tip(c, 'revenue')}>{c.revenue > 0 ? formatCurrency(c.revenue) : '—'}</TableCell>
+                      <TableCell className="text-center text-xs tabular-nums" onMouseEnter={tip(c, 'spend')}>{c.spend > 0 ? formatCurrency(c.spend) : '—'}</TableCell>
+                      <TableCell className="text-center text-xs tabular-nums" onMouseEnter={tip(c, 'cpl')}>{c.cpl != null ? formatCurrency(c.cpl) : '—'}</TableCell>
+                      <TableCell className="text-center" onMouseEnter={tip(c, 'roas')}><RoiBadge value={c.roas} /></TableCell>
                       <TableCell className="text-center"><RecoBadge type={insightByCampaign.get(c.campaign)} /></TableCell>
                     </TableRow>
                     {isOpen && (
@@ -386,6 +393,7 @@ export default function CampaignsTable({
             לחיצה על שורה פותחת פירוט מלא — טרנד, אדסטים, מודעות, דפי נחיתה וסטטוסים. ההכנסות הן מכל ההזמנות של לידי התקופה (גם אם ההזמנה נסגרה אחריה).
           </p>
         )}
+        {tipOverlay}
       </CardContent>
     </Card>
   );
