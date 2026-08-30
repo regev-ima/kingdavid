@@ -101,6 +101,32 @@ $$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- Link the profiles that the broken trigger left unlinked. Same guards as
 -- 20260804000007: only empty links, only an unambiguous single email match.
+--
+-- The trigger has to come off around this UPDATE. The escape added above keys
+-- on auth.role() = 'service_role', but this migration runs through the Supabase
+-- Management API, where there is no JWT at all — auth.role() is not
+-- 'service_role', so the new escape does not cover this statement, and the
+-- trigger would reject the very backfill it is being fixed to allow. That is
+-- exactly how the first run of this migration failed:
+--
+--   ERROR: P0001: אסור לשנות auth_id
+--   CONTEXT: PL/pgSQL function prevent_users_privilege_escalation() line 33
+--
+-- 20260806000001 hit the same wall updating access_level and solved it this
+-- way; 20260804000007 ran the same UPDATE bare and only survived because it
+-- matched no rows at the time. Guarded on pg_trigger so a database that has
+-- never created the trigger still applies cleanly.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger
+     WHERE tgname = 'prevent_users_privilege_escalation_trigger'
+       AND tgrelid = 'public.users'::regclass
+  ) THEN
+    ALTER TABLE public.users DISABLE TRIGGER prevent_users_privilege_escalation_trigger;
+  END IF;
+END $$;
+
 UPDATE public.users u
    SET auth_id = a.id
   FROM auth.users a
@@ -111,5 +137,16 @@ UPDATE public.users u
      SELECT count(*) FROM auth.users a2
       WHERE lower(btrim(a2.email)) = lower(btrim(u.email))
    ) = 1;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger
+     WHERE tgname = 'prevent_users_privilege_escalation_trigger'
+       AND tgrelid = 'public.users'::regclass
+  ) THEN
+    ALTER TABLE public.users ENABLE TRIGGER prevent_users_privilege_escalation_trigger;
+  END IF;
+END $$;
 
 NOTIFY pgrst, 'reload schema';
