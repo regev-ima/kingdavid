@@ -15,7 +15,7 @@ Deno.serve(async (req) => {
 
     // Direct invite path: invite a single user by email (used by Representatives/Settings UI).
     if (body.directInvite) {
-      return await handleDirectInvite(body);
+      return await handleDirectInvite(body, corsHeaders);
     }
 
     const { spreadsheet_id, sheet_name, column_mapping } = body;
@@ -174,7 +174,15 @@ Deno.serve(async (req) => {
   }
 });
 
-async function handleDirectInvite(body: Record<string, any>) {
+// `corsHeaders` is request-derived (it echoes the caller's origin), so it has to
+// be threaded in from the request handler — it is not module scope. Without it
+// every response below throws ReferenceError, which the caller's catch turns
+// into a generic 500 "Internal server error" *after* the invite already
+// succeeded.
+async function handleDirectInvite(
+  body: Record<string, any>,
+  corsHeaders: Record<string, string>,
+) {
   const email: string | undefined = body.email?.trim();
   // Least-privilege by default: every invited user comes in as a basic sales
   // rep ("נציג מכירות") with no extra permissions. The role the caller sends
