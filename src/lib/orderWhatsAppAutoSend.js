@@ -17,14 +17,19 @@
 //
 // Only orders money has changed hands on go out by themselves — paid in full
 // or a deposit. An order written with nothing collected yet is not a document
-// the customer is waiting for, and a card order is unpaid at the moment it is
-// created (Hyp clears afterwards), so it is not sent either: the rep sends it
-// from the order screen once the charge goes through.
+// the customer is waiting for.
+//
+// A card order is unpaid at the moment it is created — Hyp clears afterwards —
+// so it isn't sent then. It is sent when the charge goes through: the same
+// send runs from the Hyp dialog's onPaid, which fires only after hyp-verify
+// confirmed the transaction with Hyp and recorded it. Paying by card is still
+// paying, and the customer should not be the one waiting for a rep to notice.
 //
 // The message is a template from the 'orders' category, so the wording is the
 // company's and identical for every rep, with {{נציג}} resolving to whoever
 // the message is sent FROM.
 
+import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { resolveTemplate } from '@/components/whatsapp/whatsappHelpers';
 import { phoneTail } from '@/components/whatsapp/useWhatsAppContext';
@@ -77,11 +82,27 @@ export async function saveOrderAutoSendSetting(enabled, updatedBy) {
   return base44.entities.AppSettings.create({ key: ORDER_AUTOSEND_SETTING_KEY, ...payload });
 }
 
-// Money changed hands: paid in full, or a deposit. Anything else — including a
-// card order, which is still 'unpaid' the moment it is created — waits for the
-// rep to send it by hand.
+// Money changed hands: paid in full, or a deposit. A card order reaches this
+// as 'unpaid' at creation and as 'paid' after clearing, which is exactly the
+// behaviour wanted from one rule.
 export function orderIsPaidEnoughToSend(order) {
   return order?.payment_status === 'paid' || order?.payment_status === 'deposit_paid';
+}
+
+// Re-read an order, once, and once more after a beat. hyp-verify writes the
+// payment row before onPaid fires, but hyp-notify — the server-to-server
+// callback — can be the one that lands the status, so a single read can catch
+// the row mid-flight. One retry is the difference between "sent" and "the rep
+// has to notice and send it".
+async function refetchOrder(orderId) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt) await new Promise((resolve) => setTimeout(resolve, 1500));
+    const rows = await base44.entities.Order.filter({ id: orderId }, null, 1).catch(() => []);
+    const row = rows?.[0];
+    if (row && orderIsPaidEnoughToSend(row)) return row;
+    if (row && attempt) return row;
+  }
+  return null;
 }
 
 function fallbackCaption(firstName) {
@@ -100,8 +121,16 @@ function fallbackCaption(firstName) {
  * order is already saved by the time this runs, and nothing here is worth
  * turning a successful sale into an error message.
  */
-export async function sendOrderToCustomerWhatsApp(order, { currentUser, isAdmin = false } = {}) {
+export async function sendOrderToCustomerWhatsApp(order, { currentUser, isAdmin = false, refreshFirst = false } = {}) {
   if (!order?.id) return { sent: false, reason: 'no_order' };
+
+  // After a card payment the caller holds the order as it was BEFORE the
+  // charge — hyp-verify wrote the new status server-side. Re-read it so the
+  // paid check is made against the truth and not against a stale object.
+  if (refreshFirst) {
+    const fresh = await refetchOrder(order.id);
+    if (fresh) order = fresh;
+  }
   if (!orderIsPaidEnoughToSend(order)) return { sent: false, reason: 'not_paid' };
 
   const tail = phoneTail(order.customer_phone);
@@ -163,4 +192,34 @@ export async function sendOrderToCustomerWhatsApp(order, { currentUser, isAdmin 
     console.error('[orderAutoSend] send failed', err);
     return { sent: false, reason: err?.message || 'send_failed' };
   }
+}
+
+/**
+ * The send, with the toasts that make it honest. Every surface that triggers an
+ * automatic send calls this so a rep sees the same three outcomes wherever the
+ * order was paid — the screen it was created on, or the Hyp dialog days later.
+ *
+ * Silent for an order nothing was collected on: the rep knows they took no
+ * payment, and a toast per order explaining that is noise.
+ */
+export function autoSendOrderWithToast(order, { currentUser, isAdmin = false, refreshFirst = false } = {}) {
+  const toastId = toast.loading('שולח את ההזמנה ללקוח בוואטסאפ...');
+  return sendOrderToCustomerWhatsApp(order, { currentUser, isAdmin, refreshFirst })
+    .then((result) => {
+      if (result.sent) {
+        toast.success('ההזמנה נשלחה ללקוח בוואטסאפ ✓', { id: toastId });
+      } else if (result.reason === 'not_paid') {
+        toast.dismiss(toastId);
+      } else if (result.reason === 'no_phone') {
+        toast.warning('אין מספר טלפון ללקוח — ההזמנה לא נשלחה בוואטסאפ', { id: toastId });
+      } else {
+        // Named, not swallowed: the rep has to know the customer is still
+        // waiting, and where the manual button is.
+        toast.error('שליחת ההזמנה בוואטסאפ נכשלה — אפשר לשלוח ידנית ממסך ההזמנה', {
+          id: toastId,
+          duration: 10000,
+        });
+      }
+      return result;
+    });
 }

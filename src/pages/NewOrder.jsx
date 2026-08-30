@@ -33,7 +33,7 @@ import HypPaymentDialog from '@/components/payment/HypPaymentDialog';
 import { isDeliveryRelatedExtra, recommendDeliveryExtras, summarizeItems } from '@/lib/deliveryExtras';
 import DeliveryExtrasCard from '@/components/quote/DeliveryExtrasCard';
 import useOrderAutoSend from '@/hooks/use-order-autosend';
-import { sendOrderToCustomerWhatsApp, orderIsPaidEnoughToSend } from '@/lib/orderWhatsAppAutoSend';
+import { autoSendOrderWithToast, orderIsPaidEnoughToSend } from '@/lib/orderWhatsAppAutoSend';
 import { cleanOrderItems, hasSellableItem, validateOrderItems } from '@/lib/orderItems';
 import { nullBlankIds } from '@/lib/blankIds';
 import { calculateDocumentTotals, lineGrossPreVat, lineDiscountPreVat } from '@/lib/quoteTotals';
@@ -511,31 +511,19 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
       // Send the order to the customer on WhatsApp — when the company has that
       // turned on AND money has actually been collected. An unpaid order stays
       // put and says nothing: the rep knows they took no payment, and a toast
-      // per order explaining why nothing was sent is noise. Card orders land
-      // here unpaid (Hyp clears after the order exists), so they wait for the
-      // manual button too.
+      // per order explaining why nothing was sent is noise.
+      //
+      // A card order is unpaid at this exact moment (Hyp clears below, once the
+      // order exists), so it isn't sent here — the Hyp dialog's onPaid sends it
+      // the moment the charge is confirmed.
       //
       // Deliberately NOT awaited: the order is saved, the rep should move on,
       // and the send reports itself when it lands. Every branch below returns,
       // so this has to fire before them.
       if (autoSendWhatsApp && orderIsPaidEnoughToSend(order)) {
-        const toastId = toast.loading('שולח את ההזמנה ללקוח בוואטסאפ...');
-        sendOrderToCustomerWhatsApp(order, {
+        autoSendOrderWithToast(order, {
           currentUser: effectiveUser,
           isAdmin: isAdmin(effectiveUser),
-        }).then((result) => {
-          if (result.sent) {
-            toast.success('ההזמנה נשלחה ללקוח בוואטסאפ ✓', { id: toastId });
-          } else if (result.reason === 'no_phone') {
-            toast.warning('אין מספר טלפון ללקוח — ההזמנה לא נשלחה בוואטסאפ', { id: toastId });
-          } else {
-            // Named, not swallowed: the rep has to know the customer is still
-            // waiting, and where the manual button is.
-            toast.error('שליחת ההזמנה בוואטסאפ נכשלה — אפשר לשלוח ידנית ממסך ההזמנה', {
-              id: toastId,
-              duration: 10000,
-            });
-          }
         });
       }
 
@@ -1431,7 +1419,20 @@ export default function NewOrder({ asDialog = false, dialogLeadId = null, dialog
           else navigate(createPageUrl('OrderDetails') + `?id=${order.id}`);
         }}
         order={createdOrder}
-        onPaid={() => toast.success('התשלום התקבל')}
+        onPaid={() => {
+          toast.success('התשלום התקבל');
+          // Paying by card is paying. onPaid runs only after hyp-verify
+          // confirmed the transaction with Hyp and wrote the payment, so the
+          // order is now paid — refreshFirst re-reads it, because the copy
+          // held here still says otherwise.
+          if (autoSendWhatsApp && createdOrder) {
+            autoSendOrderWithToast(createdOrder, {
+              currentUser: effectiveUser,
+              isAdmin: isAdmin(effectiveUser),
+              refreshFirst: true,
+            });
+          }
+        }}
       />
     </div>
   );

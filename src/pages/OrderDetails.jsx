@@ -55,6 +55,8 @@ import {
 import { format } from '@/lib/safe-date-fns';
 import useEffectiveCurrentUser from '@/hooks/use-effective-current-user';
 import { canEditOrder, isAdmin as isAdminUser, isFactoryUser } from '@/lib/rbac';
+import useOrderAutoSend from '@/hooks/use-order-autosend';
+import { autoSendOrderWithToast } from '@/lib/orderWhatsAppAutoSend';
 import OpenServiceTicketDialog from '@/components/service/OpenServiceTicketDialog';
 import DeleteOrderDialog from '@/components/order/DeleteOrderDialog';
 import CancelOrderDialog from '@/components/order/CancelOrderDialog';
@@ -80,6 +82,7 @@ const money2 = (n) => `₪${(Number(n) || 0).toLocaleString('he-IL', { minimumFr
 
 export default function OrderDetails({ orderId: orderIdProp, isModal = false, onClose }) {
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
+  const { enabled: autoSendWhatsApp } = useOrderAutoSend();
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showHypPayment, setShowHypPayment] = useState(false);
   const [showServiceTicket, setShowServiceTicket] = useState(false);
@@ -1085,6 +1088,17 @@ export default function OrderDetails({ orderId: orderIdProp, isModal = false, on
         order={order}
         onPaid={() => {
           toast.success('התשלום התקבל');
+          // An order paid by card is an order the customer should receive,
+          // whether the charge happened seconds after it was written or days
+          // later from this screen. refreshFirst re-reads the row, because the
+          // copy held here still says unpaid.
+          if (autoSendWhatsApp) {
+            autoSendOrderWithToast(order, {
+              currentUser: effectiveUser,
+              isAdmin,
+              refreshFirst: true,
+            });
+          }
           // The server-to-server hyp-notify writes the payment row. Give it a
           // moment before refreshing so the order reflects the new state.
           setTimeout(() => {
