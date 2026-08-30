@@ -183,7 +183,12 @@ async function handleDirectInvite(
   body: Record<string, any>,
   corsHeaders: Record<string, string>,
 ) {
-  const email: string | undefined = body.email?.trim();
+  // Normalize to lowercase: Supabase Auth stores emails lowercased, so a
+  // mixed-case invite would spell the profile row and the auth account
+  // differently and leave the two impossible to match reliably. Rows written
+  // before this held true keep their original case, so the lookups below
+  // compare case-insensitively rather than assuming every row is normalized.
+  const email: string | undefined = body.email?.trim().toLowerCase();
   // Least-privilege by default: every invited user comes in as a basic sales
   // rep ("נציג מכירות") with no extra permissions. The role the caller sends
   // is intentionally ignored — an admin promotes the rep afterwards from the
@@ -207,17 +212,29 @@ async function handleDirectInvite(
 
   // Step 1: ensure the users-table row exists first so the rep shows up as "pending"
   // in the CRM even if the invitation email later fails (e.g. SMTP rate limit).
-  const { data: existingProfiles, error: lookupError } = await supabase
+  // Matched case-insensitively: `email` is lowercased above, but rows written
+  // before that was true still carry whatever case the admin typed, and `.eq`
+  // is case-sensitive — a plain match would miss them and insert a duplicate
+  // profile. `ilike` treats `_` and `%` as wildcards, and `_` is legal in an
+  // address, so it can over-match; the exact comparison below narrows the
+  // superset back down to a real match.
+  const { data: ilikeMatches, error: lookupError } = await supabase
     .from('users')
-    .select('id, auth_id')
-    .eq('email', email);
+    .select('id, auth_id, email')
+    .ilike('email', email);
 
   if (lookupError) {
     console.error('[directInvite] profile lookup failed', lookupError);
     return Response.json({ error: `Profile lookup failed: ${lookupError.message}` }, { status: 500, headers: corsHeaders });
   }
 
-  const hasExistingProfile = !!(existingProfiles && existingProfiles.length > 0);
+  const existingProfiles = (ilikeMatches ?? []).filter(
+    (u: { email?: string }) => u.email?.trim().toLowerCase() === email,
+  );
+  const hasExistingProfile = existingProfiles.length > 0;
+  // Carried to step 3: the auth_id link writes by primary key, so it never has
+  // to re-match on an email whose case it cannot predict.
+  let profileId: string | number | null = hasExistingProfile ? existingProfiles[0].id : null;
 
   if (hasExistingProfile) {
     // Re-invite (resend the email): only refresh the display name if one was
@@ -228,7 +245,7 @@ async function handleDirectInvite(
       const { error } = await supabase
         .from('users')
         .update({ full_name: fullName })
-        .eq('id', existingProfiles![0].id);
+        .eq('id', existingProfiles[0].id);
       if (error) {
         console.error('[directInvite] profile update failed', error);
         return Response.json({ error: `Profile update failed: ${error.message}` }, { status: 500, headers: corsHeaders });
@@ -236,17 +253,18 @@ async function handleDirectInvite(
     }
   } else {
     // Brand-new rep: basic "נציג" role, no extra permissions.
-    const { error } = await supabase.from('users').insert({
+    const { data: inserted, error } = await supabase.from('users').insert({
       email,
       is_active: true,
       role,
       full_name: fullName || email.split('@')[0],
       extra_permissions: {},
-    });
+    }).select('id').single();
     if (error) {
       console.error('[directInvite] profile insert failed', error);
       return Response.json({ error: `Profile insert failed: ${error.message}` }, { status: 500, headers: corsHeaders });
     }
+    profileId = inserted?.id ?? null;
   }
 
   // Step 2: try to send the invitation email. A failure here (rate limit, SMTP misconfig, etc.)
@@ -276,7 +294,9 @@ async function handleDirectInvite(
       alreadyRegistered = true;
       // Link the existing auth user to the profile so future logins resolve.
       const { data: listData } = await supabase.auth.admin.listUsers();
-      const found = listData?.users?.find((u: { email?: string }) => u.email === email);
+      const found = listData?.users?.find(
+        (u: { email?: string }) => u.email?.trim().toLowerCase() === email,
+      );
       if (found) authUserId = found.id;
     } else {
       emailError = inviteError.message;
@@ -286,9 +306,20 @@ async function handleDirectInvite(
     console.log('[directInvite] invite email sent', { authUserId });
   }
 
-  // Step 3: if we now have an auth_id, link it to the profile.
-  if (authUserId) {
-    const { error } = await supabase.from('users').update({ auth_id: authUserId }).eq('email', email);
+  // Step 3: if we now have an auth_id, link it to the profile. Written by
+  // primary key rather than by email, so a legacy row whose stored address is
+  // cased differently still gets linked.
+  //
+  // Until migration 20260830000001 is applied this UPDATE is rejected by
+  // prevent_users_privilege_escalation: the trigger identifies its caller via
+  // `WHERE auth_id = auth.uid()`, which is NULL for a service-role call, so it
+  // treats an edge function as an unprivileged user and refuses to let it set
+  // auth_id. The failure is logged rather than fatal — the profile and the
+  // invitation email are already in place, and an unlinked row is still
+  // recoverable — but it is not harmless: every RLS delete policy matches on
+  // auth_id, so an unlinked user's deletes silently no-op.
+  if (authUserId && profileId !== null) {
+    const { error } = await supabase.from('users').update({ auth_id: authUserId }).eq('id', profileId);
     if (error) {
       console.error('[directInvite] auth_id link failed', error);
     }
