@@ -35,7 +35,8 @@ export default function MenuManagementTab() {
         </CardTitle>
         <CardDescription>
           גרור את הידית (☰) כדי לשנות את סדר הפריטים בתפריט הצד, וכבה את המתג כדי
-          להסתיר פריט. ההגדרה נשמרת בדפדפן הזה.
+          להסתיר פריט. ההגדרות נשמרות במערכת — הן חלות על כל הדפדפנים והמכשירים
+          ולא מתאפסות בעדכון גרסה.
         </CardDescription>
       </CardHeader>
       <CardContent dir="rtl">
