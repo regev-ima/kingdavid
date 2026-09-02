@@ -26,6 +26,7 @@ import StatusOptionRow from '@/components/shared/StatusOptionRow';
 import NewQuote from '@/pages/NewQuote';
 import useEffectiveCurrentUser from '@/components/shared/useEffectiveCurrentUser';
 import { isAdmin as isAdminUser, canAccessSalesWorkspace } from '@/components/shared/rbac';
+import { getRepDisplayName } from '@/lib/repDisplay';
 import { phoneTail as phoneTailOf, isPhoneShapedQuery } from '@/utils/phoneUtils';
 import RepSelectItem from '@/components/shared/RepSelectItem';
 import { closeSalesTask } from '@/lib/closeSalesTask';
@@ -1265,6 +1266,13 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
             <div className="text-xs text-muted-foreground/70 space-y-0.5 pt-2 border-t">
               {editingTask.created_date && <p>נוצרה: {safeFormat(editingTask.created_date, 'dd/MM/yyyy HH:mm')}</p>}
               {editingTask.updated_date && <p>עודכנה: {safeFormat(editingTask.updated_date, 'dd/MM/yyyy HH:mm')}</p>}
+              {/* An imported task that was handed to someone else (its Kaveret
+                  rep left) still says whose it was. A former rep added as a
+                  disabled user shows by name here; otherwise the address. */}
+              {editingTask.imported_rep
+                && String(editingTask.imported_rep).toLowerCase() !== String(editingTask.rep1 || '').toLowerCase() ? (
+                <p>נציג בכוורת: {getRepDisplayName(editingTask.imported_rep, users)}</p>
+              ) : null}
             </div>
 
             {/* כפתורי פעולה */}

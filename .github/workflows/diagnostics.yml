@@ -6,7 +6,7 @@ name: Diagnostics — run a read-only check
 #
 # The script list is a fixed allowlist and the dispatch input is a choice, not
 # free text, so this workflow cannot be pointed at arbitrary SQL. None of the
-# four touches business data: three are pure SELECT, and delete-impact builds a
+# five touches business data: four are pure SELECT, and delete-impact builds a
 # session-local TEMP table it then reads back. That is what makes it safe to
 # also run on push — the same reasoning does NOT extend to adding a migration
 # to the allowlist.
@@ -28,11 +28,20 @@ on:
           - status-check
           - duplicate-inflow-check
           - delete-impact
+          - task-import-check
+          - lead-gap-check
   push:
     branches:
       - main
+      # The task-import check runs on its feature branch too: this GitHub App
+      # cannot dispatch workflows (403), and a check nobody can run answers
+      # nothing. On that branch a push runs task-import-check; on main the
+      # readiness check, as before.
+      - claude/scroll-issue-yzabql
     paths:
       - 'scripts/import-readiness.sql'
+      - 'scripts/task-import-check.sql'
+      - 'scripts/lead-gap-check.sql'
       - '.github/workflows/diagnostics.yml'
 
 jobs:
@@ -50,7 +59,7 @@ jobs:
           # inputs.script is empty on a push event — only workflow_dispatch
           # supplies it. Without the fallback SCRIPT would be blank and the
           # path check below would fail on "scripts/.sql".
-          SCRIPT: ${{ inputs.script || 'import-readiness' }}
+          SCRIPT: ${{ inputs.script || (github.ref_name == 'main' && 'import-readiness' || 'lead-gap-check') }}
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
