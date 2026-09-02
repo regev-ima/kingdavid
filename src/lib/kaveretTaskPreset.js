@@ -74,7 +74,11 @@ export function kaveretTaskStatus(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return 'not_completed';
   if (/^(completed|done)$/i.test(s)) return 'completed';
-  if (/\bלא\b/.test(s)) return 'not_completed';
+  // A negation anywhere keeps it open — "לא הושלמה", "לא בוצעה". Tested with
+  // explicit whitespace, not \b: JavaScript's word boundary only knows ASCII
+  // letters, so \bלא\b never matched inside Hebrew text and every "לא הושלמה"
+  // fell through to the "הושלמ" test below and came out completed.
+  if (/(^|\s)לא(\s|$)/.test(s)) return 'not_completed';
   if (/בוצע|הושלמ|נסגר/.test(s)) return 'completed';
   return 'not_completed';
 }
