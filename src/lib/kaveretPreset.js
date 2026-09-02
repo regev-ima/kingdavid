@@ -43,6 +43,13 @@ const SIGNATURE_ANY = ['[[lead.id]]', '[[Lead.leadCode]]', '[[Lead.creationDateT
 //   lead.name / [[lead.id]] / [[Lead.leadCode]] — duplicates of columns already
 //     mapped; mapping a field twice is not possible and the extra copies carry
 //     no information.
+//   משימות פתוחות → notes. It used to be. The cell is the TITLES of the lead's
+//     open tasks ("3450 כולל הובלה"), not a note about the lead, and it carries
+//     none of what a task is — no dates, no status, no rep, and none of the
+//     tasks already done. Landing it in הערות put a task's headline where a
+//     rep reads remarks and threw the rest of the history away. Task history
+//     needs Kaveret's task export and its own import; the lead export cannot
+//     supply it.
 const KAVERET_COLUMNS = {
   external_id:  'lead.id',
   full_name:    'איש קשר',
@@ -50,10 +57,18 @@ const KAVERET_COLUMNS = {
   created_date: 'תאריך יצירה',
   status:       'סטטוס',
   source:       'מקור הגעה',
-  notes:        'משימות פתוחות',
   facebook_ad_name: 'שם מודעה',
   click_id:     'gclid',
   rep1:         'מנהל תיק',
+};
+
+// The lead form's two questions, which Kaveret keeps as custom fields. Their
+// headers are the question text and the wording is not fixed between forms
+// ("מה מידת המזרן שתרצו?", "מה מידת המזרן שאתם מחפשים?"), so these match on
+// the phrase that survives every wording rather than on an exact header.
+const KAVERET_FUZZY_COLUMNS = {
+  facebook_requested_size: ['מידת המזרן', 'מידת מזרן'],
+  facebook_try_at_home:    ['לנסות את המזרן', 'איפה תרצו לנסות'],
 };
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -83,6 +98,11 @@ export function kaveretMapping(headers) {
   for (const [field, column] of Object.entries(KAVERET_COLUMNS)) {
     const i = index.get(norm(column));
     if (i !== undefined) mapping[field] = i;
+  }
+  const taken = new Set(Object.values(mapping));
+  for (const [field, phrases] of Object.entries(KAVERET_FUZZY_COLUMNS)) {
+    const i = headers.findIndex((h, idx) => !taken.has(idx) && phrases.some((p) => norm(h).includes(norm(p))));
+    if (i !== -1) { mapping[field] = i; taken.add(i); }
   }
   return mapping;
 }
