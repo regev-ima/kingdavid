@@ -37,6 +37,7 @@ const WhatsAppTemplatesTab = lazy(() => import('@/components/settings/WhatsAppTe
 const WhatsAppAlertsTab = lazy(() => import('@/components/settings/WhatsAppAlertsTab'));
 const AiSettingsTab = lazy(() => import('@/components/settings/AiSettingsTab'));
 const ImportLeadsTab = lazy(() => import('@/components/settings/ImportLeadsTab'));
+const ImportTasksTab = lazy(() => import('@/components/settings/ImportTasksTab'));
 const PermissionsTab = lazy(() => import('@/components/settings/PermissionsTab'));
 
 // Centered spinner shown while a section's chunk downloads.
@@ -100,6 +101,9 @@ export default function Settings() {
     { value: 'permissions',    label: 'הרשאות ותפקידים',   desc: 'רמות הרשאה ומה כל רמה יכולה', icon: 'admin_panel_settings', show: canManagePermissions },
     { value: 'statuses',       label: 'סטטוסים',           desc: 'ניהול סטטוסי לידים',         icon: 'checklist',      perm: 'settings.statuses' },
     { value: 'lead-import',    label: 'ייבוא לידים',        desc: 'ייבוא מכוורת / CSV עם איתור אנשי קשר', icon: 'group_add', perm: 'settings.lead_import' },
+    // Same permission as the lead import: it is the same operator doing the
+    // second half of the same migration.
+    { value: 'task-import',    label: 'ייבוא משימות',       desc: 'היסטוריית המשימות מכוורת אל כרטיסי הלידים', icon: 'task_alt', perm: 'settings.lead_import' },
     { value: 'import',         label: 'ייבוא נתונים',       desc: 'ייבוא הזמנות מקבצים',        icon: 'upload_file',    perm: 'settings.data_import' },
     { value: 'quote-defaults', label: 'ברירות-מחדל הצעה',  desc: 'אמצעי תשלום קבועים להצעה',  icon: 'receipt_long',   perm: 'settings.quote_defaults' },
     { value: 'document-terms', label: 'טקסטים ותנאים',     desc: 'הנוסח המשפטי על הצעה והזמנה', icon: 'gavel',        perm: 'settings.document_terms' },
@@ -345,6 +349,14 @@ export default function Settings() {
           <TabsContent value="lead-import" className="space-y-6">
             <Suspense fallback={<SectionFallback />}>
               <ImportLeadsTab />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {can('settings.lead_import') && (
+          <TabsContent value="task-import" className="space-y-6">
+            <Suspense fallback={<SectionFallback />}>
+              <ImportTasksTab />
             </Suspense>
           </TabsContent>
         )}
