@@ -29,6 +29,7 @@ on:
           - duplicate-inflow-check
           - delete-impact
           - task-import-check
+          - lead-gap-check
   push:
     branches:
       - main
@@ -40,6 +41,7 @@ on:
     paths:
       - 'scripts/import-readiness.sql'
       - 'scripts/task-import-check.sql'
+      - 'scripts/lead-gap-check.sql'
       - '.github/workflows/diagnostics.yml'
 
 jobs:
@@ -57,7 +59,7 @@ jobs:
           # inputs.script is empty on a push event — only workflow_dispatch
           # supplies it. Without the fallback SCRIPT would be blank and the
           # path check below would fail on "scripts/.sql".
-          SCRIPT: ${{ inputs.script || (github.ref_name == 'main' && 'import-readiness' || 'task-import-check') }}
+          SCRIPT: ${{ inputs.script || (github.ref_name == 'main' && 'import-readiness' || 'lead-gap-check') }}
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
