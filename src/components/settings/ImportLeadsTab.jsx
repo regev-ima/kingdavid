@@ -15,7 +15,7 @@ import { readFileToRows, parseImportDate } from '@/utils/importFile';
 import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
 import { isKaveretExport, kaveretMapping } from '@/lib/kaveretPreset';
 import { extractEmail, auditRepEmails } from '@/lib/repEmailExtract';
-import { toLocalIsraeliPhone } from '@/utils/phoneUtils';
+import { toLocalIsraeliPhone, normalizeIsraeliPhone } from '@/utils/phoneUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk lead import: CSV/Excel → staging table → one server-side SQL merge.
@@ -250,7 +250,7 @@ export default function ImportLeadsTab() {
   const reset = () => {
     setFileName(''); setHeaders([]); setRows([]); setMapping({});
     setPhase('idle'); setProgress({ current: 0, total: 0, label: '' });
-    setResult(null); setParseError(''); setIsKaveret(false);
+    setResult(null); setParseError(''); setIsKaveret(false); setCompare(null);
     setShowAllStatuses(false); setShowAllReps(false);
     setRunning({
       created_leads: 0, updated_leads: 0, adopted_leads: 0, failed_rows: 0,
@@ -334,6 +334,50 @@ export default function ImportLeadsTab() {
     }
     if (!out.status) out.status = 'new_lead';
     return out;
+  };
+
+  // ── Compare only: which rows of this file already have a lead here ──
+  // Nothing is written. Kaveret's funnel says 190 leads on a day and the
+  // screen here says 171; the file for that day, put through this, names
+  // the ones that never arrived — by phone, the way the import itself
+  // matches — so the gap can be traced to a source or a phone format instead
+  // of argued about.
+  const [compare, setCompare] = useState(null); // { loading, found, missing: [row payloads] }
+  const compareOnly = async () => {
+    if (missingRequired.length) { toast.error('חסר מיפוי לשדות חובה'); return; }
+    setCompare({ loading: true, found: 0, missing: [] });
+    try {
+      const payloads = rows.map((row, i) => ({ i, ...buildPayload(row) }));
+      const norms = [...new Set(payloads.map((p) => normalizeIsraeliPhone(p.phone)).filter(Boolean))];
+      const have = new Set();
+      for (let i = 0; i < norms.length; i += 200) {
+        const { data, error } = await base44.supabase
+          .from('leads')
+          .select('phone_normalized')
+          .in('phone_normalized', norms.slice(i, i + 200));
+        if (error) throw error;
+        for (const l of data || []) have.add(l.phone_normalized);
+      }
+      const missing = payloads.filter((p) => !have.has(normalizeIsraeliPhone(p.phone)));
+      setCompare({ loading: false, found: payloads.length - missing.length, missing });
+    } catch (err) {
+      console.error('[ImportLeadsTab] compare failed', err);
+      toast.error(`ההשוואה נכשלה: ${err?.message || 'שגיאה לא ידועה'}`);
+      setCompare(null);
+    }
+  };
+  const downloadMissing = () => {
+    if (!compare?.missing?.length) return;
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      ['שורה', 'שם', 'טלפון', 'מקור', 'תאריך יצירה', 'סטטוס', 'מזהה כוורת'].map(esc).join(','),
+      ...compare.missing.map((p) => [p.i + 2, p.full_name, p.phone, p.source, p.created_date, p.status, p.external_id].map(esc).join(',')),
+    ];
+    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'leads-missing-here.csv'; a.click();
+    URL.revokeObjectURL(url);
   };
 
   const runImport = async () => {
@@ -775,6 +819,64 @@ export default function ImportLeadsTab() {
                   </div>
                 </div>
               )}
+
+              {/* Compare only — nothing written. */}
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="outline" size="sm" onClick={compareOnly} disabled={busy || compare?.loading || missingRequired.length > 0}>
+                    {compare?.loading ? <Loader2 className="h-4 w-4 me-1.5 animate-spin" /> : null}
+                    בדוק מול המערכת בלי לייבא
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    מאתר לכל שורה ליד קיים לפי טלפון, ומראה אילו שורות אין להן ליד כאן. לא כותב כלום.
+                  </span>
+                </div>
+                {compare && !compare.loading ? (
+                  <div className="space-y-2 text-sm">
+                    <p>
+                      <span className="text-emerald-700 font-medium">{compare.found.toLocaleString('he-IL')} עם ליד קיים</span>
+                      {' · '}
+                      <span className={compare.missing.length ? 'text-destructive font-medium' : ''}>{compare.missing.length.toLocaleString('he-IL')} ללא ליד במערכת</span>
+                      {compare.missing.length ? (
+                        <Button variant="ghost" size="sm" className="ms-2" onClick={downloadMissing}>
+                          <Download className="h-4 w-4 me-1" />הורד CSV
+                        </Button>
+                      ) : null}
+                    </p>
+                    {compare.missing.length ? (
+                      <div className="overflow-x-auto rounded border bg-background">
+                        <table className="w-full text-[12px]">
+                          <thead className="bg-muted/30 text-muted-foreground">
+                            <tr>
+                              <th className="px-2 py-1 text-start font-medium">#</th>
+                              <th className="px-2 py-1 text-start font-medium">שם</th>
+                              <th className="px-2 py-1 text-start font-medium">טלפון</th>
+                              <th className="px-2 py-1 text-start font-medium">מקור</th>
+                              <th className="px-2 py-1 text-start font-medium">נוצר</th>
+                              <th className="px-2 py-1 text-start font-medium">סטטוס</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {compare.missing.slice(0, 200).map((p) => (
+                              <tr key={p.i} className="border-t">
+                                <td className="px-2 py-1 tabular-nums text-muted-foreground">{p.i + 2}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{p.full_name || '—'}</td>
+                                <td className="px-2 py-1 whitespace-nowrap" dir="ltr">{p.phone || '—'}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{p.source || '—'}</td>
+                                <td className="px-2 py-1 whitespace-nowrap tabular-nums" dir="ltr">{p.created_date || '—'}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{p.status || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {compare.missing.length > 200 ? (
+                          <p className="px-2 py-1 text-xs text-muted-foreground">מוצגות 200 הראשונות · הקובץ המלא בהורדה</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
 
               {missingRequired.length > 0 && (
                 <Alert>
