@@ -31,7 +31,7 @@ rows_out AS (
     coalesce(l.full_name, '') || ' · ' || coalesce(l.phone, '') AS title,
     coalesce(l.status, '') AS status,
     coalesce(l.rep1, '') AS rep,
-    'id ' || l.id::text
+    'id ' || left(l.id::text, 8)
       || ' · notes: ' || left(coalesce(l.notes, ''), 60) AS detail,
     l.created_date AS sort_ts
   FROM the_lead l
@@ -59,16 +59,40 @@ rows_out AS (
     CASE WHEN t.task_status = 'completed' THEN 'בוצעה' ELSE 'פתוחה' END
       || coalesce(' · ' || t.status, ''),
     coalesce(t.rep1, ''),
-    'due ' || coalesce(to_char(t.due_date AT TIME ZONE 'Asia/Jerusalem', 'DD/MM/YYYY HH24:MI'), '—')
+    'lead ' || left(t.lead_id::text, 8)
+      || ' · due ' || coalesce(to_char(t.due_date AT TIME ZONE 'Asia/Jerusalem', 'DD/MM/YYYY HH24:MI'), '—')
       || ' · type ' || coalesce(t.task_type, '')
       || CASE WHEN coalesce(t.unique_id, '') LIKE 'kaveret:%' THEN ' · מיובאת' ELSE ' · נוצרה כאן' END,
     coalesce(t.manual_created_date, t.created_date)
   FROM public.sales_tasks t
   WHERE t.lead_id IN (SELECT id FROM the_lead)
+
+  -- What the "updated" rows of the latest batch were: two Kaveret tasks on one
+  -- lead in the same minute collapse into one under the lead+minute identity,
+  -- and this shows whether those are true duplicates or two different tasks.
+  UNION ALL
+  SELECT
+    3,
+    'updated-sample',
+    to_char(b.created_date AT TIME ZONE 'Asia/Jerusalem', 'DD/MM/YYYY HH24:MI'),
+    'row ' || r.row_number || ': ' || left(coalesce(r.data ->> 'summary', ''), 60),
+    coalesce(r.data ->> 'task_status', ''),
+    coalesce(r.data ->> 'rep1', ''),
+    'created ' || coalesce(r.data ->> 'created_at', '') || ' · due ' || coalesce(r.data ->> 'due_at', '')
+      || ' · now on task: ' || left(coalesce(t.summary, ''), 40),
+    b.created_date
+  FROM public.task_import_rows r
+  JOIN public.task_import_batches b ON b.id = r.batch_id
+  LEFT JOIN public.sales_tasks t ON t.id = r.task_id
+  WHERE r.status = 'updated'
+    AND b.id = (SELECT id FROM public.task_import_batches ORDER BY created_date DESC LIMIT 1)
+  ORDER BY r.row_number
+  LIMIT 12
 )
 SELECT kind, "when", title, status, rep, detail
 FROM rows_out
 ORDER BY ord,
          CASE WHEN ord = 1 THEN sort_ts END DESC,
-         CASE WHEN ord = 2 THEN sort_ts END DESC
-LIMIT 60;
+         CASE WHEN ord = 2 THEN sort_ts END DESC,
+         title
+LIMIT 80;
