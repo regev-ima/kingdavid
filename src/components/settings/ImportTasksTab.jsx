@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download, ClipboardList, ExternalLink } from 'lucide-react';
+import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download, ClipboardList, ExternalLink, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { readFileToRows } from '@/utils/importFile';
 import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
@@ -330,6 +330,44 @@ export default function ImportTasksTab() {
     }
   };
 
+  // Undo one batch: created tasks are deleted, updated tasks restored from
+  // the snapshot the import took before overwriting them. Two clicks — the
+  // second one names what is about to go — and chunked like the import, so a
+  // closed tab leaves the batch half undone and "בטל ייבוא" finishes it.
+  const [confirmRollback, setConfirmRollback] = useState(null); // batch id
+  const [rollingBack, setRollingBack] = useState(null);         // batch id
+  const rollbackBatch = async (b) => {
+    setConfirmRollback(null);
+    setRollingBack(b.id);
+    const totals = { deleted_tasks: 0, restored_tasks: 0, skipped_rows: 0, failed_rows: 0 };
+    try {
+      for (;;) {
+        const { data, error } = await base44.supabase.rpc('rollback_task_import', {
+          p_batch_id: b.id,
+          p_chunk: PROCESS_CHUNK,
+        });
+        if (error) throw error;
+        for (const k of Object.keys(totals)) totals[k] += data[k] || 0;
+        if (data.done || !data.processed_now) break;
+      }
+      toast.success(
+        `הייבוא בוטל — ${fmt(totals.deleted_tasks)} משימות נמחקו, ${fmt(totals.restored_tasks)} שוחזרו`
+        + (totals.skipped_rows ? `, ${fmt(totals.skipped_rows)} דולגו` : '')
+        + (totals.failed_rows ? `, ${fmt(totals.failed_rows)} נכשלו` : ''),
+      );
+      queryClient.invalidateQueries({ queryKey: ['task-import-batches'] });
+      queryClient.invalidateQueries({ queryKey: ['salesTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-tasks'] });
+      if (outcome?.batchId === b.id) await loadOutcome(b.id);
+      if (batchId === b.id) { setResult(null); setPhase('idle'); }
+    } catch (err) {
+      console.error('[ImportTasksTab] rollback failed', err);
+      toast.error(`ביטול הייבוא נכשל: ${err?.message || 'שגיאה לא ידועה'}`);
+    } finally {
+      setRollingBack(null);
+    }
+  };
+
   const resumeBatch = async (b) => {
     setResult(null); setBatchId(b.id);
     try {
@@ -549,7 +587,8 @@ export default function ImportTasksTab() {
                 rep: r.data?.rep1 || '',
                 lead: r.lead || null,
                 how: r.status === 'created' ? 'created' : r.status === 'updated' ? 'updated'
-                  : r.status === 'unmatched' ? 'none' : r.status === 'failed' ? 'failed' : 'pending',
+                  : r.status === 'unmatched' ? 'none' : r.status === 'failed' ? 'failed'
+                    : r.status === 'rolled_back' ? 'rolled_back' : 'pending',
                 error: r.error,
               }))}
               summary={{
@@ -572,6 +611,9 @@ export default function ImportTasksTab() {
               {batches.map((b) => {
                 const pending = (b.total_rows || 0) - (b.processed_rows || 0);
                 const when = b.created_date ? new Date(b.created_date).toLocaleString('he-IL') : '';
+                const written = (b.created_tasks || 0) + (b.updated_tasks || 0);
+                const canRollback = written > 0 && !['rolled_back', 'rolling_back', 'uploading'].includes(b.status) && !busy;
+                const isRolling = rollingBack === b.id;
                 return (
                   <li key={b.id} className="py-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                     <div className="min-w-0">
@@ -579,11 +621,31 @@ export default function ImportTasksTab() {
                       <span className="text-muted-foreground"> · {when} · {fmt(b.total_rows)} שורות</span>
                       <div className="text-xs text-muted-foreground">
                         {fmt(b.created_tasks)} נוצרו · {fmt(b.updated_tasks)} עודכנו · {fmt(b.unmatched_rows)} ללא ליד · {fmt(b.failed_rows)} נכשלו
-                        {' · '}<Badge variant={b.status === 'done' ? 'secondary' : 'outline'} className="text-[10px]">{b.status}</Badge>
+                        {' · '}<Badge variant={b.status === 'done' ? 'secondary' : 'outline'} className="text-[10px]">{BATCH_STATUS_LABEL[b.status] || b.status}</Badge>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {b.status !== 'done' && pending > 0 ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {confirmRollback === b.id ? (
+                        <span className="flex items-center gap-2 text-xs">
+                          <span className="text-destructive">
+                            למחוק {fmt(b.created_tasks)} משימות שנוצרו ולשחזר {fmt(b.updated_tasks)} שעודכנו?
+                          </span>
+                          <Button variant="destructive" size="sm" onClick={() => rollbackBatch(b)}>כן, בטל ייבוא</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setConfirmRollback(null)}>לא</Button>
+                        </span>
+                      ) : (canRollback || isRolling) ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                          disabled={isRolling || rollingBack != null}
+                          onClick={() => setConfirmRollback(b.id)}
+                        >
+                          {isRolling ? <Loader2 className="h-4 w-4 me-1 animate-spin" /> : <Undo2 className="h-4 w-4 me-1" />}
+                          {isRolling ? 'מבטל…' : 'בטל ייבוא'}
+                        </Button>
+                      ) : null}
+                      {b.status !== 'done' && b.status !== 'rolled_back' && b.status !== 'rolling_back' && pending > 0 ? (
                         <Button variant="outline" size="sm" disabled={busy} onClick={() => resumeBatch(b)}>המשך עיבוד ({fmt(pending)})</Button>
                       ) : null}
                       {(b.unmatched_rows > 0 || b.failed_rows > 0) ? (
@@ -601,6 +663,16 @@ export default function ImportTasksTab() {
   );
 }
 
+const BATCH_STATUS_LABEL = {
+  uploading: 'מעלה',
+  ready: 'מוכן לעיבוד',
+  processing: 'בעיבוד',
+  done: 'הושלם',
+  failed: 'נכשל',
+  rolling_back: 'בביטול',
+  rolled_back: 'בוטל',
+};
+
 const HOW_LABEL = {
   name:          { text: 'לפי טלפון ושם',              tone: 'text-emerald-700' },
   phone:         { text: 'לפי טלפון',                   tone: 'text-emerald-700' },
@@ -611,6 +683,7 @@ const HOW_LABEL = {
   updated:       { text: 'משימה עודכנה',                tone: 'text-emerald-700' },
   failed:        { text: 'נכשל',                        tone: 'text-destructive' },
   pending:       { text: 'ממתין',                       tone: 'text-muted-foreground' },
+  rolled_back:   { text: 'בוטל',                        tone: 'text-muted-foreground' },
 };
 const STATUS_LABEL = Object.fromEntries(LEAD_STATUS_OPTIONS.map((o) => [o.value, o.label]));
 
