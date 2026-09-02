@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { createPageUrl } from '@/utils';
 import { useLeadModal } from '@/components/lead/LeadModalContext';
@@ -57,6 +57,14 @@ const SCROLL_KEY_PREFIX = 'leadMgmtScroll:';
 const LEAD_LIST_COLUMNS = 'id,full_name,phone,status,source,rep1,rep2,pending_rep_email,contact_id,facebook_ad_name,first_action_at,effective_sort_date,created_date';
 
 function fmt(n) { return Number(n || 0).toLocaleString(); }
+
+// Rows per infinite-scroll page. Each scroll to the bottom fetches ONE more
+// page with an explicit range, so no single request ever asks for more rows
+// than this. The old scheme grew a single `limit` (100 → 200 → 300 …) and
+// re-requested the whole list; a server row cap of 100 then returned 100 rows
+// for a limit of 200, `leads.length >= limit` went false, and the list stuck at
+// exactly 100 with "גלול להמשך" under it and nothing left to scroll to.
+const LEAD_PAGE_SIZE = 100;
 
 // PostgREST answers with at most `db-max-rows` (1000 on Supabase) no matter
 // what limit the client asks for, and it says nothing about having truncated.
@@ -371,7 +379,6 @@ export default function LeadManagement() {
   const [showWorkload, setShowWorkload] = useState(false);
   const [assigningRep, setAssigningRep] = useState('');
   const [showImport, setShowImport] = useState(false);
-  const [limit, setLimit] = useState(Number(urlParams.get('limit')) || 100);
 
   // Reflect the current filter state back into the URL so the browser's
   // back/forward buttons restore it, and so a deep-link to this page
@@ -399,14 +406,13 @@ export default function LeadManagement() {
     // keeps a clean URL — and a clean URL re-applies the default on the next
     // visit, which is the whole point.
     if (next.filters?.rep && next.filters.rep !== defaultRep) params.set('rep', next.filters.rep);
-    if (next.limit && next.limit !== 100) params.set('limit', String(next.limit));
     const search = params.toString();
     navigate(search ? `${location.pathname}?${search}` : location.pathname, { replace: true });
   }, [navigate, location.pathname, defaultRep]);
 
   useEffect(() => {
-    updateUrl({ preset: datePresetId, range: customRange, scope, filters, limit, hourFrom, hourTo });
-  }, [datePresetId, customRange, scope, filters, limit, hourFrom, hourTo, updateUrl]);
+    updateUrl({ preset: datePresetId, range: customRange, scope, filters, hourFrom, hourTo });
+  }, [datePresetId, customRange, scope, filters, hourFrom, hourTo, updateUrl]);
 
   useEffect(() => {
     if (!effectiveUser) return;
@@ -733,48 +739,62 @@ export default function LeadManagement() {
   // "סה״כ מכירות" drills into the leads behind the orders the tile counted, so
   // its id set comes from the sales query rather than from relatedScopeSets.
   const relatedLeadIds = (scope === 'won' ? sales.leadIds : relatedScopeSets[scope]) || [];
-  // Only the ids for the page being shown go into the query. `{ id: { $in: … } }`
+  // Only the ids for the page being fetched go into a request. `{ id: { $in: … } }`
   // becomes `id=in.(uuid,uuid,…)` on a GET, so a scope holding 879 leads built a
   // ~33KB URL that the server refused — and the refusal rendered as an empty
-  // list under a tile reading 879. Infinite scroll still works: `limit` grows,
-  // the slice grows with it. The ids arrive in the related table's own order
-  // (task due date, quote recency), which is the order these scopes want.
-  const relatedLeadIdsPage = useMemo(
-    () => relatedLeadIds.slice(0, limit),
-    [relatedLeadIds, limit],
+  // list under a tile reading 879. Each page asks for its own slice of
+  // LEAD_PAGE_SIZE ids, so a request never carries more than that. The ids
+  // arrive in the related table's own order (task due date, quote recency),
+  // which is the order these scopes want, so pages follow that order too.
+  const isRelatedScope = RELATED_SCOPES.includes(scope);
+  const queryParts = useMemo(
+    () => ({ filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported }),
+    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported],
   );
-
+  // The full query (all related ids included) is the cache key: any change to
+  // scope / filter / rep / status / date / search — or to the related id set —
+  // starts a fresh list at page one, so switching views fetches a single light
+  // page and infinite-scroll grows it again on demand.
   const leadsQuery = useMemo(
-    () => buildLeadsQuery({
-      filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported,
-      relatedLeadIds: relatedLeadIdsPage,
-    }),
-    [filters, dateRange, scope, userEmail, seesAllLeads, hourCond, phoneKeySupported, sourceChannelSupported, relatedLeadIdsPage],
+    () => buildLeadsQuery({ ...queryParts, relatedLeadIds }),
+    [queryParts, relatedLeadIds],
   );
-  // Reset paging to the first page whenever the query itself changes (scope /
-  // filter / rep / status / date / search) — without this, switching views
-  // re-pulls however many rows the user had scrolled to (e.g. 400). Each click
-  // then fetches a single light page; infinite-scroll grows it again on demand.
-  const leadsQueryKey = useMemo(() => JSON.stringify(leadsQuery), [leadsQuery]);
-  const prevLeadsQueryKey = useRef(leadsQueryKey);
-  useEffect(() => {
-    if (prevLeadsQueryKey.current !== leadsQueryKey) {
-      prevLeadsQueryKey.current = leadsQueryKey;
-      setLimit((cur) => (cur > 100 ? 100 : cur));
-    }
-  }, [leadsQueryKey]);
-  const { data: leads = [], isLoading, isFetching } = useQuery({
-    queryKey: ['leadMgmt-leads', leadsQuery, limit],
+  const {
+    data: leadPages,
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['leadMgmt-leads', leadsQuery],
     enabled: !!effectiveUser && repResolved,
     staleTime: 60_000,
-    placeholderData: (prev) => prev, // ← key: don't drop rows on loadMore so the scroll stays put
-    queryFn: () => base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', limit, undefined, LEAD_LIST_COLUMNS),
+    placeholderData: (prev) => prev, // ← key: don't drop rows while the next page loads so the scroll stays put
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      if (isRelatedScope) {
+        const pageIds = relatedLeadIds.slice(pageParam, pageParam + LEAD_PAGE_SIZE);
+        const pageQuery = buildLeadsQuery({ ...queryParts, relatedLeadIds: pageIds });
+        return base44.entities.Lead.filter(pageQuery, '-effective_sort_date', LEAD_PAGE_SIZE, undefined, LEAD_LIST_COLUMNS);
+      }
+      // entities.filter() treats a falsy skip as "no range", so the first page
+      // goes out as a plain limit and every later one as an explicit range.
+      return base44.entities.Lead.filter(leadsQuery, '-effective_sort_date', LEAD_PAGE_SIZE, pageParam || undefined, LEAD_LIST_COLUMNS);
+    },
+    getNextPageParam: (lastPage, pages) => {
+      const next = pages.length * LEAD_PAGE_SIZE;
+      // Related scopes page through the id list, so a page can legitimately
+      // come back short (ids that miss the other filters) while ids remain.
+      if (isRelatedScope) return next < relatedLeadIds.length ? next : undefined;
+      return lastPage.length < LEAD_PAGE_SIZE ? undefined : next;
+    },
   });
+  const leads = useMemo(() => (leadPages?.pages ?? []).flat(), [leadPages]);
   // A count over the sliced page would just report the page size, so the
   // related scopes report the size of the set the tile counted instead. Any
   // other filter on top narrows the rows below it, which is what the filter
   // chips above the list are there to say.
-  const isRelatedScope = RELATED_SCOPES.includes(scope);
   const ignoresDateRange = isRelatedScope && scope !== 'tasks_today';
   const { data: countedLeads = null } = useQuery({
     queryKey: ['leadMgmt-count', leadsQuery],
@@ -817,7 +837,7 @@ export default function LeadManagement() {
   // ───────────────────────────────────────────────────────────────
   // Infinite-scroll sentinel. Append rows in place without scroll jump.
   // ───────────────────────────────────────────────────────────────
-  const hasMore = leads.length >= limit && (filteredCount == null || leads.length < filteredCount);
+  const hasMore = !!hasNextPage && (filteredCount == null || leads.length < filteredCount);
   const loadMoreRef = useRef(null);
   useEffect(() => {
     const el = loadMoreRef.current;
@@ -825,14 +845,14 @@ export default function LeadManagement() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !isFetching) {
-          setLimit((prev) => prev + 100);
+          fetchNextPage();
         }
       },
       { rootMargin: '400px' },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, isFetching]);
+  }, [hasMore, isFetching, fetchNextPage]);
 
   // ───────────────────────────────────────────────────────────────
   // Scroll restoration. Save on every URL change (filter tweak, page
@@ -1442,7 +1462,7 @@ export default function LeadManagement() {
           leads currently visible in the table (post-filter, post-sort)
           so a manager can pick "30", drop them on a rep, and move on.
           "הכל" picks every lead loaded in the table — note this is
-          the LOADED set (capped by `limit`), not the entire matching
+          the LOADED set (the pages scrolled to so far), not the entire matching
           count in the DB, so we show the working number next to it. */}
       {isAdmin && multiSelect && leads.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-card">
@@ -1511,7 +1531,7 @@ export default function LeadManagement() {
       <div ref={loadMoreRef} className="h-1" />
       {filteredCount != null && leads.length < filteredCount ? (
         <p className="text-[11px] text-center text-muted-foreground py-2">
-          {isFetching ? 'טוען עוד...' : `מציג ${fmt(leads.length)} מתוך ${fmt(filteredCount)} — גלול להמשך`}
+          {isFetchingNextPage ? 'טוען עוד...' : `מציג ${fmt(leads.length)} מתוך ${fmt(filteredCount)} — גלול להמשך`}
         </p>
       ) : leads.length > 0 && filteredCount != null ? (
         <p className="text-[11px] text-center text-muted-foreground py-2">
