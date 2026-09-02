@@ -23,6 +23,20 @@ WITH the_lead AS (
   ORDER BY created_date DESC NULLS LAST
   LIMIT 5
 ),
+-- What the "updated" rows of the latest batch were: two Kaveret tasks on one
+-- lead in the same minute collapse into one under the lead+minute identity,
+-- and this shows whether those are true duplicates or two different tasks.
+-- Its own CTE because a UNION ALL branch cannot carry ORDER BY / LIMIT.
+updated_sample AS (
+  SELECT r.row_number, r.data, t.summary AS task_summary, b.created_date
+  FROM public.task_import_rows r
+  JOIN public.task_import_batches b ON b.id = r.batch_id
+  LEFT JOIN public.sales_tasks t ON t.id = r.task_id
+  WHERE r.status = 'updated'
+    AND b.id = (SELECT id FROM public.task_import_batches ORDER BY created_date DESC LIMIT 1)
+  ORDER BY r.row_number
+  LIMIT 12
+),
 rows_out AS (
   SELECT
     0 AS ord,
@@ -67,27 +81,18 @@ rows_out AS (
   FROM public.sales_tasks t
   WHERE t.lead_id IN (SELECT id FROM the_lead)
 
-  -- What the "updated" rows of the latest batch were: two Kaveret tasks on one
-  -- lead in the same minute collapse into one under the lead+minute identity,
-  -- and this shows whether those are true duplicates or two different tasks.
   UNION ALL
   SELECT
     3,
     'updated-sample',
-    to_char(b.created_date AT TIME ZONE 'Asia/Jerusalem', 'DD/MM/YYYY HH24:MI'),
-    'row ' || r.row_number || ': ' || left(coalesce(r.data ->> 'summary', ''), 60),
-    coalesce(r.data ->> 'task_status', ''),
-    coalesce(r.data ->> 'rep1', ''),
-    'created ' || coalesce(r.data ->> 'created_at', '') || ' · due ' || coalesce(r.data ->> 'due_at', '')
-      || ' · now on task: ' || left(coalesce(t.summary, ''), 40),
-    b.created_date
-  FROM public.task_import_rows r
-  JOIN public.task_import_batches b ON b.id = r.batch_id
-  LEFT JOIN public.sales_tasks t ON t.id = r.task_id
-  WHERE r.status = 'updated'
-    AND b.id = (SELECT id FROM public.task_import_batches ORDER BY created_date DESC LIMIT 1)
-  ORDER BY r.row_number
-  LIMIT 12
+    to_char(u.created_date AT TIME ZONE 'Asia/Jerusalem', 'DD/MM/YYYY HH24:MI'),
+    'row ' || u.row_number || ': ' || left(coalesce(u.data ->> 'summary', ''), 60),
+    coalesce(u.data ->> 'task_status', ''),
+    coalesce(u.data ->> 'rep1', ''),
+    'created ' || coalesce(u.data ->> 'created_at', '') || ' · due ' || coalesce(u.data ->> 'due_at', '')
+      || ' · now on task: ' || left(coalesce(u.task_summary, ''), 40),
+    u.created_date
+  FROM updated_sample u
 )
 SELECT kind, "when", title, status, rep, detail
 FROM rows_out
