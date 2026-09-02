@@ -195,6 +195,11 @@ function LeadTasksCard({ queue, tasks = [], salesReps, onOpenTask, onCompleteTas
           // Blank for tasks closed before the stamp existed: no name beats the
           // wrong name.
           const closedBy = t.completed_by ? getRepDisplayName(t.completed_by, salesReps) : '';
+          // An imported task whose Kaveret rep is not its rep here: say whose
+          // it was, since that is the person who actually made the call.
+          const importedBy = t.imported_rep
+            && String(t.imported_rep).toLowerCase() !== String(t.rep1 || '').toLowerCase()
+            ? getRepDisplayName(t.imported_rep, salesReps) : '';
           const title = String(t.summary || '').split('\n')[0]
             || ALL_TASK_TYPE_LABELS[t.task_type]
             || 'משימה';
@@ -206,13 +211,14 @@ function LeadTasksCard({ queue, tasks = [], salesReps, onOpenTask, onCompleteTas
               <button
                 type="button"
                 onClick={() => onOpenTask?.(t)}
-                title={[title, closedBy && `בוצע ע״י ${closedBy}`, exact].filter(Boolean).join(' · ')}
+                title={[title, closedBy && `בוצע ע״י ${closedBy}`, importedBy && `בכוורת: ${importedBy}`, exact].filter(Boolean).join(' · ')}
                 className="w-full flex items-center gap-2 px-2 py-1 -mx-2 rounded-lg text-start hover:bg-muted transition-colors"
               >
                 <Check className="h-3.5 w-3.5 flex-shrink-0 text-emerald-600" />
                 <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">{title}</span>
                 <span className="flex-none text-[11px] text-muted-foreground/70">
                   {closedBy ? <span className="truncate">{closedBy} · </span> : null}
+                  {importedBy ? <span className="truncate">{importedBy} · </span> : null}
                   <span className="tabular-nums">{day}</span>
                 </span>
               </button>
