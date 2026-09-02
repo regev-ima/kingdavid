@@ -6,7 +6,7 @@ name: Diagnostics — run a read-only check
 #
 # The script list is a fixed allowlist and the dispatch input is a choice, not
 # free text, so this workflow cannot be pointed at arbitrary SQL. None of the
-# four touches business data: three are pure SELECT, and delete-impact builds a
+# five touches business data: four are pure SELECT, and delete-impact builds a
 # session-local TEMP table it then reads back. That is what makes it safe to
 # also run on push — the same reasoning does NOT extend to adding a migration
 # to the allowlist.
@@ -28,6 +28,7 @@ on:
           - status-check
           - duplicate-inflow-check
           - delete-impact
+          - task-import-check
   push:
     branches:
       - main
