@@ -1,4 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,12 +11,13 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download, ClipboardList } from 'lucide-react';
+import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download, ClipboardList, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { readFileToRows } from '@/utils/importFile';
 import { matchStatus, auditStatuses } from '@/lib/leadStatusMatch';
 import { extractEmail, auditRepEmails } from '@/lib/repEmailExtract';
-import { isMeetingStatus } from '@/constants/leadOptions';
+import { isMeetingStatus, LEAD_STATUS_OPTIONS } from '@/constants/leadOptions';
+import { normalizeIsraeliPhone } from '@/utils/phoneUtils';
 import {
   isKaveretTaskExport, kaveretTaskMapping, kaveretTaskStatus, toWallClock,
 } from '@/lib/kaveretTaskPreset';
@@ -115,7 +118,60 @@ export default function ImportTasksTab() {
     return { noPhone, noDate, statuses, reps, taskStatus: [...taskStatus.entries()] };
   }, [rows, mapping, users]);
 
+  // ── Preview: which lead each row will land on, before anything is written ──
+  // The same rule process_task_import() applies, run here against the live
+  // leads so the operator sees the match and not just a count: by phone
+  // (normalized both sides), name-matched first, then the newest.
+  const [preview, setPreview] = useState(null); // { rows: [{ i, lead, how }], loading }
+  const previewRows = useMemo(() => {
+    if (!rows.length || col('phone') == null) return [];
+    return rows.map((r, i) => ({
+      i,
+      phone: cell(r, 'phone') || cell(r, 'phone_alt'),
+      name: cell(r, 'full_name'),
+      created: toWallClock(cell(r, 'created_at')),
+      due: toWallClock(cell(r, 'due_at')),
+      taskStatus: kaveretTaskStatus(cell(r, 'task_status')),
+      status: matchStatus(cell(r, 'status')),
+      summary: cell(r, 'summary'),
+      rep: extractEmail(cell(r, 'rep1')) || '',
+    }));
+  }, [rows, mapping]);
+
+  useEffect(() => {
+    if (!previewRows.length) { setPreview(null); return; }
+    let cancelled = false;
+    (async () => {
+      setPreview({ rows: [], loading: true });
+      const norms = [...new Set(previewRows.map((r) => normalizeIsraeliPhone(r.phone)).filter(Boolean))];
+      const byNorm = new Map();
+      for (let i = 0; i < norms.length; i += 200) {
+        const { data, error } = await base44.supabase
+          .from('leads')
+          .select('id,full_name,phone,phone_normalized,status,rep1,created_date')
+          .in('phone_normalized', norms.slice(i, i + 200));
+        if (error) { console.error('[ImportTasksTab] preview lookup failed', error); break; }
+        for (const l of data || []) {
+          if (!byNorm.has(l.phone_normalized)) byNorm.set(l.phone_normalized, []);
+          byNorm.get(l.phone_normalized).push(l);
+        }
+      }
+      if (cancelled) return;
+      const out = previewRows.map((r) => {
+        const cands = byNorm.get(normalizeIsraeliPhone(r.phone)) || [];
+        if (!cands.length) return { ...r, lead: null, how: r.phone ? 'none' : 'nophone' };
+        const byName = r.name ? cands.filter((l) => String(l.full_name || '').includes(r.name)) : [];
+        const pool = byName.length ? byName : cands;
+        const lead = [...pool].sort((a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0))[0];
+        return { ...r, lead, how: byName.length ? 'name' : (cands.length > 1 ? 'phone-multi' : 'phone') };
+      });
+      setPreview({ rows: out, loading: false });
+    })();
+    return () => { cancelled = true; };
+  }, [previewRows]);
+
   const reset = () => {
+    setPreview(null);
     setFileName(''); setHeaders([]); setRows([]); setMapping({}); setIsKaveret(false);
     setParseError(''); setPhase('idle'); setProgress({ current: 0, total: 0, label: '' });
     setRunning({ ...EMPTY_TOTALS }); setResult(null); setBatchId(null);
@@ -192,6 +248,27 @@ export default function ImportTasksTab() {
     return totals;
   };
 
+  // What the server actually did with each row — read back from staging so
+  // the operator sees row → lead → task, not just four numbers.
+  const [outcome, setOutcome] = useState(null);
+  const loadOutcome = async (id) => {
+    const { data, error } = await base44.supabase
+      .from('task_import_rows')
+      .select('row_number,status,error,lead_id,task_id,data')
+      .eq('batch_id', id)
+      .order('row_number')
+      .limit(2000);
+    if (error) { console.error('[ImportTasksTab] outcome load failed', error); return; }
+    const leadIds = [...new Set((data || []).map((r) => r.lead_id).filter(Boolean))];
+    const leads = new Map();
+    for (let i = 0; i < leadIds.length; i += 200) {
+      const { data: ls } = await base44.supabase
+        .from('leads').select('id,full_name,phone').in('id', leadIds.slice(i, i + 200));
+      for (const l of ls || []) leads.set(l.id, l);
+    }
+    setOutcome({ batchId: id, rows: (data || []).map((r) => ({ ...r, lead: r.lead_id ? leads.get(r.lead_id) : null })) });
+  };
+
   const finish = (totals) => {
     setResult(totals);
     setPhase('done');
@@ -203,7 +280,7 @@ export default function ImportTasksTab() {
 
   const runImport = async () => {
     if (missingRequired.length) { toast.error('חסר מיפוי לשדות חובה'); return; }
-    setResult(null);
+    setResult(null); setOutcome(null);
     let id = null;
     try {
       setPhase('uploading');
@@ -238,6 +315,7 @@ export default function ImportTasksTab() {
       await base44.supabase.from('task_import_batches').update({ status: 'ready' }).eq('id', id);
 
       finish(await processBatch(id, rows.length));
+      await loadOutcome(id);
     } catch (err) {
       console.error('[ImportTasksTab] import failed', err);
       if (id) {
@@ -256,6 +334,7 @@ export default function ImportTasksTab() {
     setResult(null); setBatchId(b.id);
     try {
       finish(await processBatch(b.id, Math.max(0, (b.total_rows || 0) - (b.processed_rows || 0))));
+      await loadOutcome(b.id);
     } catch (err) {
       console.error('[ImportTasksTab] resume failed', err);
       setPhase('failed');
@@ -395,6 +474,18 @@ export default function ImportTasksTab() {
                 </div>
               ) : null}
 
+              {preview ? (
+                <MatchTable
+                  title="למי כל שורה תשויך"
+                  loading={preview.loading}
+                  rows={preview.rows}
+                  summary={preview.loading ? null : {
+                    matched: preview.rows.filter((r) => r.lead).length,
+                    unmatched: preview.rows.filter((r) => !r.lead).length,
+                  }}
+                />
+              ) : null}
+
               {missingRequired.length ? (
                 <p className="text-xs text-destructive">
                   חסר מיפוי: {missingRequired.map((k) => FIELDS.find((f) => f.key === k)?.label).join(', ')}
@@ -441,6 +532,35 @@ export default function ImportTasksTab() {
         </CardContent>
       </Card>
 
+      {outcome ? (
+        <Card>
+          <CardContent className="pt-5">
+            <MatchTable
+              title="מה נקלט בפועל"
+              rows={outcome.rows.map((r) => ({
+                i: (r.row_number || 2) - 2,
+                phone: r.data?.phone || '',
+                name: r.data?.full_name || '',
+                created: r.data?.created_at || '',
+                due: r.data?.due_at || '',
+                taskStatus: r.data?.task_status || 'not_completed',
+                status: r.data?.status || null,
+                summary: r.data?.summary || '',
+                rep: r.data?.rep1 || '',
+                lead: r.lead || null,
+                how: r.status === 'created' ? 'created' : r.status === 'updated' ? 'updated'
+                  : r.status === 'unmatched' ? 'none' : r.status === 'failed' ? 'failed' : 'pending',
+                error: r.error,
+              }))}
+              summary={{
+                matched: outcome.rows.filter((r) => r.status === 'created' || r.status === 'updated').length,
+                unmatched: outcome.rows.filter((r) => r.status === 'unmatched' || r.status === 'failed').length,
+              }}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+
       {batches.length ? (
         <Card>
           <CardHeader>
@@ -476,6 +596,107 @@ export default function ImportTasksTab() {
             </ul>
           </CardContent>
         </Card>
+      ) : null}
+    </div>
+  );
+}
+
+const HOW_LABEL = {
+  name:          { text: 'לפי טלפון ושם',              tone: 'text-emerald-700' },
+  phone:         { text: 'לפי טלפון',                   tone: 'text-emerald-700' },
+  'phone-multi': { text: 'לפי טלפון (כמה לידים — נבחר החדש)', tone: 'text-amber-700' },
+  none:          { text: 'לא נמצא ליד',                 tone: 'text-destructive' },
+  nophone:       { text: 'אין טלפון',                   tone: 'text-destructive' },
+  created:       { text: 'נוצרה משימה',                 tone: 'text-emerald-700' },
+  updated:       { text: 'משימה עודכנה',                tone: 'text-emerald-700' },
+  failed:        { text: 'נכשל',                        tone: 'text-destructive' },
+  pending:       { text: 'ממתין',                       tone: 'text-muted-foreground' },
+};
+const STATUS_LABEL = Object.fromEntries(LEAD_STATUS_OPTIONS.map((o) => [o.value, o.label]));
+
+// One row of the file beside the lead it lands on. Used twice: before the
+// import (what WILL happen, computed here by the same rule the server uses)
+// and after it (what DID happen, read back from staging).
+function MatchTable({ title, rows, loading, summary }) {
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? rows : rows.slice(0, 100);
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-muted/40 border-b">
+        <span className="text-sm font-medium">{title}</span>
+        {loading ? (
+          <span className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />מאתר לידים…</span>
+        ) : summary ? (
+          <span className="text-xs text-muted-foreground">
+            <span className="text-emerald-700 font-medium">{summary.matched.toLocaleString('he-IL')} עם ליד</span>
+            {' · '}
+            <span className={summary.unmatched ? 'text-destructive font-medium' : ''}>{summary.unmatched.toLocaleString('he-IL')} ללא ליד</span>
+          </span>
+        ) : null}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead className="bg-muted/20 text-muted-foreground">
+            <tr>
+              <th className="px-2 py-1.5 text-start font-medium">#</th>
+              <th className="px-2 py-1.5 text-start font-medium">בקובץ</th>
+              <th className="px-2 py-1.5 text-start font-medium">ליד במערכת</th>
+              <th className="px-2 py-1.5 text-start font-medium">איך שויך</th>
+              <th className="px-2 py-1.5 text-start font-medium">נוצר</th>
+              <th className="px-2 py-1.5 text-start font-medium">לביצוע</th>
+              <th className="px-2 py-1.5 text-start font-medium">משימה</th>
+              <th className="px-2 py-1.5 text-start font-medium">סטטוס ליד</th>
+              <th className="px-2 py-1.5 text-start font-medium">נציג</th>
+              <th className="px-2 py-1.5 text-start font-medium">תוכן</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((r) => {
+              const how = HOW_LABEL[r.how] || HOW_LABEL.pending;
+              return (
+                <tr key={r.i} className="border-t align-top">
+                  <td className="px-2 py-1.5 text-muted-foreground tabular-nums">{r.i + 2}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <div>{r.name || <span className="text-muted-foreground">—</span>}</div>
+                    <div className="text-muted-foreground" dir="ltr">{r.phone}</div>
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {r.lead ? (
+                      <Link
+                        to={createPageUrl('LeadDetails') + `?id=${r.lead.id}`}
+                        target="_blank"
+                        className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        {r.lead.full_name || r.lead.phone}
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    ) : <span className="text-muted-foreground">—</span>}
+                    {r.lead?.phone && r.lead.phone !== r.phone ? (
+                      <div className="text-muted-foreground" dir="ltr">{r.lead.phone}</div>
+                    ) : null}
+                  </td>
+                  <td className={`px-2 py-1.5 whitespace-nowrap ${how.tone}`} title={r.error || ''}>{how.text}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap tabular-nums" dir="ltr">{r.created || '—'}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap tabular-nums" dir="ltr">{r.due || '—'}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{r.taskStatus === 'completed' ? 'בוצעה' : 'פתוחה'}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{r.status ? (STATUS_LABEL[r.status] || r.status) : <span className="text-muted-foreground">—</span>}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap" dir="ltr">{r.rep || '—'}</td>
+                  <td className="px-2 py-1.5 max-w-[26rem] truncate" title={r.summary}>{r.summary}</td>
+                </tr>
+              );
+            })}
+            {!loading && rows.length === 0 ? (
+              <tr><td colSpan={10} className="px-2 py-3 text-center text-muted-foreground">אין שורות</td></tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > 100 ? (
+        <div className="px-3 py-2 border-t">
+          <Button variant="ghost" size="sm" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? 'הצג פחות' : `הצג את כל ${rows.length.toLocaleString('he-IL')} השורות`}
+          </Button>
+        </div>
       ) : null}
     </div>
   );
