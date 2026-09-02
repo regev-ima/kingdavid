@@ -32,8 +32,14 @@ on:
   push:
     branches:
       - main
+      # The task-import check runs on its feature branch too: this GitHub App
+      # cannot dispatch workflows (403), and a check nobody can run answers
+      # nothing. On that branch a push runs task-import-check; on main the
+      # readiness check, as before.
+      - claude/scroll-issue-yzabql
     paths:
       - 'scripts/import-readiness.sql'
+      - 'scripts/task-import-check.sql'
       - '.github/workflows/diagnostics.yml'
 
 jobs:
@@ -51,7 +57,7 @@ jobs:
           # inputs.script is empty on a push event — only workflow_dispatch
           # supplies it. Without the fallback SCRIPT would be blank and the
           # path check below would fail on "scripts/.sql".
-          SCRIPT: ${{ inputs.script || 'import-readiness' }}
+          SCRIPT: ${{ inputs.script || (github.ref_name == 'main' && 'import-readiness' || 'task-import-check') }}
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
