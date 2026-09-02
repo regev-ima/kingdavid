@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, Upload, AlertCircle, CheckCircle2, FileSpreadsheet, RotateCcw, Download, ClipboardList, ExternalLink, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { readFileToRows } from '@/utils/importFile';
@@ -91,6 +92,25 @@ export default function ImportTasksTab() {
     staleTime: 30_000,
   });
 
+  // Reps in the file who are no longer users here. Their DONE tasks keep the
+  // address they were done under — that is history. Their OPEN tasks have to
+  // land in a queue someone reads: the lead's current owner here, or else
+  // this fallback. The switch moves the done ones too, for an operator who
+  // would rather see one name than a departed one.
+  const knownEmails = useMemo(
+    () => new Set(users.map((u) => String(u.email || '').toLowerCase()).filter(Boolean)),
+    [users],
+  );
+  const [unknownRepTo, setUnknownRepTo] = useState('');
+  const [moveCompletedToo, setMoveCompletedToo] = useState(false);
+  useEffect(() => {
+    if (unknownRepTo || !users.length) return;
+    const preferred = users.find((u) => String(u.email || '').toLowerCase() === 'yonikd01@gmail.com');
+    const admin = users.find((u) => u.role === 'admin');
+    setUnknownRepTo(String((preferred || admin || users[0])?.email || '').toLowerCase());
+  }, [users, unknownRepTo]);
+  const repIsUnknown = (email) => Boolean(email) && !knownEmails.has(email);
+
   const col = (key) => (mapping[key] === undefined || mapping[key] === null ? null : mapping[key]);
   const cell = (row, key) => { const i = col(key); return i == null ? '' : String(row[i] ?? '').trim(); };
 
@@ -138,6 +158,14 @@ export default function ImportTasksTab() {
     }));
   }, [rows, mapping]);
 
+  // The same rule process_task_import() applies to a rep who is not a user.
+  const effectiveRep = (r, lead) => {
+    if (!repIsUnknown(r.rep)) return { rep: r.rep, moved: false };
+    if (r.taskStatus !== 'not_completed' && !moveCompletedToo) return { rep: r.rep, moved: false };
+    const to = String(lead?.rep1 || '').toLowerCase() || unknownRepTo || r.rep;
+    return { rep: to, moved: to !== r.rep, from: r.rep };
+  };
+
   useEffect(() => {
     if (!previewRows.length) { setPreview(null); return; }
     let cancelled = false;
@@ -159,16 +187,18 @@ export default function ImportTasksTab() {
       if (cancelled) return;
       const out = previewRows.map((r) => {
         const cands = byNorm.get(normalizeIsraeliPhone(r.phone)) || [];
-        if (!cands.length) return { ...r, lead: null, how: r.phone ? 'none' : 'nophone' };
+        if (!cands.length) return { ...r, lead: null, how: r.phone ? 'none' : 'nophone', ...effectiveRep(r, null) };
         const byName = r.name ? cands.filter((l) => String(l.full_name || '').includes(r.name)) : [];
         const pool = byName.length ? byName : cands;
         const lead = [...pool].sort((a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0))[0];
-        return { ...r, lead, how: byName.length ? 'name' : (cands.length > 1 ? 'phone-multi' : 'phone') };
+        return { ...r, lead, how: byName.length ? 'name' : (cands.length > 1 ? 'phone-multi' : 'phone'), ...effectiveRep(r, lead) };
       });
       setPreview({ rows: out, loading: false });
     })();
     return () => { cancelled = true; };
-  }, [previewRows]);
+    // effectiveRep reads unknownRepTo / moveCompletedToo / knownEmails, so a
+    // change to any of them re-runs the preview with the new rule.
+  }, [previewRows, unknownRepTo, moveCompletedToo, knownEmails]);
 
   const reset = () => {
     setPreview(null);
@@ -220,6 +250,11 @@ export default function ImportTasksTab() {
       task_type:        isMeetingStatus(status) ? 'meeting' : 'call',
       summary:          cell(row, 'summary'),
     };
+    if (repIsUnknown(out.rep1)) {
+      out.rep_unknown = 'true';
+      out.rep_fallback = unknownRepTo;
+      if (moveCompletedToo) out.rep_move_completed = 'true';
+    }
     for (const k of Object.keys(out)) if (out[k] === '' || out[k] == null) delete out[k];
     return out;
   };
@@ -503,12 +538,42 @@ export default function ImportTasksTab() {
                     {audit.reps ? (
                       <li>
                         נציגים בקובץ: {fmt(audit.reps.rows?.length ?? 0)}
-                        {audit.reps.unmatched?.length
-                          ? <span className="text-amber-700"> · לא קיימים כמשתמשים: {audit.reps.unmatched.map((r) => r.email).join(', ')}</span>
-                          : null}
+                        {audit.reps.unmatched?.length ? (
+                          <>
+                            <span className="text-amber-700"> · {fmt(audit.reps.unmatched.length)} אינם משתמשים במערכת</span>
+                            {' — '}
+                            {moveCompletedToo ? 'כל המשימות שלהם' : 'המשימות הפתוחות שלהם'} יעברו לנציג שמטפל היום בליד, ואם אין כזה ל־
+                            <span dir="ltr" className="font-mono">{unknownRepTo || '(לא נבחר)'}</span>.
+                            {moveCompletedToo ? '' : ' משימות שבוצעו נשארות על שם הנציג המקורי.'}
+                          </>
+                        ) : null}
                       </li>
                     ) : null}
                   </ul>
+                  {audit.reps?.unmatched?.length ? (
+                    <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-border/50">
+                      <div className="space-y-1 min-w-[16rem]">
+                        <Label className="text-xs text-muted-foreground">נציג ברירת מחדל לנציגים שאינם במערכת</Label>
+                        <Select value={unknownRepTo || '__none__'} onValueChange={(v) => setUnknownRepTo(v === '__none__' ? '' : v)} disabled={busy}>
+                          <SelectTrigger className="h-9"><SelectValue placeholder="בחר נציג" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— להשאיר את המייל המקורי —</SelectItem>
+                            {users.filter((u) => u.email).map((u) => (
+                              <SelectItem key={u.email} value={String(u.email).toLowerCase()}>{u.full_name || u.email}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs pb-2 cursor-pointer">
+                        <Checkbox checked={moveCompletedToo} onCheckedChange={(v) => setMoveCompletedToo(Boolean(v))} disabled={busy} />
+                        להעביר גם משימות שבוצעו (ההיסטוריה תציג את הנציג החדש)
+                      </label>
+                      <details className="text-xs text-muted-foreground w-full">
+                        <summary className="cursor-pointer">הכתובות שאינן במערכת ({fmt(audit.reps.unmatched.length)})</summary>
+                        <p dir="ltr" className="font-mono mt-1 break-all">{audit.reps.unmatched.map((r) => `${r.email} (${r.count})`).join(', ')}</p>
+                      </details>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -753,7 +818,10 @@ function MatchTable({ title, rows, loading, summary }) {
                   <td className="px-2 py-1.5 whitespace-nowrap tabular-nums" dir="ltr">{r.due || '—'}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap">{r.taskStatus === 'completed' ? 'בוצעה' : 'פתוחה'}</td>
                   <td className="px-2 py-1.5 whitespace-nowrap">{r.status ? (STATUS_LABEL[r.status] || r.status) : <span className="text-muted-foreground">—</span>}</td>
-                  <td className="px-2 py-1.5 whitespace-nowrap" dir="ltr">{r.rep || '—'}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap" dir="ltr" title={r.moved ? `במקור: ${r.from}` : ''}>
+                    {r.rep || '—'}
+                    {r.moved ? <span className="text-amber-700 text-[10px] ms-1" dir="rtl">(הועבר)</span> : null}
+                  </td>
                   <td className="px-2 py-1.5 max-w-[26rem] truncate" title={r.summary}>{r.summary}</td>
                 </tr>
               );
