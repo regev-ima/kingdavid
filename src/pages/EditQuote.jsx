@@ -516,11 +516,20 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
     });
   };
 
+  const hasPaymentMethod = (formData.payment_terms_selection || []).length > 0;
+
   // Editing saves directly — no summary/confirm step. "שמור שינויים" וזהו.
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!isValidIsraeliPhone(formData.customer_phone)) {
       toast.error('מספר טלפון לא תקין. פורמט ישראלי: 05X-XXXXXXX או 0X-XXXXXXX');
+      return;
+    }
+    // Every quote states how the customer pays — same rule as a new quote.
+    // Older quotes saved before it was required land here with none picked.
+    if (!hasPaymentMethod) {
+      toast.error('חסרים שדות חובה: אמצעי תשלום');
+      setCurrentStep(3);
       return;
     }
     updateQuoteMutation.mutate(formData);
@@ -752,6 +761,23 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
           </CardContent>
         </Card>
 
+            {/* Right under the products: the note a rep writes is about the
+                line they just added ("without the headboard", "deliver after
+                the 15th"), so it belongs beside it, not three cards into the
+                terms step. */}
+            <Card>
+              <CardContent className="pt-5 space-y-1.5">
+                <Label className="text-sm font-medium">בקשות מיוחדות</Label>
+                <Textarea
+                  value={formData.special_requests || ''}
+                  onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
+                  placeholder="בקשות מיוחדות שיופיעו על ההצעה ועל ההזמנה (אופציונלי)"
+                  rows={3}
+                  className="resize-none"
+                />
+              </CardContent>
+            </Card>
+
         {formData.items.some(item => item.sku) && (
           <div>
             <UpsellPanel 
@@ -784,6 +810,43 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
             <CardTitle>תנאים ואחריות</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
+            {/* First thing on this step, and required: the rep has to mark
+                how the customer pays on every quote, and it used to sit
+                below three blocks of boilerplate text where they had to go
+                looking for it. The date and the terms text below are
+                pre-filled and rarely touched. */}
+            <div className={`space-y-1.5 rounded-lg border p-3 ${hasPaymentMethod ? 'border-border' : 'border-amber-300 bg-amber-50/40'}`}>
+              <Label className="text-sm font-medium">אמצעי תשלום *</Label>
+              <p className="text-[11px] text-muted-foreground">
+                {hasPaymentMethod ? 'בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.' : 'שדה חובה — יש לבחור לפחות אמצעי תשלום אחד כדי לשמור את ההצעה.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {PAYMENT_TERMS_OPTIONS.map((opt) => {
+                  const selected = (formData.payment_terms_selection || []).includes(opt);
+                  return (
+                    <Button
+                      key={opt}
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        const current = formData.payment_terms_selection || [];
+                        setFormData({
+                          ...formData,
+                          payment_terms_selection: selected
+                            ? current.filter((x) => x !== opt)
+                            : [...current, opt],
+                        });
+                      }}
+                    >
+                      {selected && <Check className="h-3 w-3 me-1" />}
+                      {opt}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">תוקף ההצעה</Label>
@@ -813,36 +876,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">אמצעי תשלום</Label>
-              <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.</p>
-              <div className="flex flex-wrap gap-2">
-                {PAYMENT_TERMS_OPTIONS.map((opt) => {
-                  const selected = (formData.payment_terms_selection || []).includes(opt);
-                  return (
-                    <Button
-                      key={opt}
-                      type="button"
-                      variant={selected ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => {
-                        const current = formData.payment_terms_selection || [];
-                        setFormData({
-                          ...formData,
-                          payment_terms_selection: selected
-                            ? current.filter((x) => x !== opt)
-                            : [...current, opt],
-                        });
-                      }}
-                    >
-                      {selected && <Check className="h-3 w-3 me-1" />}
-                      {opt}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="space-y-1.5">
               {/* `notes` is the quote's general terms block — the same text an
                   order keeps in `legal_notes`. */}
               <Label className="text-sm font-medium">תנאים כלליים</Label>
@@ -850,16 +883,6 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
                 rows={8}
-                className="resize-none"
-              />
-              </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">בקשות מיוחדות</Label>
-              <Textarea
-                value={formData.special_requests || ''}
-                onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
-                placeholder="בקשות מיוחדות שיופיעו על ההצעה ועל ההזמנה (אופציונלי)"
-                rows={3}
                 className="resize-none"
               />
               </div>
@@ -897,19 +920,24 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
                   המשך
                 </Button>
               ) : (
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
-                  disabled={updateQuoteMutation.isPending}
-                >
-                  {updateQuoteMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 me-2 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 me-2" />
-                  )}
-                  שמור שינויים
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="submit"
+                    size="lg"
+                    className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
+                    disabled={updateQuoteMutation.isPending || !hasPaymentMethod}
+                  >
+                    {updateQuoteMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 me-2" />
+                    )}
+                    שמור שינויים
+                  </Button>
+                  {!hasPaymentMethod ? (
+                    <span className="text-[11px] text-muted-foreground">יש לבחור אמצעי תשלום כדי לשמור</span>
+                  ) : null}
+                </div>
               )}
             </div>
           </div>

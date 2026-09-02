@@ -573,6 +573,8 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     setFormData(prev => ({ ...prev, items: newItems, ...totals }));
   };
 
+  const hasPaymentMethod = (formData.payment_terms_selection || []).length > 0;
+
   // Open the configurator wizard for an already-set bed line (the "edit" button):
   // ensure a token, use the bed's current config lines for prefill.
   const handleSubmit = (e) => {
@@ -584,10 +586,18 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
     if (!formData.customer_name?.trim()) missing.push('שם ושם משפחה');
     if (!formData.customer_phone?.trim()) missing.push('טלפון');
     if (!formData.items.some((item) => item.product_id)) missing.push('לפחות מוצר אחד');
+    // Every quote states how the customer pays; a quote without it is not one
+    // the customer can act on, so the save is refused rather than the PDF
+    // going out with an empty line.
+    if (!hasPaymentMethod) missing.push('אמצעי תשלום');
     if (missing.length > 0) {
       toast.error(`חסרים שדות חובה: ${missing.join(', ')}`);
       // Jump back to the step that holds the missing input so the user can fix it.
-      setCurrentStep(missing.includes('לפחות מוצר אחד') ? 2 : 1);
+      setCurrentStep(
+        missing.includes('שם ושם משפחה') || missing.includes('טלפון') ? 1
+          : missing.includes('לפחות מוצר אחד') ? 2
+            : 3,
+      );
       return;
     }
     if (!isValidIsraeliPhone(formData.customer_phone)) {
@@ -979,6 +989,23 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 control that removes it. Same rule as the order form. */}
             <QuoteTotalsSummary items={formData.items} extras={[]} />
 
+            {/* Right under the products: the note a rep writes is about the
+                line they just added ("without the headboard", "deliver after
+                the 15th"), so it belongs beside it, not three cards into the
+                terms step. */}
+            <Card>
+              <CardContent className="pt-5 space-y-1.5">
+                <Label className="text-sm font-medium">בקשות מיוחדות</Label>
+                <Textarea
+                  value={formData.special_requests || ''}
+                  onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
+                  placeholder="בקשות מיוחדות שיופיעו על ההצעה ועל ההזמנה (אופציונלי)"
+                  rows={3}
+                  className="resize-none"
+                />
+              </CardContent>
+            </Card>
+
         {/* Upsell Panel */}
         {formData.items.some(item => item.sku) && (
           <div>
@@ -1052,6 +1079,43 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
             <CardTitle>תנאים ואחריות</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
+            {/* First thing on this step, and required: the rep has to mark
+                how the customer pays on every quote, and it used to sit
+                below three blocks of boilerplate text where they had to go
+                looking for it. The date and the terms text below are
+                pre-filled and rarely touched. */}
+            <div className={`space-y-1.5 rounded-lg border p-3 ${hasPaymentMethod ? 'border-border' : 'border-amber-300 bg-amber-50/40'}`}>
+              <Label className="text-sm font-medium">אמצעי תשלום *</Label>
+              <p className="text-[11px] text-muted-foreground">
+                {hasPaymentMethod ? 'בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.' : 'שדה חובה — יש לבחור לפחות אמצעי תשלום אחד כדי לשמור את ההצעה.'}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {PAYMENT_TERMS_OPTIONS.map((opt) => {
+                  const selected = (formData.payment_terms_selection || []).includes(opt);
+                  return (
+                    <Button
+                      key={opt}
+                      type="button"
+                      variant={selected ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        const current = formData.payment_terms_selection || [];
+                        setFormData({
+                          ...formData,
+                          payment_terms_selection: selected
+                            ? current.filter((x) => x !== opt)
+                            : [...current, opt],
+                        });
+                      }}
+                    >
+                      {selected && <Check className="h-3 w-3 me-1" />}
+                      {opt}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-sm font-medium">תוקף ההצעה</Label>
@@ -1081,36 +1145,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">אמצעי תשלום</Label>
-              <p className="text-[11px] text-muted-foreground">בחר אחד או יותר. יופיע על ההצעה ועל ההזמנה.</p>
-              <div className="flex flex-wrap gap-2">
-                {PAYMENT_TERMS_OPTIONS.map((opt) => {
-                  const selected = (formData.payment_terms_selection || []).includes(opt);
-                  return (
-                    <Button
-                      key={opt}
-                      type="button"
-                      variant={selected ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => {
-                        const current = formData.payment_terms_selection || [];
-                        setFormData({
-                          ...formData,
-                          payment_terms_selection: selected
-                            ? current.filter((x) => x !== opt)
-                            : [...current, opt],
-                        });
-                      }}
-                    >
-                      {selected && <Check className="h-3 w-3 me-1" />}
-                      {opt}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="space-y-1.5">
               {/* A quote's general terms block lives in `notes` — same text an
                   order keeps in `legal_notes`. See constants/documentTerms.js. */}
               <Label className="text-sm font-medium">תנאים כלליים</Label>
@@ -1118,16 +1152,6 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
                 rows={8}
-                className="resize-none"
-              />
-              </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">בקשות מיוחדות</Label>
-              <Textarea
-                value={formData.special_requests || ''}
-                onChange={(e) => setFormData({...formData, special_requests: e.target.value})}
-                placeholder="בקשות מיוחדות שיופיעו על ההצעה ועל ההזמנה (אופציונלי)"
-                rows={3}
                 className="resize-none"
               />
               </div>
@@ -1176,19 +1200,24 @@ export default function NewQuote({ asDialog = false, dialogLeadId = null, onDial
                   ) : null}
                 </>
               ) : (
-                <Button
-                  type="submit"
-                  size="lg"
-                  className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
-                  disabled={createQuoteMutation.isPending}
-                >
-                  {createQuoteMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 me-2 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4 me-2" />
-                  )}
-                  שמור הצעה
-                </Button>
+                <>
+                  <Button
+                    type="submit"
+                    size="lg"
+                    className="h-11 px-8 text-base font-semibold shadow-md hover:shadow-lg transition-shadow"
+                    disabled={createQuoteMutation.isPending || !hasPaymentMethod}
+                  >
+                    {createQuoteMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 me-2" />
+                    )}
+                    שמור הצעה
+                  </Button>
+                  {!hasPaymentMethod ? (
+                    <span className="text-[11px] text-muted-foreground">יש לבחור אמצעי תשלום כדי לשמור את ההצעה</span>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
