@@ -26,10 +26,6 @@ checks AS (
   FROM (SELECT coalesce(nullif(source, ''), '—') s, count(*) n FROM day_leads GROUP BY 1) x
 
   UNION ALL
-  SELECT 3, 'by source_channel', coalesce(string_agg(s || ': ' || n, ' · ' ORDER BY n DESC), '—')
-  FROM (SELECT coalesce(nullif(source_channel, ''), '—') s, count(*) n FROM day_leads GROUP BY 1) x
-
-  UNION ALL
   SELECT 4, 'by hour (Israel)', coalesce(string_agg(h || ':' || n, ' ' ORDER BY h), '—')
   FROM (SELECT to_char(created_date AT TIME ZONE 'Asia/Jerusalem', 'HH24') h, count(*) n FROM day_leads GROUP BY 1) x
 
@@ -51,20 +47,6 @@ checks AS (
                 WHERE o.phone_normalized = d.phone_normalized AND o.id <> d.id AND o.created_date < day.d0)
 
   UNION ALL
-  SELECT 8, 'leads with facebook_created_time on 30/08 (Israel) — by the day they were CREATED here',
-         coalesce(string_agg(dd || ': ' || n, ' · ' ORDER BY dd), '—')
-  FROM (SELECT to_char(created_date AT TIME ZONE 'Asia/Jerusalem', 'DD/MM') dd, count(*) n
-        FROM public.leads
-        WHERE facebook_created_time IS NOT NULL
-          AND left(btrim(facebook_created_time), 10) IN ('30/08/2026', '2026-08-30')
-        GROUP BY 1) x
-
-  UNION ALL
-  SELECT 9, 'facebook_created_time formats seen (sample)',
-         coalesce(string_agg(DISTINCT left(facebook_created_time, 19), ' · '), '—')
-  FROM (SELECT facebook_created_time FROM day_leads WHERE facebook_created_time IS NOT NULL LIMIT 5) x
-
-  UNION ALL
   SELECT 10, 'leads on 30/08 with no phone / invalid phone', 
          (SELECT count(*) FROM day_leads WHERE phone_normalized IS NULL)::text || ' no phone · '
          || (SELECT count(*) FROM day_leads WHERE phone_normalized IS NOT NULL AND length(phone_normalized) NOT BETWEEN 11 AND 12)::text || ' odd length'
@@ -74,7 +56,16 @@ checks AS (
   FROM (SELECT coalesce(left(unique_id, 6), '—') p, count(*) n FROM day_leads GROUP BY 1) x
 
   UNION ALL
-  SELECT 12, 'by facebook_form_id', coalesce(string_agg(f || ': ' || n, ' · ' ORDER BY n DESC), '—')
-  FROM (SELECT coalesce(nullif(facebook_form_id, ''), '—') f, count(*) n FROM day_leads GROUP BY 1) x
+  SELECT 12, 'lead columns that exist for source / facebook timing (so the next check can use them)',
+         coalesce(string_agg(column_name, ', ' ORDER BY column_name), '—')
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'leads'
+    AND (column_name LIKE 'facebook_%' OR column_name LIKE 'source%' OR column_name IN ('landing_page','utm_source','last_api_update'))
+
+  UNION ALL
+  SELECT 13, 'leads on 30/08 (Israel) by last_api_update day (when the webhook last touched them)',
+         coalesce(string_agg(dd || ': ' || n, ' · ' ORDER BY dd), '—')
+  FROM (SELECT coalesce(to_char(last_api_update AT TIME ZONE 'Asia/Jerusalem', 'DD/MM'), '—') dd, count(*) n
+        FROM day_leads GROUP BY 1) x
 )
 SELECT ord, label, value FROM checks ORDER BY ord;
