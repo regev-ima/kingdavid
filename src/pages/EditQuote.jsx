@@ -43,7 +43,12 @@ export default function EditQuote({ id: idProp, isModal = false, onExit, onSaved
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { effectiveUser, isLoading: isLoadingUser } = useEffectiveCurrentUser();
-  const [currentStep, setCurrentStep] = useState(1);
+  // Editing opens on the products step. The customer details were settled
+  // when the quote was written; what brings a rep back is a line to change,
+  // a price to fix or a discount to add, and landing on step 1 made every
+  // edit start with a "המשך" click past a form they had no reason to touch.
+  // Step 1 is still one click away on the step bar.
+  const [currentStep, setCurrentStep] = useState(2);
   const steps = [
     { id: 1, name: 'פרטי לקוח' },
     { id: 2, name: 'מוצרים' },
