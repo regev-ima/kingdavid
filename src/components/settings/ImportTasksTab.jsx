@@ -608,7 +608,7 @@ export default function ImportTasksTab() {
             <div className="space-y-2">
               <Progress value={pct} />
               <p className="text-xs text-muted-foreground">
-                {fmt(progress.current)} / {fmt(progress.total)}
+                <span dir="ltr">{fmt(progress.current)} / {fmt(progress.total)}</span>
                 {phase === 'processing' || phase === 'done' ? (
                   <> · {fmt(running.created_tasks)} נוצרו · {fmt(running.updated_tasks)} עודכנו · {fmt(running.unmatched_rows)} ללא ליד · {fmt(running.failed_rows)} נכשלו</>
                 ) : null}

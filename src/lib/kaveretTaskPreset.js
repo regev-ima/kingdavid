@@ -71,12 +71,17 @@ export function kaveretTaskMapping(headers) {
 
 /**
  * Kaveret's task-status label → sales_tasks.task_status.
- * "בוצעה" / "הושלמה" close it; "לא הושלמה" (and anything else) leaves it open.
+ *
+ * Closed: "בוצעה" / "הושלמה", and "לא ניתנת להשלמה" / "בוטלה" — a task Kaveret
+ * gave up on is not a to-do, and this CRM has no third state for it.
+ * Open: "לא הושלמה", "בביצוע", "מושהית", and anything else.
  */
 export function kaveretTaskStatus(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return 'not_completed';
-  if (/^(completed|done)$/i.test(s)) return 'completed';
+  if (/^(completed|done|cancelled|canceled)$/i.test(s)) return 'completed';
+  // Given up on — closed, before the negation test below reads its "לא".
+  if (/לא ניתנ|בוטל|מבוטל/.test(s)) return 'completed';
   // A negation anywhere keeps it open — "לא הושלמה", "לא בוצעה". Tested with
   // explicit whitespace, not \b: JavaScript's word boundary only knows ASCII
   // letters, so \bלא\b never matched inside Hebrew text and every "לא הושלמה"
