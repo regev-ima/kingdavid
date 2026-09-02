@@ -26,8 +26,8 @@ checks AS (
   FROM (SELECT coalesce(nullif(source, ''), '—') s, count(*) n FROM day_leads GROUP BY 1) x
 
   UNION ALL
-  SELECT 3, 'by source_channel', coalesce(string_agg(s || ': ' || n, ' · ' ORDER BY n DESC), '—')
-  FROM (SELECT coalesce(nullif(source_channel, ''), '—') s, count(*) n FROM day_leads GROUP BY 1) x
+  SELECT 3, 'by source_form', coalesce(string_agg(s || ': ' || n, ' · ' ORDER BY n DESC), '—')
+  FROM (SELECT coalesce(nullif(source_form, ''), '—') s, count(*) n FROM day_leads GROUP BY 1) x
 
   UNION ALL
   SELECT 4, 'by hour (Israel)', coalesce(string_agg(h || ':' || n, ' ' ORDER BY h), '—')
