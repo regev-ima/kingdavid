@@ -228,6 +228,20 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
   if (filters.rep && filters.rep !== 'all') {
     conditions.push({ $or: [{ rep1: filters.rep }, { rep2: filters.rep }] });
   }
+  conditions.push(...listFilterConditions(filters, { phoneKeySupported, sourceChannelSupported }));
+  if (conditions.length === 0) return {};
+  if (conditions.length === 1) return conditions[0];
+  return { $and: conditions };
+}
+
+// The filters picked from the bar above the list — status, source, free-text
+// search — as query conditions. One helper for the list query AND the lead
+// KPI tiles, so "לידים שהתקבלו / לא משויכים / בטיפול" count exactly the rows
+// the list shows. Rep and date are handled by each caller: the tiles already
+// carried those, and the tiles that read other tables (quotes, tasks, orders)
+// keep carrying only those.
+function listFilterConditions(filters, { phoneKeySupported, sourceChannelSupported }) {
+  const conditions = [];
   if (filters.status && filters.status !== 'all') {
     conditions.push({ status: filters.status });
   }
@@ -252,9 +266,7 @@ function buildLeadsQuery({ filters, dateRange, scope, userEmail, seesAllLeads, h
       { email: { $regex: s, $options: 'i' } },
     ] });
   }
-  if (conditions.length === 0) return {};
-  if (conditions.length === 1) return conditions[0];
-  return { $and: conditions };
+  return conditions;
 }
 
 const DATE_PRESETS = [
@@ -498,38 +510,57 @@ export default function LeadManagement() {
   // the view. Computed on mount; a page left open past midnight is refreshed by
   // the normal refetch cycle.
   const todayWindow = useMemo(() => israelDayWindow(), []);
+  // Status / source / search picked from the bar above the list. The three
+  // lead tiles count within them, so a manager who picks "כל הזמנים" and a
+  // status reads how many leads sit in that status straight off the tiles —
+  // before this they only moved with the date range and the rep, and the
+  // list under them was the only thing that filtered.
+  const hasListFilter = filters.status !== 'all' || filters.source !== 'all' || Boolean(filters.search);
   // ───────────────────────────────────────────────────────────────
-  // Category KPI tiles. All buckets respect the selected date range.
+  // Category KPI tiles. All buckets respect the selected date range, the rep,
+  // and the list filters (status / source / search).
   // ───────────────────────────────────────────────────────────────
   const EMPTY_KPI = {
-    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0,
+    assignedUnhandledCount: 0, unassignedCount: 0, handlingCount: 0, totalCount: 0, rangeTotalCount: 0,
   };
   const { data: kpiCounts = EMPTY_KPI } = useQuery({
-    queryKey: ['leadMgmt-kpis', seesAllLeads, userEmail, filters.rep, fromIso, toIso, hourKey],
+    queryKey: ['leadMgmt-kpis', seesAllLeads, userEmail, filters.rep, filters.status, filters.source, filters.search, fromIso, toIso, hourKey, phoneKeySupported, sourceChannelSupported],
     enabled: !!effectiveUser && !!userEmail && repResolved,
     staleTime: 60_000,
     placeholderData: (p) => p,
     queryFn: async () => {
-      // base(extra) builds a count filter honoring the page date range + hour window.
-      const base = (extra) => {
+      // base(extra) builds a count filter honoring the page date range + hour
+      // window + rep, and (unless told otherwise) the list filters too.
+      const base = (extra, { withListFilters = true } = {}) => {
         const conditions = [];
         if (!seesAllLeads) conditions.push({ $or: [{ rep1: userEmail }, { rep2: userEmail }, { pending_rep_email: userEmail }] });
         if (filters.rep && filters.rep !== 'all') conditions.push({ $or: [{ rep1: filters.rep }, { rep2: filters.rep }] });
         if (fromIso && toIso) conditions.push({ effective_sort_date: { $gte: fromIso, $lte: toIso } });
         if (hourCond) conditions.push(hourCond);
+        if (withListFilters) conditions.push(...listFilterConditions(filters, { phoneKeySupported, sourceChannelSupported }));
         if (Array.isArray(extra)) conditions.push(...extra);
         else if (extra) conditions.push(extra);
         if (conditions.length === 0) return {};
         if (conditions.length === 1) return conditions[0];
         return { $and: conditions };
       };
-      const [assignedUnhandledCount, unassignedCount, handlingCount, totalCount] = await Promise.all([
+      const [assignedUnhandledCount, unassignedCount, handlingCount, totalCount, rangeTotalCount] = await Promise.all([
         base44.entities.Lead.count(base([{ status: 'new_lead' }, { rep1: { $ne: null } }, { rep1: { $ne: '' } }])),
         base44.entities.Lead.count(base({ $or: [{ rep1: null }, { rep1: '' }] })),
+        // A status outside the handling set makes this 0, which is the truth:
+        // no lead in "אבוד" is in handling.
         base44.entities.Lead.count(base({ status: { $nin: HANDLING_EXCLUDED_STATUSES } })),
         base44.entities.Lead.count(base()),
+        // Everything in the range regardless of the list filters — the
+        // denominator the filter banner reports the filtered count against.
+        hasListFilter
+          ? base44.entities.Lead.count(base(undefined, { withListFilters: false }))
+          : null,
       ]);
-      return { assignedUnhandledCount, unassignedCount, handlingCount, totalCount };
+      return {
+        assignedUnhandledCount, unassignedCount, handlingCount, totalCount,
+        rangeTotalCount: rangeTotalCount ?? totalCount,
+      };
     },
   });
 
@@ -972,7 +1003,10 @@ export default function LeadManagement() {
   // their own leads is not filtering, that is where the page starts them;
   // measuring it against 'all' would leave the "לידים שהתקבלו" tile unable to
   // light up for anyone but a manager.
-  const hasActiveFilter = Boolean(filters.search) || filters.status !== 'all' || filters.source !== 'all' || filters.rep !== defaultRep || scope !== 'all';
+  const hasActiveFilter = hasListFilter || filters.rep !== defaultRep || scope !== 'all';
+  // Shown under the quote / task / sales tiles while a list filter is on, so
+  // nobody reads "25 הצעות פתוחות" as "25 in this status".
+  const otherTableTileNote = hasListFilter ? 'ללא סינון סטטוס/מקור' : undefined;
 
   // Switch the active scope (toggling off if it's already active). Scopes are
   // status/assignment-defined, so a lingering status filter (e.g. one picked
@@ -1086,6 +1120,12 @@ export default function LeadManagement() {
           RTL ellipsis clips the leading digits. Giving each tile room is the
           only version that stays readable. */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1800px]:grid-cols-7 gap-3">
+        {/* The three lead tiles count within the status / source / search
+            filters, like the list. The quote, task and sales tiles are counted
+            off other tables (quotes, tasks, orders), where a lead status means
+            nothing, so they stay on rep + date and say so while a list filter
+            is on — a steady number that is clearly labeled beats a "clever"
+            one nobody can read. */}
         {/* Clicking this clears the filters back to where the page STARTS —
             which for a rep is their own leads, not the whole floor's. It used
             to reset rep to 'all', so the tile showed a rep "0 arrived today"
@@ -1133,6 +1173,7 @@ export default function LeadManagement() {
           label="הצעות מחיר פתוחות"
           value={relatedScopeSets.open_quotes.length}
           sub="סה״כ פתוחות"
+          secondarySub={otherTableTileNote}
           icon={FileText}
           tone="emerald"
           isActive={scope === 'open_quotes'}
@@ -1142,6 +1183,7 @@ export default function LeadManagement() {
           label={tasksTileLabel}
           value={relatedScopeSets.tasks_today.length}
           sub={taskWindowIsToday ? 'מתוכן להיום' : activePresetLabel}
+          secondarySub={otherTableTileNote}
           icon={ClipboardCheck}
           tone="amber"
           isActive={scope === 'tasks_today'}
@@ -1152,6 +1194,7 @@ export default function LeadManagement() {
           value={relatedScopeSets.tasks_open.length}
           sub="טרם טופלו"
           subTone="text-rose-600"
+          secondarySub={otherTableTileNote}
           icon={Clock}
           tone="rose"
           isActive={scope === 'tasks_open'}
@@ -1162,7 +1205,7 @@ export default function LeadManagement() {
           value={sales.count}
           sub={`${fmt(sales.total)} ₪`}
           subTone="text-emerald-600"
-          secondarySub={activePresetLabel}
+          secondarySub={otherTableTileNote ?? activePresetLabel}
           icon={DollarSign}
           tone="emerald"
           isActive={scope === 'won'}
@@ -1346,9 +1389,12 @@ export default function LeadManagement() {
         ) : null}
       </div>
 
-      {/* Drill-down summary — only when a tile or a rep bucket is pinned. The
-          everyday filters have "נקה פילטרים" above and need no banner. */}
-      {scope !== 'all' ? (
+      {/* Filter summary — when a tile or a rep bucket is pinned, and also when
+          a status / source / search is picked from the bar: that is the one
+          place the screen says how many leads match the filter, and it used
+          to appear only for a pinned tile, leaving the "how many are in this
+          status" question answered only by the footer at the end of the list. */}
+      {scope !== 'all' || hasListFilter ? (
         <ActiveFilterSummary
           scope={scope}
           filters={filters}
@@ -1363,7 +1409,7 @@ export default function LeadManagement() {
           repNameByEmail={repNameByEmail}
           customStatusesForFilter={customStatusesForFilter}
           filteredCount={filteredCount}
-          totalCount={kpiCounts.totalCount}
+          totalCount={kpiCounts.rangeTotalCount}
           onClearScope={() => setScope('all')}
           onClearFilter={(key) => setFilters((f) => ({ ...f, [key]: key === 'search' ? '' : 'all' }))}
           onClearAll={() => {
