@@ -191,7 +191,12 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
       setEditingTask({ ...task, status: leadStatus });
       setOriginalLeadStatus(leadStatus);
     } else {
-      const repEmail = !isAdmin ? (effectiveUser?.email || '') : '';
+      // Whoever opens the dialog is the task's rep when the lead has none —
+      // admins included. An admin working an unowned lead (changing its
+      // status, booking a call) used to get an empty rep and a "יש לבחור
+      // נציג ראשי" refusal; the task is theirs, the lead stays unowned, and
+      // the rep select is still there to hand it to someone else.
+      const repEmail = effectiveUser?.email || '';
       setEditingTask(blankTask(preSelectedLead, repEmail));
       setOriginalLeadStatus(preSelectedLead?.status || '');
     }
@@ -227,10 +232,11 @@ export default function SalesTaskDialog({ isOpen, onClose, task = null, preSelec
 
   // A task inherits its lead's rep. Assignment tasks inherit too, but never
   // fall back to whoever opened the dialog — an unowned lead is precisely what
-  // they exist to route, so that one keeps asking.
+  // they exist to route, so that one keeps asking. Every other task falls
+  // back to the opener, admin or not (see the create branch above).
   useEffect(() => {
     if (!isOpen || !editingTask || editingTask.rep1) return;
-    const fallback = !isAdmin && editingTask.task_type !== 'assignment' ? (effectiveUser?.email || '') : '';
+    const fallback = editingTask.task_type !== 'assignment' ? (effectiveUser?.email || '') : '';
     const inherited = resolveTaskRep(editingTask.lead, effectiveUser?.email, fallback);
     if (!inherited) return;
     setEditingTask(prev => (prev && !prev.rep1 ? { ...prev, rep1: inherited } : prev));

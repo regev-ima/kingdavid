@@ -525,8 +525,14 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
   // intercepts with the assign-first gate so a task can never be
   // attached to an owner-less lead. Every "משימה חדשה" trigger in
   // this screen goes through here.
+  //
+  // An admin skips the gate: they change statuses and open tasks on leads
+  // they will never own, and making them pick an owner first turned every
+  // such action into an assignment. The task they open carries them as its
+  // rep (SalesTaskDialog falls back to whoever opens it) while the lead
+  // itself stays unowned, so the assignment queue still shows it.
   const requestAddTask = () => {
-    if (lead?.rep1) {
+    if (lead?.rep1 || isAdmin) {
       setShowAddTaskDialog(true);
     } else {
       setAssignBeforeTaskRep('');
@@ -544,9 +550,18 @@ export default function LeadDetails({ leadId: leadIdProp, initialMode: initialMo
     );
     // Prefer the latest still-open task (that's where the status actually
     // gets changed); otherwise the most recent task; with none, start one.
-    const target = sorted.find(
+    //
+    // An assignment task has no status control — it exists to pick an owner
+    // — so for an admin it is skipped: on an unowned lead the only open task
+    // is usually that one, and landing there left the admin with no way to
+    // change the status short of assigning the lead. They get a fresh task
+    // instead (requestAddTask lets them straight in).
+    const usable = isAdmin
+      ? sorted.filter((t) => t?.task_type !== 'assignment')
+      : sorted;
+    const target = usable.find(
       (t) => String(t?.task_status || '').toLowerCase() === 'not_completed',
-    ) || sorted[0];
+    ) || usable[0];
     if (target) {
       setEditingTask(target);
       setShowEditTaskDialog(true);
