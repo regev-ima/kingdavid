@@ -190,7 +190,16 @@ export default function ImportTasksTab() {
         if (!cands.length) return { ...r, lead: null, how: r.phone ? 'none' : 'nophone', ...effectiveRep(r, null) };
         const byName = r.name ? cands.filter((l) => String(l.full_name || '').includes(r.name)) : [];
         const pool = byName.length ? byName : cands;
-        const lead = [...pool].sort((a, b) => new Date(b.created_date || 0) - new Date(a.created_date || 0))[0];
+        // The lead that existed when the task was created: the newest lead
+        // created at or before the task's stamp, else the earliest. Same rule
+        // as process_task_import(); the wall-clock string is read as local
+        // time here, close enough for a preview.
+        const taskAt = r.created ? new Date(r.created.replace(' ', 'T')).getTime() : NaN;
+        const at = (l) => new Date(l.created_date || 0).getTime();
+        const before = Number.isNaN(taskAt) ? pool : pool.filter((l) => at(l) <= taskAt);
+        const lead = before.length
+          ? [...before].sort((a, b) => at(b) - at(a))[0]
+          : [...pool].sort((a, b) => at(a) - at(b))[0];
         return { ...r, lead, how: byName.length ? 'name' : (cands.length > 1 ? 'phone-multi' : 'phone'), ...effectiveRep(r, lead) };
       });
       setPreview({ rows: out, loading: false });
@@ -741,7 +750,7 @@ const BATCH_STATUS_LABEL = {
 const HOW_LABEL = {
   name:          { text: 'לפי טלפון ושם',              tone: 'text-emerald-700' },
   phone:         { text: 'לפי טלפון',                   tone: 'text-emerald-700' },
-  'phone-multi': { text: 'לפי טלפון (כמה לידים — נבחר החדש)', tone: 'text-amber-700' },
+  'phone-multi': { text: 'לפי טלפון (כמה לידים — נבחר זה שהיה קיים בזמן המשימה)', tone: 'text-amber-700' },
   none:          { text: 'לא נמצא ליד',                 tone: 'text-destructive' },
   nophone:       { text: 'אין טלפון',                   tone: 'text-destructive' },
   created:       { text: 'נוצרה משימה',                 tone: 'text-emerald-700' },
