@@ -20,6 +20,9 @@
 //   • "ליד id" exists as a column and is empty in every export seen, which is
 //     why the import matches the lead by phone. It is still mapped: a file
 //     that fills it gets the stronger match for free.
+//   • A task's identity on re-import is its lead + "תאריך יצירה" (to the
+//     minute) — the one stamp Kaveret never changes. Text and due date are
+//     what a re-run updates, not what it matches on (process_task_import).
 //
 // A PRESET, not a lock — it fills the dropdowns and the user can still change
 // anything before importing.
