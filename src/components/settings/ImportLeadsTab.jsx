@@ -72,6 +72,12 @@ const FIELDS = [
   { key: 'subject',      label: 'נושא',          aliases: ['subject', 'topic', 'נושא'] },
   { key: 'budget',       label: 'תקציב',         aliases: ['budget', 'תקציב'] },
   { key: 'preferred_product', label: 'מוצר מבוקש', aliases: ['product', 'מוצר', 'מוצר מבוקש'] },
+  // The lead form's two questions. Kaveret keeps them as custom fields headed
+  // by the question text; the preset matches those by phrase (kaveretPreset).
+  { key: 'facebook_requested_size', label: 'מה מידת המזרן?',
+    aliases: ['facebook_requested_size', 'מה מידת המזרן שאתם מחפשים?', 'מה מידת המזרן שתרצו?', 'מידת המזרן', 'מידת מזרן'] },
+  { key: 'facebook_try_at_home', label: 'איפה תרצו לנסות את המזרן?',
+    aliases: ['facebook_try_at_home', 'איפה תרצו לנסות את המזרן?', 'איפה תרצו לנסות', 'איפה לנסות'] },
   // Marketing attribution. These are what the repeat-enquiry card shows per
   // enquiry ("this person came back three times — from which ad?"), so losing
   // them on import empties that screen for every historical lead.

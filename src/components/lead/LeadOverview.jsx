@@ -425,6 +425,13 @@ export default function LeadOverview({
     { k: 'UTM Source', v: lead?.utm_source || sourceLabel },
     { k: 'UTM Campaign', v: lead?.utm_campaign || lead?.facebook_campaign_name },
     { k: 'UTM Content', v: lead?.utm_content || lead?.facebook_ad_name },
+    // The two answers the customer gave on the lead form. These are what a rep
+    // wants beside the notes — the size they asked for and where they want to
+    // try it — so they sit right above the notes box, and only when the lead
+    // has them: most leads never filled the form, and a row of "—" says
+    // nothing.
+    ...(lead?.facebook_requested_size ? [{ k: 'מידת מזרן מבוקשת', v: lead.facebook_requested_size }] : []),
+    ...(lead?.facebook_try_at_home ? [{ k: 'איפה לנסות', v: lead.facebook_try_at_home }] : []),
   ];
 
   const copyPhone = async () => {
