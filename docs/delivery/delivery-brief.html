@@ -1,0 +1,615 @@
+<title>תיק מסירה קינג דיוויד</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Heebo:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --ground:#F2F4F1;
+    --surface:#FBFCFA;
+    --sunk:#E9ECE7;
+    --ink:#101C2B;
+    --muted:#5A6672;
+    --rule:#D5D9D2;
+    --rule-strong:#B9BFB6;
+    --accent:#2D5F7C;
+    --stable:#4A7C59;
+    --moving:#B0682A;
+    --halt:#9A3B2E;
+    --band:rgba(154,59,46,.07);
+
+    --serif:"Frank Ruhl Libre",'Times New Roman',serif;
+    --sans:"Heebo",-apple-system,"Segoe UI",Arial,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#14181A;
+      --surface:#1C2225;
+      --sunk:#232A2D;
+      --ink:#E9EBE6;
+      --muted:#98A2AA;
+      --rule:#2E3639;
+      --rule-strong:#414A4E;
+      --accent:#74A8C6;
+      --stable:#83B692;
+      --moving:#DBA063;
+      --halt:#D67B6C;
+      --band:rgba(214,123,108,.10);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#14181A;
+    --surface:#1C2225;
+    --sunk:#232A2D;
+    --ink:#E9EBE6;
+    --muted:#98A2AA;
+    --rule:#2E3639;
+    --rule-strong:#414A4E;
+    --accent:#74A8C6;
+    --stable:#83B692;
+    --moving:#DBA063;
+    --halt:#D67B6C;
+    --band:rgba(214,123,108,.10);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    direction:rtl;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-weight:300;
+    font-size:16.5px;
+    line-height:1.72;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1080px;margin:0 auto;padding:0 28px 96px}
+  .col{max-width:66ch}
+
+  /* ---------- masthead ---------- */
+  .masthead{
+    padding:56px 0 30px;
+    border-bottom:2px solid var(--ink);
+    display:flex;flex-wrap:wrap;gap:24px;align-items:flex-end;justify-content:space-between;
+  }
+  .brandline{
+    font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:14px;
+  }
+  h1{
+    font-family:var(--serif);font-weight:900;
+    font-size:clamp(34px,5.4vw,54px);line-height:1.06;margin:0;
+    letter-spacing:-.01em;text-wrap:balance;
+  }
+  .sub{margin:14px 0 0;color:var(--muted);font-size:17px;max-width:48ch}
+  .stamp{
+    font-family:var(--mono);font-size:11.5px;line-height:2;color:var(--muted);
+    text-align:left;white-space:nowrap;
+  }
+  .stamp b{color:var(--ink);font-weight:500}
+
+  /* ---------- figure strip ---------- */
+  .strip{
+    display:grid;gap:1px;background:var(--rule);
+    grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    border-bottom:1px solid var(--rule);
+  }
+  .fig{background:var(--ground);padding:26px 4px 24px}
+  .fig .n{
+    font-family:var(--mono);font-weight:500;font-size:clamp(28px,4vw,38px);
+    line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+  }
+  .fig .k{font-size:13.5px;color:var(--muted);margin-top:9px;line-height:1.45}
+  .fig.hot .n{color:var(--moving)}
+  .fig.stop .n{color:var(--halt)}
+
+  /* ---------- prose ---------- */
+  h2{
+    font-family:var(--serif);font-weight:700;font-size:clamp(23px,2.9vw,30px);
+    line-height:1.2;margin:0 0 6px;letter-spacing:-.005em;text-wrap:balance;
+  }
+  .exlabel{
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--accent);display:block;margin-bottom:9px;
+  }
+  p{margin:0 0 18px}
+  .lead{font-size:19px;line-height:1.66;font-weight:300}
+  strong{font-weight:500;color:var(--ink)}
+  section{padding-top:56px}
+  .thesis{
+    font-family:var(--serif);font-weight:500;font-size:clamp(21px,2.7vw,27px);
+    line-height:1.5;border-right:3px solid var(--moving);padding:2px 22px 2px 0;
+    margin:34px 0 0;max-width:34ch;
+  }
+
+  /* ---------- bar exhibits ---------- */
+  .bars{display:grid;gap:9px;margin-top:26px}
+  .bar{
+    display:grid;grid-template-columns:130px 1fr 62px;
+    align-items:center;gap:16px;
+  }
+  .bar .lab{font-size:14.5px;color:var(--ink)}
+  .bar .lab i{display:block;font-style:normal;font-size:12px;color:var(--muted);line-height:1.3}
+  .track{background:var(--sunk);height:26px;border-radius:2px;overflow:hidden;display:flex}
+  .fill{height:100%;background:var(--accent);border-radius:2px 0 0 2px}
+  .fill.moving{background:var(--moving)}
+  .fill.halt{background:var(--halt)}
+  .bar .val{
+    font-family:var(--mono);font-size:14.5px;font-variant-numeric:tabular-nums;
+    color:var(--muted);text-align:left;
+  }
+  .bar.flag .val{color:var(--halt);font-weight:500}
+  .bar.hot .val{color:var(--moving);font-weight:500}
+
+  /* ---------- phase table ---------- */
+  .phases{
+    display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);
+    grid-template-columns:repeat(auto-fit,minmax(270px,1fr));margin-top:26px;
+  }
+  .phase{background:var(--surface);padding:24px 22px}
+  .phase h3{
+    font-family:var(--serif);font-weight:700;font-size:20px;margin:0 0 4px;line-height:1.25;
+  }
+  .phase .when{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:16px}
+  .phase dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:14px}
+  .phase dt{color:var(--muted)}
+  .phase dd{margin:0;font-family:var(--mono);font-size:13.5px;font-variant-numeric:tabular-nums}
+  .phase.undoc{border-right:3px solid var(--moving)}
+  .phase .note{
+    margin:18px 0 0;font-size:13.5px;color:var(--muted);line-height:1.6;
+    padding-top:14px;border-top:1px solid var(--rule);
+  }
+
+  /* ---------- scatter ---------- */
+  .plot{margin-top:26px;overflow-x:auto}
+  .plot svg{display:block;min-width:660px;width:100%;height:auto;direction:ltr}
+  .gridline{stroke:var(--rule);stroke-width:1}
+  .axis{stroke:var(--rule-strong);stroke-width:1}
+  .tick{fill:var(--muted);font-family:var(--mono);font-size:11px}
+  .axlab{fill:var(--muted);font-family:var(--sans);font-size:12.5px;font-weight:400}
+  .dot{fill:var(--stable);opacity:.82}
+  .dot.moving{fill:var(--moving);opacity:1}
+  .dotlab{fill:var(--ink);font-family:var(--mono);font-size:11px}
+  .zonelab{fill:var(--halt);font-family:var(--sans);font-size:12.5px;font-weight:500}
+  .divider{stroke:var(--halt);stroke-width:1;stroke-dasharray:4 4}
+
+  .legend{
+    display:flex;gap:22px;flex-wrap:wrap;margin-top:16px;
+    font-size:13.5px;color:var(--muted);
+  }
+  .legend span{display:flex;align-items:center;gap:8px}
+  .swatch{width:11px;height:11px;border-radius:50%;flex:none}
+
+  /* ---------- stopped work ---------- */
+  .stopped{
+    columns:2;column-gap:36px;margin-top:24px;font-size:14.5px;
+  }
+  .stopped div{
+    break-inside:avoid;padding:9px 0;border-bottom:1px solid var(--rule);
+    display:flex;gap:12px;align-items:baseline;
+  }
+  .stopped time{
+    font-family:var(--mono);font-size:12px;color:var(--muted);
+    flex:none;font-variant-numeric:tabular-nums;
+  }
+  .stopped b{font-weight:500}
+
+  /* ---------- verdict ---------- */
+  .verdict{
+    display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);
+    grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-top:28px;
+  }
+  .vcard{background:var(--surface);padding:26px 24px}
+  .vcard .tag{
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    display:block;margin-bottom:10px;
+  }
+  .vcard.in .tag{color:var(--stable)}
+  .vcard.out .tag{color:var(--moving)}
+  .vcard h3{font-family:var(--serif);font-weight:700;font-size:21px;margin:0 0 12px}
+  .vcard p{font-size:14.5px;margin:0 0 12px;color:var(--muted);line-height:1.62}
+  .vcard ul{margin:0;padding:0;list-style:none;font-size:14px}
+  .vcard li{
+    padding:7px 0;border-top:1px solid var(--rule);
+    display:flex;justify-content:space-between;gap:14px;
+  }
+  .vcard li span:last-child{
+    font-family:var(--mono);font-size:12.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums;text-align:left;flex:none;
+  }
+  .vcard.in li span:last-child{color:var(--stable)}
+  .vcard.out li span:last-child{color:var(--moving)}
+
+  /* ---------- clauses ---------- */
+  .clauses{display:grid;gap:1px;background:var(--rule);margin-top:26px;
+    border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .clause{
+    background:var(--ground);padding:20px 0;
+    display:grid;grid-template-columns:88px 1fr;gap:22px;align-items:start;
+  }
+  .clause .no{
+    font-family:var(--mono);font-size:12px;color:var(--accent);
+    letter-spacing:.08em;padding-top:3px;
+  }
+  .clause h4{font-family:var(--serif);font-size:18px;font-weight:700;margin:0 0 5px}
+  .clause p{font-size:14.5px;color:var(--muted);margin:0;line-height:1.62}
+
+  /* ---------- callout ---------- */
+  .callout{
+    background:var(--surface);border:1px solid var(--rule);
+    border-right:3px solid var(--accent);padding:24px 24px;margin-top:30px;
+  }
+  .callout h4{font-family:var(--serif);font-size:19px;font-weight:700;margin:0 0 8px}
+  .callout p{font-size:15px;margin:0 0 12px;line-height:1.65}
+  .callout p:last-child{margin:0}
+  .callout cite{
+    display:block;font-style:normal;font-family:var(--mono);font-size:12px;
+    color:var(--muted);margin-top:14px;padding-top:12px;border-top:1px solid var(--rule);
+  }
+  .warn{border-right-color:var(--halt)}
+  .warn h4{color:var(--halt)}
+
+  /* ---------- checklist ---------- */
+  .todo{margin-top:24px;font-size:15px}
+  .todo div{
+    padding:11px 0;border-bottom:1px solid var(--rule);
+    display:flex;gap:13px;align-items:baseline;
+  }
+  .todo div::before{
+    content:"";width:13px;height:13px;border:1.5px solid var(--rule-strong);
+    border-radius:2px;flex:none;position:relative;top:2px;
+  }
+  .todo div.must::before{border-color:var(--halt)}
+  .todo em{font-style:normal;color:var(--muted);font-size:13.5px}
+
+  code{
+    font-family:var(--mono);font-size:.88em;background:var(--sunk);
+    padding:2px 6px;border-radius:3px;direction:ltr;display:inline-block;
+  }
+
+  footer{
+    margin-top:72px;padding-top:26px;border-top:2px solid var(--ink);
+    font-size:13.5px;color:var(--muted);display:flex;
+    justify-content:space-between;gap:20px;flex-wrap:wrap;
+  }
+  footer code{background:none;padding:0}
+
+  @media (max-width:720px){
+    .bar{grid-template-columns:104px 1fr 50px;gap:11px}
+    .bar .lab{font-size:13.5px}
+    .stopped{columns:1}
+    .clause{grid-template-columns:1fr;gap:6px}
+    .stamp{text-align:right}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="brandline">אימג'יק · תיק מסירה · שלב א'</div>
+      <h1>מה נבנה, מה השתנה,<br>ומה עוד לא נסגר</h1>
+      <p class="sub">דוח ראיות והיקף עבודה, כבסיס להסכם המסירה ולמסגרת ההמשך.</p>
+    </div>
+    <div class="stamp">
+      נכון ל־<b>03/09/2026</b><br>
+      תקופת ההתקשרות <b>~10 חודשים</b><br>
+      מקור הנתונים <b>היסטוריית גרסאות</b><br>
+      סיווג <b>מסמך פנימי</b>
+    </div>
+  </header>
+
+  <div class="strip">
+    <div class="fig"><div class="n">1,010</div><div class="k">עדכוני קוד</div></div>
+    <div class="fig"><div class="n">346</div><div class="k">מחזורי עבודה שהושלמו</div></div>
+    <div class="fig"><div class="n">45</div><div class="k">מודולים במערכת</div></div>
+    <div class="fig hot"><div class="n">75</div><div class="k">סבבי שינוי באזור הלידים</div></div>
+    <div class="fig stop"><div class="n">44</div><div class="k">יחידות עבודה שנעצרו</div></div>
+  </div>
+
+  <section class="col">
+    <p class="lead">ההתקשרות נמשכת כ־10 חודשים והחלה כליווי וייעוץ עסקי. היא התרחבה לפיתוח מערכת CRM ואתר לאחר שהלקוח בחר להחליף את ספקיו הקודמים — ומעולם לא עוגנה בהסכם בכתב.</p>
+    <p>המסמך הזה לא מחווה דעה על איכות. כל נתון בו נשלף מהיסטוריית הגרסאות וניתן לשחזור בכל רגע. הסיווג של &rlm;&ldquo;נמסר&rdquo; מול &ldquo;טרם נמסר&rdquo; נקבע לפי שני מדדים בלבד: <strong>גודל המודול</strong>, ו<strong>מספר הימים מאז שינויו האחרון</strong>. לא לפי טעם, ולא לפי ויכוח.</p>
+    <p class="thesis">אזור שמשתנה כל 2.4 ימים אינו אזור שנבנה גרוע. הוא אזור שהגדרתו לא נסגרה.</p>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">מוצג 1</span>
+      <h2>שני שלבים, אופי אחד שונה לגמרי</h2>
+      <p>כמחצית מההתקשרות קדמה לניהול הגרסאות. היעדר תיעוד אינו היעדר עבודה — 58,003 השורות שיובאו ביום הראשון הן התוצר המוחשי של אותה תקופה.</p>
+    </div>
+    <div class="phases">
+      <div class="phase undoc">
+        <h3>ליווי, ייעוץ ופיתוח ראשוני</h3>
+        <div class="when">~נובמבר 2025 — אפריל 2026 · ~5 חודשים</div>
+        <dl>
+          <dt>שורות קוד בתום השלב</dt><dd>58,003</dd>
+          <dt>קבצים</dt><dd>229</dd>
+          <dt>תיעוד בבקרת גרסאות</dt><dd>אין</dd>
+        </dl>
+        <p class="note">אפיון תהליכי העבודה, כניסה בנעלי הספקים הקודמים, ובניית המערכת הראשונית. לא מתועד בקוד — ולכן חייב להיות מתועד בהסכם.</p>
+      </div>
+      <div class="phase">
+        <h3>פיתוח מערכתי</h3>
+        <div class="when">12/04/2026 — 02/09/2026 · 143 ימים</div>
+        <dl>
+          <dt>שורות קוד בתום השלב</dt><dd>117,825</dd>
+          <dt>קבצים</dt><dd>731</dd>
+          <dt>עדכוני קוד</dt><dd>1,010</dd>
+          <dt>שירותי צד־שרת</dt><dd>44</dd>
+          <dt>מיגרציות מסד נתונים</dt><dd>110</dd>
+        </dl>
+        <p class="note">הגירת פלטפורמה מלאה של שכבת השרת, ופיתוח מתמשך. המערכת הוכפלה בהיקפה.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">מוצג 2</span>
+      <h2>הקצב — ושתי העצירות</h2>
+      <p>הצניחה ביוני–יולי אינה ירידה בהספק. כלל העבודה הוסטה לדרישות שהוגדרו מחדש, ואז חזרה לקצב מלא באוגוסט. שני חודשי רצף פיתוח נקטעו ולא הושלמו.</p>
+    </div>
+    <div class="bars">
+      <div class="bar"><div class="lab">אפריל 2026</div><div class="track"><div class="fill" style="width:85.8%"></div></div><div class="val">97</div></div>
+      <div class="bar"><div class="lab">מאי 2026</div><div class="track"><div class="fill" style="width:89.4%"></div></div><div class="val">101</div></div>
+      <div class="bar flag"><div class="lab">יוני 2026</div><div class="track"><div class="fill halt" style="width:4.4%"></div></div><div class="val">5</div></div>
+      <div class="bar flag"><div class="lab">יולי 2026</div><div class="track"><div class="fill halt" style="width:14.2%"></div></div><div class="val">16</div></div>
+      <div class="bar"><div class="lab">אוגוסט 2026</div><div class="track"><div class="fill" style="width:100%"></div></div><div class="val">113</div></div>
+      <div class="bar"><div class="lab">ספטמבר 2026<i>חלקי</i></div><div class="track"><div class="fill" style="width:12.4%"></div></div><div class="val">14</div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">מוצג 3</span>
+      <h2>כמה פעמים חזרנו לאותו אזור</h2>
+      <p>מספר סבבי העבודה הנפרדים שהוקדשו לכל אזור תפקודי. אזור הלידים לבדו קיבל 75 — יותר מאשר הזמנות, מוצרים, משימות ומשלוחים גם יחד.</p>
+    </div>
+    <div class="bars">
+      <div class="bar hot"><div class="lab">לידים</div><div class="track"><div class="fill moving" style="width:100%"></div></div><div class="val">75</div></div>
+      <div class="bar hot"><div class="lab">נציגים</div><div class="track"><div class="fill moving" style="width:64%"></div></div><div class="val">48</div></div>
+      <div class="bar"><div class="lab">משימות</div><div class="track"><div class="fill" style="width:30.7%"></div></div><div class="val">23</div></div>
+      <div class="bar"><div class="lab">הזמנות</div><div class="track"><div class="fill" style="width:30.7%"></div></div><div class="val">23</div></div>
+      <div class="bar"><div class="lab">מוצרים</div><div class="track"><div class="fill" style="width:29.3%"></div></div><div class="val">22</div></div>
+      <div class="bar"><div class="lab">משלוחים</div><div class="track"><div class="fill" style="width:21.3%"></div></div><div class="val">16</div></div>
+      <div class="bar"><div class="lab">תשלומים</div><div class="track"><div class="fill" style="width:16%"></div></div><div class="val">12</div></div>
+      <div class="bar"><div class="lab">טלפוניה</div><div class="track"><div class="fill" style="width:14.7%"></div></div><div class="val">11</div></div>
+      <div class="bar"><div class="lab">הצעות מחיר</div><div class="track"><div class="fill" style="width:13.3%"></div></div><div class="val">10</div></div>
+      <div class="bar"><div class="lab">דשבורד</div><div class="track"><div class="fill" style="width:12%"></div></div><div class="val">9</div></div>
+    </div>
+    <div class="col" style="margin-top:26px">
+      <p>ברמת הקובץ הבודד התמונה חדה עוד יותר: <code>src/pages/LeadDetails.jsx</code> — מסך כרטיס הליד — נבנה ונבנה מחדש ב־<strong>60 עדכונים נפרדים</strong> בתוך 143 ימים.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">מוצג 4</span>
+      <h2>מטריצת הבשלות</h2>
+      <p>כל נקודה היא מודול. ככל שהיא גבוהה יותר — כך שונתה יותר פעמים. ככל שהיא ימנית יותר — כך שונתה לאחרונה. הפינה הימנית־עליונה היא בדיוק האזור שהלקוח מביע בו אי־שביעות רצון.</p>
+    </div>
+    <div class="plot">
+      <svg viewBox="0 0 800 480" role="img" aria-label="פיזור מודולים: מספר סבבי שינוי מול ימים מאז השינוי האחרון">
+        <rect x="612" y="25" width="88" height="380" fill="var(--band)"></rect>
+        <line class="divider" x1="612" y1="25" x2="612" y2="405"></line>
+
+        <line class="gridline" x1="70" y1="405" x2="700" y2="405"></line>
+        <line class="gridline" x1="70" y1="313" x2="700" y2="313"></line>
+        <line class="gridline" x1="70" y1="221" x2="700" y2="221"></line>
+        <line class="gridline" x1="70" y1="129" x2="700" y2="129"></line>
+        <line class="gridline" x1="70" y1="37" x2="700" y2="37"></line>
+        <line class="axis" x1="700" y1="25" x2="700" y2="405"></line>
+
+        <text class="tick" x="710" y="409">0</text>
+        <text class="tick" x="710" y="317">15</text>
+        <text class="tick" x="710" y="225">30</text>
+        <text class="tick" x="710" y="133">45</text>
+        <text class="tick" x="710" y="41">60</text>
+        <text class="axlab" x="757" y="215" transform="rotate(90 757 215)" text-anchor="middle">סבבי שינוי</text>
+
+        <text class="tick" x="700" y="426" text-anchor="middle">0</text>
+        <text class="tick" x="574" y="426" text-anchor="middle">30</text>
+        <text class="tick" x="448" y="426" text-anchor="middle">60</text>
+        <text class="tick" x="322" y="426" text-anchor="middle">90</text>
+        <text class="tick" x="196" y="426" text-anchor="middle">120</text>
+        <text class="tick" x="70" y="426" text-anchor="middle">150</text>
+        <text class="axlab" x="385" y="450" text-anchor="middle">ימים מאז השינוי האחרון</text>
+
+        <circle class="dot moving" cx="696" cy="37" r="5.5"></circle>
+        <circle class="dot moving" cx="696" cy="172" r="5.5"></circle>
+        <circle class="dot moving" cx="696" cy="197" r="5.5"></circle>
+        <circle class="dot moving" cx="696" cy="252" r="5.5"></circle>
+        <circle class="dot moving" cx="690" cy="252" r="5.5"></circle>
+        <circle class="dot moving" cx="671" cy="338" r="5.5"></circle>
+        <circle class="dot moving" cx="671" cy="344" r="5.5"></circle>
+        <circle class="dot moving" cx="641" cy="172" r="5.5"></circle>
+        <circle class="dot moving" cx="641" cy="325" r="5.5"></circle>
+        <circle class="dot moving" cx="637" cy="246" r="5.5"></circle>
+        <circle class="dot moving" cx="633" cy="197" r="5.5"></circle>
+        <circle class="dot" cx="612" cy="276" r="5.5"></circle>
+        <circle class="dot" cx="606" cy="276" r="5.5"></circle>
+        <circle class="dot" cx="600" cy="276" r="5.5"></circle>
+        <circle class="dot" cx="608" cy="350" r="5.5"></circle>
+        <circle class="dot" cx="602" cy="362" r="5.5"></circle>
+        <circle class="dot" cx="614" cy="350" r="5.5"></circle>
+        <circle class="dot" cx="608" cy="295" r="5.5"></circle>
+        <circle class="dot" cx="608" cy="368" r="5.5"></circle>
+        <circle class="dot" cx="599" cy="344" r="5.5"></circle>
+        <circle class="dot" cx="595" cy="178" r="5.5"></circle>
+        <circle class="dot" cx="578" cy="381" r="5.5"></circle>
+        <circle class="dot" cx="578" cy="362" r="5.5"></circle>
+        <circle class="dot" cx="572" cy="393" r="5.5"></circle>
+        <circle class="dot" cx="578" cy="374" r="5.5"></circle>
+        <circle class="dot" cx="566" cy="338" r="5.5"></circle>
+        <circle class="dot" cx="461" cy="307" r="5.5"></circle>
+        <circle class="dot" cx="461" cy="338" r="5.5"></circle>
+        <circle class="dot" cx="461" cy="368" r="5.5"></circle>
+        <circle class="dot" cx="455" cy="368" r="5.5"></circle>
+        <circle class="dot" cx="461" cy="387" r="5.5"></circle>
+        <circle class="dot" cx="455" cy="374" r="5.5"></circle>
+        <circle class="dot" cx="431" cy="393" r="5.5"></circle>
+        <circle class="dot" cx="406" cy="387" r="5.5"></circle>
+        <circle class="dot" cx="368" cy="350" r="5.5"></circle>
+        <circle class="dot" cx="364" cy="374" r="5.5"></circle>
+        <circle class="dot" cx="154" cy="387" r="5.5"></circle>
+        <circle class="dot" cx="154" cy="374" r="5.5"></circle>
+        <circle class="dot" cx="141" cy="325" r="5.5"></circle>
+        <circle class="dot" cx="108" cy="387" r="5.5"></circle>
+        <circle class="dot" cx="99" cy="387" r="5.5"></circle>
+        <circle class="dot" cx="92" cy="387" r="5.5"></circle>
+        <circle class="dot" cx="85" cy="387" r="5.5"></circle>
+
+        <text class="dotlab" x="684" y="41" text-anchor="end">LeadDetails · 60</text>
+
+        <text class="zonelab" x="656" y="470" text-anchor="middle">11 מודולים בתנועה</text>
+        <text class="axlab" x="340" y="470" text-anchor="middle">32 מודולים שהתייצבו</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--stable)"></i>התייצב — נמסר</span>
+      <span><i class="swatch" style="background:var(--moving)"></i>בתנועה — טרם נמסר</span>
+      <span><i class="swatch" style="background:var(--band);border:1px solid var(--halt)"></i>שונה ב־21 הימים האחרונים</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">מוצג 5</span>
+      <h2>עבודה שהתחילה ונעצרה</h2>
+      <p>44 יחידות עבודה נפתחו, בוצעה בהן עבודה, ומעולם לא הושלמו. אלה אינם כישלונות טכניים — אלה משימות שהוזנחו לטובת דרישה דחופה יותר שהגיעה באמצע. הרשימה הזו היא, בפועל, תוכנית העבודה של שלב ב'.</p>
+    </div>
+    <div class="stopped">
+      <div><time>12/08</time><b>מחיר קטלוגי כולל מע&quot;מ</b></div>
+      <div><time>11/08</time><b>שליחה אוטומטית אחרי תשלום באשראי</b></div>
+      <div><time>11/08</time><b>אזהרת כפילות בחיפוש</b></div>
+      <div><time>09/08</time><b>שינויים בממשק הניהול</b></div>
+      <div><time>05/08</time><b>מערכת הרשאות ותפקידים</b></div>
+      <div><time>05/08</time><b>תקלת שיוך לידים</b></div>
+      <div><time>26/07</time><b>תקלות תמחור בלידים</b></div>
+      <div><time>22/07</time><b>וואטסאפ שלב ב' — מסרים</b></div>
+      <div><time>21/07</time><b>איפוס סיסמת נציג ע&quot;י מנהל</b></div>
+      <div><time>02/07</time><b>טבלת מוצרים</b></div>
+      <div><time>01/07</time><b>שיבוץ משמרות</b></div>
+      <div><time>01/07</time><b>שיפורי לוח זמנים</b></div>
+      <div><time>25/06</time><b>אינטגרציית SMS 019</b></div>
+      <div><time>25/06</time><b>הגדרות תצוגת תפריט</b></div>
+      <div><time>15/06</time><b>שיפורי קליטת פניות שירות</b></div>
+      <div><time>24/05</time><b>פערי אפיון מרכז שירות</b></div>
+      <div><time>28/04</time><b>תצוגת מפה יומית למשלוחים</b></div>
+      <div><time>28/04</time><b>תיקון גרירה שבועית במשלוחים</b></div>
+    </div>
+    <div class="col" style="margin-top:22px">
+      <p><em style="font-style:normal;color:var(--muted);font-size:14px">18 מתוך 44. בנוסף — שני אפיונים מלאים שנכתבו ולא מומשו: מרכז פיקוד שיווקי (331 שורות) ומחבר Meta Ads (267 שורות).</em></p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">המסקנה</span>
+      <h2>איפה עובר קו המסירה</h2>
+      <p>הנתונים מציירים את הקו בעצמם. אין צורך להתווכח על טעם — צריך רק להסכים על מה שההיסטוריה כבר מראה.</p>
+    </div>
+    <div class="verdict">
+      <div class="vcard in">
+        <span class="tag">נספח ב'</span>
+        <h3>נמסר · באחריות 90 יום</h3>
+        <p>מודולים ממשיים שהתייצבו: 21 יום ומעלה ללא שינוי. עליהם חלה אחריות לתקלות מתועדות.</p>
+        <ul>
+          <li><span>מודולים</span><span>32</span></li>
+          <li><span>שירותי צד־שרת</span><span>44</span></li>
+          <li><span>מיגרציות מסד נתונים</span><span>110</span></li>
+          <li><span>מסמכי אפיון</span><span>10</span></li>
+        </ul>
+      </div>
+      <div class="vcard out">
+        <span class="tag">נספח ג'</span>
+        <h3>טרם נמסר · ללא אחריות</h3>
+        <p>לא משום שהעבודה בהם לקויה — אלא משום שהגדרתם טרם הושלמה. לא ניתן לתת אחריות על יעד נע.</p>
+        <ul>
+          <li><span>מודולים בתנועה פעילה</span><span>11</span></li>
+          <li><span>מודולים במצב שלד</span><span>2</span></li>
+          <li><span>יחידות עבודה שנעצרו</span><span>44</span></li>
+          <li><span>אפיונים שלא מומשו</span><span>2</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <span class="exlabel">מבנה ההסכם</span>
+      <h2>אחד־עשר סעיפים, ארבעה נספחים</h2>
+    </div>
+    <div class="clauses">
+      <div class="clause">
+        <div class="no">סעיף 5</div>
+        <div>
+          <h4>קניין רוחני</h4>
+          <p>העברת מלוא הזכויות ללקוח, בכפוף לסילוק יתרת החוב. רכיבי תשתית גנריים נשארים בבעלות אימג'יק, עם רישיון קבוע ללקוח.</p>
+        </div>
+      </div>
+      <div class="clause">
+        <div class="no">סעיף 6</div>
+        <div>
+          <h4>אחריות</h4>
+          <p>90 יום, תקלות מתועדות בלבד, על מודולי נספח ב' בלבד. שבעה סייגים מפורשים — ובראשם שינוי בהגדרת הדרישה.</p>
+        </div>
+      </div>
+      <div class="clause">
+        <div class="no">סעיף 7</div>
+        <div>
+          <h4>תשתית וחשבונות</h4>
+          <p>החשבונות רשומים כיום על שם אימג'יק. תוכנית העברה של 30 יום, וחלוקת עלויות ואחריות ברורה עד להשלמתה.</p>
+        </div>
+      </div>
+      <div class="clause">
+        <div class="no">סעיף 8</div>
+        <div>
+          <h4>תמורה ויתרת חוב</h4>
+          <p>העברת הבעלות והחשבונות מותנית בסילוק מלא. רישיון השימוש, הגישה למערכת ורציפות הפעילות — אינם נפגעים.</p>
+        </div>
+      </div>
+      <div class="clause">
+        <div class="no">נספח ד'</div>
+        <div>
+          <h4>מסגרת שלב ב'</h4>
+          <p>מכסה חודשית, סיווג פניות לשלושה סוגים, ומנגנון נעילת אזור — אזור שאושר ונסגר, פתיחתו מחדש היא בקשת שינוי בתשלום.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="col">
+    <div class="callout">
+      <h4>הנקודה שקובעת את כוח המיקוח</h4>
+      <p>גם אם כוונת הצדדים לאורך כל ההתקשרות הייתה שהקוד יהיה של הלקוח — <strong>בהיעדר הסכם בכתב, ההעברה טרם השתכללה.</strong></p>
+      <p>סעיף 5 בהסכם אינו פורמליות טכנית. הוא המכשיר שמבצע את ההעברה בפועל, ולכן הוא נכס בעל ערך שנמסר במסגרת ההסכם — ולא סעיף שמאשר מצב קיים.</p>
+      <cite>חוק זכות יוצרים, התשס&quot;ז־2007, ס' 35(א): ביצירה מוזמנת הבעלים הראשון של זכות היוצרים הוא היוצר, אלא אם הוסכם אחרת.</cite>
+    </div>
+
+    <div class="callout warn">
+      <h4>לפני שליחה — חובה</h4>
+      <p>המסמכים הם טיוטה. סעיפי הקניין הרוחני והאחריות קובעים את החשיפה שלך לשנים הבאות ומחייבים בדיקה של עו&quot;ד קניין רוחני לפני חתימה.</p>
+    </div>
+
+    <div class="todo">
+      <div class="must">יתרת החוב המדויקת והחודשים <em>· סעיף 8.2</em></div>
+      <div class="must">מועד סילוק <em>· סעיף 8.3</em></div>
+      <div class="must">בדיקת עו&quot;ד קניין רוחני</div>
+      <div>אחוז דמי טיפול על חשבונות תשתית <em>· סעיף 7.3</em></div>
+      <div>תעריף שעת חריגה וזמני טיפול <em>· נספח ד'</em></div>
+      <div>מקום סמכות השיפוט <em>· סעיף 11.6</em></div>
+      <div>רשימה מפורשת של רכיבי התשתית שנשארים בבעלותך <em>· סעיף 5.3</em></div>
+      <div>שקילה מחדש של מכסת השעות — 40 שעות ב־10,000 ₪ הן 250 ₪ לשעה <em>· נספח ד'</em></div>
+    </div>
+  </section>
+
+  <footer>
+    <div>תיק מסירה שלב א' · אימג'יק · טיוטה לבדיקה משפטית</div>
+    <div><code>docs/delivery/</code> · <code>./scripts/delivery-evidence.sh</code></div>
+  </footer>
+
+</div>

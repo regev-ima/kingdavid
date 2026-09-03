@@ -10,12 +10,25 @@
 | [`delivery-agreement-phase1.md`](delivery-agreement-phase1.md) | ללקוח | ההסכם עצמו |
 | [`appendix-b-c-scope.md`](appendix-b-c-scope.md) | ללקוח | נספח ב' — מה נמסר · נספח ג' — מה לא |
 | [`appendix-d-change-control.md`](appendix-d-change-control.md) | ללקוח | נספח ד' — מסגרת שלב ב' |
+| [`delivery-brief.html`](delivery-brief.html) | ללקוח | דוח הראיות כעמוד ויזואלי — מה שמציגים בפגישה |
+| [`word/`](word/) | ללקוח / לעו"ד | גרסאות Word לעריכה ולסימון שינויים |
 | [`../../scripts/delivery-evidence.sh`](../../scripts/delivery-evidence.sh) | פנימי | מפיק מחדש את כל הנתונים מההיסטוריה |
+| [`../../scripts/delivery-docx.mjs`](../../scripts/delivery-docx.mjs) | פנימי | מפיק מחדש את קובצי ה-Word מה-markdown |
+
+### הפקה מחדש
 
 ```bash
+# נתוני נספח א' מההיסטוריה
 git fetch --unshallow origin      # פעם אחת, אם המאגר משוכפל חלקית
 ./scripts/delivery-evidence.sh
+
+# קובצי Word, לאחר עריכת ה-markdown
+npm install --no-save docx
+node scripts/delivery-docx.mjs docs/delivery/word
 ```
+
+**זרימת העבודה:** עורכים את קובצי ה-markdown → מריצים את `delivery-docx.mjs` →
+מקבלים Word מעודכן לשליחה. ה-markdown הוא מקור האמת.
 
 ---
 
